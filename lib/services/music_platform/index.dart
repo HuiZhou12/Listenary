@@ -6,4 +6,5 @@ export 'chksz/netease_stream_resolver.dart';
 export 'chksz/chksz_quota.dart';
 export 'chksz/chksz_request.dart';
 export 'chksz/remote_stream_coordinator.dart';
+export 'music_catalog_service.dart';
 export 'models/music_models.dart';
