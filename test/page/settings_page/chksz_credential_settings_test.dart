@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/page/settings_page/chksz_credential_settings.dart';
-import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider.dart';
+import 'package:pure_music/services/music_platform/index.dart';
 
 const _apiKey = 'chksz_SETTINGS_TEST_ONLY';
 
@@ -11,11 +11,13 @@ void main() {
     tester,
   ) async {
     final provider = _FakeCredentialProvider();
+    final runtime = _runtime(provider);
+    addTearDown(runtime.dispose);
 
-    await tester.pumpWidget(_host(provider, active: false));
+    await tester.pumpWidget(_host(runtime, active: false));
     expect(provider.readCount, 0);
 
-    await tester.pumpWidget(_host(provider, active: true));
+    await tester.pumpWidget(_host(runtime, active: true));
     await tester.pump();
 
     expect(provider.readCount, 1);
@@ -26,8 +28,10 @@ void main() {
     tester,
   ) async {
     final provider = _FakeCredentialProvider(value: _apiKey);
+    final runtime = _runtime(provider);
+    addTearDown(runtime.dispose);
 
-    await tester.pumpWidget(_host(provider));
+    await tester.pumpWidget(_host(runtime));
     await tester.pump();
 
     expect(find.textContaining('已配置'), findsOneWidget);
@@ -36,8 +40,10 @@ void main() {
 
   testWidgets('validates, obscures, and saves a new key', (tester) async {
     final provider = _FakeCredentialProvider();
+    final runtime = _runtime(provider);
+    addTearDown(runtime.dispose);
 
-    await tester.pumpWidget(_host(provider));
+    await tester.pumpWidget(_host(runtime));
     await tester.pump();
     await tester.tap(find.text('配置'));
     await tester.pump();
@@ -69,8 +75,10 @@ void main() {
 
   testWidgets('requires confirmation before clearing the key', (tester) async {
     final provider = _FakeCredentialProvider(value: _apiKey);
+    final runtime = _runtime(provider);
+    addTearDown(runtime.dispose);
 
-    await tester.pumpWidget(_host(provider));
+    await tester.pumpWidget(_host(runtime));
     await tester.pump();
     await tester.tap(find.byTooltip('清除 API Key'));
     await tester.pump();
@@ -92,8 +100,10 @@ void main() {
         errorCode: 5,
       ),
     );
+    final runtime = _runtime(provider);
+    addTearDown(runtime.dispose);
 
-    await tester.pumpWidget(_host(provider));
+    await tester.pumpWidget(_host(runtime));
     await tester.pump();
     await tester.tap(find.text('配置'));
     await tester.pump();
@@ -111,15 +121,30 @@ void main() {
   });
 }
 
-Widget _host(_FakeCredentialProvider provider, {bool active = true}) {
+Widget _host(ChkszRuntime runtime, {bool active = true}) {
   return MaterialApp(
     home: Scaffold(
-      body: Provider<ChkszCredentialProvider>.value(
-        value: provider,
+      body: Provider<ChkszRuntime>.value(
+        value: runtime,
         child: ChkszCredentialSettings(active: active),
       ),
     ),
   );
+}
+
+ChkszRuntime _runtime(ChkszCredentialProvider provider) => ChkszRuntime(
+  credentialProvider: provider,
+  transport: _UnexpectedTransport(),
+);
+
+final class _UnexpectedTransport implements ChkszTransport {
+  @override
+  Future<ChkszTransportResponse> send(
+    ChkszAuthorizedRequest request, {
+    required ChkszCancelToken cancelToken,
+  }) {
+    throw StateError('Credential settings must not send a request');
+  }
 }
 
 final class _FakeCredentialProvider implements ChkszCredentialProvider {

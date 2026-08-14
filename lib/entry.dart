@@ -44,7 +44,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
-import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider.dart';
+import 'package:pure_music/services/music_platform/chksz/chksz_runtime.dart';
 
 class SlideTransitionPage<T> extends CustomTransitionPage<T> {
   const SlideTransitionPage({
@@ -90,10 +90,10 @@ class Entry extends StatefulWidget {
   const Entry({
     super.key,
     required this.welcome,
-    required this.credentialProvider,
+    required this.chkszRuntime,
   });
   final bool welcome;
-  final ChkszCredentialProvider credentialProvider;
+  final ChkszRuntime chkszRuntime;
 
   @override
   State<Entry> createState() => _EntryState();
@@ -125,6 +125,7 @@ class _EntryState extends State<Entry>
     _windowResizing.dispose();
     WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
+    widget.chkszRuntime.dispose();
     super.dispose();
   }
 
@@ -442,8 +443,8 @@ class _EntryState extends State<Entry>
             scaffoldMessengerKey: scaffoldMessengerKey,
             debugShowCheckedModeBanner: false,
             scrollBehavior: const AppScrollBehavior(),
-            builder: (context, child) => Provider<ChkszCredentialProvider>.value(
-              value: widget.credentialProvider,
+            builder: (context, child) => Provider<ChkszRuntime>.value(
+              value: widget.chkszRuntime,
               child: ValueListenableBuilder<bool>(
                 valueListenable: _windowResizing,
                 child: child,

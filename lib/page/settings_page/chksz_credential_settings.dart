@@ -6,6 +6,7 @@ import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_request.dart';
+import 'package:pure_music/services/music_platform/chksz/chksz_runtime.dart';
 
 class ChkszCredentialSettings extends StatefulWidget {
   const ChkszCredentialSettings({super.key, required this.active});
@@ -18,7 +19,7 @@ class ChkszCredentialSettings extends StatefulWidget {
 }
 
 class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
-  late final ChkszCredentialProvider _provider;
+  late final ChkszRuntime _runtime;
   bool _hasLoaded = false;
   bool _loading = false;
   bool _configured = false;
@@ -30,7 +31,7 @@ class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
   @override
   void initState() {
     super.initState();
-    _provider = context.read<ChkszCredentialProvider>();
+    _runtime = context.read<ChkszRuntime>();
     if (widget.active) _load();
   }
 
@@ -47,7 +48,7 @@ class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
       _error = null;
     });
     try {
-      final apiKey = await _provider.readApiKey();
+      final apiKey = await _runtime.readApiKey();
       if (!mounted) return;
       setState(() {
         _configured = apiKey != null;
@@ -78,7 +79,7 @@ class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
   }
 
   Future<void> _saveApiKey(String apiKey) async {
-    await _provider.writeApiKey(apiKey);
+    await _runtime.writeApiKey(apiKey);
     if (!mounted) return;
     setState(() {
       _configured = true;
@@ -104,7 +105,7 @@ class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
       _error = null;
     });
     try {
-      await _provider.clearApiKey();
+      await _runtime.clearApiKey();
       if (!mounted) return;
       setState(() {
         _configured = false;
