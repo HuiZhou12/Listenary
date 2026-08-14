@@ -5,6 +5,13 @@ analyzer:
     - bin/build_tool_runner.dart
     - 原代码（请勿修改）/**
     - rust_builder/cargokit/build_tool/**
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
   errors:
     missing_required_param: warning
     missing_return: warning
