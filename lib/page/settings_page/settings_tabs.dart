@@ -22,6 +22,7 @@ import 'package:pure_music/play_service/desktop_lyric_service.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/page/settings_page/check_update.dart';
 import 'package:pure_music/page/settings_page/create_issue.dart';
+import 'package:pure_music/page/settings_page/chksz_credential_settings.dart';
 import 'package:pure_music/page/settings_page/artist_separator_editor.dart';
 import 'package:pure_music/page/settings_page/other_settings.dart'
     show AudioEchoLogRecordControl, ReplayGainControl;
@@ -45,6 +46,7 @@ class _SettingsTabsState extends State<SettingsTabs> {
     _SettingsTab('外观', Symbols.palette),
     _SettingsTab('歌词', Symbols.lyrics),
     _SettingsTab('桌面歌词', Symbols.desktop_windows),
+    _SettingsTab('在线音乐', Symbols.music_note),
     _SettingsTab('高级', Symbols.settings),
     _SettingsTab('关于', Symbols.info),
   ];
@@ -96,12 +98,13 @@ class _SettingsTabsState extends State<SettingsTabs> {
         Expanded(
           child: DirectionalTabView(
             index: _currentIndex,
-            children: const [
-              _AppearanceTabContent(),
-              _LyricsTabContent(),
-              _DesktopLyricTabContent(),
-              _AdvancedTabContent(),
-              _AboutTabContent(),
+            children: [
+              const _AppearanceTabContent(),
+              const _LyricsTabContent(),
+              const _DesktopLyricTabContent(),
+              ChkszCredentialSettings(active: _currentIndex == 3),
+              const _AdvancedTabContent(),
+              const _AboutTabContent(),
             ],
           ),
         ),

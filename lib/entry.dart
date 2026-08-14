@@ -44,6 +44,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
+import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider.dart';
 
 class SlideTransitionPage<T> extends CustomTransitionPage<T> {
   const SlideTransitionPage({
@@ -86,8 +87,13 @@ class SlideTransitionPage<T> extends CustomTransitionPage<T> {
 }
 
 class Entry extends StatefulWidget {
-  const Entry({super.key, required this.welcome});
+  const Entry({
+    super.key,
+    required this.welcome,
+    required this.credentialProvider,
+  });
   final bool welcome;
+  final ChkszCredentialProvider credentialProvider;
 
   @override
   State<Entry> createState() => _EntryState();
@@ -436,12 +442,15 @@ class _EntryState extends State<Entry>
             scaffoldMessengerKey: scaffoldMessengerKey,
             debugShowCheckedModeBanner: false,
             scrollBehavior: const AppScrollBehavior(),
-            builder: (context, child) => ValueListenableBuilder<bool>(
-              valueListenable: _windowResizing,
-              child: child,
-              builder: (context, resizing, child) => TickerMode(
-                enabled: !resizing,
-                child: child ?? const SizedBox.shrink(),
+            builder: (context, child) => Provider<ChkszCredentialProvider>.value(
+              value: widget.credentialProvider,
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _windowResizing,
+                child: child,
+                builder: (context, resizing, child) => TickerMode(
+                  enabled: !resizing,
+                  child: child ?? const SizedBox.shrink(),
+                ),
               ),
             ),
             theme: fromSchemeAndFontFamily(

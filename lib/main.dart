@@ -14,6 +14,7 @@ import 'package:pure_music/native/rust/api/logger.dart';
 import 'package:pure_music/native/rust/frb_generated.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider_factory.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
@@ -121,7 +122,10 @@ Future<void> main() async {
 
   MemoryMonitorService.instance.start();
 
-  runApp(Entry(welcome: welcome));
+  final credentialProvider = createChkszCredentialProvider(
+    portableBuild: portableBuild,
+  );
+  runApp(Entry(welcome: welcome, credentialProvider: credentialProvider));
 }
 
 StreamSubscription<String>? _rustLoggerSub;
