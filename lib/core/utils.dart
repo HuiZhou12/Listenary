@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:collection';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:pure_music/core/design_tokens.dart';
@@ -561,7 +562,7 @@ final _diagnosticUrlQueryPattern = RegExp(
   caseSensitive: false,
 );
 final _diagnosticSecretFieldPattern = RegExp(
-  r'\b(access[_-]?key|auth[_-]?token|token|device[_-]?id|session[_-]?id)\s*[:=]\s*[^&\s|]+',
+  r'\b(api[_-]?key|access[_-]?key|auth(?:orization|[_-]?token)|token|cookie|device[_-]?id|session[_-]?id)\s*[:=]\s*(?:Bearer\s+)?[^&\s|]+',
   caseSensitive: false,
 );
 
