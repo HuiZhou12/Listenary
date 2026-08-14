@@ -60,6 +60,7 @@ final class ChkszClient {
     for (var attempt = 0; attempt < 2; attempt++) {
       _throwIfCancelled(token);
       final response = await _send(authorized, token);
+      _throwIfCancelled(token);
       final quota = ChkszQuotaSnapshot.fromHeaders(response.headers);
       if (quota.hasData) _onQuotaUpdated?.call(quota);
       final retryAfter = _retryAfter(response.headers);
