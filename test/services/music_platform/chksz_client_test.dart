@@ -95,6 +95,7 @@ void main() {
     });
 
     test('parses quota headers case-insensitively', () async {
+      final updates = <ChkszQuotaSnapshot>[];
       final client = _client(
         _FakeTransport(
           (_, _) async => ChkszTransportResponse(
@@ -107,6 +108,7 @@ void main() {
             },
           ),
         ),
+        onQuotaUpdated: updates.add,
       );
 
       final response = await client.sendJson(
@@ -118,7 +120,63 @@ void main() {
       expect(response.quota.freeRemaining, 49);
       expect(response.quota.paidRemaining, isNull);
       expect(response.quota.hasData, isTrue);
+      expect(updates, hasLength(1));
+      expect(updates.single.rateLimit, 20);
+      expect(updates.single.freeRemaining, 49);
     });
+
+    test('reports quota before mapping an HTTP failure', () async {
+      final updates = <ChkszQuotaSnapshot>[];
+      final client = _client(
+        _FakeTransport(
+          (_, _) async => ChkszTransportResponse(
+            statusCode: 402,
+            data: const {'msg': 'quota exhausted'},
+            headers: const {
+              'X-Quota-Free-Remaining': ['0'],
+              'X-Quota-Paid-Remaining': ['0'],
+            },
+          ),
+        ),
+        onQuotaUpdated: updates.add,
+      );
+
+      final exception = await _captureException(
+        client.sendJson(
+          ChkszRequest(path: '/api/search'),
+          isBusinessSuccess: (_) => true,
+        ),
+      );
+
+      expect(exception.kind, ChkszErrorKind.quotaExhausted);
+      expect(updates, hasLength(1));
+      expect(updates.single.freeRemaining, 0);
+      expect(updates.single.paidRemaining, 0);
+    });
+
+    test(
+      'does not report a quota update when all quota headers are absent',
+      () async {
+        final updates = <ChkszQuotaSnapshot>[];
+        final client = _client(
+          _FakeTransport(
+            (_, _) async => ChkszTransportResponse(
+              statusCode: 200,
+              data: const {'ok': true},
+            ),
+          ),
+          onQuotaUpdated: updates.add,
+        );
+
+        final response = await client.sendJson(
+          ChkszRequest(path: '/api/search'),
+          isBusinessSuccess: (body) => body['ok'] == true,
+        );
+
+        expect(response.quota.hasData, isFalse);
+        expect(updates, isEmpty);
+      },
+    );
 
     test('maps supported HTTP statuses without leaking response secrets', () {
       const expected = <int, ChkszErrorKind>{
@@ -190,6 +248,7 @@ void main() {
 
     test('retries 429 exactly once when Retry-After is valid', () async {
       final delays = <Duration>[];
+      final updates = <ChkszQuotaSnapshot>[];
       final transport = _FakeTransport((_, _) async {
         if (delays.isEmpty) {
           return ChkszTransportResponse(
@@ -197,17 +256,22 @@ void main() {
             data: const {'msg': 'slow down'},
             headers: const {
               'Retry-After': ['2'],
+              'X-Quota-Free-Remaining': ['9'],
             },
           );
         }
         return ChkszTransportResponse(
           statusCode: 200,
           data: const {'ok': true},
+          headers: const {
+            'X-Quota-Free-Remaining': ['8'],
+          },
         );
       });
       final client = _client(
         transport,
         delay: (duration) async => delays.add(duration),
+        onQuotaUpdated: updates.add,
       );
 
       final response = await client.sendJson(
@@ -218,6 +282,7 @@ void main() {
       expect(response.body['ok'], isTrue);
       expect(delays, [const Duration(seconds: 2)]);
       expect(transport.requests, hasLength(2));
+      expect(updates.map((quota) => quota.freeRemaining), [9, 8]);
     });
 
     test('does not retry 429 without a valid Retry-After', () async {
@@ -318,13 +383,18 @@ void main() {
   });
 }
 
-ChkszClient _client(_FakeTransport transport, {ChkszDelay? delay}) {
+ChkszClient _client(
+  _FakeTransport transport, {
+  ChkszDelay? delay,
+  ChkszQuotaUpdated? onQuotaUpdated,
+}) {
   return ChkszClient(
     transport: transport,
     credentialProvider: InMemoryChkszCredentialProvider(
       initialApiKey: _fakeApiKey,
     ),
     delay: delay,
+    onQuotaUpdated: onQuotaUpdated,
   );
 }
 

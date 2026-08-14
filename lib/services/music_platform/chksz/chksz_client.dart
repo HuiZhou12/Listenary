@@ -8,6 +8,7 @@ import 'package:pure_music/services/music_platform/chksz/chksz_request.dart';
 typedef ChkszBusinessSuccess = bool Function(Map<String, dynamic> body);
 typedef ChkszDelay = Future<void> Function(Duration duration);
 typedef ChkszClock = DateTime Function();
+typedef ChkszQuotaUpdated = void Function(ChkszQuotaSnapshot quota);
 
 final class ChkszJsonResponse {
   const ChkszJsonResponse({
@@ -27,15 +28,18 @@ final class ChkszClient {
     required ChkszCredentialProvider credentialProvider,
     ChkszDelay? delay,
     ChkszClock? clock,
+    ChkszQuotaUpdated? onQuotaUpdated,
   }) : _transport = transport,
        _credentialProvider = credentialProvider,
        _delay = delay ?? Future<void>.delayed,
-       _clock = clock ?? DateTime.now;
+       _clock = clock ?? DateTime.now,
+       _onQuotaUpdated = onQuotaUpdated;
 
   final ChkszTransport _transport;
   final ChkszCredentialProvider _credentialProvider;
   final ChkszDelay _delay;
   final ChkszClock _clock;
+  final ChkszQuotaUpdated? _onQuotaUpdated;
 
   Future<ChkszJsonResponse> sendJson(
     ChkszRequest request, {
@@ -56,6 +60,8 @@ final class ChkszClient {
     for (var attempt = 0; attempt < 2; attempt++) {
       _throwIfCancelled(token);
       final response = await _send(authorized, token);
+      final quota = ChkszQuotaSnapshot.fromHeaders(response.headers);
+      if (quota.hasData) _onQuotaUpdated?.call(quota);
       final retryAfter = _retryAfter(response.headers);
       if (response.statusCode == 429 && attempt == 0 && retryAfter != null) {
         await _waitForRetry(retryAfter, token);
@@ -74,7 +80,7 @@ final class ChkszClient {
       }
       return ChkszJsonResponse(
         body: body,
-        quota: ChkszQuotaSnapshot.fromHeaders(response.headers),
+        quota: quota,
         message: chkszSafeBusinessMessage(body),
       );
     }
