@@ -1,3 +1,4 @@
+export 'adapters/netease_adapter.dart';
 export 'chksz/chksz_client.dart';
 export 'chksz/chksz_credential_provider.dart';
 export 'chksz/chksz_error.dart';
