@@ -1,6 +1,7 @@
 export 'adapters/netease_adapter.dart';
 export 'chksz/chksz_client.dart';
 export 'chksz/chksz_credential_provider.dart';
+export 'chksz/chksz_dio_transport.dart';
 export 'chksz/chksz_error.dart';
 export 'chksz/netease_stream_resolver.dart';
 export 'chksz/chksz_quota.dart';
