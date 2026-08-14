@@ -55,10 +55,49 @@ void main() {
       expect(sent.toString(), isNot(contains('keyword=test')));
     });
 
+    test('reads the current credential for every request', () async {
+      final credentials = InMemoryChkszCredentialProvider(
+        initialApiKey: _fakeApiKey,
+      );
+      final transport = _FakeTransport(
+        (_, _) async =>
+            ChkszTransportResponse(statusCode: 200, data: const {'ok': true}),
+      );
+      final client = ChkszClient(
+        transport: transport,
+        credentialProvider: credentials,
+      );
+
+      await client.sendJson(
+        ChkszRequest(path: '/api/search'),
+        isBusinessSuccess: (body) => body['ok'] == true,
+      );
+      await credentials.writeApiKey('chksz_REPLACED_TEST_ONLY');
+      await client.sendJson(
+        ChkszRequest(path: '/api/search'),
+        isBusinessSuccess: (body) => body['ok'] == true,
+      );
+      await credentials.clearApiKey();
+      final exception = await _captureException(
+        client.sendJson(
+          ChkszRequest(path: '/api/search'),
+          isBusinessSuccess: (body) => body['ok'] == true,
+        ),
+      );
+
+      expect(transport.requests, hasLength(2));
+      expect(transport.requests.first.queryParameters['apikey'], _fakeApiKey);
+      expect(
+        transport.requests.last.queryParameters['apikey'],
+        'chksz_REPLACED_TEST_ONLY',
+      );
+      expect(exception.kind, ChkszErrorKind.unauthorized);
+    });
+
     test('parses quota headers case-insensitively', () async {
       final client = _client(
         _FakeTransport(
-          (_, __) async => ChkszTransportResponse(
+          (_, _) async => ChkszTransportResponse(
             statusCode: 200,
             data: const {'ok': true},
             headers: const {
@@ -107,7 +146,7 @@ void main() {
     test('maps business failure and redacts its message', () async {
       final client = _client(
         _FakeTransport(
-          (_, __) async => ChkszTransportResponse(
+          (_, _) async => ChkszTransportResponse(
             statusCode: 200,
             data: const {
               'code': 403,
@@ -132,7 +171,7 @@ void main() {
     test('rejects a successful response with a non-object body', () async {
       final client = _client(
         _FakeTransport(
-          (_, __) async => ChkszTransportResponse(
+          (_, _) async => ChkszTransportResponse(
             statusCode: 200,
             data: const ['not', 'an', 'object'],
           ),
@@ -151,7 +190,7 @@ void main() {
 
     test('retries 429 exactly once when Retry-After is valid', () async {
       final delays = <Duration>[];
-      final transport = _FakeTransport((_, __) async {
+      final transport = _FakeTransport((_, _) async {
         if (delays.isEmpty) {
           return ChkszTransportResponse(
             statusCode: 429,
@@ -183,7 +222,7 @@ void main() {
 
     test('does not retry 429 without a valid Retry-After', () async {
       final transport = _FakeTransport(
-        (_, __) async => ChkszTransportResponse(
+        (_, _) async => ChkszTransportResponse(
           statusCode: 429,
           data: const {'msg': 'slow down'},
           headers: const {
@@ -206,7 +245,7 @@ void main() {
 
     test('cancels before calling the transport', () async {
       final transport = _FakeTransport(
-        (_, __) async =>
+        (_, _) async =>
             ChkszTransportResponse(statusCode: 200, data: const {'ok': true}),
       );
       final token = ChkszCancelToken()..cancel();
@@ -227,7 +266,7 @@ void main() {
       final delayStarted = Completer<void>();
       final token = ChkszCancelToken();
       final transport = _FakeTransport(
-        (_, __) async => ChkszTransportResponse(
+        (_, _) async => ChkszTransportResponse(
           statusCode: 429,
           data: const {'msg': 'slow down'},
           headers: const {
@@ -259,7 +298,7 @@ void main() {
     test('converts transport failures to safe network errors', () async {
       final client = _client(
         _FakeTransport(
-          (_, __) => throw StateError(
+          (_, _) => throw StateError(
             'request failed: https://api.invalid?apikey=$_fakeApiKey',
           ),
         ),
@@ -282,7 +321,9 @@ void main() {
 ChkszClient _client(_FakeTransport transport, {ChkszDelay? delay}) {
   return ChkszClient(
     transport: transport,
-    apiKeyProvider: () => _fakeApiKey,
+    credentialProvider: InMemoryChkszCredentialProvider(
+      initialApiKey: _fakeApiKey,
+    ),
     delay: delay,
   );
 }
@@ -296,10 +337,11 @@ Future<ChkszException> _captureException(Future<Object?> future) async {
   throw StateError('Expected ChkszException');
 }
 
-typedef _TransportHandler = Future<ChkszTransportResponse> Function(
-  ChkszAuthorizedRequest request,
-  ChkszCancelToken cancelToken,
-);
+typedef _TransportHandler =
+    Future<ChkszTransportResponse> Function(
+      ChkszAuthorizedRequest request,
+      ChkszCancelToken cancelToken,
+    );
 
 final class _FakeTransport implements ChkszTransport {
   _FakeTransport(this._handler);

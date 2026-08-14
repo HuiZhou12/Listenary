@@ -1,10 +1,10 @@
 import 'dart:async';
 
+import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_error.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_quota.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_request.dart';
 
-typedef ChkszApiKeyProvider = String? Function();
 typedef ChkszBusinessSuccess = bool Function(Map<String, dynamic> body);
 typedef ChkszDelay = Future<void> Function(Duration duration);
 typedef ChkszClock = DateTime Function();
@@ -24,16 +24,16 @@ final class ChkszJsonResponse {
 final class ChkszClient {
   ChkszClient({
     required ChkszTransport transport,
-    required ChkszApiKeyProvider apiKeyProvider,
+    required ChkszCredentialProvider credentialProvider,
     ChkszDelay? delay,
     ChkszClock? clock,
   }) : _transport = transport,
-       _apiKeyProvider = apiKeyProvider,
+       _credentialProvider = credentialProvider,
        _delay = delay ?? Future<void>.delayed,
        _clock = clock ?? DateTime.now;
 
   final ChkszTransport _transport;
-  final ChkszApiKeyProvider _apiKeyProvider;
+  final ChkszCredentialProvider _credentialProvider;
   final ChkszDelay _delay;
   final ChkszClock _clock;
 
@@ -44,7 +44,7 @@ final class ChkszClient {
   }) async {
     final token = cancelToken ?? ChkszCancelToken();
     _throwIfCancelled(token);
-    final key = _apiKeyProvider();
+    final key = await _credentialProvider.readApiKey();
     if (key == null || !isValidChkszApiKeyFormat(key)) {
       throw const ChkszException(
         kind: ChkszErrorKind.unauthorized,
