@@ -16,6 +16,7 @@ class PlayService {
   PlaybackService? _playbackService;
   LyricService? _lyricService;
   DesktopLyricService? _desktopLyricService;
+  final Set<void Function()> _localPlaybackRequestListeners = {};
 
   PlaybackService get playbackService =>
       _playbackService ??= PlaybackService(this);
@@ -33,7 +34,22 @@ class PlayService {
 
   bool get hasPlaybackSession => _playbackService?.nowPlaying != null;
 
+  void addLocalPlaybackRequestListener(void Function() listener) {
+    _localPlaybackRequestListeners.add(listener);
+  }
+
+  void removeLocalPlaybackRequestListener(void Function() listener) {
+    _localPlaybackRequestListeners.remove(listener);
+  }
+
+  void notifyLocalPlaybackRequested() {
+    for (final listener in List.of(_localPlaybackRequestListeners)) {
+      listener();
+    }
+  }
+
   Future<void> close() async {
+    _localPlaybackRequestListeners.clear();
     // 按顺序关闭服务，每个操作带超时保护
     final desktopLyric = _desktopLyricService;
     if (desktopLyric != null) {

@@ -91,6 +91,22 @@ void main() {
     expect(queue.value.currentIndex, 0);
   });
 
+  test('cancel stops active work but keeps the controller reusable', () async {
+    final pending = Completer<void>();
+    gateway.pending.add(pending.future);
+    final cancelled = controller.play(1, requestedQuality: 'standard');
+    await pumpEventQueue();
+    final token = gateway.tokens.single;
+
+    controller.cancel();
+    expect(token.isCancelled, isTrue);
+    pending.complete();
+    await expectLater(cancelled, throwsA(isA<RemoteStreamPlaybackException>()));
+
+    await controller.play(0, requestedQuality: 'lossless');
+    expect(queue.value.currentIndex, 0);
+  });
+
   test('dispose cancels the active request and rejects new work', () async {
     final pending = Completer<void>();
     gateway.pending.add(pending.future);

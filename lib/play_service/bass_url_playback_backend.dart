@@ -129,9 +129,10 @@ final class BassUrlPlaybackBackend implements PlaybackBackend {
   Future<void> stop() async {
     if (_disposed) return;
     _operation++;
-    await _driverStateSubscription?.cancel();
+    final stateSubscription = _driverStateSubscription;
     _driverStateSubscription = null;
     await _stopDriverSafely();
+    await stateSubscription?.cancel();
     _emit(PlaybackBackendState.stopped);
   }
 

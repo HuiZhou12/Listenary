@@ -378,6 +378,7 @@ class PlaybackService extends ChangeNotifier {
     bool reportFailure = true,
   }) {
     if (audioIndex < 0 || audioIndex >= playlist.length) return false;
+    playService.notifyLocalPlaybackRequested();
     final audio = playlist[audioIndex];
     _songChangeTaskToken++;
     _cancelSongChangeTasks();

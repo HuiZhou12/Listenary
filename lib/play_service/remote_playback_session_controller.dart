@@ -29,6 +29,10 @@ abstract interface class LocalPlaybackSessionBridge {
   void pause();
 
   void restore(LocalPlaybackResumePoint resumePoint);
+
+  void addLocalPlaybackRequestListener(void Function() listener);
+
+  void removeLocalPlaybackRequestListener(void Function() listener);
 }
 
 final class PlaybackServiceLocalPlaybackSessionBridge
@@ -94,27 +98,40 @@ final class PlaybackServiceLocalPlaybackSessionBridge
       playback.pause();
     }
   }
+
+  @override
+  void addLocalPlaybackRequestListener(void Function() listener) {
+    _playService.addLocalPlaybackRequestListener(listener);
+  }
+
+  @override
+  void removeLocalPlaybackRequestListener(void Function() listener) {
+    _playService.removeLocalPlaybackRequestListener(listener);
+  }
 }
 
-enum RemotePlaybackSessionFailure { nextTrack, localRestore }
+enum RemotePlaybackSessionFailure { nextTrack, localRestore, remoteStop }
 
 final class RemotePlaybackSessionController {
   RemotePlaybackSessionController({
     required RemotePlaybackQueue queue,
     required RemotePlaybackQueueController remoteController,
     required LocalPlaybackSessionBridge localBridge,
-    required Stream<PlaybackBackendState> backendStateStream,
+    required PlaybackBackend backend,
     void Function(RemotePlaybackSessionFailure failure)? onFailure,
   }) : _queue = queue,
        _remoteController = remoteController,
        _localBridge = localBridge,
+       _backend = backend,
        _onFailure = onFailure {
-    _backendStateSubscription = backendStateStream.listen(_onBackendState);
+    _backendStateSubscription = backend.stateStream.listen(_onBackendState);
+    _localBridge.addLocalPlaybackRequestListener(_onLocalPlaybackRequested);
   }
 
   final RemotePlaybackQueue _queue;
   final RemotePlaybackQueueController _remoteController;
   final LocalPlaybackSessionBridge _localBridge;
+  final PlaybackBackend _backend;
   final void Function(RemotePlaybackSessionFailure failure)? _onFailure;
   late final StreamSubscription<PlaybackBackendState> _backendStateSubscription;
   LocalPlaybackResumePoint? _localResumePoint;
@@ -159,6 +176,24 @@ final class RemotePlaybackSessionController {
     if (!_sessionStarted || revision == null) return;
     _activeRemoteRevision = null;
     unawaited(_handleCompleted(revision));
+  }
+
+  void _onLocalPlaybackRequested() {
+    if (_disposed || !_sessionStarted) return;
+    ++_revision;
+    _remoteController.cancel();
+    _endSession();
+    unawaited(_stopRemoteSafely());
+  }
+
+  Future<void> _stopRemoteSafely() async {
+    try {
+      await _backend.stop();
+    } catch (_) {
+      if (!_disposed) {
+        _onFailure?.call(RemotePlaybackSessionFailure.remoteStop);
+      }
+    }
   }
 
   Future<void> _handleCompleted(int revision) async {
@@ -206,6 +241,7 @@ final class RemotePlaybackSessionController {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _localBridge.removeLocalPlaybackRequestListener(_onLocalPlaybackRequested);
     ++_revision;
     _endSession();
     unawaited(_backendStateSubscription.cancel());

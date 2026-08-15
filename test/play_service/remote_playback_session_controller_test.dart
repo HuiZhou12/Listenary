@@ -15,7 +15,7 @@ void main() {
   late RemotePlaybackQueueController remoteController;
   late _RecordingLocalBridge localBridge;
   late RemotePlaybackSessionController sessionController;
-  late StreamController<PlaybackBackendState> backendStates;
+  late _RecordingBackend backend;
   late List<RemotePlaybackSessionFailure> failures;
 
   setUp(() {
@@ -27,13 +27,13 @@ void main() {
       gateway: gateway,
     );
     localBridge = _RecordingLocalBridge();
-    backendStates = StreamController<PlaybackBackendState>.broadcast();
+    backend = _RecordingBackend();
     failures = [];
     sessionController = RemotePlaybackSessionController(
       queue: queue,
       remoteController: remoteController,
       localBridge: localBridge,
-      backendStateStream: backendStates.stream,
+      backend: backend,
       onFailure: failures.add,
     );
   });
@@ -42,7 +42,7 @@ void main() {
     sessionController.dispose();
     remoteController.dispose();
     queue.dispose();
-    await backendStates.close();
+    await backend.dispose();
   });
 
   test('captures and pauses local playback before opening remote', () async {
@@ -126,8 +126,8 @@ void main() {
   test('natural completion advances to the next remote item once', () async {
     await sessionController.play(0, requestedQuality: 'lossless');
 
-    backendStates.add(PlaybackBackendState.completed);
-    backendStates.add(PlaybackBackendState.completed);
+    backend.emit(PlaybackBackendState.completed);
+    backend.emit(PlaybackBackendState.completed);
     await pumpEventQueue();
 
     expect(gateway.refs.map((ref) => ref.trackId), ['1', '2']);
@@ -139,7 +139,7 @@ void main() {
     await sessionController.play(0, requestedQuality: 'lossless');
     gateway.error = StateError('next failed');
 
-    backendStates.add(PlaybackBackendState.completed);
+    backend.emit(PlaybackBackendState.completed);
     await pumpEventQueue();
 
     expect(failures, [RemotePlaybackSessionFailure.nextTrack]);
@@ -153,7 +153,7 @@ void main() {
       final pendingNext = Completer<void>();
       gateway.pending.add(pendingNext.future);
 
-      backendStates.add(PlaybackBackendState.completed);
+      backend.emit(PlaybackBackendState.completed);
       await pumpEventQueue();
       final selected = sessionController.play(0, requestedQuality: 'lossless');
       await pumpEventQueue();
@@ -173,8 +173,8 @@ void main() {
       localBridge.resumePoint = resumePoint;
       await sessionController.play(1, requestedQuality: 'lossless');
 
-      backendStates.add(PlaybackBackendState.completed);
-      backendStates.add(PlaybackBackendState.completed);
+      backend.emit(PlaybackBackendState.completed);
+      backend.emit(PlaybackBackendState.completed);
       await pumpEventQueue();
 
       expect(localBridge.restored, [same(resumePoint)]);
@@ -186,7 +186,7 @@ void main() {
   test('last item completion ends safely without a local session', () async {
     await sessionController.play(1, requestedQuality: 'lossless');
 
-    backendStates.add(PlaybackBackendState.completed);
+    backend.emit(PlaybackBackendState.completed);
     await pumpEventQueue();
 
     expect(localBridge.restored, isEmpty);
@@ -201,7 +201,7 @@ void main() {
       localBridge.restoreError = StateError('restore failed');
       await sessionController.play(1, requestedQuality: 'lossless');
 
-      backendStates.add(PlaybackBackendState.completed);
+      backend.emit(PlaybackBackendState.completed);
       await pumpEventQueue();
 
       expect(localBridge.pauseCount, 2);
@@ -215,12 +215,64 @@ void main() {
     await sessionController.play(0, requestedQuality: 'lossless');
     queue.replace([_item('3')]);
 
-    backendStates.add(PlaybackBackendState.completed);
+    backend.emit(PlaybackBackendState.completed);
     await pumpEventQueue();
 
     expect(gateway.refs.map((ref) => ref.trackId), ['1']);
     expect(localBridge.restored, isEmpty);
     expect(failures, isEmpty);
+  });
+
+  test('local selection cancels an active remote request and stops', () async {
+    localBridge.resumePoint = _FakeResumePoint();
+    final pendingOpen = Completer<void>();
+    gateway.pending.add(pendingOpen.future);
+    final remotePlay = sessionController.play(0, requestedQuality: 'lossless');
+    await pumpEventQueue();
+
+    localBridge.requestLocalPlayback();
+    expect(gateway.tokens.single.isCancelled, isTrue);
+    expect(backend.stopCount, 1);
+    expect(sessionController.localResumePoint, isNull);
+
+    pendingOpen.complete();
+    await expectLater(
+      remotePlay,
+      throwsA(isA<RemoteStreamPlaybackException>()),
+    );
+    backend.emit(PlaybackBackendState.completed);
+    await pumpEventQueue();
+    expect(localBridge.restored, isEmpty);
+  });
+
+  test('local selection without an active remote session does not stop', () {
+    localBridge.requestLocalPlayback();
+
+    expect(backend.stopCount, 0);
+    expect(failures, isEmpty);
+  });
+
+  test(
+    'scheme A restore does not cancel itself as a local selection',
+    () async {
+      localBridge.resumePoint = _FakeResumePoint();
+      localBridge.notifyOnRestore = true;
+      await sessionController.play(1, requestedQuality: 'lossless');
+
+      backend.emit(PlaybackBackendState.completed);
+      await pumpEventQueue();
+
+      expect(localBridge.restored, hasLength(1));
+      expect(backend.stopCount, 0);
+    },
+  );
+
+  test('dispose removes the local playback request listener', () {
+    sessionController.dispose();
+    localBridge.requestLocalPlayback();
+
+    expect(backend.stopCount, 0);
+    expect(localBridge.listenerCount, 0);
   });
 
   test('invalid indexes and disposed sessions do not capture local state', () {
@@ -255,6 +307,21 @@ final class _RecordingLocalBridge implements LocalPlaybackSessionBridge {
   Object? pauseError;
   Object? restoreError;
   final restored = <LocalPlaybackResumePoint>[];
+  final _listeners = <void Function()>{};
+  bool notifyOnRestore = false;
+
+  int get listenerCount => _listeners.length;
+
+  void requestLocalPlayback() {
+    for (final listener in List.of(_listeners)) {
+      listener();
+    }
+  }
+
+  @override
+  void addLocalPlaybackRequestListener(void Function() listener) {
+    _listeners.add(listener);
+  }
 
   @override
   LocalPlaybackResumePoint? capture() {
@@ -276,6 +343,12 @@ final class _RecordingLocalBridge implements LocalPlaybackSessionBridge {
     final nextError = restoreError;
     if (nextError != null) throw nextError;
     restored.add(resumePoint);
+    if (notifyOnRestore) requestLocalPlayback();
+  }
+
+  @override
+  void removeLocalPlaybackRequestListener(void Function() listener) {
+    _listeners.remove(listener);
   }
 }
 
@@ -283,6 +356,7 @@ final class _RecordingGateway implements RemoteQueuePlaybackGateway {
   final refs = <PlatformTrackRef>[];
   final events = <String>[];
   final pending = <Future<void>>[];
+  final tokens = <ChkszCancelToken>[];
   Object? error;
 
   @override
@@ -292,9 +366,33 @@ final class _RecordingGateway implements RemoteQueuePlaybackGateway {
     required ChkszCancelToken cancelToken,
   }) async {
     refs.add(ref);
+    tokens.add(cancelToken);
     events.add('open');
     if (pending.isNotEmpty) await pending.removeAt(0);
     final nextError = error;
     if (nextError != null) throw nextError;
   }
+}
+
+final class _RecordingBackend implements PlaybackBackend {
+  final _states = StreamController<PlaybackBackendState>.broadcast();
+  int stopCount = 0;
+
+  @override
+  Stream<PlaybackBackendState> get stateStream => _states.stream;
+
+  void emit(PlaybackBackendState state) => _states.add(state);
+
+  @override
+  Future<void> open(PlaybackSource source) {
+    throw UnsupportedError('The session test opens through its gateway');
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCount++;
+  }
+
+  @override
+  Future<void> dispose() => _states.close();
 }

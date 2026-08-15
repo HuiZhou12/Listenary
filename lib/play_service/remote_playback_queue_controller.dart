@@ -87,12 +87,17 @@ final class RemotePlaybackQueueController {
     }
   }
 
-  void dispose() {
+  void cancel() {
     if (_disposed) return;
-    _disposed = true;
     _operation++;
     _activeToken?.cancel();
     _activeToken = null;
+  }
+
+  void dispose() {
+    if (_disposed) return;
+    cancel();
+    _disposed = true;
   }
 
   void _throwIfDisposed() {
