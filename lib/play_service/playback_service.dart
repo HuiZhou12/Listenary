@@ -597,13 +597,13 @@ class PlaybackService extends ChangeNotifier {
   }
 
   /// 播放当前播放列表的第几项，只能用在播放列表界面
-  void playIndexOfPlaylist(int audioIndex) {
+  bool playIndexOfPlaylist(int audioIndex) {
     logger.i('[action] playIndexOfPlaylist=$audioIndex');
     AudioEchoLogRecorder.instance.mark(
       'playIndexOfPlaylist',
       extra: {'index': audioIndex},
     );
-    _loadAndPlay(audioIndex, playlist.value);
+    return _loadAndPlay(audioIndex, playlist.value);
   }
 
   /// 仅更新播放列表索引，不触发重新播放。用于拖拽排序等场景

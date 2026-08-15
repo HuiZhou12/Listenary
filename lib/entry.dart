@@ -123,6 +123,14 @@ class _EntryState extends State<Entry>
       localBridge: PlaybackServiceLocalPlaybackSessionBridge(
         playService: PlayService.instance,
       ),
+      backendStateStream: _remotePlaybackBackend.stateStream,
+      onFailure: (failure) {
+        final message = switch (failure) {
+          RemotePlaybackSessionFailure.nextTrack => '无法播放下一首远程曲目',
+          RemotePlaybackSessionFailure.localRestore => '无法恢复本地播放',
+        };
+        showTextOnSnackBar(message, variant: ToastVariant.error);
+      },
     );
     windowManager.addListener(this);
     WidgetsBinding.instance.addObserver(this);
