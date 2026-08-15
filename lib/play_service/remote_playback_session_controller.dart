@@ -110,7 +110,12 @@ final class PlaybackServiceLocalPlaybackSessionBridge
   }
 }
 
-enum RemotePlaybackSessionFailure { nextTrack, localRestore, remoteStop }
+enum RemotePlaybackSessionFailure {
+  nextTrack,
+  navigation,
+  localRestore,
+  remoteStop,
+}
 
 final class RemotePlaybackSessionController {
   RemotePlaybackSessionController({
@@ -142,6 +147,31 @@ final class RemotePlaybackSessionController {
   bool _disposed = false;
 
   LocalPlaybackResumePoint? get localResumePoint => _localResumePoint;
+
+  bool previous() => _navigate(-1);
+
+  bool next() => _navigate(1);
+
+  bool _navigate(int offset) {
+    if (_disposed || !_sessionStarted) return false;
+    final snapshot = _queue.value;
+    final currentIndex = snapshot.currentIndex;
+    final requestedQuality = _requestedQuality;
+    if (currentIndex == null || requestedQuality == null) return true;
+    final targetIndex = currentIndex + offset;
+    if (targetIndex < 0 || targetIndex >= snapshot.items.length) return true;
+    final expectedRevision = _revision + 1;
+    unawaited(
+      _playRemote(targetIndex, requestedQuality: requestedQuality).catchError((
+        _,
+      ) {
+        if (!_disposed && _revision == expectedRevision) {
+          _onFailure?.call(RemotePlaybackSessionFailure.navigation);
+        }
+      }),
+    );
+    return true;
+  }
 
   Future<void> play(int index, {required String requestedQuality}) async {
     _throwIfDisposed();

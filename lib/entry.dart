@@ -103,11 +103,13 @@ class _EntryState extends State<Entry>
   late final RemotePlaybackQueue _remotePlaybackQueue;
   late final RemotePlaybackQueueController _remotePlaybackQueueController;
   late final RemotePlaybackSessionController _remotePlaybackSessionController;
+  late final PlayService _playService;
   Timer? _resizeIdleTimer;
 
   @override
   void initState() {
     super.initState();
+    _playService = PlayService.instance;
     _remotePlaybackBackend = BassUrlPlaybackBackend();
     _remotePlaybackQueue = RemotePlaybackQueue();
     _remotePlaybackQueueController = RemotePlaybackQueueController(
@@ -121,17 +123,22 @@ class _EntryState extends State<Entry>
       queue: _remotePlaybackQueue,
       remoteController: _remotePlaybackQueueController,
       localBridge: PlaybackServiceLocalPlaybackSessionBridge(
-        playService: PlayService.instance,
+        playService: _playService,
       ),
       backend: _remotePlaybackBackend,
       onFailure: (failure) {
         final message = switch (failure) {
           RemotePlaybackSessionFailure.nextTrack => '无法播放下一首远程曲目',
+          RemotePlaybackSessionFailure.navigation => '无法切换远程曲目',
           RemotePlaybackSessionFailure.localRestore => '无法恢复本地播放',
           RemotePlaybackSessionFailure.remoteStop => '无法停止远程播放',
         };
         showTextOnSnackBar(message, variant: ToastVariant.error);
       },
+    );
+    _playService.setRemoteNavigationHandlers(
+      previous: _remotePlaybackSessionController.previous,
+      next: _remotePlaybackSessionController.next,
     );
     windowManager.addListener(this);
     WidgetsBinding.instance.addObserver(this);
@@ -151,6 +158,7 @@ class _EntryState extends State<Entry>
     _windowResizing.dispose();
     WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
+    _playService.clearRemoteNavigationHandlers();
     _remotePlaybackSessionController.dispose();
     _remotePlaybackQueueController.dispose();
     _remotePlaybackQueue.dispose();

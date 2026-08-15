@@ -17,6 +17,8 @@ class PlayService {
   LyricService? _lyricService;
   DesktopLyricService? _desktopLyricService;
   final Set<void Function()> _localPlaybackRequestListeners = {};
+  bool Function()? _remotePreviousHandler;
+  bool Function()? _remoteNextHandler;
 
   PlaybackService get playbackService =>
       _playbackService ??= PlaybackService(this);
@@ -48,8 +50,32 @@ class PlayService {
     }
   }
 
+  void setRemoteNavigationHandlers({
+    required bool Function() previous,
+    required bool Function() next,
+  }) {
+    _remotePreviousHandler = previous;
+    _remoteNextHandler = next;
+  }
+
+  void clearRemoteNavigationHandlers() {
+    _remotePreviousHandler = null;
+    _remoteNextHandler = null;
+  }
+
+  void previousAudio() {
+    if (_remotePreviousHandler?.call() == true) return;
+    playbackService.lastAudio();
+  }
+
+  void nextAudio() {
+    if (_remoteNextHandler?.call() == true) return;
+    playbackService.nextAudio();
+  }
+
   Future<void> close() async {
     _localPlaybackRequestListeners.clear();
+    clearRemoteNavigationHandlers();
     // 按顺序关闭服务，每个操作带超时保护
     final desktopLyric = _desktopLyricService;
     if (desktopLyric != null) {

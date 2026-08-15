@@ -122,7 +122,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                             IconButton(
                               tooltip: hasNowPlaying ? '上一曲' : '暂无正在播放',
                               onPressed: hasNowPlaying
-                                  ? playbackService.lastAudio
+                                  ? PlayService.instance.previousAudio
                                   : null,
                               icon: const Icon(
                                 Symbols.skip_previous,
@@ -173,7 +173,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                             IconButton(
                               tooltip: hasNowPlaying ? '下一曲' : '暂无正在播放',
                               onPressed: hasNowPlaying
-                                  ? playbackService.nextAudio
+                                  ? PlayService.instance.nextAudio
                                   : null,
                               icon: const Icon(
                                 Symbols.skip_next,

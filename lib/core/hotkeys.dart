@@ -65,7 +65,7 @@ class HotkeysHelper {
       scope: HotKeyScope.inapp,
     ): (_) {
       if (!_canHandlePlaybackHotkey()) return;
-      PlayService.instance.playbackService.lastAudio();
+      PlayService.instance.previousAudio();
       hotkeyUiFeedback.emit(HotkeyUiAction.prev);
       showHotkeyToast(text: '上一曲', icon: Icons.skip_previous);
     },
@@ -75,7 +75,7 @@ class HotkeysHelper {
       scope: HotKeyScope.inapp,
     ): (_) {
       if (!_canHandlePlaybackHotkey()) return;
-      PlayService.instance.playbackService.nextAudio();
+      PlayService.instance.nextAudio();
       hotkeyUiFeedback.emit(HotkeyUiAction.next);
       showHotkeyToast(text: '下一曲', icon: Icons.skip_next);
     },

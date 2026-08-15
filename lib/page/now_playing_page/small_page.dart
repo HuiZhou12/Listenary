@@ -231,7 +231,9 @@ class _NowPlayingSmallMainControls extends StatelessWidget {
             const SizedBox(width: 16),
             IconButton(
               tooltip: hasNowPlaying ? '上一曲' : '暂无正在播放',
-              onPressed: hasNowPlaying ? playbackService.lastAudio : null,
+              onPressed: hasNowPlaying
+                  ? PlayService.instance.previousAudio
+                  : null,
               icon: const Icon(Symbols.skip_previous, fill: 1.0),
               iconSize: 28,
               color: controlColor,
@@ -272,7 +274,7 @@ class _NowPlayingSmallMainControls extends StatelessWidget {
             const SizedBox(width: 16),
             IconButton(
               tooltip: hasNowPlaying ? '下一曲' : '暂无正在播放',
-              onPressed: hasNowPlaying ? playbackService.nextAudio : null,
+              onPressed: hasNowPlaying ? PlayService.instance.nextAudio : null,
               icon: const Icon(Symbols.skip_next, fill: 1.0),
               iconSize: 28,
               color: controlColor,

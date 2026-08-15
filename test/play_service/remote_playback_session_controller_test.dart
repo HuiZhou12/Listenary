@@ -223,6 +223,66 @@ void main() {
     expect(failures, isEmpty);
   });
 
+  test('manual previous and next stay inside the remote queue', () async {
+    await sessionController.play(1, requestedQuality: 'lossless');
+
+    expect(sessionController.previous(), isTrue);
+    await pumpEventQueue();
+    expect(queue.value.currentIndex, 0);
+    expect(sessionController.next(), isTrue);
+    await pumpEventQueue();
+
+    expect(queue.value.currentIndex, 1);
+    expect(gateway.refs.map((ref) => ref.trackId), ['2', '1', '2']);
+    expect(gateway.qualities, everyElement('lossless'));
+  });
+
+  test('manual navigation consumes remote queue boundaries', () async {
+    await sessionController.play(0, requestedQuality: 'lossless');
+
+    expect(sessionController.previous(), isTrue);
+    await pumpEventQueue();
+    expect(gateway.refs, hasLength(1));
+
+    await sessionController.play(1, requestedQuality: 'lossless');
+    expect(sessionController.next(), isTrue);
+    await pumpEventQueue();
+    expect(gateway.refs, hasLength(2));
+  });
+
+  test('manual navigation is not consumed outside a remote session', () {
+    expect(sessionController.previous(), isFalse);
+    expect(sessionController.next(), isFalse);
+  });
+
+  test('manual remote navigation failure reports safely', () async {
+    await sessionController.play(0, requestedQuality: 'lossless');
+    gateway.error = StateError('navigation failed');
+
+    expect(sessionController.next(), isTrue);
+    await pumpEventQueue();
+
+    expect(failures, [RemotePlaybackSessionFailure.navigation]);
+    expect(queue.value.currentIndex, 0);
+  });
+
+  test('a newer selection suppresses cancelled navigation failure', () async {
+    await sessionController.play(0, requestedQuality: 'lossless');
+    final pendingNavigation = Completer<void>();
+    gateway.pending.add(pendingNavigation.future);
+    expect(sessionController.next(), isTrue);
+    await pumpEventQueue();
+
+    final selected = sessionController.play(0, requestedQuality: 'lossless');
+    await pumpEventQueue();
+    pendingNavigation.complete();
+    await selected;
+    await pumpEventQueue();
+
+    expect(failures, isEmpty);
+    expect(queue.value.currentIndex, 0);
+  });
+
   test('local selection cancels an active remote request and stops', () async {
     localBridge.resumePoint = _FakeResumePoint();
     final pendingOpen = Completer<void>();
@@ -354,6 +414,7 @@ final class _RecordingLocalBridge implements LocalPlaybackSessionBridge {
 
 final class _RecordingGateway implements RemoteQueuePlaybackGateway {
   final refs = <PlatformTrackRef>[];
+  final qualities = <String>[];
   final events = <String>[];
   final pending = <Future<void>>[];
   final tokens = <ChkszCancelToken>[];
@@ -366,6 +427,7 @@ final class _RecordingGateway implements RemoteQueuePlaybackGateway {
     required ChkszCancelToken cancelToken,
   }) async {
     refs.add(ref);
+    qualities.add(requestedQuality);
     tokens.add(cancelToken);
     events.add('open');
     if (pending.isNotEmpty) await pending.removeAt(0);
