@@ -337,6 +337,39 @@ class Bass {
         int Function(int, ffi.Pointer<ffi.Void>, int, int, int)
       >();
 
+  int BASS_StreamCreateURL(
+    ffi.Pointer<ffi.Char> url,
+    int offset,
+    int flags,
+    ffi.Pointer<ffi.Void> proc,
+    ffi.Pointer<ffi.Void> user,
+  ) {
+    return _BASS_StreamCreateURL(url, offset, flags, proc, user);
+  }
+
+  late final _BASS_StreamCreateURLPtr =
+      _lookup<
+        ffi.NativeFunction<
+          HSTREAM Function(
+            ffi.Pointer<ffi.Char>,
+            DWORD,
+            DWORD,
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Void>,
+          )
+        >
+      >('BASS_StreamCreateURL');
+  late final _BASS_StreamCreateURL =
+      _BASS_StreamCreateURLPtr.asFunction<
+        int Function(
+          ffi.Pointer<ffi.Char>,
+          int,
+          int,
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Void>,
+        )
+      >();
+
   int BASS_PluginLoad(ffi.Pointer<ffi.Char> file, int flags) {
     return _BASS_PluginLoad(file, flags);
   }

@@ -39,6 +39,56 @@ enum PlayerState {
 
 enum SpectrumUpdateMode { auto, hz60, hz90, hz120 }
 
+sealed class _BassPlaybackSource {
+  const _BassPlaybackSource();
+
+  int createStream(bass.Bass api, int flags);
+}
+
+final class _BassFileSource extends _BassPlaybackSource {
+  const _BassFileSource(this.path);
+
+  final String path;
+
+  @override
+  int createStream(bass.Bass api, int flags) {
+    final pathPointer = path.toNativeUtf16().cast<ffi.Void>();
+    try {
+      return api.BASS_StreamCreateFile(
+        bass.FALSE,
+        pathPointer,
+        0,
+        0,
+        flags | bass.BASS_UNICODE | bass.BASS_ASYNCFILE,
+      );
+    } finally {
+      malloc.free(pathPointer);
+    }
+  }
+}
+
+final class _BassUrlSource extends _BassPlaybackSource {
+  const _BassUrlSource(this.uri);
+
+  final Uri uri;
+
+  @override
+  int createStream(bass.Bass api, int flags) {
+    final urlPointer = uri.toString().toNativeUtf8().cast<ffi.Char>();
+    try {
+      return api.BASS_StreamCreateURL(
+        urlPointer,
+        0,
+        flags,
+        ffi.nullptr,
+        ffi.nullptr,
+      );
+    } finally {
+      malloc.free(urlPointer);
+    }
+  }
+}
+
 class BassPlayer {
   late final ffi.DynamicLibrary _bassLib;
   late final ffi.DynamicLibrary _bassWasapiLib;
@@ -49,7 +99,7 @@ class BassPlayer {
 
   late final String _bassDir;
 
-  String? _fPath;
+  _BassPlaybackSource? _source;
   int? _fstream;
   bool _streamWasapiExclusive = false;
 
@@ -856,8 +906,8 @@ class BassPlayer {
     _bassDir = exeBassDll.existsSync()
         ? exeBassDir
         : (cwdBassDll.existsSync()
-            ? cwdBassDir
-            : (sourceBassDll.existsSync() ? sourceBassDir : exeBassDir));
+              ? cwdBassDir
+              : (sourceBassDll.existsSync() ? sourceBassDir : exeBassDir));
 
     // ─── 2. 确保 Windows 能找到 BASS 目录下的依赖 DLL ──────────────────────
     if (Platform.isWindows) {
@@ -1013,9 +1063,9 @@ class BassPlayer {
       final lastPos = position;
 
       if (exclusive && !prevState) {
-        if (_fstream == null || _fPath == null) return false;
+        if (_fstream == null || _source == null) return false;
         // 1) 建解码流（旧流仍在播放，文件 I/O 对用户透明）
-        final decodeHandle = _createDecodeStream(_fPath!);
+        final decodeHandle = _createDecodeStream(_source!);
         if (decodeHandle == 0) {
           throw Exception('Failed to create decode stream');
         }
@@ -1071,13 +1121,13 @@ class BassPlayer {
         _streamWasapiExclusive = false;
         wasapiExclusive = false;
         _bassInit();
-        if (_fPath != null) {
-          _createSharedStream(_fPath!, lastPos);
+        if (_source != null) {
+          _createSharedStream(_source!, lastPos);
         }
       } else {
         wasapiExclusive = exclusive;
-        if (_fstream != null && _fPath != null) {
-          _rebuildStream(_fPath!, lastPos);
+        if (_fstream != null && _source != null) {
+          _rebuildStream(_source!, lastPos);
         }
       }
 
@@ -1100,7 +1150,7 @@ class BassPlayer {
   }
 
   /// Rebuilds the audio stream after output-mode changes.
-  void _rebuildStream(String path, double seekTo) {
+  void _rebuildStream(_BassPlaybackSource source, double seekTo) {
     _logAudioState('_rebuildStream(begin)');
     _positionUpdaterVersion++;
     _positionUpdater?.cancel();
@@ -1121,32 +1171,21 @@ class BassPlayer {
     _cachedLengthSeconds = null;
 
     wasapiExclusive
-        ? _createWasapiStream(path, seekTo)
-        : _createSharedStream(path, seekTo);
+        ? _createWasapiStream(source, seekTo)
+        : _createSharedStream(source, seekTo);
     _logAudioState('_rebuildStream(done)');
   }
 
-  int _createDecodeStream(String path) {
-    const flags =
-        bass.BASS_UNICODE |
-        bass.BASS_SAMPLE_FLOAT |
-        bass.BASS_ASYNCFILE |
-        bass.BASS_STREAM_DECODE;
-    final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
-    final handle = _bass.BASS_StreamCreateFile(
-      bass.FALSE,
-      pathPointer,
-      0,
-      0,
-      flags,
+  int _createDecodeStream(_BassPlaybackSource source) {
+    return source.createStream(
+      _bass,
+      bass.BASS_SAMPLE_FLOAT | bass.BASS_STREAM_DECODE,
     );
-    malloc.free(pathPointer);
-    return handle;
   }
 
   /// 创建独占模式流
-  void _createWasapiStream(String path, double seekTo) {
-    var handle = _createDecodeStream(path);
+  void _createWasapiStream(_BassPlaybackSource source, double seekTo) {
+    var handle = _createDecodeStream(source);
     if (handle == 0) {
       throw Exception('Failed to create WASAPI exclusive stream');
     }
@@ -1163,22 +1202,13 @@ class BassPlayer {
   }
 
   /// 创建共享模式流
-  void _createSharedStream(String path, double seekTo) {
-    const flags =
-        bass.BASS_UNICODE | bass.BASS_SAMPLE_FLOAT | bass.BASS_ASYNCFILE;
+  void _createSharedStream(_BassPlaybackSource source, double seekTo) {
+    const flags = bass.BASS_SAMPLE_FLOAT;
     const decodeFlags = flags | bass.BASS_STREAM_DECODE;
 
-    final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
-    var handle = _bass.BASS_StreamCreateFile(
-      bass.FALSE,
-      pathPointer,
-      0,
-      0,
-      decodeFlags,
-    );
+    var handle = source.createStream(_bass, decodeFlags);
 
     if (handle == 0) {
-      malloc.free(pathPointer);
       throw Exception('Failed to create shared stream');
     }
 
@@ -1193,36 +1223,16 @@ class BassPlayer {
           handle = tempoHandle;
         } else {
           _bass.BASS_StreamFree(handle);
-          handle = _bass.BASS_StreamCreateFile(
-            bass.FALSE,
-            pathPointer,
-            0,
-            0,
-            flags,
-          );
+          handle = source.createStream(_bass, flags);
         }
       } else {
         _bass.BASS_StreamFree(handle);
-        handle = _bass.BASS_StreamCreateFile(
-          bass.FALSE,
-          pathPointer,
-          0,
-          0,
-          flags,
-        );
+        handle = source.createStream(_bass, flags);
       }
     } catch (e) {
       _bass.BASS_StreamFree(handle);
-      handle = _bass.BASS_StreamCreateFile(
-        bass.FALSE,
-        pathPointer,
-        0,
-        0,
-        flags,
-      );
+      handle = source.createStream(_bass, flags);
     }
-
-    malloc.free(pathPointer);
 
     if (handle == 0) {
       throw Exception('Failed to create shared stream with fallback');
@@ -1300,6 +1310,14 @@ class BassPlayer {
   /// if setSource has been called once,
   /// it will pause current channel and free current stream.
   void setSource(String path) {
+    _setSource(_BassFileSource(path));
+  }
+
+  void setUrlSource(Uri uri) {
+    _setSource(_BassUrlSource(uri));
+  }
+
+  void _setSource(_BassPlaybackSource source) {
     replayGainDb = null;
     _logAudioState('setSource(begin)');
     if (_fstream != null) {
@@ -1325,20 +1343,13 @@ class BassPlayer {
       _cachedLengthSeconds = null;
       _streamWasapiExclusive = false;
     }
-    final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
-
-    /// 设置 flags 为 BASS_UNICODE 才可以找到文件。
-    const flags =
-        bass.BASS_UNICODE | bass.BASS_SAMPLE_FLOAT | bass.BASS_ASYNCFILE;
+    const flags = bass.BASS_SAMPLE_FLOAT;
     const exclusiveFlags = flags | bass.BASS_STREAM_DECODE;
     // 如果要使用 FX，源流必须是 DECODE 的
     const decodeFlags = flags | bass.BASS_STREAM_DECODE;
 
-    var handle = _bass.BASS_StreamCreateFile(
-      bass.FALSE,
-      pathPointer,
-      0,
-      0,
+    var handle = source.createStream(
+      _bass,
       wasapiExclusive ? exclusiveFlags : decodeFlags,
     );
 
@@ -1356,44 +1367,23 @@ class BassPlayer {
           } else {
             // FX 创建失败，回退
             _bass.BASS_StreamFree(handle);
-            handle = _bass.BASS_StreamCreateFile(
-              bass.FALSE,
-              pathPointer,
-              0,
-              0,
-              flags,
-            );
+            handle = source.createStream(_bass, flags);
           }
         } else {
           // bass_fx 未加载
           _bass.BASS_StreamFree(handle);
-          handle = _bass.BASS_StreamCreateFile(
-            bass.FALSE,
-            pathPointer,
-            0,
-            0,
-            flags,
-          );
+          handle = source.createStream(_bass, flags);
         }
       } catch (e) {
         // bass_fx 未加载等情况
         _bass.BASS_StreamFree(handle);
-        handle = _bass.BASS_StreamCreateFile(
-          bass.FALSE,
-          pathPointer,
-          0,
-          0,
-          flags,
-        );
+        handle = source.createStream(_bass, flags);
       }
     }
 
-    // BASS_StreamCreateFile 已复制路径字符串，释放 Dart 侧的 native 内存
-    malloc.free(pathPointer);
-
     if (handle != 0) {
       _fstream = handle;
-      _fPath = path;
+      _source = source;
       // 标记当前流是否为独占模式流
       _streamWasapiExclusive = wasapiExclusive;
       _refreshCachedLength();
@@ -1413,13 +1403,13 @@ class BassPlayer {
       _logAudioState('setSource(ok)');
     } else {
       _fstream = null;
-      _fPath = null;
+      _source = null;
       _cachedLengthSeconds = null;
       _streamWasapiExclusive = false;
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_INIT:
           _bassInit();
-          setSource(path);
+          _setSource(source);
           break;
         case bass.BASS_ERROR_NOTAVAIL:
           throw const FormatException(
@@ -1673,11 +1663,11 @@ class BassPlayer {
     wasapiExclusive = false;
     _streamWasapiExclusive = false;
     _bassInit();
-    if (_fPath != null) {
+    if (_source != null) {
       _positionUpdaterVersion++;
       _positionUpdater?.cancel();
       _positionUpdater = null;
-      _createSharedStream(_fPath!, seekPos);
+      _createSharedStream(_source!, seekPos);
     }
   }
 
@@ -1839,7 +1829,10 @@ class BassPlayer {
       _fadeOutHandle = null;
     }
 
-    if (_fstream == null) return;
+    if (_fstream == null) {
+      _source = null;
+      return;
+    }
 
     _stopWasapiOutputIfNeeded();
 
@@ -1855,7 +1848,7 @@ class BassPlayer {
       }
     }
     _fstream = null;
-    _fPath = null;
+    _source = null;
     _cachedLengthSeconds = null;
     _streamWasapiExclusive = false;
     _eqHandles.clear();
@@ -1884,7 +1877,7 @@ class BassPlayer {
     wasapiExclusive = false;
     _streamWasapiExclusive = false;
     _fstream = null;
-    _fPath = null;
+    _source = null;
     _cachedLengthSeconds = null;
 
     if (_bass.BASS_Free() == 0) {

@@ -1,0 +1,170 @@
+import 'dart:async';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:pure_music/native/bass/bass_player.dart';
+import 'package:pure_music/play_service/bass_url_playback_backend.dart';
+import 'package:pure_music/play_service/playback_source.dart';
+import 'package:pure_music/services/music_platform/models/music_models.dart';
+
+void main() {
+  late _FakeBassUrlPlaybackDriver driver;
+  late BassUrlPlaybackBackend backend;
+  late List<PlaybackBackendState> states;
+  late StreamSubscription<PlaybackBackendState> subscription;
+
+  setUp(() {
+    driver = _FakeBassUrlPlaybackDriver();
+    backend = BassUrlPlaybackBackend(driver: driver);
+    states = [];
+    subscription = backend.stateStream.listen(states.add);
+  });
+
+  tearDown(() async {
+    await subscription.cancel();
+    await backend.dispose();
+  });
+
+  test('rejects local playback sources', () async {
+    await expectLater(
+      backend.open(const LocalPlaybackSource(path: 'local.mp3')),
+      throwsA(
+        isA<PlaybackBackendOpenException>().having(
+          (error) => error.kind,
+          'kind',
+          PlaybackBackendOpenFailure.unavailable,
+        ),
+      ),
+    );
+
+    expect(driver.openedUris, isEmpty);
+  });
+
+  test('opens a URL and maps driver states', () async {
+    driver.state = PlayerState.playing;
+
+    await backend.open(_remoteSource());
+    driver.emit(PlayerState.pausedDevice);
+    driver.emit(PlayerState.stalled);
+    driver.emit(PlayerState.completed);
+    await pumpEventQueue();
+
+    expect(driver.openedUris, hasLength(1));
+    expect(states, [
+      PlaybackBackendState.opening,
+      PlaybackBackendState.playing,
+      PlaybackBackendState.paused,
+      PlaybackBackendState.stalled,
+      PlaybackBackendState.completed,
+    ]);
+  });
+
+  test('stop prevents a stale open from becoming playing', () async {
+    final pendingOpen = Completer<void>();
+    driver.pendingOpens.add(pendingOpen.future);
+
+    final openFuture = backend.open(_remoteSource());
+    await pumpEventQueue();
+    await backend.stop();
+    driver.state = PlayerState.playing;
+    pendingOpen.complete();
+    await openFuture;
+    await pumpEventQueue();
+
+    expect(states, contains(PlaybackBackendState.opening));
+    expect(states.last, PlaybackBackendState.stopped);
+    expect(states, isNot(contains(PlaybackBackendState.playing)));
+    expect(driver.stopCount, greaterThanOrEqualTo(2));
+  });
+
+  test('a newer open supersedes an older pending open', () async {
+    final firstOpen = Completer<void>();
+    driver.pendingOpens.add(firstOpen.future);
+    driver.pendingOpens.add(Future<void>.value());
+
+    final oldFuture = backend.open(_remoteSource(trackId: 'old'));
+    await pumpEventQueue();
+    final newFuture = backend.open(_remoteSource(trackId: 'new'));
+    firstOpen.complete();
+    await Future.wait([oldFuture, newFuture]);
+    await pumpEventQueue();
+
+    expect(driver.openedUris, hasLength(2));
+    expect(states.last, PlaybackBackendState.playing);
+    expect(driver.stopCount, 1);
+  });
+
+  test('open failure exposes only a safe backend exception', () async {
+    driver.openError = StateError('signed request failed');
+
+    Object? error;
+    try {
+      await backend.open(_remoteSource());
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error, isA<PlaybackBackendOpenException>());
+    expect(error.toString(), isNot(contains('secret-signature')));
+    expect(states, contains(PlaybackBackendState.failed));
+  });
+
+  test('dispose is idempotent', () async {
+    await backend.dispose();
+    await backend.dispose();
+
+    expect(driver.disposeCount, 1);
+  });
+}
+
+RemotePlaybackSource _remoteSource({String trackId = 'track-1'}) {
+  final now = DateTime.now();
+  return RemotePlaybackSource(
+    stream: ResolvedStream(
+      ref: PlatformTrackRef(platform: MusicPlatform.netease, trackId: trackId),
+      uri: Uri.parse('https://media.invalid/audio?signature=secret-signature'),
+      requestedQuality: 'standard',
+      resolvedAt: now,
+      expiresAt: now.add(const Duration(minutes: 5)),
+    ),
+  );
+}
+
+final class _FakeBassUrlPlaybackDriver implements BassUrlPlaybackDriver {
+  final _states = StreamController<PlayerState>.broadcast();
+  final openedUris = <Uri>[];
+  @override
+  PlayerState state = PlayerState.stopped;
+  final pendingOpens = <Future<void>>[];
+  Object? openError;
+  int stopCount = 0;
+  int disposeCount = 0;
+
+  @override
+  Stream<PlayerState> get stateStream => _states.stream;
+
+  void emit(PlayerState value) {
+    state = value;
+    _states.add(value);
+  }
+
+  @override
+  Future<void> open(Uri uri) async {
+    openedUris.add(uri);
+    if (pendingOpens.isNotEmpty) await pendingOpens.removeAt(0);
+    final error = openError;
+    if (error != null) throw error;
+    state = PlayerState.playing;
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCount++;
+    state = PlayerState.stopped;
+  }
+
+  @override
+  Future<void> dispose() async {
+    disposeCount++;
+    await _states.close();
+  }
+}
