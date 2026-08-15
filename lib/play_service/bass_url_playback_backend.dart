@@ -10,6 +10,10 @@ abstract interface class BassUrlPlaybackDriver {
 
   Future<void> open(Uri uri);
 
+  Future<void> pause();
+
+  Future<void> resume();
+
   Future<void> stop();
 
   Future<void> dispose();
@@ -34,6 +38,16 @@ final class BassPlayerUrlPlaybackDriver implements BassUrlPlaybackDriver {
   }
 
   @override
+  Future<void> pause() async {
+    _player?.pause();
+  }
+
+  @override
+  Future<void> resume() async {
+    _player?.start();
+  }
+
+  @override
   Future<void> stop() async {
     _player?.freeFStream();
   }
@@ -45,7 +59,7 @@ final class BassPlayerUrlPlaybackDriver implements BassUrlPlaybackDriver {
   }
 }
 
-final class BassUrlPlaybackBackend implements PlaybackBackend {
+final class BassUrlPlaybackBackend implements ControllablePlaybackBackend {
   BassUrlPlaybackBackend({BassUrlPlaybackDriver? driver})
     : _driver = driver ?? BassPlayerUrlPlaybackDriver();
 
@@ -137,6 +151,18 @@ final class BassUrlPlaybackBackend implements PlaybackBackend {
   }
 
   @override
+  Future<void> pause() => _control(
+    expectedState: PlaybackBackendState.playing,
+    action: _driver.pause,
+  );
+
+  @override
+  Future<void> resume() => _control(
+    expectedState: PlaybackBackendState.paused,
+    action: _driver.resume,
+  );
+
+  @override
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
@@ -153,6 +179,25 @@ final class BassUrlPlaybackBackend implements PlaybackBackend {
     try {
       await _driver.stop();
     } catch (_) {}
+  }
+
+  Future<void> _control({
+    required PlaybackBackendState expectedState,
+    required Future<void> Function() action,
+  }) async {
+    if (_disposed || _lastState != expectedState) return;
+    final operation = _operation;
+    try {
+      await action();
+    } catch (_) {
+      if (!_disposed && operation == _operation) {
+        throw const PlaybackBackendControlException();
+      }
+      return;
+    }
+    if (!_disposed && operation == _operation) {
+      _emit(_mapState(_driver.state));
+    }
   }
 
   void _emit(PlaybackBackendState state) {

@@ -52,3 +52,17 @@ abstract interface class PlaybackBackend {
 
   Future<void> dispose();
 }
+
+final class PlaybackBackendControlException implements Exception {
+  const PlaybackBackendControlException();
+
+  @override
+  String toString() => 'PlaybackBackendControlException';
+}
+
+abstract interface class ControllablePlaybackBackend
+    implements PlaybackBackend {
+  Future<void> pause();
+
+  Future<void> resume();
+}

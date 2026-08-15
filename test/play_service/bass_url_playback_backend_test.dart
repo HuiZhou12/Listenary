@@ -58,6 +58,57 @@ void main() {
     ]);
   });
 
+  test('pauses and resumes the current URL without reopening it', () async {
+    driver.state = PlayerState.playing;
+
+    await backend.open(_remoteSource());
+    await backend.pause();
+    await backend.resume();
+    await pumpEventQueue();
+
+    expect(driver.openedUris, hasLength(1));
+    expect(driver.pauseCount, 1);
+    expect(driver.resumeCount, 1);
+    expect(states, [
+      PlaybackBackendState.opening,
+      PlaybackBackendState.playing,
+      PlaybackBackendState.paused,
+      PlaybackBackendState.playing,
+    ]);
+  });
+
+  test('controls are safe no-ops without an applicable remote state', () async {
+    await backend.pause();
+    await backend.resume();
+
+    driver.state = PlayerState.playing;
+    await backend.open(_remoteSource());
+    await backend.pause();
+    await backend.pause();
+    await backend.resume();
+    await backend.resume();
+
+    expect(driver.pauseCount, 1);
+    expect(driver.resumeCount, 1);
+  });
+
+  test('control failures expose only a safe exception', () async {
+    driver.state = PlayerState.playing;
+    await backend.open(_remoteSource());
+    driver.pauseError = StateError('signed request failed');
+
+    Object? error;
+    try {
+      await backend.pause();
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error, isA<PlaybackBackendControlException>());
+    expect(error.toString(), isNot(contains('secret-signature')));
+    expect(states.last, PlaybackBackendState.playing);
+  });
+
   test('stop prevents a stale open from becoming playing', () async {
     final pendingOpen = Completer<void>();
     driver.pendingOpens.add(pendingOpen.future);
@@ -136,6 +187,10 @@ final class _FakeBassUrlPlaybackDriver implements BassUrlPlaybackDriver {
   PlayerState state = PlayerState.stopped;
   final pendingOpens = <Future<void>>[];
   Object? openError;
+  Object? pauseError;
+  Object? resumeError;
+  int pauseCount = 0;
+  int resumeCount = 0;
   int stopCount = 0;
   int disposeCount = 0;
 
@@ -154,6 +209,22 @@ final class _FakeBassUrlPlaybackDriver implements BassUrlPlaybackDriver {
     final error = openError;
     if (error != null) throw error;
     state = PlayerState.playing;
+  }
+
+  @override
+  Future<void> pause() async {
+    pauseCount++;
+    final error = pauseError;
+    if (error != null) throw error;
+    emit(PlayerState.paused);
+  }
+
+  @override
+  Future<void> resume() async {
+    resumeCount++;
+    final error = resumeError;
+    if (error != null) throw error;
+    emit(PlayerState.playing);
   }
 
   @override

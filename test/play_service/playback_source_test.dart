@@ -55,6 +55,7 @@ void main() {
       PlaybackBackendState.opening,
       PlaybackBackendState.playing,
     ]);
+    expect(backend, isNot(isA<ControllablePlaybackBackend>()));
   });
 }
 
