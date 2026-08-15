@@ -144,6 +144,7 @@ class _EntryState extends State<Entry>
     _playService.setRemotePlaybackControlHandlers(
       initialState: _remotePlaybackSessionController.controlState,
       stateStream: _remotePlaybackSessionController.controlStateStream,
+      isActive: () => _remotePlaybackSessionController.controlState.isActive,
       pause: _remotePlaybackSessionController.pause,
       resume: _remotePlaybackSessionController.resume,
     );

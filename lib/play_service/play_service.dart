@@ -45,16 +45,19 @@ final class RemotePlaybackControlBinding {
   StreamSubscription<RemotePlaybackControlState>? _stateSubscription;
   bool Function()? _pauseHandler;
   bool Function()? _resumeHandler;
+  bool Function()? _isActiveReader;
   int _revision = 0;
   bool _disposed = false;
 
   RemotePlaybackControlState get state => _state;
   Stream<RemotePlaybackControlState> get stateStream => _stateController.stream;
-  bool get canSeekFromUi => !_state.isActive;
+  bool get isActive => _isActiveReader?.call() ?? _state.isActive;
+  bool get canSeekFromUi => !isActive;
 
   void bind({
     required RemotePlaybackControlState initialState,
     required Stream<RemotePlaybackControlState> stateStream,
+    required bool Function() isActive,
     required bool Function() pause,
     required bool Function() resume,
   }) {
@@ -69,6 +72,7 @@ final class RemotePlaybackControlBinding {
     }
     _pauseHandler = pause;
     _resumeHandler = resume;
+    _isActiveReader = isActive;
     _setState(initialState);
     _stateSubscription = stateStream.listen((state) {
       if (!_disposed && revision == _revision) {
@@ -78,7 +82,7 @@ final class RemotePlaybackControlBinding {
   }
 
   bool pause() {
-    if (!_state.isActive) return false;
+    if (!isActive) return false;
     if (_state.controlInFlight ||
         _state.state != PlaybackBackendState.playing) {
       return true;
@@ -88,7 +92,7 @@ final class RemotePlaybackControlBinding {
   }
 
   bool resume() {
-    if (!_state.isActive) return false;
+    if (!isActive) return false;
     if (_state.controlInFlight || _state.state != PlaybackBackendState.paused) {
       return true;
     }
@@ -113,6 +117,7 @@ final class RemotePlaybackControlBinding {
     ++_revision;
     _pauseHandler = null;
     _resumeHandler = null;
+    _isActiveReader = null;
     final subscription = _stateSubscription;
     _stateSubscription = null;
     _setState(_inactive);
@@ -124,6 +129,7 @@ final class RemotePlaybackControlBinding {
     ++_revision;
     _pauseHandler = null;
     _resumeHandler = null;
+    _isActiveReader = null;
     final subscription = _stateSubscription;
     _stateSubscription = null;
     if (subscription != null) {
@@ -155,6 +161,7 @@ class PlayService {
   bool Function()? _remoteNextHandler;
   final RemotePlaybackControlBinding _remotePlaybackControls =
       RemotePlaybackControlBinding();
+  late final SmtcControlRouter _smtcControlRouter;
 
   PlaybackService get playbackService =>
       _playbackService ??= PlaybackService(this);
@@ -165,6 +172,7 @@ class PlayService {
     final existing = _smtcSessionOwner;
     if (existing != null) return existing;
     final created = SmtcSessionOwner.create();
+    created.bindControlRouter(_smtcControlRouter);
     _smtcSessionOwner = created;
     if (_smtcKeepAliveRequested) {
       created.startKeepAlive();
@@ -174,7 +182,21 @@ class PlayService {
 
   SmtcBridge get smtcBridge => _sharedSmtcSession.bridge;
 
-  PlayService._();
+  PlayService._() {
+    _smtcControlRouter = SmtcControlRouter(
+      isRemoteActive: () => _remotePlaybackControls.isActive,
+      remotePlay: playAudio,
+      remotePause: pauseAudio,
+      remotePrevious: previousAudio,
+      remoteNext: nextAudio,
+      localPlay: () => _playbackService?.start(),
+      localPause: () => _playbackService?.pause(),
+      localPrevious: () => _playbackService?.lastAudio(),
+      localNext: () => _playbackService?.nextAudio(),
+      localStop: _stopLocalFromSmtc,
+      localPosition: _seekLocalFromSmtc,
+    );
+  }
 
   static PlayService? _instance;
   static PlayService get instance {
@@ -237,12 +259,14 @@ class PlayService {
   void setRemotePlaybackControlHandlers({
     required RemotePlaybackControlState initialState,
     required Stream<RemotePlaybackControlState> stateStream,
+    required bool Function() isActive,
     required bool Function() pause,
     required bool Function() resume,
   }) {
     _remotePlaybackControls.bind(
       initialState: initialState,
       stateStream: stateStream,
+      isActive: isActive,
       pause: pause,
       resume: resume,
     );
@@ -281,6 +305,24 @@ class PlayService {
     return _remotePlaybackControls.seekFromUi(
       () => playbackService.seek(seconds),
     );
+  }
+
+  void _stopLocalFromSmtc() {
+    final service = _playbackService;
+    if (service == null) return;
+    service.pause();
+    service.seek(0);
+  }
+
+  void _seekLocalFromSmtc(int position) {
+    final service = _playbackService;
+    final audio = service?.nowPlaying;
+    if (service == null || audio == null) return;
+    final positionSeconds = (position / 1000).clamp(
+      0.0,
+      audio.duration.toDouble(),
+    );
+    service.seek(positionSeconds);
   }
 
   Future<void> close() async {
@@ -343,6 +385,7 @@ class PlayService {
     _smtcSessionOwner = null;
     if (smtcSessionOwner != null) {
       try {
+        smtcSessionOwner.clearControlRouter(_smtcControlRouter);
         await smtcSessionOwner.close().timeout(const Duration(seconds: 1));
       } catch (e) {
         logger.w('smtcSessionOwner.close error: $e');

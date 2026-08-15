@@ -23,8 +23,6 @@ class PlaybackService extends ChangeNotifier {
   final PlayService playService;
 
   late StreamSubscription _playerStateStreamSub;
-  late StreamSubscription _smtcEventStreamSub;
-  late StreamSubscription _smtcPositionChangeStreamSub;
   late final void Function() _smtcKeepAliveHandler;
   int _lastNowPlayingChangedMs = 0;
   Timer? _smtcPositionTimer;
@@ -64,39 +62,6 @@ class PlaybackService extends ChangeNotifier {
       if (event == PlayerState.completed) {
         _autoNextAudio();
       }
-    });
-
-    _smtcEventStreamSub = _smtc.controlEvents.listen((event) {
-      switch (event) {
-        case SMTCControlEvent.play:
-          start();
-          break;
-        case SMTCControlEvent.pause:
-          pause();
-          break;
-        case SMTCControlEvent.previous:
-          lastAudio();
-          break;
-        case SMTCControlEvent.next:
-          nextAudio();
-          break;
-        case SMTCControlEvent.stop:
-          pause();
-          seek(0);
-          break;
-        case SMTCControlEvent.unknown:
-      }
-    });
-    _smtcPositionChangeStreamSub = _smtc.positionChangeEvents.listen((
-      position,
-    ) {
-      final audio = nowPlaying;
-      if (_closed || audio == null) return;
-      final positionSeconds = (position / 1000).clamp(
-        0.0,
-        audio.duration.toDouble(),
-      );
-      seek(positionSeconds);
     });
 
     _eq = EqualizerService(_player, _pref);
@@ -1022,8 +987,6 @@ class PlaybackService extends ChangeNotifier {
     try {
       await _playerStateStreamSub.cancel();
     } catch (_) {}
-    unawaited(_smtcEventStreamSub.cancel());
-    unawaited(_smtcPositionChangeStreamSub.cancel());
     _smtcPositionTimer?.cancel();
     _smtcPositionTimer = null;
 

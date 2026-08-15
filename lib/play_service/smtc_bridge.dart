@@ -233,11 +233,33 @@ final class SmtcSessionOwner {
 
   final SmtcBridge bridge;
   final Duration keepAliveInterval;
+  StreamSubscription<SMTCControlEvent>? _controlSubscription;
+  StreamSubscription<int>? _positionSubscription;
+  SmtcControlRouter? _controlRouter;
   Timer? _keepAliveTimer;
   void Function()? _keepAliveHandler;
   bool _closed = false;
 
   bool get isKeepAliveRunning => _keepAliveTimer != null;
+
+  void bindControlRouter(SmtcControlRouter router) {
+    if (_closed) {
+      throw StateError('SmtcSessionOwner has been closed');
+    }
+    _controlRouter = router;
+    _controlSubscription ??= bridge.controlEvents.listen((event) {
+      _controlRouter?.routeControl(event);
+    });
+    _positionSubscription ??= bridge.positionChangeEvents.listen((position) {
+      _controlRouter?.routePosition(position);
+    });
+  }
+
+  void clearControlRouter(SmtcControlRouter router) {
+    if (identical(_controlRouter, router)) {
+      _controlRouter = null;
+    }
+  }
 
   void bindKeepAlive(void Function() handler) {
     if (_closed) {
@@ -274,7 +296,70 @@ final class SmtcSessionOwner {
     _closed = true;
     stopKeepAlive();
     _keepAliveHandler = null;
+    _controlRouter = null;
+    final controlSubscription = _controlSubscription;
+    final positionSubscription = _positionSubscription;
+    _controlSubscription = null;
+    _positionSubscription = null;
+    await controlSubscription?.cancel();
+    await positionSubscription?.cancel();
     await bridge.close();
+  }
+}
+
+final class SmtcControlRouter {
+  const SmtcControlRouter({
+    required this.isRemoteActive,
+    required this.remotePlay,
+    required this.remotePause,
+    required this.remotePrevious,
+    required this.remoteNext,
+    required this.localPlay,
+    required this.localPause,
+    required this.localPrevious,
+    required this.localNext,
+    required this.localStop,
+    required this.localPosition,
+  });
+
+  final bool Function() isRemoteActive;
+  final void Function() remotePlay;
+  final void Function() remotePause;
+  final void Function() remotePrevious;
+  final void Function() remoteNext;
+  final void Function() localPlay;
+  final void Function() localPause;
+  final void Function() localPrevious;
+  final void Function() localNext;
+  final void Function() localStop;
+  final void Function(int position) localPosition;
+
+  void routeControl(SMTCControlEvent event) {
+    final remoteActive = isRemoteActive();
+    switch (event) {
+      case SMTCControlEvent.play:
+        (remoteActive ? remotePlay : localPlay)();
+        break;
+      case SMTCControlEvent.pause:
+        (remoteActive ? remotePause : localPause)();
+        break;
+      case SMTCControlEvent.previous:
+        (remoteActive ? remotePrevious : localPrevious)();
+        break;
+      case SMTCControlEvent.next:
+        (remoteActive ? remoteNext : localNext)();
+        break;
+      case SMTCControlEvent.stop:
+        if (!remoteActive) localStop();
+        break;
+      case SMTCControlEvent.unknown:
+    }
+  }
+
+  void routePosition(int position) {
+    if (!isRemoteActive()) {
+      localPosition(position);
+    }
   }
 }
 

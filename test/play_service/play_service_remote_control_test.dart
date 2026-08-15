@@ -27,6 +27,7 @@ void main() {
     binding.bind(
       initialState: const _State(PlaybackBackendState.paused),
       stateStream: source.stream,
+      isActive: () => binding.state.isActive,
       pause: () {
         pauseCount++;
         return true;
@@ -62,6 +63,7 @@ void main() {
       binding.bind(
         initialState: const _State(PlaybackBackendState.opening),
         stateStream: source.stream,
+        isActive: () => binding.state.isActive,
         pause: () {
           pauseCount++;
           return true;
@@ -109,6 +111,7 @@ void main() {
     binding.bind(
       initialState: const _State(PlaybackBackendState.opening),
       stateStream: source.stream,
+      isActive: () => binding.state.isActive,
       pause: () => true,
       resume: () => true,
     );
@@ -137,6 +140,7 @@ void main() {
     binding.bind(
       initialState: const _State(PlaybackBackendState.playing),
       stateStream: source.stream,
+      isActive: () => binding.state.isActive,
       pause: () => true,
       resume: () => true,
     );
@@ -152,6 +156,7 @@ void main() {
     binding.bind(
       initialState: const _State(PlaybackBackendState.playing),
       stateStream: source.stream,
+      isActive: () => binding.state.isActive,
       pause: () => true,
       resume: () => true,
     );
@@ -165,10 +170,36 @@ void main() {
     expect(binding.pause(), isFalse);
     expect(binding.resume(), isFalse);
   });
+
+  test('synchronous active reader prevents stale local fallback', () async {
+    var active = true;
+    var pauseCount = 0;
+    binding.bind(
+      initialState: const _State.inactive(),
+      stateStream: source.stream,
+      isActive: () => active,
+      pause: () {
+        pauseCount++;
+        return true;
+      },
+      resume: () => true,
+    );
+
+    expect(binding.pause(), isTrue);
+    expect(pauseCount, 0);
+
+    source.add(const _State(PlaybackBackendState.playing));
+    await pumpEventQueue();
+    active = false;
+
+    expect(binding.pause(), isFalse);
+    expect(pauseCount, 0);
+  });
 }
 
 final class _State implements RemotePlaybackControlState {
   const _State(this.state, {this.controlInFlight = false});
+  const _State.inactive() : state = null, controlInFlight = false;
 
   @override
   final PlaybackBackendState? state;
