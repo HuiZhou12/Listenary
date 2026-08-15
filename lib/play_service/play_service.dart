@@ -156,6 +156,7 @@ class PlayService {
   DesktopLyricService? _desktopLyricService;
   SmtcSessionOwner? _smtcSessionOwner;
   bool _smtcKeepAliveRequested = false;
+  void Function()? _remoteSmtcKeepAlivePublisher;
   final Set<void Function()> _localPlaybackRequestListeners = {};
   bool Function()? _remotePreviousHandler;
   bool Function()? _remoteNextHandler;
@@ -173,6 +174,10 @@ class PlayService {
     if (existing != null) return existing;
     final created = SmtcSessionOwner.create();
     created.bindControlRouter(_smtcControlRouter);
+    final remotePublisher = _remoteSmtcKeepAlivePublisher;
+    if (remotePublisher != null) {
+      created.bindRemoteKeepAlive(remotePublisher);
+    }
     _smtcSessionOwner = created;
     if (_smtcKeepAliveRequested) {
       created.startKeepAlive();
@@ -220,11 +225,19 @@ class PlayService {
   }
 
   void bindRemoteSmtcKeepAlive(void Function() publisher) {
-    _sharedSmtcSession.bindRemoteKeepAlive(publisher);
+    final oldPublisher = _remoteSmtcKeepAlivePublisher;
+    if (identical(oldPublisher, publisher)) return;
+    if (oldPublisher != null) {
+      _smtcSessionOwner?.clearRemoteKeepAlive(oldPublisher);
+    }
+    _remoteSmtcKeepAlivePublisher = publisher;
+    _smtcSessionOwner?.bindRemoteKeepAlive(publisher);
   }
 
   void clearRemoteSmtcKeepAlive(void Function() publisher) {
+    if (!identical(_remoteSmtcKeepAlivePublisher, publisher)) return;
     _smtcSessionOwner?.clearRemoteKeepAlive(publisher);
+    _remoteSmtcKeepAlivePublisher = null;
   }
 
   void startSmtcKeepAlive() {
@@ -337,6 +350,11 @@ class PlayService {
     stopSmtcKeepAlive();
     _localPlaybackRequestListeners.clear();
     clearRemoteNavigationHandlers();
+    final remotePublisher = _remoteSmtcKeepAlivePublisher;
+    _remoteSmtcKeepAlivePublisher = null;
+    if (remotePublisher != null) {
+      _smtcSessionOwner?.clearRemoteKeepAlive(remotePublisher);
+    }
     await _remotePlaybackControls.dispose();
     // 按顺序关闭服务，每个操作带超时保护
     final desktopLyric = _desktopLyricService;

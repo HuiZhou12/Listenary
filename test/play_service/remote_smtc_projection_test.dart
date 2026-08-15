@@ -202,10 +202,101 @@ void main() {
     expect(harness.smtc.operations[operationCount - 1], 'clear');
     expect(harness.smtc.operations, hasLength(operationCount));
   });
+
+  test(
+    'lazy production binding creates one projection owner after selection',
+    () async {
+      final lazyHarness = _Harness.lazy();
+      addTearDown(lazyHarness.dispose);
+      final openGate = Completer<void>();
+      lazyHarness.gateway.pending.add(openGate.future);
+
+      final play = lazyHarness.session.play(0, requestedQuality: 'lossless');
+      await pumpEventQueue();
+
+      expect(lazyHarness.projectionCreateCount, 0);
+      expect(lazyHarness.keepAlivePublisher, isNotNull);
+      expect(lazyHarness.lifecycleEvents, ['bind']);
+
+      openGate.complete();
+      await play;
+      lazyHarness.backend.emit(PlaybackBackendState.playing);
+      await lazyHarness.settle();
+
+      expect(lazyHarness.projectionCreateCount, 1);
+      expect(lazyHarness.smtc.displayUpdates.last.title, 'Track 1');
+      lazyHarness.keepAlivePublisher?.call();
+      await lazyHarness.settle();
+      expect(lazyHarness.smtc.operations, contains('refresh'));
+
+      await lazyHarness.session.play(1, requestedQuality: 'lossless');
+      await lazyHarness.settle();
+      expect(lazyHarness.projectionCreateCount, 1);
+
+      lazyHarness.localBridge.requestLocalPlayback();
+      await lazyHarness.settle();
+      expect(lazyHarness.lifecycleEvents, ['bind', 'clear']);
+      expect(lazyHarness.keepAlivePublisher, isNull);
+      expect(lazyHarness.smtc.operations.last, 'clear');
+    },
+  );
+
+  test('lazy production binding does not create an owner on failure', () async {
+    final lazyHarness = _Harness.lazy();
+    addTearDown(lazyHarness.dispose);
+    lazyHarness.gateway.error = StateError('open failed');
+
+    await expectLater(
+      lazyHarness.session.play(0, requestedQuality: 'lossless'),
+      throwsStateError,
+    );
+    await lazyHarness.settle();
+
+    expect(lazyHarness.projectionCreateCount, 0);
+    expect(lazyHarness.smtc.operations, isEmpty);
+    expect(lazyHarness.keepAlivePublisher, isNotNull);
+
+    await lazyHarness.binding.dispose();
+    expect(lazyHarness.lifecycleEvents, ['bind', 'clear']);
+    expect(lazyHarness.keepAlivePublisher, isNull);
+  });
+
+  test('lazy production dispose unbinds before clearing projection', () async {
+    final lazyHarness = _Harness.lazy();
+    addTearDown(lazyHarness.dispose);
+    await lazyHarness.session.play(0, requestedQuality: 'lossless');
+    lazyHarness.backend.emit(PlaybackBackendState.playing);
+    await lazyHarness.settle();
+    final stalePublisher = lazyHarness.keepAlivePublisher;
+
+    await lazyHarness.binding.dispose();
+    await lazyHarness.settle();
+
+    expect(lazyHarness.lifecycleEvents, ['bind', 'clear']);
+    expect(lazyHarness.keepAlivePublisher, isNull);
+    expect(lazyHarness.smtc.operations.last, 'clear');
+    final operationCount = lazyHarness.smtc.operations.length;
+    stalePublisher?.call();
+    await lazyHarness.settle();
+    expect(lazyHarness.smtc.operations, hasLength(operationCount));
+  });
 }
 
 final class _Harness {
-  _Harness() {
+  _Harness() : _lazyProjection = false {
+    _initialize();
+  }
+
+  _Harness.lazy() : _lazyProjection = true {
+    _initialize();
+  }
+
+  final bool _lazyProjection;
+  int projectionCreateCount = 0;
+  void Function()? keepAlivePublisher;
+  final lifecycleEvents = <String>[];
+
+  void _initialize() {
     queue.replace([_item('1'), _item('2')]);
     remoteController = RemotePlaybackQueueController(
       queue: queue,
@@ -217,11 +308,29 @@ final class _Harness {
       localBridge: localBridge,
       backend: backend,
     );
-    binding = RemoteSmtcProjectionBinding(
-      queue: queue,
-      sessionController: session,
-      projectionController: RemoteSmtcProjectionController(smtcBridge),
-    );
+    binding = _lazyProjection
+        ? RemoteSmtcProjectionBinding.lazy(
+            queue: queue,
+            sessionController: session,
+            createProjectionController: () {
+              projectionCreateCount++;
+              return RemoteSmtcProjectionController(smtcBridge);
+            },
+            bindRemoteKeepAlive: (publisher) {
+              lifecycleEvents.add('bind');
+              keepAlivePublisher = publisher;
+            },
+            clearRemoteKeepAlive: (publisher) {
+              if (!identical(keepAlivePublisher, publisher)) return;
+              lifecycleEvents.add('clear');
+              keepAlivePublisher = null;
+            },
+          )
+        : RemoteSmtcProjectionBinding(
+            queue: queue,
+            sessionController: session,
+            projectionController: RemoteSmtcProjectionController(smtcBridge),
+          );
   }
 
   final queue = RemotePlaybackQueue();
@@ -279,6 +388,12 @@ final class _LocalBridge implements LocalPlaybackSessionBridge {
   final _listeners = <void Function()>{};
   LocalPlaybackResumePoint? resumePoint;
   void Function()? onRestore;
+
+  void requestLocalPlayback() {
+    for (final listener in List.of(_listeners)) {
+      listener();
+    }
+  }
 
   @override
   void addLocalPlaybackRequestListener(void Function() listener) {

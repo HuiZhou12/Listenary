@@ -31,6 +31,8 @@ import 'package:pure_music/play_service/bass_url_playback_backend.dart';
 import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/play_service/remote_playback_queue_controller.dart';
 import 'package:pure_music/play_service/remote_playback_session_controller.dart';
+import 'package:pure_music/play_service/remote_smtc_projection.dart';
+import 'package:pure_music/play_service/smtc_bridge.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/immersive.dart';
@@ -103,6 +105,7 @@ class _EntryState extends State<Entry>
   late final RemotePlaybackQueue _remotePlaybackQueue;
   late final RemotePlaybackQueueController _remotePlaybackQueueController;
   late final RemotePlaybackSessionController _remotePlaybackSessionController;
+  late final RemoteSmtcProjectionBinding _remoteSmtcProjectionBinding;
   late final PlayService _playService;
   Timer? _resizeIdleTimer;
 
@@ -137,6 +140,14 @@ class _EntryState extends State<Entry>
         showTextOnSnackBar(message, variant: ToastVariant.error);
       },
     );
+    _remoteSmtcProjectionBinding = RemoteSmtcProjectionBinding.lazy(
+      queue: _remotePlaybackQueue,
+      sessionController: _remotePlaybackSessionController,
+      createProjectionController: () =>
+          RemoteSmtcProjectionController(_playService.smtcBridge),
+      bindRemoteKeepAlive: _playService.bindRemoteSmtcKeepAlive,
+      clearRemoteKeepAlive: _playService.clearRemoteSmtcKeepAlive,
+    );
     _playService.setRemoteNavigationHandlers(
       previous: _remotePlaybackSessionController.previous,
       next: _remotePlaybackSessionController.next,
@@ -166,6 +177,7 @@ class _EntryState extends State<Entry>
     _windowResizing.dispose();
     WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
+    unawaited(_remoteSmtcProjectionBinding.dispose());
     _playService.clearRemoteNavigationHandlers();
     _playService.clearRemotePlaybackControlHandlers();
     _playService.stopSmtcKeepAlive();
