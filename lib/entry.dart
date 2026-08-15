@@ -30,6 +30,7 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/bass_url_playback_backend.dart';
 import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/play_service/remote_playback_queue_controller.dart';
+import 'package:pure_music/play_service/remote_playback_session_controller.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/immersive.dart';
@@ -101,6 +102,7 @@ class _EntryState extends State<Entry>
   late final BassUrlPlaybackBackend _remotePlaybackBackend;
   late final RemotePlaybackQueue _remotePlaybackQueue;
   late final RemotePlaybackQueueController _remotePlaybackQueueController;
+  late final RemotePlaybackSessionController _remotePlaybackSessionController;
   Timer? _resizeIdleTimer;
 
   @override
@@ -113,6 +115,13 @@ class _EntryState extends State<Entry>
       gateway: ChkszRemoteQueuePlaybackGateway(
         runtime: widget.chkszRuntime,
         backend: _remotePlaybackBackend,
+      ),
+    );
+    _remotePlaybackSessionController = RemotePlaybackSessionController(
+      queue: _remotePlaybackQueue,
+      remoteController: _remotePlaybackQueueController,
+      localBridge: PlaybackServiceLocalPlaybackSessionBridge(
+        playService: PlayService.instance,
       ),
     );
     windowManager.addListener(this);
@@ -133,6 +142,7 @@ class _EntryState extends State<Entry>
     _windowResizing.dispose();
     WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
+    _remotePlaybackSessionController.dispose();
     _remotePlaybackQueueController.dispose();
     _remotePlaybackQueue.dispose();
     unawaited(_remotePlaybackBackend.dispose());
@@ -450,8 +460,8 @@ class _EntryState extends State<Entry>
                 ChangeNotifierProvider<RemotePlaybackQueue>.value(
                   value: _remotePlaybackQueue,
                 ),
-                Provider<RemotePlaybackQueueController>.value(
-                  value: _remotePlaybackQueueController,
+                Provider<RemotePlaybackSessionController>.value(
+                  value: _remotePlaybackSessionController,
                 ),
               ],
               child: ValueListenableBuilder<bool>(

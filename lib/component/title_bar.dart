@@ -15,7 +15,7 @@ import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/remote_playback_queue.dart';
-import 'package:pure_music/play_service/remote_playback_queue_controller.dart';
+import 'package:pure_music/play_service/remote_playback_session_controller.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -33,7 +33,7 @@ class TitleBar extends StatelessWidget {
       context,
       onOnlineTrackSelected: (selection) async {
         final queue = context.read<RemotePlaybackQueue>();
-        final controller = context.read<RemotePlaybackQueueController>();
+        final controller = context.read<RemotePlaybackSessionController>();
         queue.replace(selection.tracks.map(RemotePlaybackQueueItem.fromTrack));
         try {
           await controller.play(
