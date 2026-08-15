@@ -238,35 +238,85 @@ void main() {
     await bridge.close();
   });
 
-  test('shared owner binds one keep-alive handler and one timer', () async {
-    final backend = _FakeSmtcBackend();
-    final owner = SmtcSessionOwner.withBridge(
-      SmtcBridge.withBackend(backend),
-      keepAliveInterval: const Duration(days: 1),
-    );
-    var firstCount = 0;
-    var secondCount = 0;
-    void firstHandler() => firstCount++;
-    void secondHandler() => secondCount++;
+  test(
+    'remote keep-alive refreshes display and state without timeline',
+    () async {
+      final backend = _FakeSmtcBackend();
+      final bridge = SmtcBridge.withBackend(backend);
+      final controller = RemoteSmtcProjectionController(bridge);
 
-    owner.bindKeepAlive(firstHandler);
-    owner.startKeepAlive();
-    owner.startKeepAlive();
-    expect(owner.isKeepAliveRunning, isTrue);
-    owner.pushKeepAlive();
+      controller.pushKeepAlive();
+      await controller.project(
+        const RemoteSmtcProjection(
+          title: 'Remote title',
+          artist: 'Remote artist',
+          state: PlaybackBackendState.playing,
+        ),
+      );
+      controller.pushKeepAlive();
+      await pumpEventQueue();
+      await bridge.flush();
 
-    owner.bindKeepAlive(secondHandler);
-    owner.clearKeepAlive(firstHandler);
-    owner.pushKeepAlive();
+      expect(backend.operations, <String>[
+        'display:Remote title',
+        'state:playing',
+        'refresh',
+        'state:playing',
+      ]);
+      expect(backend.progressUpdates, isEmpty);
 
-    expect(firstCount, 1);
-    expect(secondCount, 1);
-    owner.stopKeepAlive();
-    expect(owner.isKeepAliveRunning, isFalse);
+      await controller.dispose();
+      await bridge.close();
+    },
+  );
 
-    await owner.close();
-    expect(backend.closeCount, 1);
-  });
+  test(
+    'shared owner prioritizes remote and restores local publisher',
+    () async {
+      final backend = _FakeSmtcBackend();
+      final owner = SmtcSessionOwner.withBridge(
+        SmtcBridge.withBackend(backend),
+        keepAliveInterval: const Duration(days: 1),
+      );
+      var localCount = 0;
+      var latestLocalCount = 0;
+      var remoteCount = 0;
+      var latestRemoteCount = 0;
+      void localPublisher() => localCount++;
+      void latestLocalPublisher() => latestLocalCount++;
+      void remotePublisher() => remoteCount++;
+      void latestRemotePublisher() => latestRemoteCount++;
+
+      owner.pushKeepAlive();
+      owner.bindLocalKeepAlive(localPublisher);
+      owner.startKeepAlive();
+      owner.startKeepAlive();
+      expect(owner.isKeepAliveRunning, isTrue);
+      owner.pushKeepAlive();
+      owner.bindLocalKeepAlive(latestLocalPublisher);
+      owner.clearLocalKeepAlive(localPublisher);
+
+      owner.bindRemoteKeepAlive(remotePublisher);
+      owner.pushKeepAlive();
+      owner.bindRemoteKeepAlive(latestRemotePublisher);
+      owner.clearRemoteKeepAlive(remotePublisher);
+      owner.pushKeepAlive();
+      owner.clearRemoteKeepAlive(latestRemotePublisher);
+      owner.clearRemoteKeepAlive(latestRemotePublisher);
+      owner.pushKeepAlive();
+
+      expect(localCount, 1);
+      expect(latestLocalCount, 1);
+      expect(remoteCount, 1);
+      expect(latestRemoteCount, 1);
+      owner.stopKeepAlive();
+      owner.stopKeepAlive();
+      expect(owner.isKeepAliveRunning, isFalse);
+
+      await owner.close();
+      expect(backend.closeCount, 1);
+    },
+  );
 
   test('shared owner close is idempotent and rejects new bindings', () async {
     final backend = _FakeSmtcBackend();
@@ -279,7 +329,8 @@ void main() {
 
     expect(owner.isKeepAliveRunning, isFalse);
     expect(backend.closeCount, 1);
-    expect(() => owner.bindKeepAlive(() {}), throwsStateError);
+    expect(() => owner.bindLocalKeepAlive(() {}), throwsStateError);
+    expect(() => owner.bindRemoteKeepAlive(() {}), throwsStateError);
   });
 
   test('control router isolates remote and local operations', () {

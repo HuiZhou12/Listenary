@@ -212,11 +212,19 @@ class PlayService {
   bool get canSeekFromUi => _remotePlaybackControls.canSeekFromUi;
 
   void bindSmtcKeepAlive(void Function() handler) {
-    _sharedSmtcSession.bindKeepAlive(handler);
+    _sharedSmtcSession.bindLocalKeepAlive(handler);
   }
 
   void clearSmtcKeepAlive(void Function() handler) {
-    _smtcSessionOwner?.clearKeepAlive(handler);
+    _smtcSessionOwner?.clearLocalKeepAlive(handler);
+  }
+
+  void bindRemoteSmtcKeepAlive(void Function() publisher) {
+    _sharedSmtcSession.bindRemoteKeepAlive(publisher);
+  }
+
+  void clearRemoteSmtcKeepAlive(void Function() publisher) {
+    _smtcSessionOwner?.clearRemoteKeepAlive(publisher);
   }
 
   void startSmtcKeepAlive() {

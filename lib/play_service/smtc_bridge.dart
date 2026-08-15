@@ -240,6 +240,7 @@ final class RemoteSmtcProjectionController {
 
   final SmtcBridge _bridge;
   int _revision = 0;
+  RemoteSmtcProjection? _projection;
   bool _hasProjection = false;
   bool _disposed = false;
 
@@ -248,6 +249,7 @@ final class RemoteSmtcProjectionController {
   Future<void> project(RemoteSmtcProjection projection) async {
     if (_disposed) return;
     final revision = ++_revision;
+    _projection = projection;
     _hasProjection = true;
     await _bridge.updateDisplay(
       title: projection.title,
@@ -260,10 +262,18 @@ final class RemoteSmtcProjectionController {
     await _bridge.updateState(_mapState(projection.state));
   }
 
+  void pushKeepAlive() {
+    final projection = _projection;
+    if (_disposed || !_hasProjection || projection == null) return;
+    final revision = _revision;
+    unawaited(_pushKeepAlive(revision, projection.state));
+  }
+
   Future<void> clear() async {
     if (_disposed) return;
     ++_revision;
     if (!_hasProjection) return;
+    _projection = null;
     _hasProjection = false;
     await _bridge.clearDisplay();
   }
@@ -273,8 +283,18 @@ final class RemoteSmtcProjectionController {
     ++_revision;
     _disposed = true;
     if (!_hasProjection) return;
+    _projection = null;
     _hasProjection = false;
     await _bridge.clearDisplay();
+  }
+
+  Future<void> _pushKeepAlive(
+    int revision,
+    PlaybackBackendState state,
+  ) async {
+    await _bridge.refreshDisplay();
+    if (!_isCurrent(revision)) return;
+    await _bridge.updateState(_mapState(state));
   }
 
   bool _isCurrent(int revision) =>
@@ -301,7 +321,8 @@ final class SmtcSessionOwner {
   StreamSubscription<int>? _positionSubscription;
   SmtcControlRouter? _controlRouter;
   Timer? _keepAliveTimer;
-  void Function()? _keepAliveHandler;
+  void Function()? _localKeepAlivePublisher;
+  void Function()? _remoteKeepAlivePublisher;
   bool _closed = false;
 
   bool get isKeepAliveRunning => _keepAliveTimer != null;
@@ -325,16 +346,29 @@ final class SmtcSessionOwner {
     }
   }
 
-  void bindKeepAlive(void Function() handler) {
+  void bindLocalKeepAlive(void Function() publisher) {
     if (_closed) {
       throw StateError('SmtcSessionOwner has been closed');
     }
-    _keepAliveHandler = handler;
+    _localKeepAlivePublisher = publisher;
   }
 
-  void clearKeepAlive(void Function() handler) {
-    if (identical(_keepAliveHandler, handler)) {
-      _keepAliveHandler = null;
+  void clearLocalKeepAlive(void Function() publisher) {
+    if (identical(_localKeepAlivePublisher, publisher)) {
+      _localKeepAlivePublisher = null;
+    }
+  }
+
+  void bindRemoteKeepAlive(void Function() publisher) {
+    if (_closed) {
+      throw StateError('SmtcSessionOwner has been closed');
+    }
+    _remoteKeepAlivePublisher = publisher;
+  }
+
+  void clearRemoteKeepAlive(void Function() publisher) {
+    if (identical(_remoteKeepAlivePublisher, publisher)) {
+      _remoteKeepAlivePublisher = null;
     }
   }
 
@@ -352,14 +386,15 @@ final class SmtcSessionOwner {
 
   void pushKeepAlive() {
     if (_closed) return;
-    _keepAliveHandler?.call();
+    (_remoteKeepAlivePublisher ?? _localKeepAlivePublisher)?.call();
   }
 
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
     stopKeepAlive();
-    _keepAliveHandler = null;
+    _localKeepAlivePublisher = null;
+    _remoteKeepAlivePublisher = null;
     _controlRouter = null;
     final controlSubscription = _controlSubscription;
     final positionSubscription = _positionSubscription;
