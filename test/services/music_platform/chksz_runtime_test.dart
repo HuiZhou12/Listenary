@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 
 const _fakeApiKey = 'chksz_TEST_ONLY';
@@ -53,6 +54,43 @@ void main() {
     expect(stream.ref, _trackRef);
     expect(runtime.quota?.freeRemaining, 8);
   });
+
+  test(
+    'opens a resolved Netease stream through the runtime coordinator',
+    () async {
+      final transport = _FakeTransport(
+        (_, _) async =>
+            ChkszTransportResponse(statusCode: 200, data: _resolveBody()),
+      );
+      final runtime = ChkszRuntime(
+        credentialProvider: InMemoryChkszCredentialProvider(
+          initialApiKey: _fakeApiKey,
+        ),
+        transport: transport,
+        clock: () => DateTime.utc(2026, 8, 14),
+      );
+      final backend = _RuntimePlaybackBackend();
+      addTearDown(() async {
+        await backend.dispose();
+        runtime.dispose();
+      });
+
+      final stream = await runtime.resolveAndOpenNetease(
+        _trackRef,
+        requestedQuality: NeteaseAdapter.defaultQuality,
+        backend: backend,
+        cancelToken: ChkszCancelToken(),
+      );
+
+      expect(stream.ref, _trackRef);
+      expect(backend.opened, hasLength(1));
+      expect(backend.opened.single, isA<RemotePlaybackSource>());
+      expect(
+        (backend.opened.single as RemotePlaybackSource).uri,
+        Uri.parse('https://media.invalid/test.flac'),
+      );
+    },
+  );
 
   test(
     'cancels active requests and clears quota before replacing key',
@@ -327,6 +365,26 @@ final class _FakeTransport implements ChkszTransport {
     tokens.add(cancelToken);
     return handler(request, cancelToken);
   }
+}
+
+final class _RuntimePlaybackBackend implements PlaybackBackend {
+  final _states = StreamController<PlaybackBackendState>.broadcast();
+  final List<PlaybackSource> opened = [];
+
+  @override
+  Stream<PlaybackBackendState> get stateStream => _states.stream;
+
+  @override
+  Future<void> open(PlaybackSource source) async {
+    opened.add(source);
+    _states.add(PlaybackBackendState.playing);
+  }
+
+  @override
+  Future<void> stop() async {}
+
+  @override
+  Future<void> dispose() => _states.close();
 }
 
 final class _RecordingCredentialProvider implements ChkszCredentialProvider {

@@ -1,4 +1,5 @@
 import 'package:pure_music/services/music_platform/adapters/netease_adapter.dart';
+import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_client.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_quota.dart';
@@ -85,6 +86,24 @@ final class ChkszRuntime {
       requestedQuality: requestedQuality,
       cancelToken: cancelToken,
     ),
+  );
+
+  Future<ResolvedStream> resolveAndOpenNetease(
+    PlatformTrackRef ref, {
+    required String requestedQuality,
+    required PlaybackBackend backend,
+    required ChkszCancelToken cancelToken,
+  }) => _runRequest(
+    cancelToken,
+    () =>
+        RemoteStreamCoordinator(
+          resolver: _neteaseStreamResolver.resolve,
+          backend: backend,
+        ).resolveAndOpen(
+          ref,
+          requestedQuality: requestedQuality,
+          cancelToken: cancelToken,
+        ),
   );
 
   void dispose() {
