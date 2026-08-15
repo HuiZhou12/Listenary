@@ -118,7 +118,8 @@ enum RemotePlaybackSessionFailure {
   remoteStop,
 }
 
-final class RemotePlaybackControlSnapshot {
+final class RemotePlaybackControlSnapshot
+    implements RemotePlaybackControlState {
   const RemotePlaybackControlSnapshot({
     required this.state,
     required this.controlInFlight,

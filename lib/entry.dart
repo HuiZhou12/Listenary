@@ -141,6 +141,12 @@ class _EntryState extends State<Entry>
       previous: _remotePlaybackSessionController.previous,
       next: _remotePlaybackSessionController.next,
     );
+    _playService.setRemotePlaybackControlHandlers(
+      initialState: _remotePlaybackSessionController.controlState,
+      stateStream: _remotePlaybackSessionController.controlStateStream,
+      pause: _remotePlaybackSessionController.pause,
+      resume: _remotePlaybackSessionController.resume,
+    );
     windowManager.addListener(this);
     WidgetsBinding.instance.addObserver(this);
 
@@ -160,6 +166,7 @@ class _EntryState extends State<Entry>
     WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
     _playService.clearRemoteNavigationHandlers();
+    _playService.clearRemotePlaybackControlHandlers();
     _remotePlaybackSessionController.dispose();
     _remotePlaybackQueueController.dispose();
     _remotePlaybackQueue.dispose();

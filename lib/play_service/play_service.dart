@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/database.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
@@ -6,11 +8,133 @@ import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/system_volume_service.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
+import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/desktop_lyric_service.dart';
 import 'package:pure_music/play_service/lyric_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
+import 'package:pure_music/play_service/playback_source.dart';
+
+abstract interface class RemotePlaybackControlState {
+  PlaybackBackendState? get state;
+  bool get controlInFlight;
+  bool get isActive;
+}
+
+final class _InactiveRemotePlaybackControlState
+    implements RemotePlaybackControlState {
+  const _InactiveRemotePlaybackControlState();
+
+  @override
+  PlaybackBackendState? get state => null;
+
+  @override
+  bool get controlInFlight => false;
+
+  @override
+  bool get isActive => false;
+}
+
+final class RemotePlaybackControlBinding {
+  final _stateController =
+      StreamController<RemotePlaybackControlState>.broadcast();
+  static const _inactive = _InactiveRemotePlaybackControlState();
+  RemotePlaybackControlState _state = _inactive;
+  StreamSubscription<RemotePlaybackControlState>? _stateSubscription;
+  bool Function()? _pauseHandler;
+  bool Function()? _resumeHandler;
+  int _revision = 0;
+  bool _disposed = false;
+
+  RemotePlaybackControlState get state => _state;
+  Stream<RemotePlaybackControlState> get stateStream => _stateController.stream;
+
+  void bind({
+    required RemotePlaybackControlState initialState,
+    required Stream<RemotePlaybackControlState> stateStream,
+    required bool Function() pause,
+    required bool Function() resume,
+  }) {
+    if (_disposed) {
+      throw StateError('RemotePlaybackControlBinding has been disposed');
+    }
+    final revision = ++_revision;
+    final oldSubscription = _stateSubscription;
+    _stateSubscription = null;
+    if (oldSubscription != null) {
+      unawaited(oldSubscription.cancel());
+    }
+    _pauseHandler = pause;
+    _resumeHandler = resume;
+    _setState(initialState);
+    _stateSubscription = stateStream.listen((state) {
+      if (!_disposed && revision == _revision) {
+        _setState(state);
+      }
+    });
+  }
+
+  bool pause() {
+    if (!_state.isActive) return false;
+    if (_state.controlInFlight ||
+        _state.state != PlaybackBackendState.playing) {
+      return true;
+    }
+    _pauseHandler?.call();
+    return true;
+  }
+
+  bool resume() {
+    if (!_state.isActive) return false;
+    if (_state.controlInFlight || _state.state != PlaybackBackendState.paused) {
+      return true;
+    }
+    _resumeHandler?.call();
+    return true;
+  }
+
+  void clear() {
+    if (_disposed) return;
+    _clear();
+  }
+
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    ++_revision;
+    _pauseHandler = null;
+    _resumeHandler = null;
+    final subscription = _stateSubscription;
+    _stateSubscription = null;
+    _setState(_inactive);
+    await subscription?.cancel();
+    await _stateController.close();
+  }
+
+  void _clear() {
+    ++_revision;
+    _pauseHandler = null;
+    _resumeHandler = null;
+    final subscription = _stateSubscription;
+    _stateSubscription = null;
+    if (subscription != null) {
+      unawaited(subscription.cancel());
+    }
+    _setState(_inactive);
+  }
+
+  void _setState(RemotePlaybackControlState state) {
+    if (_state.state == state.state &&
+        _state.controlInFlight == state.controlInFlight) {
+      return;
+    }
+    _state = state;
+    if (!_stateController.isClosed) {
+      _stateController.add(state);
+    }
+  }
+}
 
 class PlayService {
   PlaybackService? _playbackService;
@@ -19,6 +143,8 @@ class PlayService {
   final Set<void Function()> _localPlaybackRequestListeners = {};
   bool Function()? _remotePreviousHandler;
   bool Function()? _remoteNextHandler;
+  final RemotePlaybackControlBinding _remotePlaybackControls =
+      RemotePlaybackControlBinding();
 
   PlaybackService get playbackService =>
       _playbackService ??= PlaybackService(this);
@@ -35,6 +161,10 @@ class PlayService {
   }
 
   bool get hasPlaybackSession => _playbackService?.nowPlaying != null;
+  RemotePlaybackControlState get remotePlaybackControlState =>
+      _remotePlaybackControls.state;
+  Stream<RemotePlaybackControlState> get remotePlaybackControlStateStream =>
+      _remotePlaybackControls.stateStream;
 
   void addLocalPlaybackRequestListener(void Function() listener) {
     _localPlaybackRequestListeners.add(listener);
@@ -63,6 +193,24 @@ class PlayService {
     _remoteNextHandler = null;
   }
 
+  void setRemotePlaybackControlHandlers({
+    required RemotePlaybackControlState initialState,
+    required Stream<RemotePlaybackControlState> stateStream,
+    required bool Function() pause,
+    required bool Function() resume,
+  }) {
+    _remotePlaybackControls.bind(
+      initialState: initialState,
+      stateStream: stateStream,
+      pause: pause,
+      resume: resume,
+    );
+  }
+
+  void clearRemotePlaybackControlHandlers() {
+    _remotePlaybackControls.clear();
+  }
+
   void previousAudio() {
     if (_remotePreviousHandler?.call() == true) return;
     playbackService.lastAudio();
@@ -73,9 +221,25 @@ class PlayService {
     playbackService.nextAudio();
   }
 
+  void pauseAudio() {
+    if (_remotePlaybackControls.pause()) return;
+    playbackService.pause();
+  }
+
+  void playAudio() {
+    if (_remotePlaybackControls.resume()) return;
+    final service = playbackService;
+    if (service.playerState == PlayerState.completed) {
+      service.playAgain();
+    } else {
+      service.start();
+    }
+  }
+
   Future<void> close() async {
     _localPlaybackRequestListeners.clear();
     clearRemoteNavigationHandlers();
+    await _remotePlaybackControls.dispose();
     // 按顺序关闭服务，每个操作带超时保护
     final desktopLyric = _desktopLyricService;
     if (desktopLyric != null) {
