@@ -25,9 +25,9 @@ class PlaybackService extends ChangeNotifier {
   late StreamSubscription _playerStateStreamSub;
   late StreamSubscription _smtcEventStreamSub;
   late StreamSubscription _smtcPositionChangeStreamSub;
+  late final void Function() _smtcKeepAliveHandler;
   int _lastNowPlayingChangedMs = 0;
   Timer? _smtcPositionTimer;
-  Timer? _smtcKeepAliveTimer;
   final Set<Timer> _positionSyncBurstTimers = {};
   int _songChangeTaskToken = 0;
   Timer? _songChangeMetadataTimer;
@@ -47,7 +47,9 @@ class PlaybackService extends ChangeNotifier {
 
   ValueListenable<int> get playCountRevision => _playCountRevision;
 
-  PlaybackService(this.playService) {
+  PlaybackService(this.playService) : _smtc = playService.smtcBridge {
+    _smtcKeepAliveHandler = _pushSmtcKeepAlive;
+    playService.bindSmtcKeepAlive(_smtcKeepAliveHandler);
     _player.onExclusiveModeChanged = (exclusive) {
       _wasapiExclusive.value = exclusive;
     };
@@ -110,7 +112,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   final _player = BassPlayer();
-  final _smtc = SmtcBridge.create();
+  final SmtcBridge _smtc;
   final _pref = AppPreference.instance.playbackPref;
   late final EqualizerService _eq;
   String? _replayGainForPath;
@@ -331,20 +333,6 @@ class PlaybackService extends ChangeNotifier {
     _smtcPositionTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
       _updateSmtcPosition();
     });
-  }
-
-  /// 窗口最小化期间系统会冻结媒体会话的显示更新（普通 Update 被静默丢弃，
-  /// 只有媒体栏按钮交互才强制刷新）。用周期心跳重推当前曲目，模拟会话活跃。
-  void startSmtcKeepAlive() {
-    if (_closed || _smtcKeepAliveTimer != null) return;
-    _smtcKeepAliveTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      _pushSmtcKeepAlive();
-    });
-  }
-
-  void stopSmtcKeepAlive() {
-    _smtcKeepAliveTimer?.cancel();
-    _smtcKeepAliveTimer = null;
   }
 
   void _pushSmtcKeepAlive() {
@@ -1020,6 +1008,7 @@ class PlaybackService extends ChangeNotifier {
 
   Future<void> close() async {
     _closed = true;
+    playService.clearSmtcKeepAlive(_smtcKeepAliveHandler);
     _songChangeTaskToken++;
     _cancelSongChangeTasks();
     _cancelPositionSyncBurst();
@@ -1037,16 +1026,13 @@ class PlaybackService extends ChangeNotifier {
     unawaited(_smtcPositionChangeStreamSub.cancel());
     _smtcPositionTimer?.cancel();
     _smtcPositionTimer = null;
-    _smtcKeepAliveTimer?.cancel();
-    _smtcKeepAliveTimer = null;
 
     // 4. 等待异步回调完全停止（避免 use-after-free）
     await Future.delayed(const Duration(milliseconds: 100));
 
-    // 5. 关闭 SMTC（系统媒体传输控制）
+    // 5. 共享 SMTC 由 PlayService 在本地订阅释放后关闭
     try {
       await _smtc.updateState(SMTCState.paused);
-      await _smtc.close();
     } catch (_) {}
 
     // 6. dispose ValueNotifiers（释放 _playlist 引用的 Audio 列表）

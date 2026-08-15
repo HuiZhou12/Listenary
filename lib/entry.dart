@@ -167,6 +167,7 @@ class _EntryState extends State<Entry>
     windowManager.removeListener(this);
     _playService.clearRemoteNavigationHandlers();
     _playService.clearRemotePlaybackControlHandlers();
+    _playService.stopSmtcKeepAlive();
     _remotePlaybackSessionController.dispose();
     _remotePlaybackQueueController.dispose();
     _remotePlaybackQueue.dispose();
@@ -189,12 +190,12 @@ class _EntryState extends State<Entry>
   void onWindowMinimize() {
     MemoryMonitorService.instance.trimAll();
     logger.i('[mem] window minimized - cleared invisible caches');
-    PlayService.instance.playbackService.startSmtcKeepAlive();
+    _playService.startSmtcKeepAlive();
   }
 
   @override
   void onWindowRestore() {
-    PlayService.instance.playbackService.stopSmtcKeepAlive();
+    _playService.stopSmtcKeepAlive();
   }
 
   @override

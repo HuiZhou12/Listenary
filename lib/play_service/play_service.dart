@@ -15,6 +15,7 @@ import 'package:pure_music/play_service/desktop_lyric_service.dart';
 import 'package:pure_music/play_service/lyric_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/play_service/playback_source.dart';
+import 'package:pure_music/play_service/smtc_bridge.dart';
 
 abstract interface class RemotePlaybackControlState {
   PlaybackBackendState? get state;
@@ -147,6 +148,8 @@ class PlayService {
   PlaybackService? _playbackService;
   LyricService? _lyricService;
   DesktopLyricService? _desktopLyricService;
+  SmtcSessionOwner? _smtcSessionOwner;
+  bool _smtcKeepAliveRequested = false;
   final Set<void Function()> _localPlaybackRequestListeners = {};
   bool Function()? _remotePreviousHandler;
   bool Function()? _remoteNextHandler;
@@ -158,6 +161,18 @@ class PlayService {
   LyricService get lyricService => _lyricService ??= LyricService(this);
   DesktopLyricService get desktopLyricService =>
       _desktopLyricService ??= DesktopLyricService(this);
+  SmtcSessionOwner get _sharedSmtcSession {
+    final existing = _smtcSessionOwner;
+    if (existing != null) return existing;
+    final created = SmtcSessionOwner.create();
+    _smtcSessionOwner = created;
+    if (_smtcKeepAliveRequested) {
+      created.startKeepAlive();
+    }
+    return created;
+  }
+
+  SmtcBridge get smtcBridge => _sharedSmtcSession.bridge;
 
   PlayService._();
 
@@ -173,6 +188,24 @@ class PlayService {
   Stream<RemotePlaybackControlState> get remotePlaybackControlStateStream =>
       _remotePlaybackControls.stateStream;
   bool get canSeekFromUi => _remotePlaybackControls.canSeekFromUi;
+
+  void bindSmtcKeepAlive(void Function() handler) {
+    _sharedSmtcSession.bindKeepAlive(handler);
+  }
+
+  void clearSmtcKeepAlive(void Function() handler) {
+    _smtcSessionOwner?.clearKeepAlive(handler);
+  }
+
+  void startSmtcKeepAlive() {
+    _smtcKeepAliveRequested = true;
+    _smtcSessionOwner?.startKeepAlive();
+  }
+
+  void stopSmtcKeepAlive() {
+    _smtcKeepAliveRequested = false;
+    _smtcSessionOwner?.stopKeepAlive();
+  }
 
   void addLocalPlaybackRequestListener(void Function() listener) {
     _localPlaybackRequestListeners.add(listener);
@@ -251,6 +284,7 @@ class PlayService {
   }
 
   Future<void> close() async {
+    stopSmtcKeepAlive();
     _localPlaybackRequestListeners.clear();
     clearRemoteNavigationHandlers();
     await _remotePlaybackControls.dispose();
@@ -302,6 +336,16 @@ class PlayService {
         );
       } catch (e) {
         logger.w('playbackService.close error: $e');
+      }
+    }
+
+    final smtcSessionOwner = _smtcSessionOwner;
+    _smtcSessionOwner = null;
+    if (smtcSessionOwner != null) {
+      try {
+        await smtcSessionOwner.close().timeout(const Duration(seconds: 1));
+      } catch (e) {
+        logger.w('smtcSessionOwner.close error: $e');
       }
     }
 

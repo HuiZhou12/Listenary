@@ -222,6 +222,62 @@ class SmtcBridge {
   }
 }
 
+final class SmtcSessionOwner {
+  SmtcSessionOwner.withBridge(
+    this.bridge, {
+    this.keepAliveInterval = const Duration(seconds: 3),
+  });
+
+  factory SmtcSessionOwner.create() =>
+      SmtcSessionOwner.withBridge(SmtcBridge.create());
+
+  final SmtcBridge bridge;
+  final Duration keepAliveInterval;
+  Timer? _keepAliveTimer;
+  void Function()? _keepAliveHandler;
+  bool _closed = false;
+
+  bool get isKeepAliveRunning => _keepAliveTimer != null;
+
+  void bindKeepAlive(void Function() handler) {
+    if (_closed) {
+      throw StateError('SmtcSessionOwner has been closed');
+    }
+    _keepAliveHandler = handler;
+  }
+
+  void clearKeepAlive(void Function() handler) {
+    if (identical(_keepAliveHandler, handler)) {
+      _keepAliveHandler = null;
+    }
+  }
+
+  void startKeepAlive() {
+    if (_closed || _keepAliveTimer != null) return;
+    _keepAliveTimer = Timer.periodic(keepAliveInterval, (_) {
+      pushKeepAlive();
+    });
+  }
+
+  void stopKeepAlive() {
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = null;
+  }
+
+  void pushKeepAlive() {
+    if (_closed) return;
+    _keepAliveHandler?.call();
+  }
+
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    stopKeepAlive();
+    _keepAliveHandler = null;
+    await bridge.close();
+  }
+}
+
 class _SmtcDisplayUpdate {
   const _SmtcDisplayUpdate({
     required this.title,

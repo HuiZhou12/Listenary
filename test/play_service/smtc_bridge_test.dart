@@ -21,13 +21,15 @@ void main() {
     final backend = _FakeSmtcBackend();
     final bridge = SmtcBridge.withBackend(backend);
 
-    unawaited(bridge.updateDisplay(
-      title: 'title',
-      artist: 'artist',
-      album: 'album',
-      duration: 1000,
-      path: 'track.wav',
-    ));
+    unawaited(
+      bridge.updateDisplay(
+        title: 'title',
+        artist: 'artist',
+        album: 'album',
+        duration: 1000,
+        path: 'track.wav',
+      ),
+    );
     unawaited(bridge.updateState(SMTCState.playing));
     await bridge.flush();
 
@@ -61,6 +63,50 @@ void main() {
     expect(backend.closed, isTrue);
     expect(backend.operations, <String>['close']);
   });
+
+  test('shared owner binds one keep-alive handler and one timer', () async {
+    final backend = _FakeSmtcBackend();
+    final owner = SmtcSessionOwner.withBridge(
+      SmtcBridge.withBackend(backend),
+      keepAliveInterval: const Duration(days: 1),
+    );
+    var firstCount = 0;
+    var secondCount = 0;
+    void firstHandler() => firstCount++;
+    void secondHandler() => secondCount++;
+
+    owner.bindKeepAlive(firstHandler);
+    owner.startKeepAlive();
+    owner.startKeepAlive();
+    expect(owner.isKeepAliveRunning, isTrue);
+    owner.pushKeepAlive();
+
+    owner.bindKeepAlive(secondHandler);
+    owner.clearKeepAlive(firstHandler);
+    owner.pushKeepAlive();
+
+    expect(firstCount, 1);
+    expect(secondCount, 1);
+    owner.stopKeepAlive();
+    expect(owner.isKeepAliveRunning, isFalse);
+
+    await owner.close();
+    expect(backend.closeCount, 1);
+  });
+
+  test('shared owner close is idempotent and rejects new bindings', () async {
+    final backend = _FakeSmtcBackend();
+    final owner = SmtcSessionOwner.withBridge(SmtcBridge.withBackend(backend));
+
+    await owner.close();
+    await owner.close();
+    owner.startKeepAlive();
+    owner.pushKeepAlive();
+
+    expect(owner.isKeepAliveRunning, isFalse);
+    expect(backend.closeCount, 1);
+    expect(() => owner.bindKeepAlive(() {}), throwsStateError);
+  });
 }
 
 class _FakeSmtcBackend implements SmtcBackend {
@@ -69,6 +115,7 @@ class _FakeSmtcBackend implements SmtcBackend {
   final firstTimelineCall = Completer<void>();
   Future<void>? timelineGate;
   bool closed = false;
+  int closeCount = 0;
 
   @override
   Stream<SMTCControlEvent> get controlEvents => const Stream.empty();
@@ -89,6 +136,7 @@ class _FakeSmtcBackend implements SmtcBackend {
   @override
   Future<void> close() async {
     closed = true;
+    closeCount++;
     operations.add('close');
   }
 
