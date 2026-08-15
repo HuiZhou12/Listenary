@@ -63,6 +63,17 @@ void main() {
     queue.dispose();
   });
 
+  test('replace can publish a queue before playback selects an item', () {
+    final queue = RemotePlaybackQueue();
+
+    queue.replace([_item('1'), _item('2')]);
+
+    expect(queue.value.items, hasLength(2));
+    expect(queue.value.currentIndex, isNull);
+    expect(queue.value.currentItem, isNull);
+    queue.dispose();
+  });
+
   test('clear and dispose release all queue items', () {
     final queue = RemotePlaybackQueue();
     queue.replace([_item('1')], currentIndex: 0);

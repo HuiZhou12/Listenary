@@ -46,14 +46,49 @@ class _SearchEmptyState extends StatelessWidget {
   }
 }
 
+final class OnlineTrackSelection {
+  OnlineTrackSelection({
+    required Iterable<MusicTrack> tracks,
+    required this.selectedIndex,
+  }) : tracks = List.unmodifiable(tracks);
+
+  factory OnlineTrackSelection.fromResultPage({
+    required Iterable<MusicTrack> tracks,
+    required PlatformTrackRef selectedRef,
+  }) {
+    final playableTracks = tracks
+        .where(
+          (track) =>
+              track.availability != TrackAvailability.unavailable &&
+              track.availability != TrackAvailability.paid,
+        )
+        .toList(growable: false);
+    final selectedIndex = playableTracks.indexWhere(
+      (track) => track.ref == selectedRef,
+    );
+    if (selectedIndex < 0) {
+      throw ArgumentError.value(selectedRef, 'selectedRef');
+    }
+    return OnlineTrackSelection(
+      tracks: playableTracks,
+      selectedIndex: selectedIndex,
+    );
+  }
+
+  final List<MusicTrack> tracks;
+  final int selectedIndex;
+
+  MusicTrack get selectedTrack => tracks[selectedIndex];
+}
+
 class SearchDialog extends StatefulWidget {
   const SearchDialog({super.key, this.onOnlineTrackSelected});
 
-  final ValueChanged<MusicTrack>? onOnlineTrackSelected;
+  final ValueChanged<OnlineTrackSelection>? onOnlineTrackSelected;
 
   static Future<void> show(
     BuildContext context, {
-    ValueChanged<MusicTrack>? onOnlineTrackSelected,
+    ValueChanged<OnlineTrackSelection>? onOnlineTrackSelected,
   }) {
     return showDialog(
       context: context,
@@ -613,6 +648,9 @@ class _SearchDialogState extends State<SearchDialog> {
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, index) {
         final track = items[index];
+        final canPlay =
+            track.availability != TrackAvailability.unavailable &&
+            track.availability != TrackAvailability.paid;
         final details = [
           if (track.artistDisplay.isNotEmpty) track.artistDisplay,
           if (track.album.isNotEmpty) track.album,
@@ -630,11 +668,20 @@ class _SearchDialogState extends State<SearchDialog> {
           trailing: track.duration == Duration.zero
               ? null
               : Text(_formatTrackDuration(track.duration)),
-          onTap: widget.onOnlineTrackSelected == null
+          onTap: widget.onOnlineTrackSelected == null || !canPlay
               ? null
-              : () => widget.onOnlineTrackSelected!(track),
+              : () => _selectOnlineTrack(track),
         );
       },
+    );
+  }
+
+  void _selectOnlineTrack(MusicTrack selected) {
+    widget.onOnlineTrackSelected!(
+      OnlineTrackSelection.fromResultPage(
+        tracks: _onlinePage!.items,
+        selectedRef: selected.ref,
+      ),
     );
   }
 

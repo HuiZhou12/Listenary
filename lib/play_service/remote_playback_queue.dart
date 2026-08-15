@@ -56,15 +56,14 @@ final class RemotePlaybackQueue
     extends ValueNotifier<RemotePlaybackQueueSnapshot> {
   RemotePlaybackQueue() : super(const RemotePlaybackQueueSnapshot.empty());
 
-  void replace(
-    Iterable<RemotePlaybackQueueItem> items, {
-    required int currentIndex,
-  }) {
+  void replace(Iterable<RemotePlaybackQueueItem> items, {int? currentIndex}) {
     final nextItems = List<RemotePlaybackQueueItem>.unmodifiable(items);
     if (nextItems.isEmpty) {
       throw ArgumentError.value(items, 'items', 'must not be empty');
     }
-    RangeError.checkValidIndex(currentIndex, nextItems, 'currentIndex');
+    if (currentIndex != null) {
+      RangeError.checkValidIndex(currentIndex, nextItems, 'currentIndex');
+    }
     value = RemotePlaybackQueueSnapshot(
       items: nextItems,
       currentIndex: currentIndex,

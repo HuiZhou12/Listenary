@@ -45,6 +45,23 @@ void main() {
     expect(find.text('Explicit Result'), findsOneWidget);
   });
 
+  test('online selection filters explicitly unplayable tracks', () {
+    final tracks = [
+      _track('1', TrackAvailability.playable),
+      _track('2', TrackAvailability.paid),
+      _track('3', TrackAvailability.unavailable),
+      _track('4', TrackAvailability.unknown),
+    ];
+
+    final selection = OnlineTrackSelection.fromResultPage(
+      tracks: tracks,
+      selectedRef: tracks.last.ref,
+    );
+
+    expect(selection.tracks.map((track) => track.ref.trackId), ['1', '4']);
+    expect(selection.selectedIndex, 1);
+  });
+
   testWidgets('enter submits and selected result preserves stable reference', (
     tester,
   ) async {
@@ -53,7 +70,7 @@ void main() {
     );
     final runtime = _runtime(transport);
     addTearDown(runtime.dispose);
-    MusicTrack? selected;
+    OnlineTrackSelection? selected;
     await _pumpDialog(
       tester,
       runtime,
@@ -72,12 +89,47 @@ void main() {
 
     await tester.tap(find.text('Selected Result'));
     expect(
-      selected?.ref,
+      selected?.selectedTrack.ref,
       const PlatformTrackRef(
         platform: MusicPlatform.netease,
         trackId: '123456',
       ),
     );
+    expect(selected?.tracks, hasLength(1));
+    expect(selected?.selectedIndex, 0);
+  });
+
+  testWidgets('selection keeps the playable current result page and index', (
+    tester,
+  ) async {
+    final transport = _RecordingTransport(
+      (_, _) async => _searchResponse(
+        items: [
+          _song(id: 1, title: 'First'),
+          _song(id: 2, title: 'Second'),
+          _song(id: 3, title: 'Third'),
+        ],
+      ),
+    );
+    final runtime = _runtime(transport);
+    addTearDown(runtime.dispose);
+    OnlineTrackSelection? selected;
+    await _pumpDialog(
+      tester,
+      runtime,
+      onOnlineTrackSelected: (selection) => selected = selection,
+    );
+
+    await tester.tap(find.text('在线'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'page');
+    await tester.pump();
+    await tester.tap(find.byTooltip('在线搜索'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Second'));
+
+    expect(selected?.tracks.map((track) => track.ref.trackId), ['1', '2', '3']);
+    expect(selected?.selectedIndex, 1);
   });
 
   testWidgets('shows empty and safe unauthorized states', (tester) async {
@@ -219,7 +271,7 @@ void main() {
 Future<void> _pumpDialog(
   WidgetTester tester,
   ChkszRuntime runtime, {
-  ValueChanged<MusicTrack>? onOnlineTrackSelected,
+  ValueChanged<OnlineTrackSelection>? onOnlineTrackSelected,
 }) async {
   tester.view.physicalSize = const Size(1200, 900);
   tester.view.devicePixelRatio = 1;
@@ -237,6 +289,22 @@ Future<void> _pumpDialog(
   );
   await tester.pump();
 }
+
+Map<String, Object?> _song({required int id, required String title}) => {
+  'id': id,
+  'name': title,
+  'artists': 'Test Artist',
+  'album': 'Test Album',
+  'picUrl': null,
+  'duration': 123456,
+};
+
+MusicTrack _track(String id, TrackAvailability availability) => MusicTrack(
+  ref: PlatformTrackRef(platform: MusicPlatform.netease, trackId: id),
+  title: 'Track $id',
+  artists: const ['Artist'],
+  availability: availability,
+);
 
 ChkszRuntime _runtime(_RecordingTransport transport) => ChkszRuntime(
   credentialProvider: InMemoryChkszCredentialProvider(initialApiKey: _apiKey),

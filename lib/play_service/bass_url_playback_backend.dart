@@ -16,31 +16,32 @@ abstract interface class BassUrlPlaybackDriver {
 }
 
 final class BassPlayerUrlPlaybackDriver implements BassUrlPlaybackDriver {
-  BassPlayerUrlPlaybackDriver({BassPlayer? player})
-    : _player = player ?? BassPlayer();
+  BassPlayerUrlPlaybackDriver({BassPlayer? player}) : _player = player;
 
-  final BassPlayer _player;
-
-  @override
-  Stream<PlayerState> get stateStream => _player.playerStateStream;
+  BassPlayer? _player;
+  BassPlayer get _instance => _player ??= BassPlayer();
 
   @override
-  PlayerState get state => _player.playerState;
+  Stream<PlayerState> get stateStream => _instance.playerStateStream;
+
+  @override
+  PlayerState get state => _instance.playerState;
 
   @override
   Future<void> open(Uri uri) async {
-    _player.setUrlSource(uri);
-    _player.start();
+    _instance.setUrlSource(uri);
+    _instance.start();
   }
 
   @override
   Future<void> stop() async {
-    _player.freeFStream();
+    _player?.freeFStream();
   }
 
   @override
   Future<void> dispose() async {
-    _player.free();
+    _player?.free();
+    _player = null;
   }
 }
 

@@ -14,15 +14,46 @@ import 'package:pure_music/component/search_dialog.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/play_service/remote_playback_queue.dart';
+import 'package:pure_music/play_service/remote_playback_queue_controller.dart';
+import 'package:pure_music/services/music_platform/index.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 class TitleBar extends StatelessWidget {
   static final _blurFilter = ImageFilter.blur(sigmaX: 20, sigmaY: 20);
 
   const TitleBar({super.key});
+
+  static void _openSearch(BuildContext context) {
+    SearchDialog.show(
+      context,
+      onOnlineTrackSelected: (selection) async {
+        final queue = context.read<RemotePlaybackQueue>();
+        final controller = context.read<RemotePlaybackQueueController>();
+        queue.replace(selection.tracks.map(RemotePlaybackQueueItem.fromTrack));
+        try {
+          await controller.play(
+            selection.selectedIndex,
+            requestedQuality: NeteaseAdapter.defaultQuality,
+          );
+        } on RemoteStreamPlaybackException catch (error) {
+          if (error.kind != RemoteStreamPlaybackErrorKind.cancelled) {
+            showTextOnSnackBar(error.safeMessage, variant: ToastVariant.error);
+          }
+        } on ChkszException catch (error) {
+          if (error.kind != ChkszErrorKind.cancelled) {
+            showTextOnSnackBar(error.safeMessage, variant: ToastVariant.error);
+          }
+        } catch (_) {
+          showTextOnSnackBar('无法播放远程曲目', variant: ToastVariant.error);
+        }
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -67,14 +98,17 @@ class _TitleBar_Small extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 8.0),
                       child: Text(
                         'Pure Music',
-                        style: TextStyle(color: scheme.onSurface, fontSize: AppType.subtitle),
+                        style: TextStyle(
+                          color: scheme.onSurface,
+                          fontSize: AppType.subtitle,
+                        ),
                       ),
                     ),
                   ),
                 ),
                 IconButton(
                   tooltip: '搜索',
-                  onPressed: () => SearchDialog.show(context),
+                  onPressed: () => TitleBar._openSearch(context),
                   style: ButtonStyle(
                     shape: WidgetStatePropertyAll(
                       RoundedRectangleBorder(
@@ -108,17 +142,17 @@ class _TitleBar_Medium extends StatelessWidget {
           color: scheme.surface.withAlpha(31),
           child: Row(
             children: [
-              const SizedBox(
-                width: 80,
-                child: Center(child: NavBackBtn()),
-              ),
+              const SizedBox(width: 80, child: Center(child: NavBackBtn())),
               Expanded(
                 child: DragToMoveArea(
                   child: Row(
                     children: [
                       Text(
                         'Pure Music',
-                        style: TextStyle(color: scheme.onSurface, fontSize: AppType.subtitle),
+                        style: TextStyle(
+                          color: scheme.onSurface,
+                          fontSize: AppType.subtitle,
+                        ),
                       ),
                       const Expanded(
                         child: Padding(
@@ -135,12 +169,10 @@ class _TitleBar_Medium extends StatelessWidget {
               ),
               IconButton(
                 tooltip: '搜索',
-                onPressed: () => SearchDialog.show(context),
+                onPressed: () => TitleBar._openSearch(context),
                 style: ButtonStyle(
                   shape: WidgetStatePropertyAll(
-                    RoundedRectangleBorder(
-                      borderRadius: AppRadius.smCircular,
-                    ),
+                    RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
                   ),
                 ),
                 icon: const Icon(Symbols.search),
@@ -181,7 +213,11 @@ class _TitleBar_Large extends StatelessWidget {
                           width: 200,
                           child: Row(
                             children: [
-                              Image.asset('app_icon.ico', width: 24, height: 24),
+                              Image.asset(
+                                'app_icon.ico',
+                                width: 24,
+                                height: 24,
+                              ),
                               const SizedBox(width: 8.0),
                               Text(
                                 'Pure Music',
@@ -205,7 +241,7 @@ class _TitleBar_Large extends StatelessWidget {
                 ),
                 IconButton(
                   tooltip: '搜索',
-                  onPressed: () => SearchDialog.show(context),
+                  onPressed: () => TitleBar._openSearch(context),
                   style: ButtonStyle(
                     shape: WidgetStatePropertyAll(
                       RoundedRectangleBorder(
@@ -272,7 +308,11 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
   bool _isProcessing = false;
   bool _isClosing = false;
 
-  Future<void> _withTimeout(Future<void> future, Duration duration, String name) async {
+  Future<void> _withTimeout(
+    Future<void> future,
+    Duration duration,
+    String name,
+  ) async {
     try {
       await future.timeout(duration);
     } catch (e) {
@@ -332,7 +372,11 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
     try {
       // 1. 先保存窗口状态（窗口必须可见才能获取正确尺寸）
       try {
-        await _withTimeout(AppSettings.instance.saveSettings(), const Duration(seconds: 1), 'saveSettings');
+        await _withTimeout(
+          AppSettings.instance.saveSettings(),
+          const Duration(seconds: 1),
+          'saveSettings',
+        );
       } catch (e) {
         logger.w('saveSettings error: $e');
       }
@@ -344,31 +388,49 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
 
       // 3. 快速取消快捷键注册（轻量操作）
       try {
-        await HotkeysHelper.unregisterAll().timeout(const Duration(milliseconds: 300));
+        await HotkeysHelper.unregisterAll().timeout(
+          const Duration(milliseconds: 300),
+        );
       } catch (_) {}
 
       // 4. 关闭播放服务（释放音频资源、销毁 AudioLibrary、清除缓存等）
       try {
-        await _withTimeout(PlayService.instance.close(), const Duration(seconds: 3), 'PlayService.close');
+        await _withTimeout(
+          PlayService.instance.close(),
+          const Duration(seconds: 3),
+          'PlayService.close',
+        );
       } catch (e) {
         logger.w('PlayService.close error: $e');
       }
 
       // 5. 执行剩余保存操作（此时 PlayService 已关闭，不会访问已释放的资源）
       try {
-        await _withTimeout(savePlaylists(), const Duration(seconds: 2), 'savePlaylists');
+        await _withTimeout(
+          savePlaylists(),
+          const Duration(seconds: 2),
+          'savePlaylists',
+        );
       } catch (e) {
         logger.w('savePlaylists error: $e');
       }
 
       try {
-        await _withTimeout(saveLyricSources(), const Duration(seconds: 2), 'saveLyricSources');
+        await _withTimeout(
+          saveLyricSources(),
+          const Duration(seconds: 2),
+          'saveLyricSources',
+        );
       } catch (e) {
         logger.w('saveLyricSources error: $e');
       }
 
       try {
-        await _withTimeout(AppPreference.instance.save(), const Duration(seconds: 1), 'savePreference');
+        await _withTimeout(
+          AppPreference.instance.save(),
+          const Duration(seconds: 1),
+          'savePreference',
+        );
       } catch (e) {
         logger.w('savePreference error: $e');
       }
@@ -382,7 +444,11 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
 
       // 6. 最终销毁窗口
       try {
-        await _withTimeout(windowManager.destroy(), const Duration(seconds: 2), 'windowManager.destroy');
+        await _withTimeout(
+          windowManager.destroy(),
+          const Duration(seconds: 2),
+          'windowManager.destroy',
+        );
       } catch (_) {
         // 如果 destroy 超时，强制退出
         logger.w('windowManager.destroy timeout, force exit');
@@ -441,8 +507,12 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
           constraints: const BoxConstraints(minWidth: 46, minHeight: 40),
           style: ButtonStyle(
             backgroundColor: WidgetStateProperty.resolveWith((states) {
-              if (states.contains(WidgetState.pressed)) return scheme.onSurface.withValues(alpha: 0.15);
-              if (states.contains(WidgetState.hovered)) return scheme.onSurface.withValues(alpha: 0.10);
+              if (states.contains(WidgetState.pressed)) {
+                return scheme.onSurface.withValues(alpha: 0.15);
+              }
+              if (states.contains(WidgetState.hovered)) {
+                return scheme.onSurface.withValues(alpha: 0.10);
+              }
               return Colors.transparent;
             }),
             shape: WidgetStateProperty.all(
@@ -461,8 +531,12 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
           constraints: const BoxConstraints(minWidth: 46, minHeight: 40),
           style: ButtonStyle(
             backgroundColor: WidgetStateProperty.resolveWith((states) {
-              if (states.contains(WidgetState.pressed)) return scheme.onSurface.withValues(alpha: 0.15);
-              if (states.contains(WidgetState.hovered)) return scheme.onSurface.withValues(alpha: 0.10);
+              if (states.contains(WidgetState.pressed)) {
+                return scheme.onSurface.withValues(alpha: 0.15);
+              }
+              if (states.contains(WidgetState.hovered)) {
+                return scheme.onSurface.withValues(alpha: 0.10);
+              }
               return Colors.transparent;
             }),
             shape: WidgetStateProperty.all(
@@ -479,8 +553,12 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
           constraints: const BoxConstraints(minWidth: 46, minHeight: 40),
           style: ButtonStyle(
             backgroundColor: WidgetStateProperty.resolveWith((states) {
-              if (states.contains(WidgetState.pressed)) return scheme.error.withValues(alpha: 0.30);
-              if (states.contains(WidgetState.hovered)) return scheme.error.withValues(alpha: 0.20);
+              if (states.contains(WidgetState.pressed)) {
+                return scheme.error.withValues(alpha: 0.30);
+              }
+              if (states.contains(WidgetState.hovered)) {
+                return scheme.error.withValues(alpha: 0.20);
+              }
               return Colors.transparent;
             }),
             shape: WidgetStateProperty.all(
