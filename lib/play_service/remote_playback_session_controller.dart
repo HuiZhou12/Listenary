@@ -130,9 +130,12 @@ final class RemotePlaybackControlSnapshot
     controlInFlight: false,
   );
 
+  @override
   final PlaybackBackendState? state;
+  @override
   final bool controlInFlight;
 
+  @override
   bool get isActive => state != null;
 }
 
@@ -158,7 +161,7 @@ final class RemotePlaybackSessionController {
   final ControllablePlaybackBackend _backend;
   final void Function(RemotePlaybackSessionFailure failure)? _onFailure;
   final _controlStateController =
-      StreamController<RemotePlaybackControlSnapshot>.broadcast();
+      StreamController<RemotePlaybackControlSnapshot>.broadcast(sync: true);
   late final StreamSubscription<PlaybackBackendState> _backendStateSubscription;
   RemotePlaybackControlSnapshot _controlState =
       RemotePlaybackControlSnapshot.inactive;

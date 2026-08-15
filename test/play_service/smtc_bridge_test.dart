@@ -37,6 +37,52 @@ void main() {
     expect(backend.operations, <String>['display:title', 'state:playing']);
   });
 
+  test('clear separates stale work from later local projection', () async {
+    final backend = _FakeSmtcBackend();
+    final timelineGate = Completer<void>();
+    backend.timelineGate = timelineGate.future;
+    final bridge = SmtcBridge.withBackend(backend);
+
+    unawaited(bridge.updateTimeProperties(10));
+    await backend.firstTimelineCall.future;
+    unawaited(
+      bridge.updateDisplay(
+        title: 'Remote stale',
+        artist: 'Remote artist',
+        album: '',
+        duration: 0,
+        path: '',
+      ),
+    );
+    unawaited(bridge.updateState(SMTCState.paused));
+    unawaited(bridge.updateTimeProperties(20));
+    unawaited(bridge.clearDisplay());
+    unawaited(
+      bridge.updateDisplay(
+        title: 'Local current',
+        artist: 'Local artist',
+        album: 'Local album',
+        duration: 1000,
+        path: 'local.wav',
+      ),
+    );
+    unawaited(bridge.updateState(SMTCState.playing));
+    unawaited(bridge.updateTimeProperties(500));
+    timelineGate.complete();
+    await bridge.flush();
+
+    expect(backend.operations, <String>[
+      'timeline:10',
+      'clear',
+      'display:Local current',
+      'state:playing',
+      'timeline:500',
+    ]);
+    expect(backend.displayUpdates.map((update) => update.title), <String>[
+      'Local current',
+    ]);
+  });
+
   test('updates arriving during a native call are conflated', () async {
     final backend = _FakeSmtcBackend();
     final firstCall = Completer<void>();
@@ -527,6 +573,7 @@ class _FakeSmtcBackend implements SmtcBackend {
   @override
   Future<void> updateTimeProperties(int progress) async {
     progressUpdates.add(progress);
+    operations.add('timeline:$progress');
     if (!firstTimelineCall.isCompleted) firstTimelineCall.complete();
     await timelineGate;
     timelineGate = null;

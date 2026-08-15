@@ -87,11 +87,14 @@ class SmtcBridge {
   static const _operationTimeout = Duration(seconds: 2);
   Future<void> _operationChain = Future<void>.value();
   _SmtcDisplayUpdate? _pendingDisplay;
-  SMTCState? _pendingState;
-  int? _pendingProgress;
-  bool _displayDrainQueued = false;
-  bool _stateDrainQueued = false;
-  bool _timelineDrainQueued = false;
+  _SmtcStateUpdate? _pendingState;
+  _SmtcTimelineUpdate? _pendingTimeline;
+  final _queuedDisplayRevisions = <int>{};
+  final _queuedStateRevisions = <int>{};
+  final _queuedTimelineRevisions = <int>{};
+  int _displayRevision = 0;
+  int _stateRevision = 0;
+  int _timelineRevision = 0;
   bool _closed = false;
 
   Stream<SMTCControlEvent> get controlEvents =>
@@ -109,20 +112,22 @@ class SmtcBridge {
   }) {
     if (_closed || _backend == null) return Future<void>.value();
     _pendingDisplay = _SmtcDisplayUpdate(
+      revision: _displayRevision,
       title: title,
       artist: artist,
       album: album,
       duration: duration,
       path: path,
     );
-    if (_displayDrainQueued) return _operationChain;
-    _displayDrainQueued = true;
+    final revision = _displayRevision;
+    if (_queuedDisplayRevisions.contains(revision)) return _operationChain;
+    _queuedDisplayRevisions.add(revision);
     return _enqueue((backend) async {
       try {
         while (!_closed) {
           final update = _pendingDisplay;
+          if (update == null || update.revision != revision) break;
           _pendingDisplay = null;
-          if (update == null) break;
           await backend.updateDisplay(
             title: update.title,
             artist: update.artist,
@@ -132,54 +137,62 @@ class SmtcBridge {
           );
         }
       } finally {
-        _displayDrainQueued = false;
+        _queuedDisplayRevisions.remove(revision);
       }
     }, 'update display');
   }
 
   Future<void> updateState(SMTCState state) {
     if (_closed || _backend == null) return Future<void>.value();
-    _pendingState = state;
-    if (_stateDrainQueued) return _operationChain;
-    _stateDrainQueued = true;
+    _pendingState = _SmtcStateUpdate(revision: _stateRevision, state: state);
+    final revision = _stateRevision;
+    if (_queuedStateRevisions.contains(revision)) return _operationChain;
+    _queuedStateRevisions.add(revision);
     return _enqueue((backend) async {
       try {
         while (!_closed) {
-          final state = _pendingState;
+          final update = _pendingState;
+          if (update == null || update.revision != revision) break;
           _pendingState = null;
-          if (state == null) break;
-          await backend.updateState(state);
+          await backend.updateState(update.state);
         }
       } finally {
-        _stateDrainQueued = false;
+        _queuedStateRevisions.remove(revision);
       }
     }, 'update state');
   }
 
   Future<void> updateTimeProperties(int progress) {
     if (_closed || _backend == null) return Future<void>.value();
-    _pendingProgress = progress;
-    if (_timelineDrainQueued) return _operationChain;
-    _timelineDrainQueued = true;
+    _pendingTimeline = _SmtcTimelineUpdate(
+      revision: _timelineRevision,
+      progress: progress,
+    );
+    final revision = _timelineRevision;
+    if (_queuedTimelineRevisions.contains(revision)) return _operationChain;
+    _queuedTimelineRevisions.add(revision);
     return _enqueue((backend) async {
       try {
         while (!_closed) {
-          final progress = _pendingProgress;
-          _pendingProgress = null;
-          if (progress == null) break;
-          await backend.updateTimeProperties(progress);
+          final update = _pendingTimeline;
+          if (update == null || update.revision != revision) break;
+          _pendingTimeline = null;
+          await backend.updateTimeProperties(update.progress);
         }
       } finally {
-        _timelineDrainQueued = false;
+        _queuedTimelineRevisions.remove(revision);
       }
     }, 'update timeline');
   }
 
   Future<void> clearDisplay() {
     if (_closed || _backend == null) return Future<void>.value();
+    _displayRevision++;
+    _stateRevision++;
+    _timelineRevision++;
     _pendingDisplay = null;
     _pendingState = null;
-    _pendingProgress = null;
+    _pendingTimeline = null;
     return _enqueue((backend) => backend.clearDisplay(), 'clear display');
   }
 
@@ -195,7 +208,7 @@ class SmtcBridge {
     _closed = true;
     _pendingDisplay = null;
     _pendingState = null;
-    _pendingProgress = null;
+    _pendingTimeline = null;
     await _operationChain;
     final backend = _backend;
     if (backend == null) return;
@@ -464,6 +477,7 @@ final class SmtcControlRouter {
 
 class _SmtcDisplayUpdate {
   const _SmtcDisplayUpdate({
+    required this.revision,
     required this.title,
     required this.artist,
     required this.album,
@@ -471,9 +485,24 @@ class _SmtcDisplayUpdate {
     required this.path,
   });
 
+  final int revision;
   final String title;
   final String artist;
   final String album;
   final int duration;
   final String path;
+}
+
+class _SmtcStateUpdate {
+  const _SmtcStateUpdate({required this.revision, required this.state});
+
+  final int revision;
+  final SMTCState state;
+}
+
+class _SmtcTimelineUpdate {
+  const _SmtcTimelineUpdate({required this.revision, required this.progress});
+
+  final int revision;
+  final int progress;
 }
