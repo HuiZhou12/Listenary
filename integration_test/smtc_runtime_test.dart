@@ -14,7 +14,7 @@ void main() {
   setUpAll(RustLib.init);
   tearDownAll(RustLib.dispose);
 
-  testWidgets('Windows runtime: SMTC state and timeline remain consistent', (
+  testWidgets('Windows runtime: SMTC local and pathless displays stay consistent', (
     tester,
   ) async {
     final tempDir = await Directory.systemTemp.createTemp(
@@ -49,7 +49,7 @@ void main() {
       expect(
         rustLogs.any((line) => line.contains('SMTC: no embedded picture')),
         isTrue,
-        reason: rustLogs.join('\n'),
+        reason: 'The local thumbnail worker did not inspect the test audio.',
       );
       expect(
         rustLogs.any((line) => line.contains('thumbnail worker init failed')),
@@ -77,6 +77,54 @@ void main() {
       await smtc.updateState(state: SMTCState.paused);
       snapshot = await smtc.debugSnapshot();
       expect(snapshot.playbackStatus, 'paused');
+
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      final remoteLogStart = rustLogs.length;
+      await smtc.updateDisplay(
+        title: 'Remote title',
+        artist: 'Remote artist',
+        album: '',
+        duration: 0,
+        path: '',
+      );
+      await smtc.updateState(state: SMTCState.paused);
+
+      snapshot = await smtc.debugSnapshot();
+      expect(snapshot.enabled, isTrue);
+      expect(snapshot.playbackStatus, 'paused');
+      expect(snapshot.title, 'Remote title');
+      expect(snapshot.artist, 'Remote artist');
+      expect(snapshot.album, isEmpty);
+      expect(snapshot.durationMs, 0);
+      expect(snapshot.progressMs, BigInt.zero);
+
+      await smtc.refreshDisplay();
+      snapshot = await smtc.debugSnapshot();
+      expect(snapshot.enabled, isTrue);
+      expect(snapshot.playbackStatus, 'paused');
+      expect(snapshot.title, 'Remote title');
+      expect(snapshot.artist, 'Remote artist');
+      expect(snapshot.album, isEmpty);
+      expect(snapshot.durationMs, 0);
+      expect(snapshot.progressMs, BigInt.zero);
+
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final remoteLogs = rustLogs.skip(remoteLogStart).toList();
+      expect(
+        remoteLogs.any((line) => line.contains(audioFile.path)),
+        isFalse,
+        reason: 'The pathless display logged the previous local path.',
+      );
+      expect(
+        remoteLogs.any((line) => line.contains('SMTC: no embedded picture')),
+        isFalse,
+        reason: 'The pathless display entered embedded-picture processing.',
+      );
+      expect(
+        remoteLogs.any((line) => line.contains('SMTC: thumbnail err')),
+        isFalse,
+        reason: 'The pathless display produced a thumbnail processing error.',
+      );
 
       await smtc.clearDisplay();
       snapshot = await smtc.debugSnapshot();

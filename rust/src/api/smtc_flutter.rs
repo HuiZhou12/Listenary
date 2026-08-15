@@ -388,6 +388,8 @@ impl SMTCFlutter {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
+        let path = path.to_string();
+        let has_path = !path.is_empty();
         let revision = self.display_revision.fetch_add(1, Ordering::SeqCst) + 1;
         let updater = self._smtc.DisplayUpdater()?;
         updater.SetType(MediaPlaybackType::Music)?;
@@ -423,12 +425,18 @@ impl SMTCFlutter {
         if !(self._smtc.IsEnabled()?) {
             self._smtc.SetIsEnabled(true)?;
         }
+        if !has_path {
+            updater.SetThumbnail(None::<&RandomAccessStreamReference>)?;
+            match self.thumbnail_pending.lock() {
+                Ok(mut pending) => *pending = None,
+                Err(poisoned) => *poisoned.into_inner() = None,
+            }
+        }
         updater.Update()?;
 
-        log_to_dart(format!("SMTC: Display updated - {}", title));
-        drop(display_guard);
-        if let Ok(mut slot) = self.last_path.lock() {
-            *slot = Some(path.to_string());
+        match self.last_path.lock() {
+            Ok(mut slot) => *slot = has_path.then_some(path.clone()),
+            Err(poisoned) => *poisoned.into_inner() = has_path.then_some(path.clone()),
         }
         if let Ok(mut slot) = self.last_title.lock() {
             *slot = Some(title.to_string());
@@ -439,7 +447,11 @@ impl SMTCFlutter {
         if let Ok(mut slot) = self.last_album.lock() {
             *slot = Some(album.to_string());
         }
-        self._queue_thumbnail_update(path, revision);
+        log_to_dart(format!("SMTC: Display updated - {}", title));
+        drop(display_guard);
+        if has_path {
+            self._queue_thumbnail_update(HSTRING::from(path), revision);
+        }
 
         Ok(())
     }
@@ -503,14 +515,17 @@ impl SMTCFlutter {
             let _ = music_properties.SetArtist(&HSTRING::from(&artist));
             let _ = music_properties.SetAlbumTitle(&HSTRING::from(&album));
         }
+        let path = self.last_path.lock().ok().and_then(|guard| guard.clone());
+        if path.is_none() {
+            updater.SetThumbnail(None::<&RandomAccessStreamReference>)?;
+            match self.thumbnail_pending.lock() {
+                Ok(mut pending) => *pending = None,
+                Err(poisoned) => *poisoned.into_inner() = None,
+            }
+        }
         updater.Update()?;
         log_to_dart(format!("SMTC: Display refreshed - {}", title));
 
-        let path = self
-            .last_path
-            .lock()
-            .ok()
-            .and_then(|guard| guard.clone());
         if let Some(path) = path {
             self._queue_thumbnail_update(HSTRING::from(path), revision);
         }
@@ -538,11 +553,19 @@ impl SMTCFlutter {
     }
 
     fn _queue_thumbnail_update(&self, path: HSTRING, revision: u64) {
+        let path = path.to_string();
+        if path.is_empty() {
+            match self.thumbnail_pending.lock() {
+                Ok(mut pending) => *pending = None,
+                Err(poisoned) => *poisoned.into_inner() = None,
+            }
+            return;
+        }
         if let Ok(mut pending) = self.thumbnail_pending.lock() {
             if self.thumbnail_closed.load(Ordering::Acquire) {
                 return;
             }
-            *pending = Some((path.to_string(), revision));
+            *pending = Some((path, revision));
             self.thumbnail_wake.notify_one();
         }
     }
@@ -678,15 +701,14 @@ impl SMTCFlutter {
     fn _try_get_thumbnail(
         path: &HSTRING,
     ) -> Result<Option<RandomAccessStreamReference>, windows::core::Error> {
-        if let Some(pic_data) =
-            tag_reader::get_embedded_picture_from_path(&path.to_string(), 256, 256)
-        {
+        let path = path.to_string();
+        if path.is_empty() {
+            return Ok(None);
+        }
+        if let Some(pic_data) = tag_reader::get_embedded_picture_from_path(&path, 256, 256) {
             return Ok(Some(Self::_ras_ref_from_pic_data(&pic_data)?));
         }
-        log_to_dart(format!(
-            "SMTC: no embedded picture for {}",
-            path.to_string()
-        ));
+        log_to_dart(format!("SMTC: no embedded picture for {}", path));
         Ok(None)
     }
 }
