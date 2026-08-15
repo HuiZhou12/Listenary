@@ -8,6 +8,18 @@ void main() {
     expect(shouldForceLyricScrollForPositionSync(PlayerState.paused), isFalse);
   });
 
+  test('remote control state disables lyric seek gate', () {
+    expect(
+      lyricSeekOnTapEnabled(requested: true, canSeekFromUi: false),
+      isFalse,
+    );
+    expect(lyricSeekOnTapEnabled(requested: true, canSeekFromUi: true), isTrue);
+    expect(
+      lyricSeekOnTapEnabled(requested: false, canSeekFromUi: true),
+      isFalse,
+    );
+  });
+
   test('next pre-switch does not take over a single-word line early', () {
     expect(
       lyricLineSwitchStartMs(

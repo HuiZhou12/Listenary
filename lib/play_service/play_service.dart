@@ -49,6 +49,7 @@ final class RemotePlaybackControlBinding {
 
   RemotePlaybackControlState get state => _state;
   Stream<RemotePlaybackControlState> get stateStream => _stateController.stream;
+  bool get canSeekFromUi => !_state.isActive;
 
   void bind({
     required RemotePlaybackControlState initialState,
@@ -91,6 +92,12 @@ final class RemotePlaybackControlBinding {
       return true;
     }
     _resumeHandler?.call();
+    return true;
+  }
+
+  bool seekFromUi(void Function() seek) {
+    if (!canSeekFromUi) return false;
+    seek();
     return true;
   }
 
@@ -165,6 +172,7 @@ class PlayService {
       _remotePlaybackControls.state;
   Stream<RemotePlaybackControlState> get remotePlaybackControlStateStream =>
       _remotePlaybackControls.stateStream;
+  bool get canSeekFromUi => _remotePlaybackControls.canSeekFromUi;
 
   void addLocalPlaybackRequestListener(void Function() listener) {
     _localPlaybackRequestListeners.add(listener);
@@ -234,6 +242,12 @@ class PlayService {
     } else {
       service.start();
     }
+  }
+
+  bool seekFromUi(double seconds) {
+    return _remotePlaybackControls.seekFromUi(
+      () => playbackService.seek(seconds),
+    );
   }
 
   Future<void> close() async {

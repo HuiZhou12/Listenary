@@ -74,6 +74,12 @@ double _responsiveNowPlayingCoverSize({
   return availableExtent * fillFraction;
 }
 
+@visibleForTesting
+bool shouldCancelNowPlayingSeekDrag({
+  required bool canSeekFromUi,
+  required bool isDragging,
+}) => !canSeekFromUi && isDragging;
+
 // 沉浸模式封面下方区域高度（24 间距 + 进度条 40）
 const _immersiveCoverBelowHeight = 64.0;
 
@@ -1751,9 +1757,12 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   final livePosition = ValueNotifier(0.0);
   final livePositionSeconds = ValueNotifier(0);
   final isDragging = ValueNotifier(false);
+  late final PlayService _playService;
   late final PlaybackService _playbackService;
   late final VoidCallback _playerStateListener;
   late final VoidCallback _nowPlayingListener;
+  late final StreamSubscription<RemotePlaybackControlState>
+  _remotePlaybackControlSubscription;
   Timer? _positionSyncTimer;
   Ticker? _progressTicker;
   Duration _lastProgressTickElapsed = Duration.zero;
@@ -1761,6 +1770,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   static const _progressTickInterval = Duration(milliseconds: 33); // ~30fps
   int _lastPositionMs = -1;
   bool _isPlaying = false;
+  bool _canSeekFromUi = true;
   double _trackLength = 1.0;
   late final AnimationController _wavyController;
 
@@ -1771,7 +1781,12 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
       vsync: this,
       duration: const Duration(seconds: 4),
     );
+    _playService = PlayService.instance;
     _playbackService = context.read<PlaybackService>();
+    _canSeekFromUi = _playService.canSeekFromUi;
+    _remotePlaybackControlSubscription = _playService
+        .remotePlaybackControlStateStream
+        .listen(_onRemotePlaybackControlStateChanged);
     _isPlaying = _playbackService.playerState == PlayerState.playing;
     _syncFromNative(force: true);
     _syncWavyAnimation(_playbackService.playerState);
@@ -1788,6 +1803,20 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
       if (mounted) setState(() {});
     };
     _playbackService.nowPlayingNotifier.addListener(_nowPlayingListener);
+  }
+
+  void _onRemotePlaybackControlStateChanged(RemotePlaybackControlState state) {
+    final canSeekFromUi = !state.isActive;
+    if (_canSeekFromUi == canSeekFromUi) return;
+    _canSeekFromUi = canSeekFromUi;
+    if (shouldCancelNowPlayingSeekDrag(
+      canSeekFromUi: canSeekFromUi,
+      isDragging: isDragging.value,
+    )) {
+      isDragging.value = false;
+      _syncFromNative(force: true);
+    }
+    if (mounted) setState(() {});
   }
 
   void _syncFromNative({bool force = false}) {
@@ -1869,6 +1898,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   void dispose() {
     _positionSyncTimer?.cancel();
     _progressTicker?.dispose();
+    unawaited(_remotePlaybackControlSubscription.cancel());
     _playbackService.playerStateNotifier.removeListener(_playerStateListener);
     _playbackService.nowPlayingNotifier.removeListener(_nowPlayingListener);
     dragPosition.dispose();
@@ -1928,41 +1958,67 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
               builder: (context, constraints) {
                 final width = constraints.maxWidth;
                 final max = nowPlayingLength > 0 ? nowPlayingLength : 1.0;
-                return GestureDetector(
+                final slider = GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onHorizontalDragStart: (details) {
-                    isDragging.value = true;
-                    final value =
-                        (details.localPosition.dx / width).clamp(0.0, 1.0) *
-                        max;
-                    dragPosition.value = value;
-                  },
-                  onHorizontalDragUpdate: (details) {
-                    final value =
-                        (details.localPosition.dx / width).clamp(0.0, 1.0) *
-                        max;
-                    dragPosition.value = value;
-                  },
-                  onHorizontalDragEnd: (details) {
-                    isDragging.value = false;
-                    _syncLivePosition(dragPosition.value, force: true);
-                    playbackService.seek(dragPosition.value);
-                  },
-                  onTapDown: (details) {
-                    final value =
-                        (details.localPosition.dx / width).clamp(0.0, 1.0) *
-                        max;
-                    _syncLivePosition(value, force: true);
-                    playbackService.seek(value);
-                  },
+                  onHorizontalDragStart: _canSeekFromUi
+                      ? (details) {
+                          if (!_playService.canSeekFromUi) return;
+                          isDragging.value = true;
+                          final value =
+                              (details.localPosition.dx / width).clamp(
+                                0.0,
+                                1.0,
+                              ) *
+                              max;
+                          dragPosition.value = value;
+                        }
+                      : null,
+                  onHorizontalDragUpdate: _canSeekFromUi
+                      ? (details) {
+                          if (!_playService.canSeekFromUi) return;
+                          final value =
+                              (details.localPosition.dx / width).clamp(
+                                0.0,
+                                1.0,
+                              ) *
+                              max;
+                          dragPosition.value = value;
+                        }
+                      : null,
+                  onHorizontalDragEnd: _canSeekFromUi
+                      ? (details) {
+                          isDragging.value = false;
+                          if (!_playService.canSeekFromUi) {
+                            _syncFromNative(force: true);
+                            return;
+                          }
+                          _syncLivePosition(dragPosition.value, force: true);
+                          _playService.seekFromUi(dragPosition.value);
+                        }
+                      : null,
+                  onTapDown: _canSeekFromUi
+                      ? (details) {
+                          if (!_playService.canSeekFromUi) return;
+                          final value =
+                              (details.localPosition.dx / width).clamp(
+                                0.0,
+                                1.0,
+                              ) *
+                              max;
+                          _syncLivePosition(value, force: true);
+                          _playService.seekFromUi(value);
+                        }
+                      : null,
                   child: CustomPaint(
                     painter: _ProgressSliderPainter(
                       livePosition: livePosition,
                       dragPosition: dragPosition,
                       isDragging: isDragging,
                       max: max,
-                      color: barColor,
-                      glowColor: barGlow,
+                      color: _canSeekFromUi
+                          ? barColor
+                          : scheme.onSurface.withValues(alpha: 0.38),
+                      glowColor: _canSeekFromUi ? barGlow : Colors.transparent,
                       inactiveColor: scheme.brightness == Brightness.dark
                           ? scheme.surfaceContainerHighest
                           : const Color(0x33FFFFFF),
@@ -1972,6 +2028,8 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
                     size: Size(width, 24),
                   ),
                 );
+                if (_canSeekFromUi) return slider;
+                return Tooltip(message: '远程播放暂不支持进度跳转', child: slider);
               },
             ),
           ),

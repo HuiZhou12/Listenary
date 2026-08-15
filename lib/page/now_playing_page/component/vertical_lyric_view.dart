@@ -42,6 +42,12 @@ bool shouldForceLyricScrollForPositionSync(PlayerState state) =>
     state == PlayerState.playing;
 
 @visibleForTesting
+bool lyricSeekOnTapEnabled({
+  required bool requested,
+  required bool canSeekFromUi,
+}) => requested && canSeekFromUi;
+
+@visibleForTesting
 int lyricDisplayPrimaryIndex({
   required int fallbackPrimaryIndex,
   required int lineCount,
@@ -252,6 +258,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   final lyricService = PlayService.instance.lyricService;
   final _userScrollTracker = LyricUserScrollTracker();
   late StreamSubscription lyricLineStreamSubscription;
+  late StreamSubscription<RemotePlaybackControlState>
+  _remotePlaybackControlSubscription;
   Timer? _positionResyncTimer;
   Timer? _positionResyncStopTimer;
   Timer? _playbackResyncTimer;
@@ -321,6 +329,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   late ValueTransition<double> _scrollTransition;
   Ticker? _scrollTicker;
   bool _scrollTickerActive = false;
+  bool _canSeekFromUi = true;
   Duration _lastTickElapsed = Duration.zero;
 
   List<double>? _cachedOffsets;
@@ -332,6 +341,16 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   @override
   void initState() {
     super.initState();
+    _canSeekFromUi = PlayService.instance.canSeekFromUi;
+    _remotePlaybackControlSubscription = PlayService
+        .instance
+        .remotePlaybackControlStateStream
+        .listen((state) {
+          final canSeekFromUi = !state.isActive;
+          if (_canSeekFromUi == canSeekFromUi) return;
+          _canSeekFromUi = canSeekFromUi;
+          if (mounted) setState(() {});
+        });
     _displayPositionMs = playbackService.position * 1000.0;
     final initialOffset = _restoreCachedInitialPosition();
     scrollController = ScrollController(initialScrollOffset: initialOffset);
@@ -1371,7 +1390,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   }
 
   void _seekToLyricLine(int i) {
-    playbackService.seek(widget.lyric.lines[i].start.inMilliseconds / 1000);
+    if (!PlayService.instance.seekFromUi(
+      widget.lyric.lines[i].start.inMilliseconds / 1000,
+    )) {
+      return;
+    }
     setState(() {
       _mainLine = i;
       _updateViewportRange(force: true);
@@ -1988,7 +2011,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                                 i == _departingBackgroundVocalLine
                                 ? _backgroundVocalExitController
                                 : null,
-                            onTap: widget.enableSeekOnTap
+                            onTap:
+                                lyricSeekOnTapEnabled(
+                                  requested: widget.enableSeekOnTap,
+                                  canSeekFromUi: _canSeekFromUi,
+                                )
                                 ? () => _seekToLyricLineWithOriginalIndex(line)
                                 : null,
                           ),
@@ -2042,6 +2069,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     );
     lyricService.removeListener(_contentResyncListener);
     lyricLineStreamSubscription.cancel();
+    unawaited(_remotePlaybackControlSubscription.cancel());
     _positionResyncTimer?.cancel();
     _positionResyncStopTimer?.cancel();
     scrollController.dispose();

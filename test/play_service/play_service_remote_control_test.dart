@@ -101,6 +101,51 @@ void main() {
     expect(binding.state.isActive, isFalse);
     expect(binding.pause(), isFalse);
     expect(binding.resume(), isFalse);
+    expect(binding.canSeekFromUi, isTrue);
+  });
+
+  test('active state blocks UI seek without invoking local seek', () async {
+    var seekCount = 0;
+    binding.bind(
+      initialState: const _State(PlaybackBackendState.opening),
+      stateStream: source.stream,
+      pause: () => true,
+      resume: () => true,
+    );
+
+    expect(binding.canSeekFromUi, isFalse);
+    expect(binding.seekFromUi(() => seekCount++), isFalse);
+
+    for (final state in const [
+      PlaybackBackendState.playing,
+      PlaybackBackendState.paused,
+      PlaybackBackendState.stalled,
+      PlaybackBackendState.completed,
+      PlaybackBackendState.failed,
+    ]) {
+      source.add(_State(state));
+      await pumpEventQueue();
+      expect(binding.canSeekFromUi, isFalse);
+      expect(binding.seekFromUi(() => seekCount++), isFalse);
+    }
+
+    expect(seekCount, 0);
+  });
+
+  test('clearing active state restores UI seek', () {
+    var seekCount = 0;
+    binding.bind(
+      initialState: const _State(PlaybackBackendState.playing),
+      stateStream: source.stream,
+      pause: () => true,
+      resume: () => true,
+    );
+
+    binding.clear();
+
+    expect(binding.canSeekFromUi, isTrue);
+    expect(binding.seekFromUi(() => seekCount++), isTrue);
+    expect(seekCount, 1);
   });
 
   test('clear resets inactive and ignores stale source states', () async {
