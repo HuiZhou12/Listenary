@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:pure_music/component/rectangle_progress_indicator.dart';
 import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/component/motion.dart';
+import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
@@ -138,138 +139,160 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
             borderRadius: AppRadius.smCircular,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              child: ListenableBuilder(
-                listenable:
-                    PlayService.instance.playbackService.nowPlayingNotifier,
-                builder: (context, _) {
-                  final playbackService = PlayService.instance.playbackService;
-                  final nowPlaying = playbackService.nowPlaying;
-                  final heroEnabled =
-                      !playbackService.nowPlayingChangedRecently;
-                  final placeholder = Icon(
-                    Symbols.queue_music,
-                    size: 48.0,
-                    color: scheme.onSecondaryContainer,
-                  );
-
-                  return LayoutBuilder(
-                    builder: (context, constraints) {
-                      final dense = constraints.maxWidth <= 520;
-                      final hideControls = !_controlsVisible;
-                      final hasNowPlaying = nowPlaying != null;
-                      final controls = Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (!dense)
-                            IconButton(
-                              tooltip: hasNowPlaying ? '上一曲' : '暂无正在播放',
-                              onPressed: hasNowPlaying
-                                  ? PlayService.instance.previousAudio
-                                  : null,
-                              icon: const Icon(
-                                Symbols.skip_previous,
-                                fill: 1.0,
-                                weight: 400.0,
-                              ),
-                              color: scheme.onSecondaryContainer,
-                            ),
-                          _MiniPlayPauseButton(
-                            dense: dense,
-                            onSecondaryContainer: scheme.onSecondaryContainer,
-                            enabled: hasNowPlaying,
-                          ),
-                          if (!dense)
-                            IconButton(
-                              tooltip: hasNowPlaying ? '下一曲' : '暂无正在播放',
-                              onPressed: hasNowPlaying
-                                  ? PlayService.instance.nextAudio
-                                  : null,
-                              icon: const Icon(
-                                Symbols.skip_next,
-                                fill: 1.0,
-                                weight: 400.0,
-                              ),
-                              color: scheme.onSecondaryContainer,
-                            ),
-                          if (!dense) const SizedBox(width: 8.0),
-                          if (!dense)
-                            _MiniTimeText(color: scheme.onSecondaryContainer),
-                        ],
+              child: StreamBuilder<RemotePlaybackControlState>(
+                stream: PlayService.instance.remotePlaybackControlStateStream,
+                initialData: PlayService.instance.remotePlaybackControlState,
+                builder: (context, remoteSnapshot) {
+                  final remoteState = remoteSnapshot.data!;
+                  return ListenableBuilder(
+                    listenable:
+                        PlayService.instance.playbackService.nowPlayingNotifier,
+                    builder: (context, _) {
+                      final playbackService =
+                          PlayService.instance.playbackService;
+                      final nowPlaying = playbackService.nowPlaying;
+                      final heroEnabled =
+                          !playbackService.nowPlayingChangedRecently;
+                      final placeholder = Icon(
+                        Symbols.queue_music,
+                        size: 48.0,
+                        color: scheme.onSecondaryContainer,
                       );
-                      return Row(
-                        children: [
-                          nowPlaying != null
-                              ? Builder(
-                                  builder: (context) {
-                                    final cover = ClipRRect(
-                                      borderRadius: AppRadius.smCircular,
-                                      child: SizedBox(
-                                        width: 48.0,
-                                        height: 48.0,
-                                        child: _MiniCoverWidget(
-                                          audio: nowPlaying,
-                                        ),
-                                      ),
-                                    );
-                                    if (!heroEnabled) return cover;
-                                    return Hero(
-                                      tag: nowPlaying.path,
-                                      child: cover,
-                                    );
-                                  },
-                                )
-                              : SizedBox(
-                                  width: 48.0,
-                                  height: 48.0,
-                                  child: Center(child: placeholder),
-                                ),
-                          const SizedBox(width: 8.0),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  nowPlaying != null
-                                      ? nowPlaying.title
-                                      : 'Pure Music',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: scheme.onSecondaryContainer,
+
+                      return LayoutBuilder(
+                        builder: (context, constraints) {
+                          final dense = constraints.maxWidth <= 520;
+                          final hideControls = !_controlsVisible;
+                          final controlState =
+                              resolvePlaybackControlPresentation(
+                                remoteState: remoteState,
+                                localState: playbackService.playerState,
+                                hasLocalSession: nowPlaying != null,
+                              );
+                          final hasPlaybackSession = controlState.hasSession;
+                          final controls = Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (!dense)
+                                IconButton(
+                                  tooltip: hasPlaybackSession
+                                      ? '上一曲'
+                                      : '暂无正在播放',
+                                  onPressed: hasPlaybackSession
+                                      ? PlayService.instance.previousAudio
+                                      : null,
+                                  icon: const Icon(
+                                    Symbols.skip_previous,
+                                    fill: 1.0,
+                                    weight: 400.0,
                                   ),
+                                  color: scheme.onSecondaryContainer,
                                 ),
-                                Text(
-                                  nowPlaying != null
-                                      ? '${nowPlaying.artist} - ${nowPlaying.album}'
-                                      : '享受音乐',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: scheme.onSecondaryContainer,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8.0),
-                          IgnorePointer(
-                            ignoring: hideControls,
-                            child: AnimatedSlide(
-                              duration: MotionDuration.fast,
-                              curve: MotionCurve.standard,
-                              offset: hideControls
-                                  ? const Offset(0.02, 0.0)
-                                  : Offset.zero,
-                              child: AnimatedOpacity(
-                                duration: MotionDuration.fast,
-                                curve: MotionCurve.standard,
-                                opacity: hideControls ? 0.0 : 1.0,
-                                child: controls,
+                              _MiniPlayPauseButton(
+                                dense: dense,
+                                onSecondaryContainer:
+                                    scheme.onSecondaryContainer,
+                                enabled: hasPlaybackSession,
+                                remoteState: remoteState,
                               ),
-                            ),
-                          ),
-                        ],
+                              if (!dense)
+                                IconButton(
+                                  tooltip: hasPlaybackSession
+                                      ? '下一曲'
+                                      : '暂无正在播放',
+                                  onPressed: hasPlaybackSession
+                                      ? PlayService.instance.nextAudio
+                                      : null,
+                                  icon: const Icon(
+                                    Symbols.skip_next,
+                                    fill: 1.0,
+                                    weight: 400.0,
+                                  ),
+                                  color: scheme.onSecondaryContainer,
+                                ),
+                              if (!dense) const SizedBox(width: 8.0),
+                              if (!dense)
+                                _MiniTimeText(
+                                  color: scheme.onSecondaryContainer,
+                                ),
+                            ],
+                          );
+                          return Row(
+                            children: [
+                              nowPlaying != null
+                                  ? Builder(
+                                      builder: (context) {
+                                        final cover = ClipRRect(
+                                          borderRadius: AppRadius.smCircular,
+                                          child: SizedBox(
+                                            width: 48.0,
+                                            height: 48.0,
+                                            child: _MiniCoverWidget(
+                                              audio: nowPlaying,
+                                            ),
+                                          ),
+                                        );
+                                        if (!heroEnabled) return cover;
+                                        return Hero(
+                                          tag: nowPlaying.path,
+                                          child: cover,
+                                        );
+                                      },
+                                    )
+                                  : SizedBox(
+                                      width: 48.0,
+                                      height: 48.0,
+                                      child: Center(child: placeholder),
+                                    ),
+                              const SizedBox(width: 8.0),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      nowPlaying != null
+                                          ? nowPlaying.title
+                                          : 'Pure Music',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: scheme.onSecondaryContainer,
+                                      ),
+                                    ),
+                                    Text(
+                                      nowPlaying != null
+                                          ? '${nowPlaying.artist} - ${nowPlaying.album}'
+                                          : '享受音乐',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: scheme.onSecondaryContainer,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8.0),
+                              IgnorePointer(
+                                ignoring: hideControls,
+                                child: AnimatedSlide(
+                                  duration: MotionDuration.fast,
+                                  curve: MotionCurve.standard,
+                                  offset: hideControls
+                                      ? const Offset(0.02, 0.0)
+                                      : Offset.zero,
+                                  child: AnimatedOpacity(
+                                    duration: MotionDuration.fast,
+                                    curve: MotionCurve.standard,
+                                    opacity: hideControls ? 0.0 : 1.0,
+                                    child: controls,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       );
                     },
                   );
@@ -294,11 +317,13 @@ class _MiniPlayPauseButton extends StatelessWidget {
     required this.dense,
     required this.onSecondaryContainer,
     required this.enabled,
+    required this.remoteState,
   });
 
   final bool dense;
   final Color onSecondaryContainer;
   final bool enabled;
+  final RemotePlaybackControlState remoteState;
 
   @override
   Widget build(BuildContext context) {
@@ -307,9 +332,7 @@ class _MiniPlayPauseButton extends StatelessWidget {
       dense: dense,
       color: onSecondaryContainer,
       enabled: enabled,
-      onPlay: playbackService.start,
-      onPause: playbackService.pause,
-      onReplay: playbackService.playAgain,
+      remoteState: remoteState,
       playerStateStream: playbackService.playerStateStream,
       initialState: playbackService.playerState,
     );
@@ -321,9 +344,7 @@ class _AnimatedPlayPauseIconButton extends StatefulWidget {
     required this.dense,
     required this.color,
     required this.enabled,
-    required this.onPlay,
-    required this.onPause,
-    required this.onReplay,
+    required this.remoteState,
     required this.playerStateStream,
     required this.initialState,
   });
@@ -331,9 +352,7 @@ class _AnimatedPlayPauseIconButton extends StatefulWidget {
   final bool dense;
   final Color color;
   final bool enabled;
-  final VoidCallback onPlay;
-  final VoidCallback onPause;
-  final VoidCallback onReplay;
+  final RemotePlaybackControlState remoteState;
   final Stream<PlayerState> playerStateStream;
   final PlayerState initialState;
 
@@ -349,13 +368,20 @@ class _AnimatedPlayPauseIconButtonState
     vsync: this,
     duration: const Duration(milliseconds: 220),
   );
-  late PlayerState _state = widget.initialState;
+  late PlayerState _localState = widget.initialState;
   StreamSubscription<PlayerState>? _playerStateSub;
+
+  PlaybackControlPresentation get _presentation =>
+      resolvePlaybackControlPresentation(
+        remoteState: widget.remoteState,
+        localState: _localState,
+        hasLocalSession: widget.enabled,
+      );
 
   @override
   void initState() {
     super.initState();
-    if (_state == PlayerState.playing) {
+    if (_presentation.isPlaying) {
       _controller.value = 1.0;
     } else {
       _controller.value = 0.0;
@@ -369,12 +395,14 @@ class _AnimatedPlayPauseIconButtonState
   }
 
   void _syncPlayerState(PlayerState nextState) {
-    if (!mounted || nextState == _state) return;
+    if (!mounted || nextState == _localState) return;
+    final wasPlaying = _presentation.isPlaying;
     setState(() {
-      _state = nextState;
+      _localState = nextState;
     });
+    if (wasPlaying == _presentation.isPlaying) return;
     _controller.animateTo(
-      nextState == PlayerState.playing ? 1.0 : 0.0,
+      _presentation.isPlaying ? 1.0 : 0.0,
       duration: const Duration(milliseconds: 240),
       curve: const Cubic(0.2, 0.0, 0.0, 1.0),
     );
@@ -383,12 +411,24 @@ class _AnimatedPlayPauseIconButtonState
   @override
   void didUpdateWidget(covariant _AnimatedPlayPauseIconButton oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final wasPlaying = resolvePlaybackControlPresentation(
+      remoteState: oldWidget.remoteState,
+      localState: _localState,
+      hasLocalSession: oldWidget.enabled,
+    ).isPlaying;
     if (oldWidget.playerStateStream != widget.playerStateStream) {
       _bindPlayerStateStream();
     }
     if (oldWidget.initialState != widget.initialState &&
-        widget.initialState != _state) {
-      _syncPlayerState(widget.initialState);
+        widget.initialState != _localState) {
+      _localState = widget.initialState;
+    }
+    if (wasPlaying != _presentation.isPlaying) {
+      _controller.animateTo(
+        _presentation.isPlaying ? 1.0 : 0.0,
+        duration: const Duration(milliseconds: 240),
+        curve: const Cubic(0.2, 0.0, 0.0, 1.0),
+      );
     }
   }
 
@@ -401,18 +441,8 @@ class _AnimatedPlayPauseIconButtonState
 
   @override
   Widget build(BuildContext context) {
-    final isPlaying = _state == PlayerState.playing;
-    VoidCallback? onPressed;
-    if (widget.enabled) {
-      if (_state == PlayerState.playing) {
-        onPressed = widget.onPause;
-      } else if (_state == PlayerState.completed) {
-        onPressed = widget.onReplay;
-      } else {
-        onPressed = widget.onPlay;
-      }
-    }
-    final iconColor = widget.enabled
+    final presentation = _presentation;
+    final iconColor = presentation.canToggle
         ? widget.color
         : widget.color.withValues(alpha: 0.38);
 
@@ -424,8 +454,20 @@ class _AnimatedPlayPauseIconButtonState
     );
 
     return IconButton(
-      tooltip: widget.enabled ? (isPlaying ? '暂停' : '播放') : '暂无正在播放',
-      onPressed: onPressed,
+      tooltip: presentation.canToggle
+          ? (presentation.isPlaying ? '暂停' : '播放')
+          : presentation.hasSession
+          ? '暂不可控制'
+          : '暂无正在播放',
+      onPressed: presentation.canToggle
+          ? () {
+              if (presentation.action == PlaybackControlAction.pause) {
+                PlayService.instance.pauseAudio();
+              } else {
+                PlayService.instance.playAudio();
+              }
+            }
+          : null,
       icon: icon,
       color: iconColor,
     );

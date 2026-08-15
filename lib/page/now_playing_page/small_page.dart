@@ -219,70 +219,86 @@ class _NowPlayingSmallMainControls extends StatelessWidget {
     final controlColor = useMonet ? scheme.primary : scheme.onSurface;
     final disabledColor = controlColor.withValues(alpha: 0.38);
 
-    return ListenableBuilder(
-      listenable: playbackService.nowPlayingNotifier,
-      builder: (context, _) {
-        final hasNowPlaying = playbackService.nowPlaying != null;
-
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const _NowPlayingPlaybackModeSwitch(),
-            const SizedBox(width: 16),
-            IconButton(
-              tooltip: hasNowPlaying ? '上一曲' : '暂无正在播放',
-              onPressed: hasNowPlaying
-                  ? PlayService.instance.previousAudio
-                  : null,
-              icon: const Icon(Symbols.skip_previous, fill: 1.0),
-              iconSize: 28,
-              color: controlColor,
-              disabledColor: disabledColor,
-            ),
-            const SizedBox(width: 16),
-            StreamBuilder(
+    return StreamBuilder<RemotePlaybackControlState>(
+      stream: PlayService.instance.remotePlaybackControlStateStream,
+      initialData: PlayService.instance.remotePlaybackControlState,
+      builder: (context, remoteSnapshot) {
+        final remoteState = remoteSnapshot.data!;
+        return ListenableBuilder(
+          listenable: playbackService.nowPlayingNotifier,
+          builder: (context, _) {
+            final hasNowPlaying = playbackService.nowPlaying != null;
+            return StreamBuilder<PlayerState>(
               stream: playbackService.playerStateStream,
               initialData: playbackService.playerState,
-              builder: (context, snapshot) {
-                final playerState = snapshot.data!;
-                final isPlaying = playerState == PlayerState.playing;
-                final isCompleted = playerState == PlayerState.completed;
+              builder: (context, localSnapshot) {
+                final controlState = resolvePlaybackControlPresentation(
+                  remoteState: remoteState,
+                  localState: localSnapshot.data!,
+                  hasLocalSession: hasNowPlaying,
+                );
+                final hasPlaybackSession = controlState.hasSession;
 
-                return IconButton(
-                  tooltip: hasNowPlaying ? (isPlaying ? '暂停' : '播放') : '暂无正在播放',
-                  onPressed: hasNowPlaying
-                      ? () {
-                          if (isPlaying) {
-                            playbackService.pause();
-                          } else if (isCompleted) {
-                            playbackService.playAgain();
-                          } else {
-                            playbackService.start();
-                          }
-                        }
-                      : null,
-                  icon: Icon(
-                    isPlaying ? Symbols.pause : Symbols.play_arrow,
-                    fill: 1.0,
-                  ),
-                  iconSize: 36,
-                  color: controlColor,
-                  disabledColor: disabledColor,
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const _NowPlayingPlaybackModeSwitch(),
+                    const SizedBox(width: 16),
+                    IconButton(
+                      tooltip: hasPlaybackSession ? '上一曲' : '暂无正在播放',
+                      onPressed: hasPlaybackSession
+                          ? PlayService.instance.previousAudio
+                          : null,
+                      icon: const Icon(Symbols.skip_previous, fill: 1.0),
+                      iconSize: 28,
+                      color: controlColor,
+                      disabledColor: disabledColor,
+                    ),
+                    const SizedBox(width: 16),
+                    IconButton(
+                      tooltip: controlState.canToggle
+                          ? (controlState.isPlaying ? '暂停' : '播放')
+                          : hasPlaybackSession
+                          ? '暂不可控制'
+                          : '暂无正在播放',
+                      onPressed: controlState.canToggle
+                          ? () {
+                              if (controlState.action ==
+                                  PlaybackControlAction.pause) {
+                                PlayService.instance.pauseAudio();
+                              } else {
+                                PlayService.instance.playAudio();
+                              }
+                            }
+                          : null,
+                      icon: Icon(
+                        controlState.isPlaying
+                            ? Symbols.pause
+                            : Symbols.play_arrow,
+                        fill: 1.0,
+                      ),
+                      iconSize: 36,
+                      color: controlColor,
+                      disabledColor: disabledColor,
+                    ),
+                    const SizedBox(width: 16),
+                    IconButton(
+                      tooltip: hasPlaybackSession ? '下一曲' : '暂无正在播放',
+                      onPressed: hasPlaybackSession
+                          ? PlayService.instance.nextAudio
+                          : null,
+                      icon: const Icon(Symbols.skip_next, fill: 1.0),
+                      iconSize: 28,
+                      color: controlColor,
+                      disabledColor: disabledColor,
+                    ),
+                    const SizedBox(width: 16),
+                    const _NowPlayingVolDspSlider(),
+                  ],
                 );
               },
-            ),
-            const SizedBox(width: 16),
-            IconButton(
-              tooltip: hasNowPlaying ? '下一曲' : '暂无正在播放',
-              onPressed: hasNowPlaying ? PlayService.instance.nextAudio : null,
-              icon: const Icon(Symbols.skip_next, fill: 1.0),
-              iconSize: 28,
-              color: controlColor,
-              disabledColor: disabledColor,
-            ),
-            const SizedBox(width: 16),
-            const _NowPlayingVolDspSlider(),
-          ],
+            );
+          },
         );
       },
     );

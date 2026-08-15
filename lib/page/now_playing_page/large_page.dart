@@ -108,84 +108,105 @@ class _NowPlayingLargePage extends StatelessWidget {
                     ),
                   ),
                   _AutoHidingControlBar(
-                    child: ListenableBuilder(
-                      listenable: playbackService.nowPlayingNotifier,
-                      builder: (context, _) {
-                        final hasNowPlaying =
-                            playbackService.nowPlaying != null;
-
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const _NowPlayingPlaybackModeSwitch(),
-                            spacer,
-                            IconButton(
-                              tooltip: hasNowPlaying ? '上一曲' : '暂无正在播放',
-                              onPressed: hasNowPlaying
-                                  ? PlayService.instance.previousAudio
-                                  : null,
-                              icon: const Icon(
-                                Symbols.skip_previous,
-                                fill: 1.0,
-                              ),
-                              iconSize: 28,
-                              color: controlColor,
-                              disabledColor: disabledColor,
-                            ),
-                            spacer,
-                            StreamBuilder(
+                    child: StreamBuilder<RemotePlaybackControlState>(
+                      stream:
+                          PlayService.instance.remotePlaybackControlStateStream,
+                      initialData:
+                          PlayService.instance.remotePlaybackControlState,
+                      builder: (context, remoteSnapshot) {
+                        final remoteState = remoteSnapshot.data!;
+                        return ListenableBuilder(
+                          listenable: playbackService.nowPlayingNotifier,
+                          builder: (context, _) {
+                            final hasNowPlaying =
+                                playbackService.nowPlaying != null;
+                            return StreamBuilder<PlayerState>(
                               stream: playbackService.playerStateStream,
                               initialData: playbackService.playerState,
-                              builder: (context, snapshot) {
-                                final state = snapshot.data!;
-                                final isPlaying = state == PlayerState.playing;
-                                final isCompleted =
-                                    state == PlayerState.completed;
+                              builder: (context, localSnapshot) {
+                                final controlState =
+                                    resolvePlaybackControlPresentation(
+                                      remoteState: remoteState,
+                                      localState: localSnapshot.data!,
+                                      hasLocalSession: hasNowPlaying,
+                                    );
+                                final hasPlaybackSession =
+                                    controlState.hasSession;
 
-                                return IconButton(
-                                  tooltip: hasNowPlaying
-                                      ? (isPlaying ? '暂停' : '播放')
-                                      : '暂无正在播放',
-                                  onPressed: hasNowPlaying
-                                      ? () {
-                                          if (isPlaying) {
-                                            playbackService.pause();
-                                          } else if (isCompleted) {
-                                            playbackService.playAgain();
-                                          } else {
-                                            playbackService.start();
-                                          }
-                                        }
-                                      : null,
-                                  icon: Icon(
-                                    isPlaying
-                                        ? Symbols.pause
-                                        : Symbols.play_arrow,
-                                    fill: 1.0,
-                                  ),
-                                  iconSize: 36,
-                                  color: controlColor,
-                                  disabledColor: disabledColor,
+                                return Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const _NowPlayingPlaybackModeSwitch(),
+                                    spacer,
+                                    IconButton(
+                                      tooltip: hasPlaybackSession
+                                          ? '上一曲'
+                                          : '暂无正在播放',
+                                      onPressed: hasPlaybackSession
+                                          ? PlayService.instance.previousAudio
+                                          : null,
+                                      icon: const Icon(
+                                        Symbols.skip_previous,
+                                        fill: 1.0,
+                                      ),
+                                      iconSize: 28,
+                                      color: controlColor,
+                                      disabledColor: disabledColor,
+                                    ),
+                                    spacer,
+                                    IconButton(
+                                      tooltip: controlState.canToggle
+                                          ? (controlState.isPlaying
+                                                ? '暂停'
+                                                : '播放')
+                                          : hasPlaybackSession
+                                          ? '暂不可控制'
+                                          : '暂无正在播放',
+                                      onPressed: controlState.canToggle
+                                          ? () {
+                                              if (controlState.action ==
+                                                  PlaybackControlAction.pause) {
+                                                PlayService.instance
+                                                    .pauseAudio();
+                                              } else {
+                                                PlayService.instance
+                                                    .playAudio();
+                                              }
+                                            }
+                                          : null,
+                                      icon: Icon(
+                                        controlState.isPlaying
+                                            ? Symbols.pause
+                                            : Symbols.play_arrow,
+                                        fill: 1.0,
+                                      ),
+                                      iconSize: 36,
+                                      color: controlColor,
+                                      disabledColor: disabledColor,
+                                    ),
+                                    spacer,
+                                    IconButton(
+                                      tooltip: hasPlaybackSession
+                                          ? '下一曲'
+                                          : '暂无正在播放',
+                                      onPressed: hasPlaybackSession
+                                          ? PlayService.instance.nextAudio
+                                          : null,
+                                      icon: const Icon(
+                                        Symbols.skip_next,
+                                        fill: 1.0,
+                                      ),
+                                      iconSize: 28,
+                                      color: controlColor,
+                                      disabledColor: disabledColor,
+                                    ),
+                                    spacer,
+                                    const _NowPlayingLargeViewSwitch(),
+                                  ],
                                 );
                               },
-                            ),
-                            spacer,
-                            IconButton(
-                              tooltip: hasNowPlaying ? '下一曲' : '暂无正在播放',
-                              onPressed: hasNowPlaying
-                                  ? PlayService.instance.nextAudio
-                                  : null,
-                              icon: const Icon(
-                                Symbols.skip_next,
-                                fill: 1.0,
-                              ),
-                              iconSize: 28,
-                              color: controlColor,
-                              disabledColor: disabledColor,
-                            ),
-                            spacer,
-                            const _NowPlayingLargeViewSwitch(),
-                          ],
+                            );
+                          },
                         );
                       },
                     ),

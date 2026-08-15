@@ -5,12 +5,65 @@ import 'package:pure_music/core/hotkey_focus_state.dart';
 import 'package:pure_music/core/immersive.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
+import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:go_router/go_router.dart';
 import 'package:window_manager/window_manager.dart';
+
+enum PlaybackControlAction { none, pause, play, replay }
+
+final class PlaybackControlPresentation {
+  const PlaybackControlPresentation({
+    required this.hasSession,
+    required this.canToggle,
+    required this.isPlaying,
+    required this.action,
+  });
+
+  final bool hasSession;
+  final bool canToggle;
+  final bool isPlaying;
+  final PlaybackControlAction action;
+}
+
+PlaybackControlPresentation resolvePlaybackControlPresentation({
+  required RemotePlaybackControlState remoteState,
+  required PlayerState localState,
+  required bool hasLocalSession,
+}) {
+  if (remoteState.isActive) {
+    final action = switch (remoteState.state) {
+      PlaybackBackendState.playing when !remoteState.controlInFlight =>
+        PlaybackControlAction.pause,
+      PlaybackBackendState.paused when !remoteState.controlInFlight =>
+        PlaybackControlAction.play,
+      _ => PlaybackControlAction.none,
+    };
+    return PlaybackControlPresentation(
+      hasSession: true,
+      canToggle: action != PlaybackControlAction.none,
+      isPlaying: remoteState.state == PlaybackBackendState.playing,
+      action: action,
+    );
+  }
+
+  final action = !hasLocalSession
+      ? PlaybackControlAction.none
+      : switch (localState) {
+          PlayerState.playing => PlaybackControlAction.pause,
+          PlayerState.completed => PlaybackControlAction.replay,
+          _ => PlaybackControlAction.play,
+        };
+  return PlaybackControlPresentation(
+    hasSession: hasLocalSession,
+    canToggle: action != PlaybackControlAction.none,
+    isPlaying: localState == PlayerState.playing,
+    action: action,
+  );
+}
 
 class HotkeysHelper {
   static bool _registered = false;
@@ -20,21 +73,43 @@ class HotkeysHelper {
         textInputFocused: isTextInputFocusedForHotkeys(),
       );
 
+  static PlaybackControlAction togglePlayback([PlayService? target]) {
+    final playService = target ?? PlayService.instance;
+    final remoteState = playService.remotePlaybackControlState;
+    final presentation = resolvePlaybackControlPresentation(
+      remoteState: remoteState,
+      localState: remoteState.isActive
+          ? PlayerState.stopped
+          : playService.playbackService.playerState,
+      hasLocalSession: remoteState.isActive
+          ? false
+          : playService.hasPlaybackSession,
+    );
+    switch (presentation.action) {
+      case PlaybackControlAction.pause:
+        playService.pauseAudio();
+      case PlaybackControlAction.play:
+      case PlaybackControlAction.replay:
+        playService.playAudio();
+      case PlaybackControlAction.none:
+        return PlaybackControlAction.none;
+    }
+    return presentation.action;
+  }
+
   static final Map<HotKey, void Function(HotKey)> _hotKeys = {
     HotKey(key: PhysicalKeyboardKey.space, scope: HotKeyScope.inapp): (_) {
       if (!_canHandlePlaybackHotkey()) return;
 
-      final playbackService = PlayService.instance.playbackService;
-      final state = playbackService.playerState;
-      if (state == PlayerState.playing) {
-        playbackService.pause();
-        showHotkeyToast(text: '暂停', icon: Icons.pause);
-      } else if (state == PlayerState.completed) {
-        playbackService.playAgain();
-        showHotkeyToast(text: '重播', icon: Icons.replay);
-      } else {
-        playbackService.start();
-        showHotkeyToast(text: '播放', icon: Icons.play_arrow);
+      switch (togglePlayback()) {
+        case PlaybackControlAction.pause:
+          showHotkeyToast(text: '暂停', icon: Icons.pause);
+        case PlaybackControlAction.play:
+          showHotkeyToast(text: '播放', icon: Icons.play_arrow);
+        case PlaybackControlAction.replay:
+          showHotkeyToast(text: '重播', icon: Icons.replay);
+        case PlaybackControlAction.none:
+          break;
       }
     },
     HotKey(key: PhysicalKeyboardKey.escape, scope: HotKeyScope.inapp):
