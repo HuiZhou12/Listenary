@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
+import 'package:pure_music/play_service/playback_source.dart';
 
 abstract interface class SmtcBackend {
   Stream<SMTCControlEvent> get controlEvents;
@@ -220,6 +221,69 @@ class SmtcBridge {
     });
     return _operationChain;
   }
+}
+
+final class RemoteSmtcProjection {
+  const RemoteSmtcProjection({
+    required this.title,
+    required this.artist,
+    required this.state,
+  });
+
+  final String title;
+  final String artist;
+  final PlaybackBackendState state;
+}
+
+final class RemoteSmtcProjectionController {
+  RemoteSmtcProjectionController(this._bridge);
+
+  final SmtcBridge _bridge;
+  int _revision = 0;
+  bool _hasProjection = false;
+  bool _disposed = false;
+
+  bool get hasProjection => _hasProjection;
+
+  Future<void> project(RemoteSmtcProjection projection) async {
+    if (_disposed) return;
+    final revision = ++_revision;
+    _hasProjection = true;
+    await _bridge.updateDisplay(
+      title: projection.title,
+      artist: projection.artist,
+      album: '',
+      duration: 0,
+      path: '',
+    );
+    if (!_isCurrent(revision)) return;
+    await _bridge.updateState(_mapState(projection.state));
+  }
+
+  Future<void> clear() async {
+    if (_disposed) return;
+    ++_revision;
+    if (!_hasProjection) return;
+    _hasProjection = false;
+    await _bridge.clearDisplay();
+  }
+
+  Future<void> dispose() async {
+    if (_disposed) return;
+    ++_revision;
+    _disposed = true;
+    if (!_hasProjection) return;
+    _hasProjection = false;
+    await _bridge.clearDisplay();
+  }
+
+  bool _isCurrent(int revision) =>
+      !_disposed && revision == _revision && _hasProjection;
+
+  SMTCState _mapState(PlaybackBackendState state) =>
+      state == PlaybackBackendState.playing
+      ? SMTCState.playing
+      : SMTCState.paused;
 }
 
 final class SmtcSessionOwner {

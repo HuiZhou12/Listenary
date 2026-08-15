@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
+import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/play_service/smtc_bridge.dart';
 
 void main() {
@@ -62,6 +63,179 @@ void main() {
 
     expect(backend.closed, isTrue);
     expect(backend.operations, <String>['close']);
+  });
+
+  test('remote projection publishes only safe fields before state', () async {
+    final backend = _FakeSmtcBackend();
+    final bridge = SmtcBridge.withBackend(backend);
+    final controller = RemoteSmtcProjectionController(bridge);
+
+    await controller.clear();
+    await controller.project(
+      const RemoteSmtcProjection(
+        title: 'Remote title',
+        artist: 'Remote artist',
+        state: PlaybackBackendState.playing,
+      ),
+    );
+
+    expect(controller.hasProjection, isTrue);
+    expect(backend.displayUpdates, <_DisplayUpdate>[
+      const _DisplayUpdate(
+        title: 'Remote title',
+        artist: 'Remote artist',
+        album: '',
+        duration: 0,
+        path: '',
+      ),
+    ]);
+    expect(backend.operations, <String>[
+      'display:Remote title',
+      'state:playing',
+    ]);
+    expect(backend.progressUpdates, isEmpty);
+
+    await controller.dispose();
+    await bridge.close();
+  });
+
+  test('remote projection maps every non-playing state to paused', () async {
+    final backend = _FakeSmtcBackend();
+    final bridge = SmtcBridge.withBackend(backend);
+    final controller = RemoteSmtcProjectionController(bridge);
+
+    for (final state in PlaybackBackendState.values) {
+      await controller.project(
+        RemoteSmtcProjection(
+          title: state.name,
+          artist: 'artist',
+          state: state,
+        ),
+      );
+    }
+
+    expect(
+      backend.stateUpdates,
+      PlaybackBackendState.values
+          .map(
+            (state) => state == PlaybackBackendState.playing
+                ? SMTCState.playing
+                : SMTCState.paused,
+          )
+          .toList(),
+    );
+    expect(backend.progressUpdates, isEmpty);
+
+    await controller.dispose();
+    await bridge.close();
+  });
+
+  test('new remote projection supersedes an in-flight revision', () async {
+    final backend = _FakeSmtcBackend();
+    final displayGate = Completer<void>();
+    backend.displayGate = displayGate.future;
+    final bridge = SmtcBridge.withBackend(backend);
+    final controller = RemoteSmtcProjectionController(bridge);
+
+    final first = controller.project(
+      const RemoteSmtcProjection(
+        title: 'Old title',
+        artist: 'Old artist',
+        state: PlaybackBackendState.paused,
+      ),
+    );
+    await backend.firstDisplayCall.future;
+    final second = controller.project(
+      const RemoteSmtcProjection(
+        title: 'New title',
+        artist: 'New artist',
+        state: PlaybackBackendState.playing,
+      ),
+    );
+    displayGate.complete();
+    await Future.wait([first, second]);
+
+    expect(
+      backend.displayUpdates.map((update) => update.title),
+      <String>['Old title', 'New title'],
+    );
+    expect(backend.stateUpdates, <SMTCState>[SMTCState.playing]);
+    expect(backend.operations.last, 'state:playing');
+
+    await controller.dispose();
+    await bridge.close();
+  });
+
+  test('clear invalidates an in-flight remote projection', () async {
+    final backend = _FakeSmtcBackend();
+    final displayGate = Completer<void>();
+    backend.displayGate = displayGate.future;
+    final bridge = SmtcBridge.withBackend(backend);
+    final controller = RemoteSmtcProjectionController(bridge);
+
+    final projection = controller.project(
+      const RemoteSmtcProjection(
+        title: 'Remote title',
+        artist: 'Remote artist',
+        state: PlaybackBackendState.playing,
+      ),
+    );
+    await backend.firstDisplayCall.future;
+    final clear = controller.clear();
+    displayGate.complete();
+    await Future.wait([projection, clear]);
+    await controller.clear();
+
+    expect(controller.hasProjection, isFalse);
+    expect(backend.stateUpdates, isEmpty);
+    expect(backend.operations, <String>['display:Remote title', 'clear']);
+
+    await controller.dispose();
+    await controller.dispose();
+    await controller.project(
+      const RemoteSmtcProjection(
+        title: 'Ignored',
+        artist: 'Ignored',
+        state: PlaybackBackendState.playing,
+      ),
+    );
+    await bridge.flush();
+
+    expect(backend.operations, <String>['display:Remote title', 'clear']);
+    await bridge.close();
+  });
+
+  test('dispose clears and invalidates an in-flight projection', () async {
+    final backend = _FakeSmtcBackend();
+    final displayGate = Completer<void>();
+    backend.displayGate = displayGate.future;
+    final bridge = SmtcBridge.withBackend(backend);
+    final controller = RemoteSmtcProjectionController(bridge);
+
+    final projection = controller.project(
+      const RemoteSmtcProjection(
+        title: 'Remote title',
+        artist: 'Remote artist',
+        state: PlaybackBackendState.playing,
+      ),
+    );
+    await backend.firstDisplayCall.future;
+    final dispose = controller.dispose();
+    displayGate.complete();
+    await Future.wait([projection, dispose]);
+    await controller.dispose();
+    await controller.project(
+      const RemoteSmtcProjection(
+        title: 'Ignored',
+        artist: 'Ignored',
+        state: PlaybackBackendState.playing,
+      ),
+    );
+
+    expect(controller.hasProjection, isFalse);
+    expect(backend.stateUpdates, isEmpty);
+    expect(backend.operations, <String>['display:Remote title', 'clear']);
+    await bridge.close();
   });
 
   test('shared owner binds one keep-alive handler and one timer', () async {
@@ -229,11 +403,15 @@ class _FakeSmtcBackend implements SmtcBackend {
   }
 
   final operations = <String>[];
+  final displayUpdates = <_DisplayUpdate>[];
+  final stateUpdates = <SMTCState>[];
   final progressUpdates = <int>[];
+  final firstDisplayCall = Completer<void>();
   final firstTimelineCall = Completer<void>();
   late final StreamController<SMTCControlEvent> controlController;
   late final StreamController<int> positionController;
   Future<void>? timelineGate;
+  Future<void>? displayGate;
   bool closed = false;
   int closeCount = 0;
   int controlListenCount = 0;
@@ -274,11 +452,24 @@ class _FakeSmtcBackend implements SmtcBackend {
     required int duration,
     required String path,
   }) async {
+    displayUpdates.add(
+      _DisplayUpdate(
+        title: title,
+        artist: artist,
+        album: album,
+        duration: duration,
+        path: path,
+      ),
+    );
     operations.add('display:$title');
+    if (!firstDisplayCall.isCompleted) firstDisplayCall.complete();
+    await displayGate;
+    displayGate = null;
   }
 
   @override
   Future<void> updateState(SMTCState state) async {
+    stateUpdates.add(state);
     operations.add('state:${state.name}');
   }
 
@@ -289,4 +480,32 @@ class _FakeSmtcBackend implements SmtcBackend {
     await timelineGate;
     timelineGate = null;
   }
+}
+
+final class _DisplayUpdate {
+  const _DisplayUpdate({
+    required this.title,
+    required this.artist,
+    required this.album,
+    required this.duration,
+    required this.path,
+  });
+
+  final String title;
+  final String artist;
+  final String album;
+  final int duration;
+  final String path;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _DisplayUpdate &&
+      title == other.title &&
+      artist == other.artist &&
+      album == other.album &&
+      duration == other.duration &&
+      path == other.path;
+
+  @override
+  int get hashCode => Object.hash(title, artist, album, duration, path);
 }
