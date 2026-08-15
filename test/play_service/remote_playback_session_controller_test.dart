@@ -83,6 +83,125 @@ void main() {
     expect(gateway.refs.single.trackId, '1');
   });
 
+  test('publishes remote control state and returns to inactive', () async {
+    final snapshots = <RemotePlaybackControlSnapshot>[];
+    final subscription = sessionController.controlStateStream.listen(
+      snapshots.add,
+    );
+
+    expect(sessionController.controlState.isActive, isFalse);
+    await sessionController.play(0, requestedQuality: 'lossless');
+    expect(sessionController.controlState.state, PlaybackBackendState.opening);
+
+    backend.emit(PlaybackBackendState.playing);
+    backend.emit(PlaybackBackendState.paused);
+    backend.emit(PlaybackBackendState.stalled);
+    backend.emit(PlaybackBackendState.failed);
+    await pumpEventQueue();
+    expect(sessionController.controlState.state, PlaybackBackendState.failed);
+
+    localBridge.requestLocalPlayback();
+    expect(
+      sessionController.controlState,
+      RemotePlaybackControlSnapshot.inactive,
+    );
+    await pumpEventQueue();
+    expect(snapshots.map((snapshot) => snapshot.state), [
+      PlaybackBackendState.opening,
+      PlaybackBackendState.playing,
+      PlaybackBackendState.paused,
+      PlaybackBackendState.stalled,
+      PlaybackBackendState.failed,
+      null,
+    ]);
+
+    await subscription.cancel();
+  });
+
+  test('pauses and resumes only in applicable remote states', () async {
+    final resumePoint = _FakeResumePoint();
+    localBridge.resumePoint = resumePoint;
+
+    expect(sessionController.pause(), isFalse);
+    await sessionController.play(0, requestedQuality: 'lossless');
+    expect(sessionController.pause(), isTrue);
+    expect(backend.pauseCount, 0);
+
+    backend.emit(PlaybackBackendState.playing);
+    await pumpEventQueue();
+    expect(sessionController.pause(), isTrue);
+    expect(sessionController.controlState.controlInFlight, isTrue);
+    await pumpEventQueue();
+    expect(backend.pauseCount, 1);
+    expect(sessionController.controlState.state, PlaybackBackendState.paused);
+    expect(sessionController.controlState.controlInFlight, isFalse);
+
+    expect(sessionController.resume(), isTrue);
+    await pumpEventQueue();
+    expect(backend.resumeCount, 1);
+    expect(sessionController.controlState.state, PlaybackBackendState.playing);
+    expect(sessionController.localResumePoint, same(resumePoint));
+    expect(gateway.refs, hasLength(1));
+    expect(gateway.qualities, ['lossless']);
+  });
+
+  test('control in progress consumes repeated operations', () async {
+    await sessionController.play(0, requestedQuality: 'lossless');
+    backend.emit(PlaybackBackendState.playing);
+    await pumpEventQueue();
+    final pendingPause = Completer<void>();
+    backend.pendingPauses.add(pendingPause.future);
+
+    expect(sessionController.pause(), isTrue);
+    expect(sessionController.pause(), isTrue);
+    expect(sessionController.resume(), isTrue);
+    expect(backend.pauseCount, 1);
+    expect(backend.resumeCount, 0);
+
+    pendingPause.complete();
+    await pumpEventQueue();
+    expect(sessionController.controlState.state, PlaybackBackendState.paused);
+    expect(sessionController.controlState.controlInFlight, isFalse);
+  });
+
+  test('remote control failure reports safely and remains retryable', () async {
+    await sessionController.play(0, requestedQuality: 'lossless');
+    backend.emit(PlaybackBackendState.playing);
+    await pumpEventQueue();
+    backend.pauseError = StateError('pause failed');
+
+    expect(sessionController.pause(), isTrue);
+    await pumpEventQueue();
+
+    expect(failures, [RemotePlaybackSessionFailure.control]);
+    expect(sessionController.controlState.state, PlaybackBackendState.playing);
+    expect(sessionController.controlState.controlInFlight, isFalse);
+
+    backend.pauseError = null;
+    expect(sessionController.pause(), isTrue);
+    await pumpEventQueue();
+    expect(backend.pauseCount, 2);
+    expect(sessionController.controlState.state, PlaybackBackendState.paused);
+  });
+
+  test('ending the session suppresses a stale control failure', () async {
+    await sessionController.play(0, requestedQuality: 'lossless');
+    backend.emit(PlaybackBackendState.playing);
+    await pumpEventQueue();
+    final pendingPause = Completer<void>();
+    backend.pendingPauses.add(pendingPause.future);
+    backend.pauseError = StateError('stale pause failed');
+
+    expect(sessionController.pause(), isTrue);
+    localBridge.requestLocalPlayback();
+    expect(sessionController.controlState.isActive, isFalse);
+
+    pendingPause.complete();
+    await pumpEventQueue();
+    expect(failures, isEmpty);
+    expect(sessionController.controlState.isActive, isFalse);
+  });
+
   test('remote failure keeps the captured local session paused', () async {
     final resumePoint = _FakeResumePoint();
     localBridge.resumePoint = resumePoint;
@@ -436,8 +555,14 @@ final class _RecordingGateway implements RemoteQueuePlaybackGateway {
   }
 }
 
-final class _RecordingBackend implements PlaybackBackend {
+final class _RecordingBackend implements ControllablePlaybackBackend {
   final _states = StreamController<PlaybackBackendState>.broadcast();
+  final pendingPauses = <Future<void>>[];
+  final pendingResumes = <Future<void>>[];
+  Object? pauseError;
+  Object? resumeError;
+  int pauseCount = 0;
+  int resumeCount = 0;
   int stopCount = 0;
 
   @override
@@ -448,6 +573,24 @@ final class _RecordingBackend implements PlaybackBackend {
   @override
   Future<void> open(PlaybackSource source) {
     throw UnsupportedError('The session test opens through its gateway');
+  }
+
+  @override
+  Future<void> pause() async {
+    pauseCount++;
+    if (pendingPauses.isNotEmpty) await pendingPauses.removeAt(0);
+    final error = pauseError;
+    if (error != null) throw error;
+    emit(PlaybackBackendState.paused);
+  }
+
+  @override
+  Future<void> resume() async {
+    resumeCount++;
+    if (pendingResumes.isNotEmpty) await pendingResumes.removeAt(0);
+    final error = resumeError;
+    if (error != null) throw error;
+    emit(PlaybackBackendState.playing);
   }
 
   @override

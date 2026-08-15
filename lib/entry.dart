@@ -130,6 +130,7 @@ class _EntryState extends State<Entry>
         final message = switch (failure) {
           RemotePlaybackSessionFailure.nextTrack => '无法播放下一首远程曲目',
           RemotePlaybackSessionFailure.navigation => '无法切换远程曲目',
+          RemotePlaybackSessionFailure.control => '无法控制远程播放',
           RemotePlaybackSessionFailure.localRestore => '无法恢复本地播放',
           RemotePlaybackSessionFailure.remoteStop => '无法停止远程播放',
         };

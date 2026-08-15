@@ -113,8 +113,26 @@ final class PlaybackServiceLocalPlaybackSessionBridge
 enum RemotePlaybackSessionFailure {
   nextTrack,
   navigation,
+  control,
   localRestore,
   remoteStop,
+}
+
+final class RemotePlaybackControlSnapshot {
+  const RemotePlaybackControlSnapshot({
+    required this.state,
+    required this.controlInFlight,
+  });
+
+  static const inactive = RemotePlaybackControlSnapshot(
+    state: null,
+    controlInFlight: false,
+  );
+
+  final PlaybackBackendState? state;
+  final bool controlInFlight;
+
+  bool get isActive => state != null;
 }
 
 final class RemotePlaybackSessionController {
@@ -122,7 +140,7 @@ final class RemotePlaybackSessionController {
     required RemotePlaybackQueue queue,
     required RemotePlaybackQueueController remoteController,
     required LocalPlaybackSessionBridge localBridge,
-    required PlaybackBackend backend,
+    required ControllablePlaybackBackend backend,
     void Function(RemotePlaybackSessionFailure failure)? onFailure,
   }) : _queue = queue,
        _remoteController = remoteController,
@@ -136,21 +154,39 @@ final class RemotePlaybackSessionController {
   final RemotePlaybackQueue _queue;
   final RemotePlaybackQueueController _remoteController;
   final LocalPlaybackSessionBridge _localBridge;
-  final PlaybackBackend _backend;
+  final ControllablePlaybackBackend _backend;
   final void Function(RemotePlaybackSessionFailure failure)? _onFailure;
+  final _controlStateController =
+      StreamController<RemotePlaybackControlSnapshot>.broadcast();
   late final StreamSubscription<PlaybackBackendState> _backendStateSubscription;
+  RemotePlaybackControlSnapshot _controlState =
+      RemotePlaybackControlSnapshot.inactive;
   LocalPlaybackResumePoint? _localResumePoint;
   String? _requestedQuality;
   int _revision = 0;
+  int _controlRevision = 0;
   int? _activeRemoteRevision;
   bool _sessionStarted = false;
   bool _disposed = false;
 
   LocalPlaybackResumePoint? get localResumePoint => _localResumePoint;
+  RemotePlaybackControlSnapshot get controlState => _controlState;
+  Stream<RemotePlaybackControlSnapshot> get controlStateStream =>
+      _controlStateController.stream;
 
   bool previous() => _navigate(-1);
 
   bool next() => _navigate(1);
+
+  bool pause() => _control(
+    expectedState: PlaybackBackendState.playing,
+    action: _backend.pause,
+  );
+
+  bool resume() => _control(
+    expectedState: PlaybackBackendState.paused,
+    action: _backend.resume,
+  );
 
   bool _navigate(int offset) {
     if (_disposed || !_sessionStarted) return false;
@@ -192,18 +228,44 @@ final class RemotePlaybackSessionController {
     required String requestedQuality,
   }) async {
     final revision = ++_revision;
+    _invalidateControl();
+    _setControlState(
+      const RemotePlaybackControlSnapshot(
+        state: PlaybackBackendState.opening,
+        controlInFlight: false,
+      ),
+    );
     _activeRemoteRevision = null;
     _requestedQuality = requestedQuality;
-    await _remoteController.play(index, requestedQuality: requestedQuality);
+    try {
+      await _remoteController.play(index, requestedQuality: requestedQuality);
+    } catch (_) {
+      if (!_disposed && revision == _revision) {
+        _setControlState(
+          const RemotePlaybackControlSnapshot(
+            state: PlaybackBackendState.failed,
+            controlInFlight: false,
+          ),
+        );
+      }
+      rethrow;
+    }
     if (!_disposed && revision == _revision) {
       _activeRemoteRevision = revision;
     }
   }
 
   void _onBackendState(PlaybackBackendState state) {
-    if (_disposed || state != PlaybackBackendState.completed) return;
+    if (_disposed || !_sessionStarted) return;
+    _setControlState(
+      RemotePlaybackControlSnapshot(
+        state: state,
+        controlInFlight: _controlState.controlInFlight,
+      ),
+    );
+    if (state != PlaybackBackendState.completed) return;
     final revision = _activeRemoteRevision;
-    if (!_sessionStarted || revision == null) return;
+    if (revision == null) return;
     _activeRemoteRevision = null;
     unawaited(_handleCompleted(revision));
   }
@@ -225,6 +287,50 @@ final class RemotePlaybackSessionController {
       }
     }
   }
+
+  bool _control({
+    required PlaybackBackendState expectedState,
+    required Future<void> Function() action,
+  }) {
+    if (_disposed || !_sessionStarted) return false;
+    if (_controlState.controlInFlight || _controlState.state != expectedState) {
+      return true;
+    }
+    final controlRevision = ++_controlRevision;
+    _setControlState(
+      RemotePlaybackControlSnapshot(
+        state: _controlState.state,
+        controlInFlight: true,
+      ),
+    );
+    unawaited(_runControl(controlRevision, action));
+    return true;
+  }
+
+  Future<void> _runControl(
+    int controlRevision,
+    Future<void> Function() action,
+  ) async {
+    try {
+      await action();
+    } catch (_) {
+      if (_isCurrentControl(controlRevision)) {
+        _onFailure?.call(RemotePlaybackSessionFailure.control);
+      }
+    } finally {
+      if (_isCurrentControl(controlRevision)) {
+        _setControlState(
+          RemotePlaybackControlSnapshot(
+            state: _controlState.state,
+            controlInFlight: false,
+          ),
+        );
+      }
+    }
+  }
+
+  bool _isCurrentControl(int controlRevision) =>
+      !_disposed && _sessionStarted && controlRevision == _controlRevision;
 
   Future<void> _handleCompleted(int revision) async {
     if (_disposed || revision != _revision) return;
@@ -262,19 +368,48 @@ final class RemotePlaybackSessionController {
   }
 
   void _endSession() {
+    _invalidateControl();
     _sessionStarted = false;
     _localResumePoint = null;
     _requestedQuality = null;
     _activeRemoteRevision = null;
+    _setControlState(RemotePlaybackControlSnapshot.inactive);
+  }
+
+  void _invalidateControl() {
+    ++_controlRevision;
+    if (_controlState.controlInFlight) {
+      _setControlState(
+        RemotePlaybackControlSnapshot(
+          state: _controlState.state,
+          controlInFlight: false,
+        ),
+      );
+    }
+  }
+
+  void _setControlState(RemotePlaybackControlSnapshot state) {
+    if (_controlState.state == state.state &&
+        _controlState.controlInFlight == state.controlInFlight) {
+      return;
+    }
+    _controlState = state;
+    if (!_controlStateController.isClosed) {
+      _controlStateController.add(state);
+    }
   }
 
   void dispose() {
     if (_disposed) return;
-    _disposed = true;
     _localBridge.removeLocalPlaybackRequestListener(_onLocalPlaybackRequested);
     ++_revision;
     _endSession();
-    unawaited(_backendStateSubscription.cancel());
+    _disposed = true;
+    unawaited(
+      _backendStateSubscription.cancel().whenComplete(
+        _controlStateController.close,
+      ),
+    );
   }
 
   void _throwIfDisposed() {
