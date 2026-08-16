@@ -24,9 +24,20 @@ void main() {
   testWidgets('inactive without a local player shows an empty queue', (
     tester,
   ) async {
+    harness.queue.clear();
     await tester.pumpWidget(harness.app());
 
     expect(find.text('播放队列还是空的'), findsOneWidget);
+    expect(find.text('本地队列'), findsOneWidget);
+    expect(find.text('在线队列'), findsOneWidget);
+    expect(PlayService.instance.existingPlaybackService, isNull);
+  });
+
+  testWidgets('inactive remote memory queue remains visible', (tester) async {
+    await tester.pumpWidget(harness.app());
+
+    expect(find.text('Remote 1'), findsOneWidget);
+    expect(find.text('Remote 2'), findsOneWidget);
     expect(PlayService.instance.existingPlaybackService, isNull);
   });
 
@@ -43,6 +54,45 @@ void main() {
     expect(find.byIcon(Symbols.clear_all), findsNothing);
     expect(find.byIcon(Symbols.remove_circle_outline), findsNothing);
     expect(PlayService.instance.existingPlaybackService, isNull);
+  });
+
+  testWidgets('local source defaults to the local queue', (tester) async {
+    harness.showLocal();
+    await tester.pumpWidget(harness.app());
+
+    expect(find.text('Remote 1'), findsNothing);
+    expect(find.text('播放队列还是空的'), findsOneWidget);
+    expect(PlayService.instance.existingPlaybackService, isNull);
+  });
+
+  testWidgets('manual queue view survives same-source updates', (tester) async {
+    harness.showRemote(currentIndex: 0);
+    await tester.pumpWidget(harness.app());
+
+    await tester.tap(find.text('本地队列'));
+    await tester.pump();
+    expect(find.text('Remote 1'), findsNothing);
+
+    harness.updateRemote(currentIndex: 1);
+    await tester.pump();
+
+    expect(find.text('Remote 1'), findsNothing);
+    expect(find.text('播放队列还是空的'), findsOneWidget);
+    expect(PlayService.instance.existingPlaybackService, isNull);
+  });
+
+  testWidgets('active source transition refocuses its queue', (tester) async {
+    harness.showRemote(currentIndex: 0);
+    await tester.pumpWidget(harness.app());
+    await tester.tap(find.text('本地队列'));
+    await tester.pump();
+    expect(find.text('Remote 1'), findsNothing);
+
+    harness.releaseRemote();
+    await tester.pump();
+
+    expect(find.text('Remote 1'), findsOneWidget);
+    expect(find.text('Remote 2'), findsOneWidget);
   });
 
   testWidgets('remote selection uses target index and default quality', (
@@ -64,18 +114,22 @@ void main() {
     expect(harness.queue.value.currentIndex, 1);
   });
 
-  testWidgets('leaving remote source removes remote items without local init', (
+  testWidgets('switching viewed queue does not change playback source', (
     tester,
   ) async {
     harness.showRemote(currentIndex: 0);
     await tester.pumpWidget(harness.app());
     expect(find.text('Remote 1'), findsOneWidget);
 
-    harness.showLocal();
+    await tester.tap(find.text('本地队列'));
     await tester.pump();
 
     expect(find.text('Remote 1'), findsNothing);
     expect(find.text('播放队列还是空的'), findsOneWidget);
+    expect(
+      harness.activeSession.value.source,
+      ActivePlaybackSessionSource.remote,
+    );
     expect(PlayService.instance.existingPlaybackService, isNull);
   });
 }
@@ -113,6 +167,7 @@ final class _Harness {
         Provider<RemotePlaybackSessionController>.value(
           value: remoteController,
         ),
+        ChangeNotifierProvider<RemotePlaybackQueue>.value(value: queue),
       ],
       child: const MaterialApp(
         home: Scaffold(
@@ -123,7 +178,7 @@ final class _Harness {
   }
 
   void showRemote({required int currentIndex}) {
-    activeSession.switchTo(
+    _remoteLease = activeSession.switchTo(
       source: ActivePlaybackSessionSource.remote,
       queue: remoteItems.map(
         (item) => ActivePlaybackSessionItem(
@@ -143,6 +198,36 @@ final class _Harness {
         canSeek: false,
       ),
     );
+  }
+
+  ActivePlaybackSessionLease? _remoteLease;
+
+  void updateRemote({required int currentIndex}) {
+    final lease = _remoteLease!;
+    activeSession.publish(
+      lease,
+      queue: remoteItems.map(
+        (item) => ActivePlaybackSessionItem(
+          title: item.title,
+          artist: item.artistDisplay,
+          album: item.album,
+        ),
+      ),
+      currentIndex: currentIndex,
+      state: ActivePlaybackSessionState.paused,
+      controlInFlight: false,
+      capabilities: const ActivePlaybackSessionCapabilities(
+        canPlay: true,
+        canPause: false,
+        canPrevious: true,
+        canNext: false,
+        canSeek: false,
+      ),
+    );
+  }
+
+  void releaseRemote() {
+    activeSession.release(_remoteLease!);
   }
 
   void showLocal() {

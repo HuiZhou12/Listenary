@@ -11,19 +11,17 @@ void main() {
     ) async {
       await tester.pumpWidget(
         _testApp(
-          snapshot: _snapshot(
-            queue: const [
-              ActivePlaybackSessionItem(
-                title: 'First title',
-                artist: 'First artist',
-                album: 'First album',
-              ),
-              ActivePlaybackSessionItem(
-                title: 'Second title',
-                artist: 'Second artist',
-              ),
-            ],
-          ),
+          queue: const [
+            ActivePlaybackSessionItem(
+              title: 'First title',
+              artist: 'First artist',
+              album: 'First album',
+            ),
+            ActivePlaybackSessionItem(
+              title: 'Second title',
+              artist: 'Second artist',
+            ),
+          ],
         ),
       );
 
@@ -40,7 +38,7 @@ void main() {
     ) async {
       final selected = <int>[];
       await tester.pumpWidget(
-        _testApp(snapshot: _snapshot(currentIndex: 0), onSelect: selected.add),
+        _testApp(currentIndex: 0, onSelect: selected.add),
       );
 
       final currentTitle = tester.widget<Text>(find.text('Title 0'));
@@ -61,7 +59,7 @@ void main() {
     ) async {
       final selected = <int>[];
       await tester.pumpWidget(
-        _testApp(snapshot: _snapshot(), onSelect: selected.add),
+        _testApp(onSelect: selected.add),
       );
 
       await tester.tap(find.text('Title 0'));
@@ -71,7 +69,7 @@ void main() {
     });
 
     testWidgets('does not expose local queue operations', (tester) async {
-      await tester.pumpWidget(_testApp(snapshot: _snapshot(currentIndex: 0)));
+      await tester.pumpWidget(_testApp(currentIndex: 0));
 
       expect(find.byIcon(Symbols.reorder), findsNothing);
       expect(find.byIcon(Symbols.clear_all), findsNothing);
@@ -81,7 +79,7 @@ void main() {
     });
 
     testWidgets('shows the existing empty queue state', (tester) async {
-      await tester.pumpWidget(_testApp(snapshot: _snapshot(queue: const [])));
+      await tester.pumpWidget(_testApp(queue: const []));
 
       expect(find.byIcon(Symbols.queue_music), findsOneWidget);
       expect(find.text('播放队列还是空的'), findsOneWidget);
@@ -100,7 +98,8 @@ void main() {
       );
       await tester.pumpWidget(
         _testApp(
-          snapshot: _snapshot(queue: queue, currentIndex: 8),
+          queue: queue,
+          currentIndex: 8,
           height: 240,
         ),
       );
@@ -112,7 +111,8 @@ void main() {
 
       await tester.pumpWidget(
         _testApp(
-          snapshot: _snapshot(queue: queue, currentIndex: 14),
+          queue: queue,
+          currentIndex: 14,
           height: 240,
         ),
       );
@@ -133,7 +133,7 @@ void main() {
         ),
       );
       await tester.pumpWidget(
-        _testApp(snapshot: _snapshot(queue: queue), height: 240),
+        _testApp(queue: queue, height: 240),
       );
       await tester.pump();
 
@@ -148,7 +148,8 @@ void main() {
 }
 
 Widget _testApp({
-  required ActivePlaybackSessionSnapshot snapshot,
+  List<ActivePlaybackSessionItem>? queue,
+  int? currentIndex,
   ValueChanged<int>? onSelect,
   double height = 400,
 }) {
@@ -158,36 +159,22 @@ Widget _testApp({
         width: 400,
         height: height,
         child: RemoteCurrentPlaylistView(
-          snapshot: snapshot,
+          queue:
+              queue ??
+              const [
+                ActivePlaybackSessionItem(
+                  title: 'Title 0',
+                  artist: 'Artist 0',
+                ),
+                ActivePlaybackSessionItem(
+                  title: 'Title 1',
+                  artist: 'Artist 1',
+                ),
+              ],
+          currentIndex: currentIndex,
           onSelect: onSelect ?? (_) {},
         ),
       ),
-    ),
-  );
-}
-
-ActivePlaybackSessionSnapshot _snapshot({
-  List<ActivePlaybackSessionItem>? queue,
-  int? currentIndex,
-}) {
-  return ActivePlaybackSessionSnapshot.active(
-    revision: 1,
-    source: ActivePlaybackSessionSource.remote,
-    queue:
-        queue ??
-        const [
-          ActivePlaybackSessionItem(title: 'Title 0', artist: 'Artist 0'),
-          ActivePlaybackSessionItem(title: 'Title 1', artist: 'Artist 1'),
-        ],
-    currentIndex: currentIndex,
-    state: ActivePlaybackSessionState.playing,
-    controlInFlight: false,
-    capabilities: const ActivePlaybackSessionCapabilities(
-      canPlay: false,
-      canPause: true,
-      canPrevious: false,
-      canNext: true,
-      canSeek: false,
     ),
   );
 }

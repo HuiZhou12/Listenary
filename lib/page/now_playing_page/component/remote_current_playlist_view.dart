@@ -6,11 +6,13 @@ import 'package:pure_music/play_service/active_playback_session.dart';
 class RemoteCurrentPlaylistView extends StatefulWidget {
   const RemoteCurrentPlaylistView({
     super.key,
-    required this.snapshot,
+    required this.queue,
+    required this.currentIndex,
     required this.onSelect,
   });
 
-  final ActivePlaybackSessionSnapshot snapshot;
+  final List<ActivePlaybackSessionItem> queue;
+  final int? currentIndex;
   final ValueChanged<int> onSelect;
 
   @override
@@ -27,7 +29,7 @@ class _RemoteCurrentPlaylistViewState extends State<RemoteCurrentPlaylistView> {
   void initState() {
     super.initState();
     _scrollController = ScrollController(
-      initialScrollOffset: (widget.snapshot.currentIndex ?? 0) * _itemExtent,
+      initialScrollOffset: (widget.currentIndex ?? 0) * _itemExtent,
     );
     _scheduleCurrentItem();
   }
@@ -35,13 +37,13 @@ class _RemoteCurrentPlaylistViewState extends State<RemoteCurrentPlaylistView> {
   @override
   void didUpdateWidget(RemoteCurrentPlaylistView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.snapshot.currentIndex != widget.snapshot.currentIndex) {
+    if (oldWidget.currentIndex != widget.currentIndex) {
       _scheduleCurrentItem();
     }
   }
 
   void _scheduleCurrentItem() {
-    final index = widget.snapshot.currentIndex;
+    final index = widget.currentIndex;
     if (index == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
@@ -55,7 +57,7 @@ class _RemoteCurrentPlaylistViewState extends State<RemoteCurrentPlaylistView> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final queue = widget.snapshot.queue;
+    final queue = widget.queue;
 
     return Material(
       type: MaterialType.transparency,
@@ -82,7 +84,7 @@ class _RemoteCurrentPlaylistViewState extends State<RemoteCurrentPlaylistView> {
                     itemExtent: _itemExtent,
                     itemBuilder: (context, index) {
                       final item = queue[index];
-                      final isCurrent = widget.snapshot.currentIndex == index;
+                      final isCurrent = widget.currentIndex == index;
                       return _RemotePlaylistItem(
                         item: item,
                         isCurrent: isCurrent,

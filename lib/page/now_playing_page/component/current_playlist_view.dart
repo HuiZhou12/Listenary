@@ -7,6 +7,7 @@ import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
+import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/play_service/remote_playback_session_controller.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -16,25 +17,113 @@ import 'package:provider/provider.dart';
 
 import 'remote_current_playlist_view.dart';
 
-class CurrentPlaylistView extends StatelessWidget {
+enum _QueueViewSource { local, remote }
+
+class CurrentPlaylistView extends StatefulWidget {
   const CurrentPlaylistView({super.key});
+
+  @override
+  State<CurrentPlaylistView> createState() => _CurrentPlaylistViewState();
+}
+
+class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
+  ActivePlaybackSessionSource? _lastActiveSource;
+  _QueueViewSource? _viewSource;
+  bool _manuallySelected = false;
+
+  _QueueViewSource _defaultSource(
+    ActivePlaybackSessionSource activeSource,
+    RemotePlaybackQueueSnapshot remoteQueue,
+  ) {
+    return switch (activeSource) {
+      ActivePlaybackSessionSource.local => _QueueViewSource.local,
+      ActivePlaybackSessionSource.remote => _QueueViewSource.remote,
+      ActivePlaybackSessionSource.inactive =>
+        PlayService.instance.existingPlaybackService != null ||
+                remoteQueue.isEmpty
+            ? _QueueViewSource.local
+            : _QueueViewSource.remote,
+    };
+  }
+
+  void _selectView(_QueueViewSource source) {
+    if (_viewSource == source) return;
+    setState(() {
+      _viewSource = source;
+      _manuallySelected = true;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final snapshot = context.watch<ActivePlaybackSession>().value;
-    if (snapshot.source == ActivePlaybackSessionSource.remote) {
+    final remoteQueue = context.watch<RemotePlaybackQueue>().value;
+    if (_lastActiveSource != snapshot.source) {
+      _lastActiveSource = snapshot.source;
+      _viewSource = _defaultSource(snapshot.source, remoteQueue);
+      _manuallySelected = false;
+    } else if (_viewSource == null ||
+        snapshot.source == ActivePlaybackSessionSource.inactive &&
+            !_manuallySelected) {
+      _viewSource = _defaultSource(snapshot.source, remoteQueue);
+    }
+
+    final viewSource = _viewSource!;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8.0, 8.0, 8.0, 0.0),
+          child: SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<_QueueViewSource>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(
+                  value: _QueueViewSource.local,
+                  label: Text('本地队列'),
+                ),
+                ButtonSegment(
+                  value: _QueueViewSource.remote,
+                  label: Text('在线队列'),
+                ),
+              ],
+              selected: {viewSource},
+              onSelectionChanged: (selection) =>
+                  _selectView(selection.single),
+            ),
+          ),
+        ),
+        Expanded(child: _buildQueue(context, viewSource, remoteQueue)),
+      ],
+    );
+  }
+
+  Widget _buildQueue(
+    BuildContext context,
+    _QueueViewSource source,
+    RemotePlaybackQueueSnapshot remoteQueue,
+  ) {
+    if (source == _QueueViewSource.remote) {
       final controller = context.read<RemotePlaybackSessionController>();
       return RemoteCurrentPlaylistView(
-        snapshot: snapshot,
+        queue: remoteQueue.items
+            .map(
+              (item) => ActivePlaybackSessionItem(
+                title: item.title,
+                artist: item.artistDisplay,
+                album: item.album,
+              ),
+            )
+            .toList(growable: false),
+        currentIndex: remoteQueue.currentIndex,
         onSelect: (index) => _selectRemote(controller, index),
       );
     }
 
     final playbackService = PlayService.instance.existingPlaybackService;
-    if (playbackService == null) {
-      return const _EmptyCurrentPlaylistView();
-    }
-    return _LocalCurrentPlaylistView(playbackService: playbackService);
+    return playbackService == null
+        ? const _EmptyCurrentPlaylistView()
+        : _LocalCurrentPlaylistView(playbackService: playbackService);
   }
 }
 
