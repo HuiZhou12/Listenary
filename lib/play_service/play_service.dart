@@ -23,6 +23,46 @@ abstract interface class RemotePlaybackControlState {
   bool get isActive;
 }
 
+typedef PlaybackServiceCreatedListener<T> = void Function(T service);
+
+final class PlaybackServiceHandoff<T> {
+  PlaybackServiceHandoff({required T Function() create}) : _create = create;
+
+  final T Function() _create;
+  final Set<PlaybackServiceCreatedListener<T>> _listeners = {};
+  T? _existing;
+
+  T? get existing => _existing;
+
+  T getOrCreate() {
+    final existing = _existing;
+    if (existing != null) return existing;
+
+    final created = _create();
+    _existing = created;
+    for (final listener in List.of(_listeners)) {
+      listener(created);
+    }
+    return created;
+  }
+
+  void addCreatedListener(PlaybackServiceCreatedListener<T> listener) {
+    if (!_listeners.add(listener)) return;
+    final existing = _existing;
+    if (existing != null) {
+      listener(existing);
+    }
+  }
+
+  void removeCreatedListener(PlaybackServiceCreatedListener<T> listener) {
+    _listeners.remove(listener);
+  }
+
+  void clearCreatedListeners() {
+    _listeners.clear();
+  }
+}
+
 final class _InactiveRemotePlaybackControlState
     implements RemotePlaybackControlState {
   const _InactiveRemotePlaybackControlState();
@@ -151,7 +191,7 @@ final class RemotePlaybackControlBinding {
 }
 
 class PlayService {
-  PlaybackService? _playbackService;
+  late final PlaybackServiceHandoff<PlaybackService> _playbackServiceHandoff;
   LyricService? _lyricService;
   DesktopLyricService? _desktopLyricService;
   SmtcSessionOwner? _smtcSessionOwner;
@@ -164,8 +204,9 @@ class PlayService {
       RemotePlaybackControlBinding();
   late final SmtcControlRouter _smtcControlRouter;
 
-  PlaybackService get playbackService =>
-      _playbackService ??= PlaybackService(this);
+  PlaybackService get playbackService => _playbackServiceHandoff.getOrCreate();
+  PlaybackService? get existingPlaybackService =>
+      _playbackServiceHandoff.existing;
   LyricService get lyricService => _lyricService ??= LyricService(this);
   DesktopLyricService get desktopLyricService =>
       _desktopLyricService ??= DesktopLyricService(this);
@@ -188,16 +229,19 @@ class PlayService {
   SmtcBridge get smtcBridge => _sharedSmtcSession.bridge;
 
   PlayService._() {
+    _playbackServiceHandoff = PlaybackServiceHandoff(
+      create: () => PlaybackService(this),
+    );
     _smtcControlRouter = SmtcControlRouter(
       isRemoteActive: () => _remotePlaybackControls.isActive,
       remotePlay: playAudio,
       remotePause: pauseAudio,
       remotePrevious: previousAudio,
       remoteNext: nextAudio,
-      localPlay: () => _playbackService?.start(),
-      localPause: () => _playbackService?.pause(),
-      localPrevious: () => _playbackService?.lastAudio(),
-      localNext: () => _playbackService?.nextAudio(),
+      localPlay: () => existingPlaybackService?.start(),
+      localPause: () => existingPlaybackService?.pause(),
+      localPrevious: () => existingPlaybackService?.lastAudio(),
+      localNext: () => existingPlaybackService?.nextAudio(),
       localStop: _stopLocalFromSmtc,
       localPosition: _seekLocalFromSmtc,
     );
@@ -209,7 +253,7 @@ class PlayService {
     return _instance!;
   }
 
-  bool get hasPlaybackSession => _playbackService?.nowPlaying != null;
+  bool get hasPlaybackSession => existingPlaybackService?.nowPlaying != null;
   RemotePlaybackControlState get remotePlaybackControlState =>
       _remotePlaybackControls.state;
   Stream<RemotePlaybackControlState> get remotePlaybackControlStateStream =>
@@ -262,6 +306,18 @@ class PlayService {
     for (final listener in List.of(_localPlaybackRequestListeners)) {
       listener();
     }
+  }
+
+  void addPlaybackServiceCreatedListener(
+    PlaybackServiceCreatedListener<PlaybackService> listener,
+  ) {
+    _playbackServiceHandoff.addCreatedListener(listener);
+  }
+
+  void removePlaybackServiceCreatedListener(
+    PlaybackServiceCreatedListener<PlaybackService> listener,
+  ) {
+    _playbackServiceHandoff.removeCreatedListener(listener);
   }
 
   void setRemoteNavigationHandlers({
@@ -329,14 +385,14 @@ class PlayService {
   }
 
   void _stopLocalFromSmtc() {
-    final service = _playbackService;
+    final service = existingPlaybackService;
     if (service == null) return;
     service.pause();
     service.seek(0);
   }
 
   void _seekLocalFromSmtc(int position) {
-    final service = _playbackService;
+    final service = existingPlaybackService;
     final audio = service?.nowPlaying;
     if (service == null || audio == null) return;
     final positionSeconds = (position / 1000).clamp(
@@ -349,6 +405,7 @@ class PlayService {
   Future<void> close() async {
     stopSmtcKeepAlive();
     _localPlaybackRequestListeners.clear();
+    _playbackServiceHandoff.clearCreatedListeners();
     clearRemoteNavigationHandlers();
     final remotePublisher = _remoteSmtcKeepAlivePublisher;
     _remoteSmtcKeepAlivePublisher = null;
@@ -393,7 +450,7 @@ class PlayService {
       }
     }
 
-    final playback = _playbackService;
+    final playback = existingPlaybackService;
     if (playback != null) {
       try {
         await playback.close().timeout(
