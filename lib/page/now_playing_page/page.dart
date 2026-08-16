@@ -511,10 +511,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                           builder: (context, cursorHidden, _) {
                             return ValueListenableBuilder(
                               valueListenable: nowPlayingViewMode,
-                              builder: (context, viewMode, _) {
-                                final inPlaylist =
-                                    viewMode == NowPlayingViewMode.withPlaylist;
-                                final shouldHide = cursorHidden || inPlaylist;
+                              builder: (context, _, _) {
+                                final shouldHide = cursorHidden;
                                 return AnimatedOpacity(
                                   duration: const Duration(milliseconds: 150),
                                   opacity: shouldHide ? 0.0 : 1.0,
