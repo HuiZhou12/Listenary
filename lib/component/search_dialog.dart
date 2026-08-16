@@ -82,19 +82,27 @@ final class OnlineTrackSelection {
 }
 
 class SearchDialog extends StatefulWidget {
-  const SearchDialog({super.key, this.onOnlineTrackSelected});
+  const SearchDialog({
+    super.key,
+    this.onOnlineTrackSelected,
+    this.initialOnline = false,
+  });
 
   final ValueChanged<OnlineTrackSelection>? onOnlineTrackSelected;
+  final bool initialOnline;
 
   static Future<void> show(
     BuildContext context, {
     ValueChanged<OnlineTrackSelection>? onOnlineTrackSelected,
+    bool initialOnline = false,
   }) {
     return showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (context) =>
-          SearchDialog(onOnlineTrackSelected: onOnlineTrackSelected),
+      builder: (context) => SearchDialog(
+        onOnlineTrackSelected: onOnlineTrackSelected,
+        initialOnline: initialOnline,
+      ),
     );
   }
 
@@ -121,7 +129,7 @@ class _SearchDialogState extends State<SearchDialog> {
   Audio? _queuedNextAudio;
   Audio? _addingAudioToPlaylist;
   Playlist? _addingTargetPlaylist;
-  int _currentIndex = 0;
+  late int _currentIndex;
   int _searchVersion = 0;
   int _onlineRequestVersion = 0;
   _OnlineSearchStatus _onlineStatus = _OnlineSearchStatus.idle;
@@ -138,6 +146,12 @@ class _SearchDialogState extends State<SearchDialog> {
   ];
 
   bool get _isOnlineTab => _currentIndex == _tabs.length - 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialOnline ? _tabs.length - 1 : 0;
+  }
 
   @override
   void dispose() {

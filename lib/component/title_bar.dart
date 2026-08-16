@@ -9,18 +9,14 @@ import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/component/horizontal_lyric_view.dart';
+import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/responsive_builder.dart';
-import 'package:pure_music/component/search_dialog.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/play_service/remote_playback_queue.dart';
-import 'package:pure_music/play_service/remote_playback_session_controller.dart';
-import 'package:pure_music/services/music_platform/index.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 class TitleBar extends StatelessWidget {
@@ -29,30 +25,7 @@ class TitleBar extends StatelessWidget {
   const TitleBar({super.key});
 
   static void _openSearch(BuildContext context) {
-    SearchDialog.show(
-      context,
-      onOnlineTrackSelected: (selection) async {
-        final queue = context.read<RemotePlaybackQueue>();
-        final controller = context.read<RemotePlaybackSessionController>();
-        queue.replace(selection.tracks.map(RemotePlaybackQueueItem.fromTrack));
-        try {
-          await controller.play(
-            selection.selectedIndex,
-            requestedQuality: NeteaseAdapter.defaultQuality,
-          );
-        } on RemoteStreamPlaybackException catch (error) {
-          if (error.kind != RemoteStreamPlaybackErrorKind.cancelled) {
-            showTextOnSnackBar(error.safeMessage, variant: ToastVariant.error);
-          }
-        } on ChkszException catch (error) {
-          if (error.kind != ChkszErrorKind.cancelled) {
-            showTextOnSnackBar(error.safeMessage, variant: ToastVariant.error);
-          }
-        } catch (_) {
-          showTextOnSnackBar('无法播放远程曲目', variant: ToastVariant.error);
-        }
-      },
-    );
+    showApplicationSearch(context);
   }
 
   @override

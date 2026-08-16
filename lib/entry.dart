@@ -15,6 +15,7 @@ import 'package:pure_music/page/audios_page.dart';
 import 'package:pure_music/page/folder_detail_page.dart';
 import 'package:pure_music/page/folders_page.dart';
 import 'package:pure_music/page/now_playing_page/page.dart';
+import 'package:pure_music/page/online_music_page.dart';
 import 'package:pure_music/page/playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
 import 'package:pure_music/page/settings_page/check_update.dart';
@@ -597,6 +598,14 @@ class _EntryState extends State<Entry>
               children: children,
             ),
         branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: app_paths.ONLINE_MUSIC_PAGE,
+                builder: (context, state) => const OnlineMusicPage(),
+              ),
+            ],
+          ),
           StatefulShellBranch(
             routes: [
               GoRoute(

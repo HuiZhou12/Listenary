@@ -45,6 +45,21 @@ void main() {
     expect(find.text('Explicit Result'), findsOneWidget);
   });
 
+  testWidgets('online entry opens online tab without requesting', (
+    tester,
+  ) async {
+    final transport = _RecordingTransport(
+      (_, _) async => _searchResponse(title: 'Unexpected Result'),
+    );
+    final runtime = _runtime(transport);
+    addTearDown(runtime.dispose);
+    await _pumpDialog(tester, runtime, initialOnline: true);
+
+    final searchField = tester.widget<TextField>(find.byType(TextField));
+    expect(searchField.decoration?.hintText, '搜索网易音乐');
+    expect(transport.requests, isEmpty);
+  });
+
   test('online selection filters explicitly unplayable tracks', () {
     final tracks = [
       _track('1', TrackAvailability.playable),
@@ -272,6 +287,7 @@ Future<void> _pumpDialog(
   WidgetTester tester,
   ChkszRuntime runtime, {
   ValueChanged<OnlineTrackSelection>? onOnlineTrackSelected,
+  bool initialOnline = false,
 }) async {
   tester.view.physicalSize = const Size(1200, 900);
   tester.view.devicePixelRatio = 1;
@@ -282,7 +298,10 @@ Future<void> _pumpDialog(
       home: Scaffold(
         body: Provider<ChkszRuntime>.value(
           value: runtime,
-          child: SearchDialog(onOnlineTrackSelected: onOnlineTrackSelected),
+          child: SearchDialog(
+            onOnlineTrackSelected: onOnlineTrackSelected,
+            initialOnline: initialOnline,
+          ),
         ),
       ),
     ),

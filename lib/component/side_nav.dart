@@ -16,15 +16,48 @@ class DestinationDesc {
   final IconData icon;
   final String label;
   final String desPath;
-  DestinationDesc(this.icon, this.label, this.desPath);
+  final int? startPageIndex;
+
+  const DestinationDesc(
+    this.icon,
+    this.label,
+    this.desPath, {
+    this.startPageIndex,
+  });
 }
 
-final destinations = <DestinationDesc>[
-  DestinationDesc(Symbols.library_music, '音乐', app_paths.AUDIOS_PAGE),
-  DestinationDesc(Symbols.artist, '艺术家', app_paths.ARTISTS_PAGE),
-  DestinationDesc(Symbols.album, '专辑', app_paths.ALBUMS_PAGE),
-  DestinationDesc(Symbols.folder, '文件夹', app_paths.FOLDERS_PAGE),
-  DestinationDesc(Symbols.list, '歌单', app_paths.PLAYLISTS_PAGE),
+const destinations = <DestinationDesc>[
+  DestinationDesc(Symbols.cloud, '在线音乐', app_paths.ONLINE_MUSIC_PAGE),
+  DestinationDesc(
+    Symbols.library_music,
+    '音乐',
+    app_paths.AUDIOS_PAGE,
+    startPageIndex: 0,
+  ),
+  DestinationDesc(
+    Symbols.artist,
+    '艺术家',
+    app_paths.ARTISTS_PAGE,
+    startPageIndex: 1,
+  ),
+  DestinationDesc(
+    Symbols.album,
+    '专辑',
+    app_paths.ALBUMS_PAGE,
+    startPageIndex: 2,
+  ),
+  DestinationDesc(
+    Symbols.folder,
+    '文件夹',
+    app_paths.FOLDERS_PAGE,
+    startPageIndex: 3,
+  ),
+  DestinationDesc(
+    Symbols.list,
+    '歌单',
+    app_paths.PLAYLISTS_PAGE,
+    startPageIndex: 4,
+  ),
   DestinationDesc(Symbols.bar_chart, '统计', app_paths.STATS_PAGE),
   DestinationDesc(Symbols.settings, '设置', app_paths.SETTINGS_PAGE),
 ];
@@ -64,9 +97,10 @@ class _SideNavState extends State<SideNav> {
       final currentIndex = navShell?.currentIndex;
       if (currentIndex == value) return;
 
-      if (value < app_paths.START_PAGES.length &&
-          AppPreference.instance.startPage != value) {
-        AppPreference.instance.startPage = value;
+      final startPageIndex = destinations[value].startPageIndex;
+      if (startPageIndex != null &&
+          AppPreference.instance.startPage != startPageIndex) {
+        AppPreference.instance.startPage = startPageIndex;
         AppPreference.instance.save();
       }
 
