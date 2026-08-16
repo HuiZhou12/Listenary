@@ -384,12 +384,18 @@ class _ImmersiveTitleText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final playbackService = PlayService.instance.playbackService;
+    final snapshot = context.watch<ActivePlaybackSession>().value;
 
     return ValueListenableBuilder<Audio?>(
       valueListenable: playbackService.nowPlayingNotifier,
       builder: (context, nowPlaying, _) {
+        final metadata = resolveNowPlayingMetadata(
+          snapshot: snapshot,
+          localTitle: nowPlaying?.title,
+          localArtist: nowPlaying?.artist,
+        );
         return Text(
-          nowPlaying == null ? 'Pure Music' : nowPlaying.title,
+          metadata.title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
@@ -410,12 +416,18 @@ class _ImmersiveArtistText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final playbackService = PlayService.instance.playbackService;
+    final snapshot = context.watch<ActivePlaybackSession>().value;
 
     return ValueListenableBuilder<Audio?>(
       valueListenable: playbackService.nowPlayingNotifier,
       builder: (context, nowPlaying, _) {
+        final metadata = resolveNowPlayingMetadata(
+          snapshot: snapshot,
+          localTitle: nowPlaying?.title,
+          localArtist: nowPlaying?.artist,
+        );
         return Text(
-          nowPlaying == null ? 'Enjoy Music' : nowPlaying.artist,
+          metadata.artist,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(

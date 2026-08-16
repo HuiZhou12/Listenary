@@ -30,7 +30,6 @@ import 'package:pure_music/page/now_playing_page/component/current_playlist_view
 import 'package:pure_music/page/now_playing_page/component/equalizer_dialog.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_source_view.dart';
 import 'package:pure_music/page/now_playing_page/component/pitch_control.dart';
-import 'package:pure_music/page/now_playing_page/component/remote_now_playing_content.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
@@ -82,6 +81,22 @@ bool shouldCancelNowPlayingSeekDrag({
   required bool isDragging,
 }) => !canSeekFromUi && isDragging;
 
+@visibleForTesting
+({String title, String artist}) resolveNowPlayingMetadata({
+  required ActivePlaybackSessionSnapshot snapshot,
+  required String? localTitle,
+  required String? localArtist,
+}) {
+  if (snapshot.source == ActivePlaybackSessionSource.remote) {
+    final item = snapshot.currentItem;
+    return (title: item?.title ?? 'Pure Music', artist: item?.artist ?? '');
+  }
+  return (
+    title: localTitle ?? 'Pure Music',
+    artist: localArtist ?? 'Enjoy Music',
+  );
+}
+
 // 沉浸模式封面下方区域高度（24 间距 + 进度条 40）
 const _immersiveCoverBelowHeight = 64.0;
 
@@ -108,8 +123,7 @@ class NowPlayingPage extends StatefulWidget {
 }
 
 class _NowPlayingPageState extends State<NowPlayingPage> {
-  PlaybackService? _playbackService;
-  ActivePlaybackSession? _activePlaybackSession;
+  final playbackService = PlayService.instance.playbackService;
   Uint8List? _nowPlayingCoverBytes;
   String? _nowPlayingCoverPath;
   Timer? _coverDebounceTimer;
@@ -126,52 +140,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   String? _palettePath;
   final ColorExtractionService _colorService = ColorExtractionService();
 
-  PlaybackService get playbackService => _playbackService!;
-
-  bool get _isRemoteActive =>
-      _activePlaybackSession?.value.source ==
-      ActivePlaybackSessionSource.remote;
-
-  void _attachPlaybackService() {
-    final next = PlayService.instance.playbackService;
-    if (identical(_playbackService, next)) return;
-    _playbackService?.nowPlayingNotifier.removeListener(updateCover);
-    _playbackService = next;
-    next.nowPlayingNotifier.addListener(updateCover);
-    updateCover();
-  }
-
-  void _detachPlaybackService() {
-    _playbackService?.nowPlayingNotifier.removeListener(updateCover);
-    _playbackService = null;
-  }
-
-  void _clearLocalPresentation() {
-    _coverDebounceTimer?.cancel();
-    _songChangeTrimTimer?.cancel();
-    _coverRequestToken++;
-    _nowPlayingCoverPath = null;
-    _nowPlayingCoverBytes = null;
-    _dominantColor = null;
-    _preExtractedPalette = null;
-    _palettePath = null;
-    _backgroundUsesCachedLargeCover = false;
-  }
-
-  void _syncActiveSession({required bool rebuild}) {
-    if (_isRemoteActive) {
-      _detachPlaybackService();
-      _clearLocalPresentation();
-    } else {
-      _attachPlaybackService();
-    }
-    if (rebuild && mounted) setState(() {});
-  }
-
-  void _onActiveSessionChanged() {
-    _syncActiveSession(rebuild: true);
-  }
-
   /// 用于防重复：同一次切歌内只提取一次调色板
 
   void _bumpCursor() {
@@ -187,7 +155,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   /// Returns true if the request is stale and should be aborted.
   bool _isCoverRequestStale(int token, String expectedPath) {
     return token != _coverRequestToken ||
-        _playbackService?.nowPlaying?.path != expectedPath ||
+        playbackService.nowPlaying?.path != expectedPath ||
         !_routeReady ||
         !mounted;
   }
@@ -206,9 +174,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
   void _scheduleCoverDetails() {
     _coverDebounceTimer?.cancel();
-    final service = _playbackService;
     final path = _nowPlayingCoverPath;
-    if (!_routeReady || path == null || service == null) return;
+    if (!_routeReady || path == null) return;
     if (_backgroundUsesCachedLargeCover &&
         _palettePath == path &&
         _preExtractedPalette != null) {
@@ -217,7 +184,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     final token = _coverRequestToken;
 
     _coverDebounceTimer = Timer(MotionDuration.xFast, () async {
-      final audio = service.nowPlaying;
+      final audio = playbackService.nowPlaying;
       if (audio == null || _isCoverRequestStale(token, path)) return;
 
       final cachedPalette = _colorService.getCachedPaletteForPath(path);
@@ -264,8 +231,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   }
 
   void updateCover() {
-    final service = _playbackService;
-    final path = service?.nowPlaying?.path;
+    final path = playbackService.nowPlaying?.path;
     if (path == null) {
       if (_nowPlayingCoverPath != null || _nowPlayingCoverBytes != null) {
         _coverDebounceTimer?.cancel();
@@ -293,7 +259,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _songChangeTrimTimer?.cancel();
     _coverRequestToken++;
     // 首帧优先复用已解码的大封面，否则沿用小封面。
-    final aud = service?.nowPlaying;
+    final aud = playbackService.nowPlaying;
     if (aud != null) {
       final cachedPalette = _colorService.getCachedPaletteForPath(path);
       if (cachedPalette != null && cachedPalette.isNotEmpty) {
@@ -320,7 +286,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     if (mounted) setState(() {});
 
     _songChangeTrimTimer = Timer(const Duration(seconds: 8), () {
-      if (!mounted || _playbackService?.nowPlaying?.path != path) return;
+      if (!mounted || playbackService.nowPlaying?.path != path) return;
       MemoryMonitorService.instance.trimAfterSongChange();
     });
 
@@ -341,10 +307,12 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   @override
   void initState() {
     super.initState();
+    playbackService.nowPlayingNotifier.addListener(updateCover);
     nowPlayingViewMode.addListener(_onViewModeChanged);
+    updateCover();
     _bumpCursor();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _isRemoteActive) return;
+      if (!mounted) return;
       FocusManager.instance.primaryFocus?.unfocus();
       PlayService.instance.lyricService.forceEmitCurrentLine();
     });
@@ -353,13 +321,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final activeSession = context.read<ActivePlaybackSession>();
-    if (!identical(activeSession, _activePlaybackSession)) {
-      _activePlaybackSession?.removeListener(_onActiveSessionChanged);
-      _activePlaybackSession = activeSession;
-      activeSession.addListener(_onActiveSessionChanged);
-      _syncActiveSession(rebuild: false);
-    }
     final animation = ModalRoute.of(context)?.animation;
     if (identical(animation, _routeAnimation)) return;
     _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
@@ -374,8 +335,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
   @override
   void dispose() {
-    _activePlaybackSession?.removeListener(_onActiveSessionChanged);
-    _detachPlaybackService();
+    playbackService.nowPlayingNotifier.removeListener(updateCover);
     nowPlayingViewMode.removeListener(_onViewModeChanged);
     _coverDebounceTimer?.cancel();
     _songChangeTrimTimer?.cancel();
@@ -386,10 +346,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     super.dispose();
   }
 
-  Widget _buildBackground(
-    Brightness brightness,
-    PlaybackService playbackService,
-  ) {
+  Widget _buildBackground(Brightness brightness) {
     return RepaintBoundary(
       child: Stack(
         fit: StackFit.expand,
@@ -453,10 +410,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     final theme = Theme.of(context);
     final brightness = theme.brightness;
     final scheme = theme.colorScheme;
-    final activeSnapshot = _activePlaybackSession!.value;
-    final remoteActive =
-        activeSnapshot.source == ActivePlaybackSessionSource.remote;
-    final localPlaybackService = _playbackService;
 
     final page = ListenableBuilder(
       listenable: ImmersiveModeController.instance,
@@ -487,13 +440,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
               fit: StackFit.expand,
               alignment: AlignmentDirectional.center,
               children: [
-                remoteActive
-                    ? RepaintBoundary(
-                        child: ColoredBox(
-                          color: _neutralBackgroundColor(brightness),
-                        ),
-                      )
-                    : _buildBackground(brightness, localPlaybackService!),
+                _buildBackground(brightness),
                 ListenableBuilder(
                   listenable: AppSettings.rebuildNotifier,
                   builder: (context, _) {
@@ -528,32 +475,22 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                             }),
                           ),
                         ),
-                        child: remoteActive
-                            ? RemoteNowPlayingContent(
-                                snapshot: activeSnapshot,
-                                queue: const CurrentPlaylistView(),
-                                immersive: immersive,
-                                onPrevious: PlayService.instance.previousAudio,
-                                onPlay: PlayService.instance.playAudio,
-                                onPause: PlayService.instance.pauseAudio,
-                                onNext: PlayService.instance.nextAudio,
-                              )
-                            : ChangeNotifierProvider.value(
-                                value: localPlaybackService!,
-                                builder: (context, _) => immersive
-                                    ? const _NowPlayingImmersivePage()
-                                    : ResponsiveBuilder2(
-                                        builder: (context, screenType) {
-                                          if (_usesCompactNowPlayingLayout(
-                                            context,
-                                            screenType,
-                                          )) {
-                                            return const _NowPlayingSmallPage();
-                                          }
-                                          return const _NowPlayingLargePage();
-                                        },
-                                      ),
-                              ),
+                        child: ChangeNotifierProvider.value(
+                          value: PlayService.instance.playbackService,
+                          builder: (context, _) => immersive
+                              ? const _NowPlayingImmersivePage()
+                              : ResponsiveBuilder2(
+                                  builder: (context, screenType) {
+                                    if (_usesCompactNowPlayingLayout(
+                                      context,
+                                      screenType,
+                                    )) {
+                                      return const _NowPlayingSmallPage();
+                                    }
+                                    return const _NowPlayingLargePage();
+                                  },
+                                ),
+                        ),
                       ),
                     );
                   },
@@ -2507,6 +2444,11 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final nowPlaying = playbackService.nowPlaying;
+    final metadata = resolveNowPlayingMetadata(
+      snapshot: context.watch<ActivePlaybackSession>().value,
+      localTitle: nowPlaying?.title,
+      localArtist: nowPlaying?.artist,
+    );
     final nowPlayingPath = nowPlaying?.path;
     final heroEnabled = !playbackService.nowPlayingChangedRecently;
 
@@ -2615,7 +2557,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                 SizedBox(
                   width: textWidth,
                   child: Text(
-                    nowPlaying == null ? 'Pure Music' : nowPlaying.title,
+                    metadata.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
@@ -2631,7 +2573,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                 SizedBox(
                   width: textWidth,
                   child: Text(
-                    nowPlaying == null ? 'Enjoy Music' : nowPlaying.artist,
+                    metadata.artist,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
