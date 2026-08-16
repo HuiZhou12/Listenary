@@ -6,11 +6,13 @@ import 'package:pure_music/play_service/active_playback_session.dart';
 class RemoteCurrentPlaylistView extends StatefulWidget {
   const RemoteCurrentPlaylistView({
     super.key,
+    required this.queueSourceSwitcher,
     required this.queue,
     required this.currentIndex,
     required this.onSelect,
   });
 
+  final Widget queueSourceSwitcher;
   final List<ActivePlaybackSessionItem> queue;
   final int? currentIndex;
   final ValueChanged<int> onSelect;
@@ -66,13 +68,24 @@ class _RemoteCurrentPlaylistViewState extends State<RemoteCurrentPlaylistView> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(8.0, 8.0, 4.0, 8.0),
-            child: Text(
-              '播放列表',
-              style: TextStyle(
-                color: scheme.onSecondaryContainer,
-                fontSize: AppType.hero,
-                fontWeight: AppType.weightBold,
-              ),
+            child: Row(
+              children: [
+                Text(
+                  '播放列表',
+                  style: TextStyle(
+                    color: scheme.onSecondaryContainer,
+                    fontSize: AppType.hero,
+                    fontWeight: AppType.weightBold,
+                  ),
+                ),
+                const SizedBox(width: 12.0),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: widget.queueSourceSwitcher,
+                  ),
+                ),
+              ],
             ),
           ),
           Expanded(

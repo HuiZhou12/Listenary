@@ -33,6 +33,23 @@ void main() {
     expect(PlayService.instance.existingPlaybackService, isNull);
   });
 
+  testWidgets('queue switcher is compact and below the title bar safety area', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness.app());
+
+    final switcher = find.byWidgetPredicate(
+      (widget) => widget is SegmentedButton,
+    );
+    final switcherRect = tester.getRect(switcher);
+    final titleRect = tester.getRect(find.text('播放列表'));
+
+    expect(switcherRect.top, greaterThanOrEqualTo(48.0));
+    expect(switcherRect.width, lessThanOrEqualTo(200.0));
+    expect((switcherRect.center.dy - titleRect.center.dy).abs(), lessThan(1.0));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('inactive remote memory queue remains visible', (tester) async {
     await tester.pumpWidget(harness.app());
 

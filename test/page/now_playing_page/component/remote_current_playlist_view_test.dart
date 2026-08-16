@@ -58,9 +58,7 @@ void main() {
       tester,
     ) async {
       final selected = <int>[];
-      await tester.pumpWidget(
-        _testApp(onSelect: selected.add),
-      );
+      await tester.pumpWidget(_testApp(onSelect: selected.add));
 
       await tester.tap(find.text('Title 0'));
       await tester.tap(find.text('Title 1'));
@@ -97,11 +95,7 @@ void main() {
         ),
       );
       await tester.pumpWidget(
-        _testApp(
-          queue: queue,
-          currentIndex: 8,
-          height: 240,
-        ),
+        _testApp(queue: queue, currentIndex: 8, height: 240),
       );
       await tester.pump();
 
@@ -110,11 +104,7 @@ void main() {
       expect(initialList.controller!.offset, 8 * 64.0);
 
       await tester.pumpWidget(
-        _testApp(
-          queue: queue,
-          currentIndex: 14,
-          height: 240,
-        ),
+        _testApp(queue: queue, currentIndex: 14, height: 240),
       );
       await tester.pump();
 
@@ -132,9 +122,7 @@ void main() {
           artist: 'Artist $index',
         ),
       );
-      await tester.pumpWidget(
-        _testApp(queue: queue, height: 240),
-      );
+      await tester.pumpWidget(_testApp(queue: queue, height: 240));
       await tester.pump();
 
       final list = tester.widget<ListView>(find.byType(ListView));
@@ -159,17 +147,12 @@ Widget _testApp({
         width: 400,
         height: height,
         child: RemoteCurrentPlaylistView(
+          queueSourceSwitcher: const SizedBox.shrink(),
           queue:
               queue ??
               const [
-                ActivePlaybackSessionItem(
-                  title: 'Title 0',
-                  artist: 'Artist 0',
-                ),
-                ActivePlaybackSessionItem(
-                  title: 'Title 1',
-                  artist: 'Artist 1',
-                ),
+                ActivePlaybackSessionItem(title: 'Title 0', artist: 'Artist 0'),
+                ActivePlaybackSessionItem(title: 'Title 1', artist: 'Artist 1'),
               ],
           currentIndex: currentIndex,
           onSelect: onSelect ?? (_) {},

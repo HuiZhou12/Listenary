@@ -69,31 +69,21 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
     }
 
     final viewSource = _viewSource!;
+    final queueSourceSwitcher = _QueueSourceSwitcher(
+      selected: viewSource,
+      onSelected: _selectView,
+    );
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8.0, 8.0, 8.0, 0.0),
-          child: SizedBox(
-            width: double.infinity,
-            child: SegmentedButton<_QueueViewSource>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(
-                  value: _QueueViewSource.local,
-                  label: Text('本地队列'),
-                ),
-                ButtonSegment(
-                  value: _QueueViewSource.remote,
-                  label: Text('在线队列'),
-                ),
-              ],
-              selected: {viewSource},
-              onSelectionChanged: (selection) =>
-                  _selectView(selection.single),
-            ),
+        const SizedBox(height: 48.0),
+        Expanded(
+          child: _buildQueue(
+            context,
+            viewSource,
+            remoteQueue,
+            queueSourceSwitcher,
           ),
         ),
-        Expanded(child: _buildQueue(context, viewSource, remoteQueue)),
       ],
     );
   }
@@ -102,10 +92,12 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
     BuildContext context,
     _QueueViewSource source,
     RemotePlaybackQueueSnapshot remoteQueue,
+    Widget queueSourceSwitcher,
   ) {
     if (source == _QueueViewSource.remote) {
       final controller = context.read<RemotePlaybackSessionController>();
       return RemoteCurrentPlaylistView(
+        queueSourceSwitcher: queueSourceSwitcher,
         queue: remoteQueue.items
             .map(
               (item) => ActivePlaybackSessionItem(
@@ -122,8 +114,57 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
 
     final playbackService = PlayService.instance.existingPlaybackService;
     return playbackService == null
-        ? const _EmptyCurrentPlaylistView()
-        : _LocalCurrentPlaylistView(playbackService: playbackService);
+        ? _EmptyCurrentPlaylistView(queueSourceSwitcher: queueSourceSwitcher)
+        : _LocalCurrentPlaylistView(
+            playbackService: playbackService,
+            queueSourceSwitcher: queueSourceSwitcher,
+          );
+  }
+}
+
+class _QueueSourceSwitcher extends StatelessWidget {
+  const _QueueSourceSwitcher({
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final _QueueViewSource selected;
+  final ValueChanged<_QueueViewSource> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 200.0),
+      child: SegmentedButton<_QueueViewSource>(
+        showSelectedIcon: false,
+        style: ButtonStyle(
+          visualDensity: const VisualDensity(horizontal: -2.0, vertical: -2.0),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          minimumSize: const WidgetStatePropertyAll(Size(0.0, 34.0)),
+          padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(horizontal: 10.0),
+          ),
+          foregroundColor: WidgetStateProperty.resolveWith((states) {
+            return states.contains(WidgetState.selected)
+                ? scheme.onSecondaryContainer
+                : scheme.onSurfaceVariant;
+          }),
+          backgroundColor: WidgetStateProperty.resolveWith((states) {
+            return states.contains(WidgetState.selected)
+                ? scheme.secondaryContainer
+                : scheme.surfaceContainerHighest.withValues(alpha: 0.5);
+          }),
+          side: const WidgetStatePropertyAll(BorderSide.none),
+        ),
+        segments: const [
+          ButtonSegment(value: _QueueViewSource.local, label: Text('本地队列')),
+          ButtonSegment(value: _QueueViewSource.remote, label: Text('在线队列')),
+        ],
+        selected: {selected},
+        onSelectionChanged: (selection) => onSelected(selection.single),
+      ),
+    );
   }
 }
 
@@ -149,7 +190,9 @@ void _selectRemote(RemotePlaybackSessionController controller, int index) {
 }
 
 class _EmptyCurrentPlaylistView extends StatelessWidget {
-  const _EmptyCurrentPlaylistView();
+  const _EmptyCurrentPlaylistView({required this.queueSourceSwitcher});
+
+  final Widget queueSourceSwitcher;
 
   @override
   Widget build(BuildContext context) {
@@ -161,13 +204,24 @@ class _EmptyCurrentPlaylistView extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(8.0, 8.0, 4.0, 8.0),
-            child: Text(
-              '播放列表',
-              style: TextStyle(
-                color: scheme.onSecondaryContainer,
-                fontSize: AppType.hero,
-                fontWeight: AppType.weightBold,
-              ),
+            child: Row(
+              children: [
+                Text(
+                  '播放列表',
+                  style: TextStyle(
+                    color: scheme.onSecondaryContainer,
+                    fontSize: AppType.hero,
+                    fontWeight: AppType.weightBold,
+                  ),
+                ),
+                const SizedBox(width: 12.0),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: queueSourceSwitcher,
+                  ),
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -219,9 +273,13 @@ class _EmptyCurrentPlaylistView extends StatelessWidget {
 }
 
 class _LocalCurrentPlaylistView extends StatefulWidget {
-  const _LocalCurrentPlaylistView({required this.playbackService});
+  const _LocalCurrentPlaylistView({
+    required this.playbackService,
+    required this.queueSourceSwitcher,
+  });
 
   final PlaybackService playbackService;
+  final Widget queueSourceSwitcher;
 
   @override
   State<_LocalCurrentPlaylistView> createState() =>
@@ -304,7 +362,13 @@ class _LocalCurrentPlaylistViewState extends State<_LocalCurrentPlaylistView> {
                     fontWeight: AppType.weightBold,
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 12.0),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: widget.queueSourceSwitcher,
+                  ),
+                ),
                 // 排序模式切换按钮
                 ValueListenableBuilder<List<Audio>>(
                   valueListenable: playbackService.playlistNotifier,
