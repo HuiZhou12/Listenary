@@ -49,6 +49,7 @@ void main() {
         calls.add(value);
         expect(localInput, same(_input));
       },
+      publishActiveSessionPosition: (value, positionMs) async {},
     );
 
     await adapter.publish(_input);
@@ -67,6 +68,12 @@ final class _FakePublisher implements LocalSmtcPublisher {
 
   @override
   Future<void> publish(LocalSmtcInput input) async {}
+
+  @override
+  Future<void> publishPosition(int positionMs) async {}
+
+  @override
+  Future<void> clearDisplay() async {}
 }
 
 const _input = LocalSmtcInput(

@@ -28,6 +28,25 @@ final class ActiveSessionSmtcPublisher {
     return _operationChain;
   }
 
+  Future<void> publishLocalPosition(
+    ActivePlaybackSessionSnapshot snapshot,
+    int positionMs,
+  ) {
+    if (_disposed || snapshot.source != ActivePlaybackSessionSource.local) {
+      return Future<void>.value();
+    }
+    final expectedRevision = _revision;
+    _operationChain = _operationChain.then((_) async {
+      if (_disposed ||
+          expectedRevision != _revision ||
+          _displayedSource != ActivePlaybackSessionSource.local) {
+        return;
+      }
+      await _bridge.updateTimeProperties(positionMs);
+    });
+    return _operationChain;
+  }
+
   Future<void> _publishSnapshot(
     ActivePlaybackSessionSnapshot snapshot,
     int token,

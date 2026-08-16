@@ -8,7 +8,6 @@ import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/equalizer_service.dart';
-import 'package:pure_music/play_service/smtc_bridge.dart';
 import 'package:pure_music/play_service/local_smtc_publisher.dart';
 import 'package:pure_music/play_service/local_smtc_input.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
@@ -48,8 +47,7 @@ class PlaybackService extends ChangeNotifier {
   ValueListenable<int> get playCountRevision => _playCountRevision;
 
   PlaybackService(this.playService, {LocalSmtcPublisher? localSmtcPublisher})
-    : _smtc = playService.smtcBridge,
-      _localSmtcPublisherSlot = LocalSmtcPublisherSlot(localSmtcPublisher) {
+    : _localSmtcPublisherSlot = LocalSmtcPublisherSlot(localSmtcPublisher) {
     _smtcKeepAliveHandler = _pushSmtcKeepAlive;
     playService.bindSmtcKeepAlive(_smtcKeepAliveHandler);
     _player.onExclusiveModeChanged = (exclusive) {
@@ -81,7 +79,6 @@ class PlaybackService extends ChangeNotifier {
   }
 
   final _player = BassPlayer();
-  final SmtcBridge _smtc;
   final LocalSmtcPublisherSlot _localSmtcPublisherSlot;
   final _pref = AppPreference.instance.playbackPref;
   late final EqualizerService _eq;
@@ -301,7 +298,7 @@ class PlaybackService extends ChangeNotifier {
     final currentPosition = position;
     _onPositionUpdate(currentPosition);
     final progress = (currentPosition * 1000).round();
-    unawaited(_smtc.updateTimeProperties(progress));
+    unawaited(_localSmtcPublisherSlot.publishPosition(progress));
   }
 
   void _syncSmtcPositionTimer() {
@@ -320,10 +317,10 @@ class PlaybackService extends ChangeNotifier {
     if (_closed) return;
     final audio = nowPlaying;
     if (audio == null) return;
-    unawaited(_smtc.refreshDisplay());
     unawaited(
-      _smtc.updateState(
-        playerState == PlayerState.playing
+      _publishLocalSmtc(
+        audio: audio,
+        state: playerState == PlayerState.playing
             ? SMTCState.playing
             : SMTCState.paused,
       ),
@@ -331,18 +328,19 @@ class PlaybackService extends ChangeNotifier {
     _updateSmtcPosition();
   }
 
-  void _publishLocalSmtc({required Audio audio, required SMTCState state}) {
-    unawaited(
-      _localSmtcPublisherSlot.publish(
-        LocalSmtcInput(
-          title: audio.title,
-          artist: audio.artist,
-          album: audio.album,
-          durationMs: audio.duration * 1000,
-          path: audio.path,
-          state: state,
-          positionMs: (position * 1000).round(),
-        ),
+  Future<void> _publishLocalSmtc({
+    required Audio audio,
+    required SMTCState state,
+  }) {
+    return _localSmtcPublisherSlot.publish(
+      LocalSmtcInput(
+        title: audio.title,
+        artist: audio.artist,
+        album: audio.album,
+        durationMs: audio.duration * 1000,
+        path: audio.path,
+        state: state,
+        positionMs: (position * 1000).round(),
       ),
     );
   }
@@ -383,7 +381,7 @@ class PlaybackService extends ChangeNotifier {
       playService.lyricService.updateLyric();
 
       _playerState.value = PlayerState.playing;
-      _publishLocalSmtc(audio: audio, state: SMTCState.playing);
+      unawaited(_publishLocalSmtc(audio: audio, state: SMTCState.playing));
       _syncSmtcPositionTimer();
       _schedulePositionSyncBurst(token: token, path: audio.path);
       notifyListeners();
@@ -440,7 +438,7 @@ class PlaybackService extends ChangeNotifier {
     _notifyPositionSync();
     final audio = nowPlaying;
     if (audio != null) {
-      _publishLocalSmtc(audio: audio, state: SMTCState.paused);
+      unawaited(_publishLocalSmtc(audio: audio, state: SMTCState.paused));
     }
     notifyListeners();
     showTextOnSnackBar(message, variant: ToastVariant.error);
@@ -703,7 +701,7 @@ class PlaybackService extends ChangeNotifier {
     _playlistBackup = [];
     _playlistIndex = null;
     _nowPlaying.value = null;
-    unawaited(_smtc.clearDisplay());
+    unawaited(_localSmtcPublisherSlot.clearDisplay());
     _clearPersistedLastSession();
   }
 
@@ -739,7 +737,7 @@ class PlaybackService extends ChangeNotifier {
           _player.pause();
           _playlistIndex = null;
           _nowPlaying.value = null;
-          unawaited(_smtc.clearDisplay());
+          unawaited(_localSmtcPublisherSlot.clearDisplay());
           _clearPersistedLastSession();
         } else if (_playlistIndex! < _playlist.value.length) {
           _loadAndPlay(_playlistIndex!, _playlist.value);
@@ -883,14 +881,7 @@ class PlaybackService extends ChangeNotifier {
       ThemeProvider.instance.applyThemeFromAudio(nowPlaying!);
 
       final restoredAudio = nowPlaying!;
-      await _smtc.updateDisplay(
-        title: restoredAudio.title,
-        artist: restoredAudio.artist,
-        album: restoredAudio.album,
-        duration: restoredAudio.duration * 1000,
-        path: restoredAudio.path,
-      );
-      await _smtc.updateState(SMTCState.paused);
+      await _publishLocalSmtc(audio: restoredAudio, state: SMTCState.paused);
       _syncSmtcPositionTimer();
     } catch (err) {
       logger.e('[restore last session] $err');
@@ -955,7 +946,7 @@ class PlaybackService extends ChangeNotifier {
       _player.pause();
       final audio = nowPlaying;
       if (audio != null) {
-        _publishLocalSmtc(audio: audio, state: SMTCState.paused);
+        unawaited(_publishLocalSmtc(audio: audio, state: SMTCState.paused));
       }
       playService.desktopLyricService.canSendMessage.then((canSend) {
         if (!canSend) return;
@@ -976,7 +967,7 @@ class PlaybackService extends ChangeNotifier {
       _player.start();
       final audio = nowPlaying;
       if (audio != null) {
-        _publishLocalSmtc(audio: audio, state: SMTCState.playing);
+        unawaited(_publishLocalSmtc(audio: audio, state: SMTCState.playing));
       }
       _schedulePositionSyncBurst();
       playService.desktopLyricService.canSendMessage.then((canSend) {
@@ -1027,7 +1018,10 @@ class PlaybackService extends ChangeNotifier {
 
     // 5. 共享 SMTC 由 PlayService 在本地订阅释放后关闭
     try {
-      await _smtc.updateState(SMTCState.paused);
+      final audio = nowPlaying;
+      if (audio != null) {
+        await _publishLocalSmtc(audio: audio, state: SMTCState.paused);
+      }
     } catch (_) {}
 
     // 6. dispose ValueNotifiers（释放 _playlist 引用的 Audio 列表）

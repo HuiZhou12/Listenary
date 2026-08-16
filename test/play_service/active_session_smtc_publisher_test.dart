@@ -98,6 +98,55 @@ void main() {
     expect(backend.timelines, [12000]);
   });
 
+  test(
+    'local position updates timeline without republishing metadata',
+    () async {
+      final backend = _FakeSmtcBackend();
+      final publisher = ActiveSessionSmtcPublisher(
+        SmtcBridge.withBackend(backend),
+      );
+      final snapshot = _snapshot(
+        source: ActivePlaybackSessionSource.local,
+        state: ActivePlaybackSessionState.playing,
+      );
+
+      final metadataPublish = publisher.publish(
+        snapshot,
+        localInput: const LocalSmtcInput(
+          title: 'Input title',
+          artist: 'Input artist',
+          album: 'Input album',
+          durationMs: 180000,
+          path: r'C:\Music\input.mp3',
+          state: SMTCState.playing,
+          positionMs: 12000,
+        ),
+      );
+      final positionPublish = publisher.publishLocalPosition(snapshot, 24000);
+      await Future.wait([metadataPublish, positionPublish]);
+
+      expect(backend.displays, hasLength(1));
+      expect(backend.states, [SMTCState.playing]);
+      expect(backend.timelines, [12000, 24000]);
+    },
+  );
+
+  test('remote position update is ignored', () async {
+    final backend = _FakeSmtcBackend();
+    final publisher = ActiveSessionSmtcPublisher(
+      SmtcBridge.withBackend(backend),
+    );
+    final snapshot = _snapshot(
+      source: ActivePlaybackSessionSource.remote,
+      state: ActivePlaybackSessionState.playing,
+    );
+
+    await publisher.publish(snapshot);
+    await publisher.publishLocalPosition(snapshot, 24000);
+
+    expect(backend.timelines, isEmpty);
+  });
+
   test('inactive snapshot clears the active display', () async {
     final backend = _FakeSmtcBackend();
     final publisher = ActiveSessionSmtcPublisher(

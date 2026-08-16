@@ -46,4 +46,10 @@ final class _RecordingPublisher implements LocalSmtcPublisher {
   Future<void> publish(LocalSmtcInput input) async {
     inputs.add(input);
   }
+
+  @override
+  Future<void> publishPosition(int positionMs) async {}
+
+  @override
+  Future<void> clearDisplay() async {}
 }
