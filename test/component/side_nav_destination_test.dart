@@ -15,10 +15,13 @@ void main() {
       localDestinations.map((destination) => destination.desPath),
       app_paths.START_PAGES,
     );
-    expect(
-      localDestinations.map((destination) => destination.startPageIndex),
-      [0, 1, 2, 3, 4],
-    );
+    expect(localDestinations.map((destination) => destination.startPageIndex), [
+      0,
+      1,
+      2,
+      3,
+      4,
+    ]);
   });
 
   test('non-start destinations do not map to a local start page', () {
@@ -28,10 +31,24 @@ void main() {
       app_paths.SETTINGS_PAGE,
     ]) {
       expect(
-        destinations.singleWhere((destination) => destination.desPath == path)
+        destinations
+            .singleWhere((destination) => destination.desPath == path)
             .startPageIndex,
         isNull,
       );
     }
+  });
+
+  test('navigation groups cover every destination once in route order', () {
+    expect(destinationGroups.map((group) => group.label), [
+      '在线音乐',
+      '本地曲库',
+      '收藏与回顾',
+      '系统',
+    ]);
+    expect(
+      destinationGroups.expand((group) => group.destinationIndices),
+      List.generate(destinations.length, (index) => index),
+    );
   });
 }
