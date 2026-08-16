@@ -227,9 +227,6 @@ class _DirectionalTabViewState extends State<DirectionalTabView>
                 child: result,
               );
             }
-            if (opacity < 0.999) {
-              result = Opacity(opacity: opacity, child: result);
-            }
             return Offstage(
               offstage: !isVisible,
               child: TickerMode(

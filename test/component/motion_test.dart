@@ -101,7 +101,7 @@ void main() {
     expect(movingPosition.dy, closeTo(verticalPosition, 0.01));
     expect(
       find.ancestor(of: incoming, matching: find.byType(Opacity)),
-      findsOneWidget,
+      findsNothing,
     );
 
     await tester.pumpAndSettle();
