@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
+import 'package:pure_music/play_service/local_smtc_input.dart';
 import 'package:pure_music/play_service/smtc_bridge.dart';
 
 final class ActiveSessionSmtcPublisher {
@@ -14,12 +15,15 @@ final class ActiveSessionSmtcPublisher {
   int _revision = 0;
   bool _disposed = false;
 
-  Future<void> publish(ActivePlaybackSessionSnapshot snapshot) {
+  Future<void> publish(
+    ActivePlaybackSessionSnapshot snapshot, {
+    LocalSmtcInput? localInput,
+  }) {
     if (_disposed) return Future<void>.value();
     final token = ++_revision;
     _operationChain = _operationChain.then((_) {
       if (_disposed) return Future<void>.value();
-      return _publishSnapshot(snapshot, token);
+      return _publishSnapshot(snapshot, token, localInput);
     });
     return _operationChain;
   }
@@ -27,6 +31,7 @@ final class ActiveSessionSmtcPublisher {
   Future<void> _publishSnapshot(
     ActivePlaybackSessionSnapshot snapshot,
     int token,
+    LocalSmtcInput? localInput,
   ) async {
     if (_disposed || token != _revision) return;
     if (snapshot.source == ActivePlaybackSessionSource.inactive) {
@@ -55,22 +60,29 @@ final class ActiveSessionSmtcPublisher {
       );
     } else {
       await _bridge.updateDisplay(
-        title: item.title,
-        artist: item.artist,
-        album: item.album,
-        duration: 0,
-        path: '',
+        title: localInput?.title ?? item.title,
+        artist: localInput?.artist ?? item.artist,
+        album: localInput?.album ?? item.album,
+        duration: localInput?.durationMs ?? 0,
+        path: localInput?.path ?? '',
       );
     }
     if (_disposed || token != _revision) return;
 
-    final state = snapshot.state == ActivePlaybackSessionState.playing
-        ? SMTCState.playing
-        : SMTCState.paused;
+    final state =
+        snapshot.source == ActivePlaybackSessionSource.local &&
+            localInput != null
+        ? localInput.state
+        : (snapshot.state == ActivePlaybackSessionState.playing
+              ? SMTCState.playing
+              : SMTCState.paused);
     if (snapshot.source == ActivePlaybackSessionSource.remote) {
       await _bridge.updateRemoteState(state);
     } else {
       await _bridge.updateState(state);
+      if (!_disposed && token == _revision && localInput != null) {
+        await _bridge.updateTimeProperties(localInput.positionMs);
+      }
     }
     if (!_disposed && token == _revision) {
       _displayedSource = snapshot.source;

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/active_session_smtc_publisher.dart';
+import 'package:pure_music/play_service/local_smtc_input.dart';
 import 'package:pure_music/play_service/smtc_bridge.dart';
 
 void main() {
@@ -18,6 +19,15 @@ void main() {
         source: ActivePlaybackSessionSource.remote,
         state: ActivePlaybackSessionState.playing,
       ),
+      localInput: const LocalSmtcInput(
+        title: 'Local title',
+        artist: 'Local artist',
+        album: 'Local album',
+        durationMs: 180000,
+        path: r'C:\Music\local.mp3',
+        state: SMTCState.paused,
+        positionMs: 12000,
+      ),
     );
 
     expect(backend.displays, [
@@ -27,7 +37,33 @@ void main() {
     expect(backend.timelines, isEmpty);
   });
 
-  test('local snapshot uses local display mode without remote fields', () async {
+  test(
+    'local snapshot uses local display mode without remote fields',
+    () async {
+      final backend = _FakeSmtcBackend();
+      final publisher = ActiveSessionSmtcPublisher(
+        SmtcBridge.withBackend(backend),
+      );
+
+      await publisher.publish(
+        _snapshot(
+          source: ActivePlaybackSessionSource.local,
+          state: ActivePlaybackSessionState.paused,
+        ),
+      );
+
+      expect(backend.displays, [
+        const _Display(
+          title: 'Local title',
+          artist: 'Local artist',
+          album: 'Album',
+        ),
+      ]);
+      expect(backend.states, [SMTCState.paused]);
+    },
+  );
+
+  test('local input publishes duration, path, state and timeline', () async {
     final backend = _FakeSmtcBackend();
     final publisher = ActiveSessionSmtcPublisher(
       SmtcBridge.withBackend(backend),
@@ -36,14 +72,30 @@ void main() {
     await publisher.publish(
       _snapshot(
         source: ActivePlaybackSessionSource.local,
-        state: ActivePlaybackSessionState.paused,
+        state: ActivePlaybackSessionState.playing,
+      ),
+      localInput: const LocalSmtcInput(
+        title: 'Input title',
+        artist: 'Input artist',
+        album: 'Input album',
+        durationMs: 180000,
+        path: r'C:\Music\input.mp3',
+        state: SMTCState.playing,
+        positionMs: 12000,
       ),
     );
 
     expect(backend.displays, [
-      const _Display(title: 'Local title', artist: 'Local artist', album: 'Album'),
+      const _Display(
+        title: 'Input title',
+        artist: 'Input artist',
+        album: 'Input album',
+        duration: 180000,
+        path: r'C:\Music\input.mp3',
+      ),
     ]);
-    expect(backend.states, [SMTCState.paused]);
+    expect(backend.states, [SMTCState.playing]);
+    expect(backend.timelines, [12000]);
   });
 
   test('inactive snapshot clears the active display', () async {
@@ -55,7 +107,9 @@ void main() {
     await publisher.publish(
       _snapshot(source: ActivePlaybackSessionSource.remote),
     );
-    await publisher.publish(ActivePlaybackSessionSnapshot.inactive(revision: 2));
+    await publisher.publish(
+      ActivePlaybackSessionSnapshot.inactive(revision: 2),
+    );
 
     expect(backend.clears, 1);
   });
@@ -158,7 +212,15 @@ final class _FakeSmtcBackend implements SmtcBackend {
       await _displayGate;
       blockDisplay = false;
     }
-    displays.add(_Display(title: title, artist: artist, album: album));
+    displays.add(
+      _Display(
+        title: title,
+        artist: artist,
+        album: album,
+        duration: duration,
+        path: path,
+      ),
+    );
   }
 
   @override
@@ -186,19 +248,29 @@ final class _FakeSmtcBackend implements SmtcBackend {
 }
 
 final class _Display {
-  const _Display({required this.title, required this.artist, this.album = ''});
+  const _Display({
+    required this.title,
+    required this.artist,
+    this.album = '',
+    this.duration = 0,
+    this.path = '',
+  });
 
   final String title;
   final String artist;
   final String album;
+  final int duration;
+  final String path;
 
   @override
   bool operator ==(Object other) =>
       other is _Display &&
       title == other.title &&
       artist == other.artist &&
-      album == other.album;
+      album == other.album &&
+      duration == other.duration &&
+      path == other.path;
 
   @override
-  int get hashCode => Object.hash(title, artist, album);
+  int get hashCode => Object.hash(title, artist, album, duration, path);
 }
