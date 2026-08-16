@@ -3,9 +3,10 @@ import 'dart:async';
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/local_smtc_input.dart';
+import 'package:pure_music/play_service/local_smtc_publisher.dart';
 import 'package:pure_music/play_service/smtc_bridge.dart';
 
-final class ActiveSessionSmtcPublisher {
+final class ActiveSessionSmtcPublisher implements LocalSmtcPublisher {
   ActiveSessionSmtcPublisher(this._bridge);
 
   final SmtcBridge _bridge;
@@ -15,6 +16,7 @@ final class ActiveSessionSmtcPublisher {
   int _revision = 0;
   bool _disposed = false;
 
+  @override
   Future<void> publish(
     ActivePlaybackSessionSnapshot snapshot, {
     LocalSmtcInput? localInput,

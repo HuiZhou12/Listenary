@@ -9,6 +9,7 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/equalizer_service.dart';
 import 'package:pure_music/play_service/smtc_bridge.dart';
+import 'package:pure_music/play_service/local_smtc_publisher.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
@@ -45,7 +46,9 @@ class PlaybackService extends ChangeNotifier {
 
   ValueListenable<int> get playCountRevision => _playCountRevision;
 
-  PlaybackService(this.playService) : _smtc = playService.smtcBridge {
+  PlaybackService(this.playService, {LocalSmtcPublisher? localSmtcPublisher})
+    : _smtc = playService.smtcBridge,
+      _localSmtcPublisherSlot = LocalSmtcPublisherSlot(localSmtcPublisher) {
     _smtcKeepAliveHandler = _pushSmtcKeepAlive;
     playService.bindSmtcKeepAlive(_smtcKeepAliveHandler);
     _player.onExclusiveModeChanged = (exclusive) {
@@ -78,9 +81,21 @@ class PlaybackService extends ChangeNotifier {
 
   final _player = BassPlayer();
   final SmtcBridge _smtc;
+  final LocalSmtcPublisherSlot _localSmtcPublisherSlot;
   final _pref = AppPreference.instance.playbackPref;
   late final EqualizerService _eq;
   String? _replayGainForPath;
+
+  LocalSmtcPublisher? get localSmtcPublisher =>
+      _localSmtcPublisherSlot.publisher;
+
+  void bindLocalSmtcPublisher(LocalSmtcPublisher publisher) {
+    _localSmtcPublisherSlot.bind(publisher);
+  }
+
+  void clearLocalSmtcPublisher(LocalSmtcPublisher publisher) {
+    _localSmtcPublisherSlot.clear(publisher);
+  }
 
   bool get isBassFxLoaded => _player.isBassFxLoaded;
   String get bassDebugStateLine => _player.debugStateLine;
