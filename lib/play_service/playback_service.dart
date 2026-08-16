@@ -10,6 +10,7 @@ import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/equalizer_service.dart';
 import 'package:pure_music/play_service/smtc_bridge.dart';
 import 'package:pure_music/play_service/local_smtc_publisher.dart';
+import 'package:pure_music/play_service/local_smtc_input.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
@@ -330,6 +331,22 @@ class PlaybackService extends ChangeNotifier {
     _updateSmtcPosition();
   }
 
+  void _publishLocalSmtc({required Audio audio, required SMTCState state}) {
+    unawaited(
+      _localSmtcPublisherSlot.publish(
+        LocalSmtcInput(
+          title: audio.title,
+          artist: audio.artist,
+          album: audio.album,
+          durationMs: audio.duration * 1000,
+          path: audio.path,
+          state: state,
+          positionMs: (position * 1000).round(),
+        ),
+      ),
+    );
+  }
+
   Duration get nowPlayingChangeAge {
     final t = _lastNowPlayingChangedMs;
     if (t <= 0) return const Duration(days: 999);
@@ -366,17 +383,7 @@ class PlaybackService extends ChangeNotifier {
       playService.lyricService.updateLyric();
 
       _playerState.value = PlayerState.playing;
-      _smtc.beginLocalDisplay();
-      unawaited(
-        _smtc.updateDisplay(
-          title: audio.title,
-          artist: audio.artist,
-          album: audio.album,
-          duration: audio.duration * 1000,
-          path: audio.path,
-        ),
-      );
-      unawaited(_smtc.updateState(SMTCState.playing));
+      _publishLocalSmtc(audio: audio, state: SMTCState.playing);
       _syncSmtcPositionTimer();
       _schedulePositionSyncBurst(token: token, path: audio.path);
       notifyListeners();
@@ -431,7 +438,10 @@ class PlaybackService extends ChangeNotifier {
     _playerState.value = PlayerState.stopped;
     _syncSmtcPositionTimer();
     _notifyPositionSync();
-    unawaited(_smtc.updateState(SMTCState.paused));
+    final audio = nowPlaying;
+    if (audio != null) {
+      _publishLocalSmtc(audio: audio, state: SMTCState.paused);
+    }
     notifyListeners();
     showTextOnSnackBar(message, variant: ToastVariant.error);
   }
@@ -943,7 +953,10 @@ class PlaybackService extends ChangeNotifier {
       logger.i('[action] pause');
       AudioEchoLogRecorder.instance.mark('pause');
       _player.pause();
-      unawaited(_smtc.updateState(SMTCState.paused));
+      final audio = nowPlaying;
+      if (audio != null) {
+        _publishLocalSmtc(audio: audio, state: SMTCState.paused);
+      }
       playService.desktopLyricService.canSendMessage.then((canSend) {
         if (!canSend) return;
 
@@ -961,7 +974,10 @@ class PlaybackService extends ChangeNotifier {
       logger.i('[action] start');
       AudioEchoLogRecorder.instance.mark('start');
       _player.start();
-      unawaited(_smtc.updateState(SMTCState.playing));
+      final audio = nowPlaying;
+      if (audio != null) {
+        _publishLocalSmtc(audio: audio, state: SMTCState.playing);
+      }
       _schedulePositionSyncBurst();
       playService.desktopLyricService.canSendMessage.then((canSend) {
         if (!canSend) return;

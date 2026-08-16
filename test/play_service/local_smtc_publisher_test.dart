@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pure_music/native/rust/api/smtc_flutter.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/local_smtc_input.dart';
 import 'package:pure_music/play_service/local_smtc_publisher.dart';
@@ -38,14 +39,55 @@ void main() {
 
     expect(publisher.disposeCalls, 0);
   });
+
+  test('active-session adapter publishes only for a local snapshot', () async {
+    var snapshot = _snapshot(ActivePlaybackSessionSource.local);
+    final calls = <ActivePlaybackSessionSnapshot>[];
+    final adapter = ActiveSessionLocalSmtcPublisher(
+      readSnapshot: () => snapshot,
+      publishActiveSession: (value, {localInput}) async {
+        calls.add(value);
+        expect(localInput, same(_input));
+      },
+    );
+
+    await adapter.publish(_input);
+    snapshot = _snapshot(ActivePlaybackSessionSource.remote);
+    await adapter.publish(_input);
+    snapshot = ActivePlaybackSessionSnapshot.inactive(revision: 3);
+    await adapter.publish(_input);
+
+    expect(calls, hasLength(1));
+    expect(calls.single.source, ActivePlaybackSessionSource.local);
+  });
 }
 
 final class _FakePublisher implements LocalSmtcPublisher {
   int disposeCalls = 0;
 
   @override
-  Future<void> publish(
-    ActivePlaybackSessionSnapshot snapshot, {
-    LocalSmtcInput? localInput,
-  }) async {}
+  Future<void> publish(LocalSmtcInput input) async {}
 }
+
+const _input = LocalSmtcInput(
+  title: 'Title',
+  artist: 'Artist',
+  album: 'Album',
+  durationMs: 1000,
+  path: r'C:\Music\song.mp3',
+  state: SMTCState.playing,
+  positionMs: 100,
+);
+
+ActivePlaybackSessionSnapshot _snapshot(ActivePlaybackSessionSource source) =>
+    ActivePlaybackSessionSnapshot.active(
+      revision: source == ActivePlaybackSessionSource.local ? 1 : 2,
+      source: source,
+      queue: const [
+        ActivePlaybackSessionItem(title: 'Title', artist: 'Artist'),
+      ],
+      currentIndex: 0,
+      state: ActivePlaybackSessionState.playing,
+      controlInFlight: false,
+      capabilities: ActivePlaybackSessionCapabilities.none,
+    );
