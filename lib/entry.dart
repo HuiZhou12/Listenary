@@ -25,9 +25,13 @@ import 'package:pure_music/test/static_cover_background_test_page.dart';
 import 'package:pure_music/page/updating_page.dart';
 import 'package:pure_music/page/welcoming_page.dart';
 import 'package:pure_music/library/playlist.dart';
+import 'package:pure_music/play_service/active_playback_session.dart';
+import 'package:pure_music/play_service/active_playback_session_composition.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
-import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/bass_url_playback_backend.dart';
+import 'package:pure_music/play_service/local_active_playback_session.dart';
+import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/play_service/remote_playback_queue_controller.dart';
 import 'package:pure_music/play_service/remote_playback_session_controller.dart';
@@ -105,6 +109,8 @@ class _EntryState extends State<Entry>
   late final RemotePlaybackQueue _remotePlaybackQueue;
   late final RemotePlaybackQueueController _remotePlaybackQueueController;
   late final RemotePlaybackSessionController _remotePlaybackSessionController;
+  late final ActivePlaybackSessionComposition<PlaybackService>
+  _activePlaybackSessionComposition;
   late final RemoteSmtcProjectionBinding _remoteSmtcProjectionBinding;
   late final PlayService _playService;
   Timer? _resizeIdleTimer;
@@ -140,6 +146,25 @@ class _EntryState extends State<Entry>
         showTextOnSnackBar(message, variant: ToastVariant.error);
       },
     );
+    _activePlaybackSessionComposition =
+        ActivePlaybackSessionComposition<PlaybackService>(
+          remoteQueue: _remotePlaybackQueue,
+          remoteSessionController: _remotePlaybackSessionController,
+          addLocalSourceCreatedListener:
+              _playService.addPlaybackServiceCreatedListener,
+          removeLocalSourceCreatedListener:
+              _playService.removePlaybackServiceCreatedListener,
+          attachLocalBinding: (playbackService, activeSession) {
+            final binding = LocalActivePlaybackSessionBinding(
+              playlist: playbackService.playlistNotifier,
+              nowPlaying: playbackService.nowPlayingNotifier,
+              playerState: playbackService.playerStateNotifier,
+              readPlaylistIndex: () => playbackService.playlistIndex,
+              activeSession: activeSession,
+            );
+            return binding.dispose;
+          },
+        );
     _remoteSmtcProjectionBinding = RemoteSmtcProjectionBinding.lazy(
       queue: _remotePlaybackQueue,
       sessionController: _remotePlaybackSessionController,
@@ -177,6 +202,7 @@ class _EntryState extends State<Entry>
     _windowResizing.dispose();
     WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
+    unawaited(_activePlaybackSessionComposition.dispose());
     unawaited(_remoteSmtcProjectionBinding.dispose());
     _playService.clearRemoteNavigationHandlers();
     _playService.clearRemotePlaybackControlHandlers();
@@ -496,6 +522,9 @@ class _EntryState extends State<Entry>
             builder: (context, child) => MultiProvider(
               providers: [
                 Provider<ChkszRuntime>.value(value: widget.chkszRuntime),
+                ChangeNotifierProvider<ActivePlaybackSession>.value(
+                  value: _activePlaybackSessionComposition.activeSession,
+                ),
                 ChangeNotifierProvider<RemotePlaybackQueue>.value(
                   value: _remotePlaybackQueue,
                 ),

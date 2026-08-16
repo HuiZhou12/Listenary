@@ -80,6 +80,7 @@ void main() {
 
   test('remote release lets the latest valid local source take over', () async {
     harness = _Harness(existingLocal: true);
+    final activeSession = harness.composition.activeSession;
     await harness.remoteSession.play(0, requestedQuality: 'lossless');
     harness.backend.emit(PlaybackBackendState.playing);
     harness.localSource.setCurrent(2, state: PlayerState.paused);
@@ -87,6 +88,7 @@ void main() {
     harness.localBridge.requestLocalPlayback();
 
     final snapshot = harness.composition.activeSession.value;
+    expect(harness.composition.activeSession, same(activeSession));
     expect(snapshot.source, ActivePlaybackSessionSource.local);
     expect(snapshot.currentItem?.title, 'Local 2');
     expect(snapshot.state, ActivePlaybackSessionState.paused);
@@ -95,9 +97,14 @@ void main() {
   test('dispose unregisters local first and does not reclaim local', () async {
     harness = _Harness(existingLocal: true);
     await harness.remoteSession.play(0, requestedQuality: 'lossless');
-    final transitions = <ActivePlaybackSessionSource>[];
+    final lifecycle = <String>[];
     final session = harness.composition.activeSession;
-    session.addListener(() => transitions.add(session.value.source));
+    harness.onLocalDispose = () => lifecycle.add('local');
+    session.addListener(() {
+      if (session.value.source == ActivePlaybackSessionSource.inactive) {
+        lifecycle.add('remote');
+      }
+    });
 
     await harness.composition.dispose();
     harness.handoff.publish(harness.localSource);
@@ -106,7 +113,7 @@ void main() {
 
     expect(harness.handoff.listenerCount, 0);
     expect(harness.localDisposeCount, 1);
-    expect(transitions, isNot(contains(ActivePlaybackSessionSource.local)));
+    expect(lifecycle, ['local', 'remote']);
   });
 }
 
@@ -142,6 +149,7 @@ final class _Harness {
         );
         return () {
           localDisposeCount++;
+          onLocalDispose?.call();
           binding.dispose();
         };
       },
@@ -159,6 +167,7 @@ final class _Harness {
   late final ActivePlaybackSessionComposition<_LocalSource> composition;
   int localAttachCount = 0;
   int localDisposeCount = 0;
+  void Function()? onLocalDispose;
 
   Future<void> dispose() async {
     await composition.dispose();
