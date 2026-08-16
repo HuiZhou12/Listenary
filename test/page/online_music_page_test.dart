@@ -3,12 +3,34 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
+import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/page/online_music_page.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 
 void main() {
   setUpAll(() {
     HotKeyManagerPlatform.instance = _FakeHotKeyManager();
+  });
+
+  test('online selection filters explicitly unplayable tracks', () {
+    final tracks = [
+      _track('1', title: 'Playable'),
+      _track('2', title: 'Paid', availability: TrackAvailability.paid),
+      _track(
+        '3',
+        title: 'Unavailable',
+        availability: TrackAvailability.unavailable,
+      ),
+      _track('4', title: 'Unknown', availability: TrackAvailability.unknown),
+    ];
+
+    final selection = OnlineTrackSelection.fromResultPage(
+      tracks: tracks,
+      selectedRef: tracks.last.ref,
+    );
+
+    expect(selection.tracks.map((track) => track.ref.trackId), ['1', '4']);
+    expect(selection.selectedIndex, 1);
   });
 
   testWidgets('searches inline only after explicit submit', (tester) async {

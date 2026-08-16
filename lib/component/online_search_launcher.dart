@@ -6,16 +6,43 @@ import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/play_service/remote_playback_session_controller.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 
-Future<void> showApplicationSearch(
-  BuildContext context, {
-  bool initialOnline = false,
-}) {
-  return SearchDialog.show(
-    context,
-    initialOnline: initialOnline,
-    onOnlineTrackSelected: (selection) =>
-        playOnlineTrackSelection(context, selection),
-  );
+final class OnlineTrackSelection {
+  OnlineTrackSelection({
+    required Iterable<MusicTrack> tracks,
+    required this.selectedIndex,
+  }) : tracks = List.unmodifiable(tracks);
+
+  factory OnlineTrackSelection.fromResultPage({
+    required Iterable<MusicTrack> tracks,
+    required PlatformTrackRef selectedRef,
+  }) {
+    final playableTracks = tracks
+        .where(
+          (track) =>
+              track.availability != TrackAvailability.unavailable &&
+              track.availability != TrackAvailability.paid,
+        )
+        .toList(growable: false);
+    final selectedIndex = playableTracks.indexWhere(
+      (track) => track.ref == selectedRef,
+    );
+    if (selectedIndex < 0) {
+      throw ArgumentError.value(selectedRef, 'selectedRef');
+    }
+    return OnlineTrackSelection(
+      tracks: playableTracks,
+      selectedIndex: selectedIndex,
+    );
+  }
+
+  final List<MusicTrack> tracks;
+  final int selectedIndex;
+
+  MusicTrack get selectedTrack => tracks[selectedIndex];
+}
+
+Future<void> showApplicationSearch(BuildContext context) {
+  return SearchDialog.show(context);
 }
 
 Future<void> playOnlineSearchResult(
