@@ -145,6 +145,39 @@ void main() {
     await bridge.close();
   });
 
+  test('remote display ownership rejects late local updates', () async {
+    final backend = _FakeSmtcBackend();
+    final bridge = SmtcBridge.withBackend(backend);
+    final controller = RemoteSmtcProjectionController(bridge);
+
+    await controller.project(
+      const RemoteSmtcProjection(
+        title: 'Remote title',
+        artist: 'Remote artist',
+        state: PlaybackBackendState.playing,
+      ),
+    );
+    await bridge.updateDisplay(
+      title: 'Local stale',
+      artist: 'Local artist',
+      album: 'Local album',
+      duration: 1000,
+      path: 'local.wav',
+    );
+    await bridge.updateState(SMTCState.paused);
+    await bridge.updateTimeProperties(500);
+    await bridge.flush();
+
+    expect(backend.displayUpdates.map((update) => update.title), <String>[
+      'Remote title',
+    ]);
+    expect(backend.stateUpdates, <SMTCState>[SMTCState.playing]);
+    expect(backend.progressUpdates, isEmpty);
+
+    await controller.dispose();
+    await bridge.close();
+  });
+
   test('remote projection maps every non-playing state to paused', () async {
     final backend = _FakeSmtcBackend();
     final bridge = SmtcBridge.withBackend(backend);

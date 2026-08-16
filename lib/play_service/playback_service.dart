@@ -351,6 +351,7 @@ class PlaybackService extends ChangeNotifier {
       playService.lyricService.updateLyric();
 
       _playerState.value = PlayerState.playing;
+      _smtc.beginLocalDisplay();
       unawaited(
         _smtc.updateDisplay(
           title: audio.title,

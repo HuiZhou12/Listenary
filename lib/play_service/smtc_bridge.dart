@@ -95,6 +95,7 @@ class SmtcBridge {
   int _displayRevision = 0;
   int _stateRevision = 0;
   int _timelineRevision = 0;
+  bool _remoteDisplayActive = false;
   bool _closed = false;
 
   Stream<SMTCControlEvent> get controlEvents =>
@@ -110,7 +111,44 @@ class SmtcBridge {
     required int duration,
     required String path,
   }) {
+    if (_closed || _backend == null || _remoteDisplayActive) {
+      return Future<void>.value();
+    }
+    return _queueDisplay(
+      title: title,
+      artist: artist,
+      album: album,
+      duration: duration,
+      path: path,
+    );
+  }
+
+  Future<void> updateRemoteDisplay({
+    required String title,
+    required String artist,
+    required String album,
+    required int duration,
+    required String path,
+  }) {
     if (_closed || _backend == null) return Future<void>.value();
+    _remoteDisplayActive = true;
+    _invalidatePendingUpdates();
+    return _queueDisplay(
+      title: title,
+      artist: artist,
+      album: album,
+      duration: duration,
+      path: path,
+    );
+  }
+
+  Future<void> _queueDisplay({
+    required String title,
+    required String artist,
+    required String album,
+    required int duration,
+    required String path,
+  }) {
     _pendingDisplay = _SmtcDisplayUpdate(
       revision: _displayRevision,
       title: title,
@@ -143,7 +181,20 @@ class SmtcBridge {
   }
 
   Future<void> updateState(SMTCState state) {
-    if (_closed || _backend == null) return Future<void>.value();
+    if (_closed || _backend == null || _remoteDisplayActive) {
+      return Future<void>.value();
+    }
+    return _queueState(state);
+  }
+
+  Future<void> updateRemoteState(SMTCState state) {
+    if (_closed || _backend == null || !_remoteDisplayActive) {
+      return Future<void>.value();
+    }
+    return _queueState(state);
+  }
+
+  Future<void> _queueState(SMTCState state) {
     _pendingState = _SmtcStateUpdate(revision: _stateRevision, state: state);
     final revision = _stateRevision;
     if (_queuedStateRevisions.contains(revision)) return _operationChain;
@@ -163,7 +214,9 @@ class SmtcBridge {
   }
 
   Future<void> updateTimeProperties(int progress) {
-    if (_closed || _backend == null) return Future<void>.value();
+    if (_closed || _backend == null || _remoteDisplayActive) {
+      return Future<void>.value();
+    }
     _pendingTimeline = _SmtcTimelineUpdate(
       revision: _timelineRevision,
       progress: progress,
@@ -186,7 +239,27 @@ class SmtcBridge {
   }
 
   Future<void> clearDisplay() {
-    if (_closed || _backend == null) return Future<void>.value();
+    if (_closed || _backend == null || _remoteDisplayActive) {
+      return Future<void>.value();
+    }
+    return _queueClearDisplay();
+  }
+
+  Future<void> clearRemoteDisplay() {
+    if (_closed || _backend == null || !_remoteDisplayActive) {
+      return Future<void>.value();
+    }
+    _remoteDisplayActive = false;
+    return _queueClearDisplay();
+  }
+
+  void beginLocalDisplay() {
+    if (_closed || !_remoteDisplayActive) return;
+    _remoteDisplayActive = false;
+    _invalidatePendingUpdates();
+  }
+
+  Future<void> _queueClearDisplay() {
     _displayRevision++;
     _stateRevision++;
     _timelineRevision++;
@@ -194,6 +267,15 @@ class SmtcBridge {
     _pendingState = null;
     _pendingTimeline = null;
     return _enqueue((backend) => backend.clearDisplay(), 'clear display');
+  }
+
+  void _invalidatePendingUpdates() {
+    _displayRevision++;
+    _stateRevision++;
+    _timelineRevision++;
+    _pendingDisplay = null;
+    _pendingState = null;
+    _pendingTimeline = null;
   }
 
   Future<void> refreshDisplay() {
@@ -264,7 +346,7 @@ final class RemoteSmtcProjectionController {
     final revision = ++_revision;
     _projection = projection;
     _hasProjection = true;
-    await _bridge.updateDisplay(
+    await _bridge.updateRemoteDisplay(
       title: projection.title,
       artist: projection.artist,
       album: '',
@@ -272,7 +354,7 @@ final class RemoteSmtcProjectionController {
       path: '',
     );
     if (!_isCurrent(revision)) return;
-    await _bridge.updateState(_mapState(projection.state));
+    await _bridge.updateRemoteState(_mapState(projection.state));
   }
 
   void pushKeepAlive() {
@@ -288,7 +370,7 @@ final class RemoteSmtcProjectionController {
     if (!_hasProjection) return;
     _projection = null;
     _hasProjection = false;
-    await _bridge.clearDisplay();
+    await _bridge.clearRemoteDisplay();
   }
 
   Future<void> dispose() async {
@@ -298,7 +380,7 @@ final class RemoteSmtcProjectionController {
     if (!_hasProjection) return;
     _projection = null;
     _hasProjection = false;
-    await _bridge.clearDisplay();
+    await _bridge.clearRemoteDisplay();
   }
 
   Future<void> _pushKeepAlive(
@@ -307,7 +389,7 @@ final class RemoteSmtcProjectionController {
   ) async {
     await _bridge.refreshDisplay();
     if (!_isCurrent(revision)) return;
-    await _bridge.updateState(_mapState(state));
+    await _bridge.updateRemoteState(_mapState(state));
   }
 
   bool _isCurrent(int revision) =>
