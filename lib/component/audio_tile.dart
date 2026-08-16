@@ -12,10 +12,22 @@ import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
+import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:provider/provider.dart';
+
+bool resolveAudioTileFocus({
+  required bool explicitFocus,
+  required ActivePlaybackSessionSource activeSource,
+  required String? localNowPlayingPath,
+  required String audioPath,
+}) =>
+    explicitFocus ||
+    activeSource == ActivePlaybackSessionSource.local &&
+        localNowPlayingPath == audioPath;
 
 /// 由[playlist]和[audioIndex]确定audio，而不是直接传入audio，
 /// 这是为了实现点击列表项播放乐曲时指定该列表为播放列表。
@@ -61,6 +73,10 @@ class _AudioTileState extends State<AudioTile> {
     final menuStyle = appMenuStyle;
     final menuItemStyle = appMenuItemStyle;
     final album = AudioLibrary.instance.albumCollection[audio.album];
+    final activeSource = context
+        .select<ActivePlaybackSession, ActivePlaybackSessionSource>(
+          (session) => session.value.source,
+        );
 
     Future<void> removeFromPlaylist() async {
       if (!canStartSinglePlaylistRemoval(
@@ -126,8 +142,12 @@ class _AudioTileState extends State<AudioTile> {
     return ListenableBuilder(
       listenable: playbackService,
       builder: (context, _) {
-        final isNowPlaying = playbackService.nowPlaying?.path == audio.path;
-        final effectiveFocus = widget.focus || isNowPlaying;
+        final effectiveFocus = resolveAudioTileFocus(
+          explicitFocus: widget.focus,
+          activeSource: activeSource,
+          localNowPlayingPath: playbackService.nowPlaying?.path,
+          audioPath: audio.path,
+        );
         final isSelected =
             widget.multiSelectController?.selected.contains(audio) == true;
 
