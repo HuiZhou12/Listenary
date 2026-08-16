@@ -1,20 +1,146 @@
+import 'dart:async';
+
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/component/danger_confirm_dialog.dart';
+import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/play_service/playback_service.dart';
+import 'package:pure_music/play_service/remote_playback_session_controller.dart';
+import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:provider/provider.dart';
 
-class CurrentPlaylistView extends StatefulWidget {
+import 'remote_current_playlist_view.dart';
+
+class CurrentPlaylistView extends StatelessWidget {
   const CurrentPlaylistView({super.key});
 
   @override
-  State<CurrentPlaylistView> createState() => _CurrentPlaylistViewState();
+  Widget build(BuildContext context) {
+    final snapshot = context.watch<ActivePlaybackSession>().value;
+    if (snapshot.source == ActivePlaybackSessionSource.remote) {
+      final controller = context.read<RemotePlaybackSessionController>();
+      return RemoteCurrentPlaylistView(
+        snapshot: snapshot,
+        onSelect: (index) => _selectRemote(controller, index),
+      );
+    }
+
+    final playbackService = PlayService.instance.existingPlaybackService;
+    if (playbackService == null) {
+      return const _EmptyCurrentPlaylistView();
+    }
+    return _LocalCurrentPlaylistView(playbackService: playbackService);
+  }
 }
 
-class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
-  final playbackService = PlayService.instance.playbackService;
+void _selectRemote(RemotePlaybackSessionController controller, int index) {
+  unawaited(() async {
+    try {
+      await controller.play(
+        index,
+        requestedQuality: NeteaseAdapter.defaultQuality,
+      );
+    } on RemoteStreamPlaybackException catch (error) {
+      if (error.kind != RemoteStreamPlaybackErrorKind.cancelled) {
+        showTextOnSnackBar(error.safeMessage, variant: ToastVariant.error);
+      }
+    } on ChkszException catch (error) {
+      if (error.kind != ChkszErrorKind.cancelled) {
+        showTextOnSnackBar(error.safeMessage, variant: ToastVariant.error);
+      }
+    } catch (_) {
+      showTextOnSnackBar('无法播放远程曲目', variant: ToastVariant.error);
+    }
+  }());
+}
+
+class _EmptyCurrentPlaylistView extends StatelessWidget {
+  const _EmptyCurrentPlaylistView();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      type: MaterialType.transparency,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8.0, 8.0, 4.0, 8.0),
+            child: Text(
+              '播放列表',
+              style: TextStyle(
+                color: scheme.onSecondaryContainer,
+                fontSize: AppType.hero,
+                fontWeight: AppType.weightBold,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(32.0),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 280),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Symbols.queue_music,
+                        color: scheme.onSecondaryContainer.withValues(
+                          alpha: 0.62,
+                        ),
+                        size: 32,
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        '播放队列还是空的',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: scheme.onSecondaryContainer,
+                          fontSize: AppType.subtitle,
+                          fontWeight: AppType.weightBold,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '选择歌曲后，它们会出现在这里。',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: scheme.onSecondaryContainer.withValues(
+                            alpha: 0.62,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LocalCurrentPlaylistView extends StatefulWidget {
+  const _LocalCurrentPlaylistView({required this.playbackService});
+
+  final PlaybackService playbackService;
+
+  @override
+  State<_LocalCurrentPlaylistView> createState() =>
+      _LocalCurrentPlaylistViewState();
+}
+
+class _LocalCurrentPlaylistViewState extends State<_LocalCurrentPlaylistView> {
+  late final playbackService = widget.playbackService;
   late final ScrollController scrollController;
   bool _isReordering = false;
 
@@ -99,8 +225,8 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
                     return IconButton(
                       tooltip: canReorder
                           ? _isReordering
-                              ? '完成排序'
-                              : '排序'
+                                ? '完成排序'
+                                : '排序'
                           : '至少两首歌曲才能排序',
                       icon: Icon(
                         _isReordering ? Symbols.check : Symbols.reorder,
@@ -109,10 +235,11 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
                         foregroundColor: _isReordering
                             ? scheme.onTertiaryContainer
                             : scheme.onSecondaryContainer,
-                        disabledForegroundColor:
-                            scheme.onSecondaryContainer.withValues(alpha: 0.38),
-                        backgroundColor:
-                            _isReordering ? scheme.tertiaryContainer : null,
+                        disabledForegroundColor: scheme.onSecondaryContainer
+                            .withValues(alpha: 0.38),
+                        backgroundColor: _isReordering
+                            ? scheme.tertiaryContainer
+                            : null,
                       ),
                       onPressed: canReorder
                           ? () => setState(() => _isReordering = !_isReordering)
@@ -130,8 +257,8 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
                       icon: const Icon(Symbols.clear_all),
                       style: IconButton.styleFrom(
                         foregroundColor: scheme.error,
-                        disabledForegroundColor:
-                            scheme.onSecondaryContainer.withValues(alpha: 0.38),
+                        disabledForegroundColor: scheme.onSecondaryContainer
+                            .withValues(alpha: 0.38),
                       ),
                       onPressed: _isReordering
                           ? null
@@ -160,8 +287,9 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
                               children: [
                                 Icon(
                                   Symbols.queue_music,
-                                  color: scheme.onSecondaryContainer
-                                      .withValues(alpha: 0.62),
+                                  color: scheme.onSecondaryContainer.withValues(
+                                    alpha: 0.62,
+                                  ),
                                   size: 32,
                                 ),
                                 const SizedBox(height: 14),
@@ -295,8 +423,9 @@ class _PlaylistViewItem extends StatelessWidget {
 
     return InkWell(
       borderRadius: AppRadius.smCircular,
-      onTap:
-          canActivate ? () => playbackService.playIndexOfPlaylist(index) : null,
+      onTap: canActivate
+          ? () => playbackService.playIndexOfPlaylist(index)
+          : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8.0),
         child: Row(
@@ -318,8 +447,9 @@ class _PlaylistViewItem extends StatelessWidget {
                     Text(
                       audio.title,
                       style: TextStyle(
-                        fontWeight:
-                            isNowPlaying ? AppType.weightSemibold : FontWeight.normal,
+                        fontWeight: isNowPlaying
+                            ? AppType.weightSemibold
+                            : FontWeight.normal,
                       ),
                     ),
                     const SizedBox(height: 2),
