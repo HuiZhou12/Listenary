@@ -109,6 +109,7 @@ void main() {
       playService.setRemotePlaybackControlHandlers(
         initialState: const _RemoteState(PlaybackBackendState.playing),
         stateStream: source.stream,
+        isActive: () => true,
         pause: () {
           pauseCount++;
           return true;

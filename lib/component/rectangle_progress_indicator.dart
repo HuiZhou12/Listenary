@@ -8,10 +8,12 @@ class RectangleProgressIndicator extends StatefulWidget {
     super.key,
     required this.size,
     required this.child,
+    this.progressEnabled = true,
   });
 
   final Size size;
   final Widget child;
+  final bool progressEnabled;
 
   @override
   State<RectangleProgressIndicator> createState() =>
@@ -41,6 +43,10 @@ class _RectangleProgressIndicatorState
   }
 
   void _syncNativeProgress() {
+    if (!widget.progressEnabled) {
+      progress.value = 0;
+      return;
+    }
     _syncedLength = playbackService.length;
     _syncedPosition = playbackService.position;
     _lastNativeSyncMs = _clock.elapsedMilliseconds;
@@ -51,13 +57,21 @@ class _RectangleProgressIndicatorState
     final elapsedMs = _clock.elapsedMilliseconds - _lastNativeSyncMs;
     final isPlaying =
         playbackService.playerStateNotifier.value == PlayerState.playing;
-    final position =
-        isPlaying ? _syncedPosition + elapsedMs / 1000.0 : _syncedPosition;
-    progress.value =
-        _syncedLength > 0 ? (position / _syncedLength).clamp(0.0, 1.0) : 0;
+    final position = isPlaying
+        ? _syncedPosition + elapsedMs / 1000.0
+        : _syncedPosition;
+    progress.value = _syncedLength > 0
+        ? (position / _syncedLength).clamp(0.0, 1.0)
+        : 0;
   }
 
   void _syncTimer() {
+    if (!widget.progressEnabled) {
+      _progressTimer?.cancel();
+      _progressTimer = null;
+      progress.value = 0;
+      return;
+    }
     _syncNativeProgress();
     final isPlaying =
         playbackService.playerStateNotifier.value == PlayerState.playing;
@@ -74,6 +88,14 @@ class _RectangleProgressIndicatorState
         _emitProgressFromLocal();
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(RectangleProgressIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.progressEnabled != widget.progressEnabled) {
+      _syncTimer();
+    }
   }
 
   @override
@@ -105,7 +127,7 @@ class RectangleProgressPainter extends CustomPainter {
   final Paint _trackPainter = Paint();
 
   RectangleProgressPainter({required this.progress, required this.scheme})
-      : super(repaint: progress);
+    : super(repaint: progress);
 
   @override
   void paint(Canvas canvas, Size size) {

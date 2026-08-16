@@ -6,6 +6,7 @@ import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/library/audio_library.dart';
+import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/core/design_tokens.dart';
@@ -14,6 +15,99 @@ import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:provider/provider.dart';
+
+final class MiniNowPlayingMetadataProjection {
+  const MiniNowPlayingMetadataProjection({
+    required this.title,
+    required this.subtitle,
+    required this.usesLocalMedia,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool usesLocalMedia;
+}
+
+bool miniNowPlayingUsesLocalMedia(ActivePlaybackSessionSnapshot snapshot) =>
+    snapshot.source != ActivePlaybackSessionSource.remote;
+
+MiniNowPlayingMetadataProjection resolveMiniNowPlayingMetadata({
+  required ActivePlaybackSessionSnapshot snapshot,
+  required String? localTitle,
+  required String? localArtist,
+  required String? localAlbum,
+}) {
+  if (!miniNowPlayingUsesLocalMedia(snapshot)) {
+    final item = snapshot.currentItem;
+    return MiniNowPlayingMetadataProjection(
+      title: item?.title ?? 'Pure Music',
+      subtitle: item?.artist ?? '享受音乐',
+      usesLocalMedia: false,
+    );
+  }
+
+  return MiniNowPlayingMetadataProjection(
+    title: localTitle ?? 'Pure Music',
+    subtitle: localTitle == null
+        ? '享受音乐'
+        : '${localArtist ?? ''} - ${localAlbum ?? ''}',
+    usesLocalMedia: true,
+  );
+}
+
+final class MiniNowPlayingControlProjection {
+  const MiniNowPlayingControlProjection({
+    required this.presentation,
+    required this.canPrevious,
+    required this.canNext,
+  });
+
+  final PlaybackControlPresentation presentation;
+  final bool canPrevious;
+  final bool canNext;
+}
+
+MiniNowPlayingControlProjection resolveMiniNowPlayingControls({
+  required ActivePlaybackSessionSnapshot snapshot,
+  required RemotePlaybackControlState remoteState,
+  required PlayerState localState,
+  required bool hasLocalSession,
+}) {
+  if (snapshot.source != ActivePlaybackSessionSource.remote) {
+    final presentation = resolvePlaybackControlPresentation(
+      remoteState: remoteState,
+      localState: localState,
+      hasLocalSession: hasLocalSession,
+    );
+    return MiniNowPlayingControlProjection(
+      presentation: presentation,
+      canPrevious: presentation.hasSession,
+      canNext: presentation.hasSession,
+    );
+  }
+
+  final capabilities = snapshot.capabilities;
+  final action = snapshot.controlInFlight
+      ? PlaybackControlAction.none
+      : switch (snapshot.state) {
+          ActivePlaybackSessionState.playing when capabilities.canPause =>
+            PlaybackControlAction.pause,
+          ActivePlaybackSessionState.paused when capabilities.canPlay =>
+            PlaybackControlAction.play,
+          _ => PlaybackControlAction.none,
+        };
+  return MiniNowPlayingControlProjection(
+    presentation: PlaybackControlPresentation(
+      hasSession: true,
+      canToggle: action != PlaybackControlAction.none,
+      isPlaying: snapshot.state == ActivePlaybackSessionState.playing,
+      action: action,
+    ),
+    canPrevious: capabilities.canPrevious,
+    canNext: capabilities.canNext,
+  );
+}
 
 class MiniNowPlaying extends StatelessWidget {
   const MiniNowPlaying({super.key});
@@ -22,6 +116,7 @@ class MiniNowPlaying extends StatelessWidget {
   Widget build(BuildContext context) {
     return ResponsiveBuilder(
       builder: (context, screenType) {
+        final activeSnapshot = context.watch<ActivePlaybackSession>().value;
         return Align(
           alignment: Alignment.bottomCenter,
           child: Padding(
@@ -50,7 +145,12 @@ class MiniNowPlaying extends StatelessWidget {
                             constraints.maxWidth,
                             constraints.maxHeight,
                           ),
-                          child: const _NowPlayingForeground(),
+                          progressEnabled: miniNowPlayingUsesLocalMedia(
+                            activeSnapshot,
+                          ),
+                          child: _NowPlayingForeground(
+                            activeSnapshot: activeSnapshot,
+                          ),
                         );
                       },
                     ),
@@ -66,7 +166,9 @@ class MiniNowPlaying extends StatelessWidget {
 }
 
 class _NowPlayingForeground extends StatefulWidget {
-  const _NowPlayingForeground();
+  const _NowPlayingForeground({required this.activeSnapshot});
+
+  final ActivePlaybackSessionSnapshot activeSnapshot;
 
   @override
   State<_NowPlayingForeground> createState() => _NowPlayingForegroundState();
@@ -151,6 +253,12 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                       final playbackService =
                           PlayService.instance.playbackService;
                       final nowPlaying = playbackService.nowPlaying;
+                      final metadata = resolveMiniNowPlayingMetadata(
+                        snapshot: widget.activeSnapshot,
+                        localTitle: nowPlaying?.title,
+                        localArtist: nowPlaying?.artist,
+                        localAlbum: nowPlaying?.album,
+                      );
                       final heroEnabled =
                           !playbackService.nowPlayingChangedRecently;
                       final placeholder = Icon(
@@ -163,22 +271,25 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                         builder: (context, constraints) {
                           final dense = constraints.maxWidth <= 520;
                           final hideControls = !_controlsVisible;
-                          final controlState =
-                              resolvePlaybackControlPresentation(
-                                remoteState: remoteState,
-                                localState: playbackService.playerState,
-                                hasLocalSession: nowPlaying != null,
-                              );
-                          final hasPlaybackSession = controlState.hasSession;
+                          final controlState = resolveMiniNowPlayingControls(
+                            snapshot: widget.activeSnapshot,
+                            remoteState: remoteState,
+                            localState: playbackService.playerState,
+                            hasLocalSession: nowPlaying != null,
+                          );
+                          final hasPlaybackSession =
+                              controlState.presentation.hasSession;
                           final controls = Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               if (!dense)
                                 IconButton(
-                                  tooltip: hasPlaybackSession
+                                  tooltip: controlState.canPrevious
                                       ? '上一曲'
+                                      : hasPlaybackSession
+                                      ? '没有上一曲'
                                       : '暂无正在播放',
-                                  onPressed: hasPlaybackSession
+                                  onPressed: controlState.canPrevious
                                       ? PlayService.instance.previousAudio
                                       : null,
                                   icon: const Icon(
@@ -194,13 +305,16 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                                     scheme.onSecondaryContainer,
                                 enabled: hasPlaybackSession,
                                 remoteState: remoteState,
+                                activeSnapshot: widget.activeSnapshot,
                               ),
                               if (!dense)
                                 IconButton(
-                                  tooltip: hasPlaybackSession
+                                  tooltip: controlState.canNext
                                       ? '下一曲'
+                                      : hasPlaybackSession
+                                      ? '没有下一曲'
                                       : '暂无正在播放',
-                                  onPressed: hasPlaybackSession
+                                  onPressed: controlState.canNext
                                       ? PlayService.instance.nextAudio
                                       : null,
                                   icon: const Icon(
@@ -211,7 +325,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                                   color: scheme.onSecondaryContainer,
                                 ),
                               if (!dense) const SizedBox(width: 8.0),
-                              if (!dense)
+                              if (!dense && metadata.usesLocalMedia)
                                 _MiniTimeText(
                                   color: scheme.onSecondaryContainer,
                                 ),
@@ -219,7 +333,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                           );
                           return Row(
                             children: [
-                              nowPlaying != null
+                              metadata.usesLocalMedia && nowPlaying != null
                                   ? Builder(
                                       builder: (context) {
                                         final cover = ClipRRect(
@@ -251,9 +365,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Text(
-                                      nowPlaying != null
-                                          ? nowPlaying.title
-                                          : 'Pure Music',
+                                      metadata.title,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
@@ -261,9 +373,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                                       ),
                                     ),
                                     Text(
-                                      nowPlaying != null
-                                          ? '${nowPlaying.artist} - ${nowPlaying.album}'
-                                          : '享受音乐',
+                                      metadata.subtitle,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
@@ -318,12 +428,14 @@ class _MiniPlayPauseButton extends StatelessWidget {
     required this.onSecondaryContainer,
     required this.enabled,
     required this.remoteState,
+    required this.activeSnapshot,
   });
 
   final bool dense;
   final Color onSecondaryContainer;
   final bool enabled;
   final RemotePlaybackControlState remoteState;
+  final ActivePlaybackSessionSnapshot activeSnapshot;
 
   @override
   Widget build(BuildContext context) {
@@ -333,6 +445,7 @@ class _MiniPlayPauseButton extends StatelessWidget {
       color: onSecondaryContainer,
       enabled: enabled,
       remoteState: remoteState,
+      activeSnapshot: activeSnapshot,
       playerStateStream: playbackService.playerStateStream,
       initialState: playbackService.playerState,
     );
@@ -345,6 +458,7 @@ class _AnimatedPlayPauseIconButton extends StatefulWidget {
     required this.color,
     required this.enabled,
     required this.remoteState,
+    required this.activeSnapshot,
     required this.playerStateStream,
     required this.initialState,
   });
@@ -353,6 +467,7 @@ class _AnimatedPlayPauseIconButton extends StatefulWidget {
   final Color color;
   final bool enabled;
   final RemotePlaybackControlState remoteState;
+  final ActivePlaybackSessionSnapshot activeSnapshot;
   final Stream<PlayerState> playerStateStream;
   final PlayerState initialState;
 
@@ -372,11 +487,12 @@ class _AnimatedPlayPauseIconButtonState
   StreamSubscription<PlayerState>? _playerStateSub;
 
   PlaybackControlPresentation get _presentation =>
-      resolvePlaybackControlPresentation(
+      resolveMiniNowPlayingControls(
+        snapshot: widget.activeSnapshot,
         remoteState: widget.remoteState,
         localState: _localState,
         hasLocalSession: widget.enabled,
-      );
+      ).presentation;
 
   @override
   void initState() {
@@ -411,11 +527,12 @@ class _AnimatedPlayPauseIconButtonState
   @override
   void didUpdateWidget(covariant _AnimatedPlayPauseIconButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final wasPlaying = resolvePlaybackControlPresentation(
+    final wasPlaying = resolveMiniNowPlayingControls(
+      snapshot: oldWidget.activeSnapshot,
       remoteState: oldWidget.remoteState,
       localState: _localState,
       hasLocalSession: oldWidget.enabled,
-    ).isPlaying;
+    ).presentation.isPlaying;
     if (oldWidget.playerStateStream != widget.playerStateStream) {
       _bindPlayerStateStream();
     }
