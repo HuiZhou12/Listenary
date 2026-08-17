@@ -99,6 +99,43 @@ void main() {
     expect(projection.audioReactiveFlow, isFalse);
   });
 
+  test('remote background uses its own spectrum when the setting is on', () {
+    const remoteSpectrum = Stream<Float32List>.empty();
+    final projection = resolveNowPlayingBackgroundInputs(
+      snapshot: _snapshot(source: ActivePlaybackSessionSource.remote),
+      localInputs: const NowPlayingBackgroundInputs(
+        enableAnimation: true,
+        isVisible: true,
+        playerState: PlayerState.paused,
+        audioReactiveFlow: true,
+      ),
+      remoteSpectrumStream: remoteSpectrum,
+    );
+
+    expect(projection.spectrumStream, same(remoteSpectrum));
+    expect(projection.audioReactiveFlow, isTrue);
+  });
+
+  test(
+    'remote background does not expose spectrum when the setting is off',
+    () {
+      const remoteSpectrum = Stream<Float32List>.empty();
+      final projection = resolveNowPlayingBackgroundInputs(
+        snapshot: _snapshot(source: ActivePlaybackSessionSource.remote),
+        localInputs: const NowPlayingBackgroundInputs(
+          enableAnimation: true,
+          isVisible: true,
+          playerState: PlayerState.playing,
+          audioReactiveFlow: false,
+        ),
+        remoteSpectrumStream: remoteSpectrum,
+      );
+
+      expect(projection.spectrumStream, isNull);
+      expect(projection.audioReactiveFlow, isFalse);
+    },
+  );
+
   test('local and inactive backgrounds preserve the original inputs', () {
     const localInputs = NowPlayingBackgroundInputs(
       enableAnimation: true,

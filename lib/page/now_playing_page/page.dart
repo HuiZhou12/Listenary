@@ -37,6 +37,7 @@ import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/playback_service.dart';
+import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/play_service/remote_playback_timeline.dart';
 import 'package:pure_music/play_service/remote_media_artwork.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
@@ -118,8 +119,7 @@ NowPlayingTimelineProjection resolveNowPlayingTimeline({
       durationSeconds: duration == null
           ? null
           : duration.inMicroseconds / 1000000.0,
-      isAdvancing:
-          activeSession.state == ActivePlaybackSessionState.playing,
+      isAdvancing: activeSession.state == ActivePlaybackSessionState.playing,
       usesRemoteTimeline: true,
     );
   }
@@ -157,11 +157,15 @@ NowPlayingBackgroundInputs resolveNowPlayingBackgroundInputs({
   required ActivePlaybackSessionSnapshot snapshot,
   required NowPlayingBackgroundInputs localInputs,
   RemoteMediaArtworkSnapshot? remoteArtwork,
+  Stream<Float32List>? remoteSpectrumStream,
 }) {
   if (snapshot.source != ActivePlaybackSessionSource.remote) {
     return localInputs;
   }
   final artwork = remoteArtwork;
+  final spectrumStream = localInputs.audioReactiveFlow
+      ? remoteSpectrumStream
+      : null;
   return NowPlayingBackgroundInputs(
     albumCoverBytes: artwork?.hasArtwork == true ? artwork!.bytes : null,
     dominantColor: artwork?.hasArtwork == true && artwork!.palette.isNotEmpty
@@ -175,7 +179,8 @@ NowPlayingBackgroundInputs resolveNowPlayingBackgroundInputs({
     playerState: _remoteBackgroundPlayerState(snapshot.state),
     flowSpeed: localInputs.flowSpeed,
     intensity: localInputs.intensity,
-    audioReactiveFlow: false,
+    spectrumStream: spectrumStream,
+    audioReactiveFlow: spectrumStream != null,
   );
 }
 
@@ -436,6 +441,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   Widget _buildBackground(Brightness brightness) {
     final activeSnapshot = context.watch<ActivePlaybackSession>().value;
     final remoteArtwork = context.watch<RemoteMediaArtworkController>().value;
+    final remoteSpectrumStream =
+        activeSnapshot.source == ActivePlaybackSessionSource.remote
+        ? context.read<SpectrumReadablePlaybackBackend?>()?.spectrumStream
+        : null;
     return RepaintBoundary(
       child: Stack(
         fit: StackFit.expand,
@@ -476,6 +485,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                                 snapshot: activeSnapshot,
                                 localInputs: localBackgroundInputs,
                                 remoteArtwork: remoteArtwork,
+                                remoteSpectrumStream: remoteSpectrumStream,
                               );
                           return NowPlayingBackground(
                             mode: backgroundMode,
@@ -1901,8 +1911,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
     _playService = PlayService.instance;
     _playbackService = context.read<PlaybackService>();
     _activePlaybackSession = context.read<ActivePlaybackSession>();
-    _remotePlaybackTimeline =
-        context.read<RemotePlaybackTimelineController>();
+    _remotePlaybackTimeline = context.read<RemotePlaybackTimelineController>();
     _canSeekFromUi = _playService.canSeekFromUi;
     _remotePlaybackControlSubscription = _playService
         .remotePlaybackControlStateStream

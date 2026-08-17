@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 
@@ -70,4 +71,9 @@ abstract interface class ControllablePlaybackBackend
 abstract interface class PositionReadablePlaybackBackend
     implements PlaybackBackend {
   Duration? readPosition();
+}
+
+abstract interface class SpectrumReadablePlaybackBackend
+    implements PlaybackBackend {
+  Stream<Float32List> get spectrumStream;
 }

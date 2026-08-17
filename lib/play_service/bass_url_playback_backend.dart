@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/play_service/playback_source.dart';
 
 abstract interface class BassUrlPlaybackDriver {
   Stream<PlayerState> get stateStream;
+
+  Stream<Float32List> get spectrumStream;
 
   PlayerState get state;
 
@@ -29,6 +32,9 @@ final class BassPlayerUrlPlaybackDriver implements BassUrlPlaybackDriver {
 
   @override
   Stream<PlayerState> get stateStream => _instance.playerStateStream;
+
+  @override
+  Stream<Float32List> get spectrumStream => _instance.spectrumStream;
 
   @override
   PlayerState get state => _instance.playerState;
@@ -65,7 +71,10 @@ final class BassPlayerUrlPlaybackDriver implements BassUrlPlaybackDriver {
 }
 
 final class BassUrlPlaybackBackend
-    implements ControllablePlaybackBackend, PositionReadablePlaybackBackend {
+    implements
+        ControllablePlaybackBackend,
+        PositionReadablePlaybackBackend,
+        SpectrumReadablePlaybackBackend {
   BassUrlPlaybackBackend({BassUrlPlaybackDriver? driver})
     : _driver = driver ?? BassPlayerUrlPlaybackDriver();
 
@@ -79,6 +88,9 @@ final class BassUrlPlaybackBackend
 
   @override
   Stream<PlaybackBackendState> get stateStream => _stateController.stream;
+
+  @override
+  Stream<Float32List> get spectrumStream => _driver.spectrumStream;
 
   @override
   Future<void> open(PlaybackSource source) {

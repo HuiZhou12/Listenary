@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
@@ -56,6 +57,19 @@ void main() {
       PlaybackBackendState.stalled,
       PlaybackBackendState.completed,
     ]);
+  });
+
+  test('exposes the remote driver spectrum without copying it', () async {
+    final frames = <Float32List>[];
+    final spectrumSubscription = backend.spectrumStream.listen(frames.add);
+    final frame = Float32List.fromList([0.1, 0.2, 0.3, 0.4]);
+
+    driver.emitSpectrum(frame);
+    await pumpEventQueue();
+
+    expect(frames, hasLength(1));
+    expect(frames.single, same(frame));
+    await spectrumSubscription.cancel();
   });
 
   test('pauses and resumes the current URL without reopening it', () async {
@@ -243,6 +257,7 @@ RemotePlaybackSource _remoteSource({String trackId = 'track-1'}) {
 
 final class _FakeBassUrlPlaybackDriver implements BassUrlPlaybackDriver {
   final _states = StreamController<PlayerState>.broadcast();
+  final _spectrum = StreamController<Float32List>.broadcast();
   final openedUris = <Uri>[];
   @override
   PlayerState state = PlayerState.stopped;
@@ -262,6 +277,9 @@ final class _FakeBassUrlPlaybackDriver implements BassUrlPlaybackDriver {
   Stream<PlayerState> get stateStream => _states.stream;
 
   @override
+  Stream<Float32List> get spectrumStream => _spectrum.stream;
+
+  @override
   double? readPositionSeconds() {
     positionReadCount++;
     final error = positionError;
@@ -272,6 +290,10 @@ final class _FakeBassUrlPlaybackDriver implements BassUrlPlaybackDriver {
   void emit(PlayerState value) {
     state = value;
     _states.add(value);
+  }
+
+  void emitSpectrum(Float32List value) {
+    _spectrum.add(value);
   }
 
   @override
@@ -309,5 +331,6 @@ final class _FakeBassUrlPlaybackDriver implements BassUrlPlaybackDriver {
   Future<void> dispose() async {
     disposeCount++;
     await _states.close();
+    await _spectrum.close();
   }
 }

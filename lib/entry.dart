@@ -36,6 +36,7 @@ import 'package:pure_music/play_service/local_active_playback_session.dart';
 import 'package:pure_music/play_service/local_smtc_publisher.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
+import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/play_service/remote_playback_queue_controller.dart';
 import 'package:pure_music/play_service/remote_playback_session_controller.dart';
@@ -586,6 +587,9 @@ class _EntryState extends State<Entry>
                 ),
                 Provider<RemotePlaybackSessionController>.value(
                   value: _remotePlaybackSessionController,
+                ),
+                Provider<SpectrumReadablePlaybackBackend?>.value(
+                  value: _remotePlaybackBackend,
                 ),
                 ChangeNotifierProvider<RemotePlaybackTimelineController>.value(
                   value: _remotePlaybackTimeline,
