@@ -17,6 +17,20 @@ final class OnlineHistoryEntry {
   final String? lastQuality;
 }
 
+final class OnlineHistoryLibrarySnapshot {
+  const OnlineHistoryLibrarySnapshot({
+    required this.recent,
+    required this.topPlayed,
+    required this.totalPlayCount,
+  });
+
+  final List<OnlineHistoryEntry> recent;
+  final List<OnlineHistoryEntry> topPlayed;
+  final int totalPlayCount;
+
+  int get trackCount => recent.length;
+}
+
 final class OnlineLibraryRepository {
   OnlineLibraryRepository(this._db);
 
@@ -94,9 +108,29 @@ final class OnlineLibraryRepository {
   List<OnlineHistoryEntry> topPlayed({int limit = 100}) {
     if (limit <= 0) return const [];
     return _readHistory(
-      orderBy:
-          'h.play_count DESC, h.last_played_at DESC, h.rowid DESC',
+      orderBy: 'h.play_count DESC, h.last_played_at DESC, h.rowid DESC',
       limit: limit,
+    );
+  }
+
+  OnlineHistoryLibrarySnapshot historySnapshot({
+    int recentLimit = defaultOnlineHistoryLimit,
+    int topLimit = 100,
+  }) {
+    final recent = recentHistory(limit: recentLimit);
+    final ranked = List<OnlineHistoryEntry>.of(recent)
+      ..sort((a, b) {
+        final byCount = b.playCount.compareTo(a.playCount);
+        if (byCount != 0) return byCount;
+        return b.lastPlayedAt.compareTo(a.lastPlayedAt);
+      });
+    final top = topLimit <= 0
+        ? const <OnlineHistoryEntry>[]
+        : ranked.take(topLimit).toList(growable: false);
+    return OnlineHistoryLibrarySnapshot(
+      recent: recent,
+      topPlayed: top,
+      totalPlayCount: recent.fold(0, (total, entry) => total + entry.playCount),
     );
   }
 
@@ -176,19 +210,24 @@ final class OnlineLibraryRepository {
     }
   }
 
-  MusicTrack _readTrack(Row row) {
+  MusicTrack _readTrack(Row row, {List<String>? artists}) {
     final platform = _parsePlatform(row['platform'] as String);
     final trackId = row['track_id'] as String;
-    final artistRows = _db.select(
-      'SELECT name FROM online_track_artists '
-      'WHERE platform = ? AND track_id = ? ORDER BY ordinal',
-      [row['platform'], trackId],
-    );
+    final resolvedArtists =
+        artists ??
+        _db
+            .select(
+              'SELECT name FROM online_track_artists '
+              'WHERE platform = ? AND track_id = ? ORDER BY ordinal',
+              [row['platform'], trackId],
+            )
+            .map((artist) => artist['name'] as String)
+            .toList(growable: false);
     final rawCoverUri = row['cover_uri'] as String?;
     return MusicTrack(
       ref: PlatformTrackRef(platform: platform, trackId: trackId),
       title: row['title'] as String,
-      artists: artistRows.map((artist) => artist['name'] as String),
+      artists: resolvedArtists,
       album: row['album'] as String,
       coverUri: rawCoverUri == null ? null : Uri.tryParse(rawCoverUri),
       duration: Duration(milliseconds: row['duration_ms'] as int),
@@ -200,18 +239,29 @@ final class OnlineLibraryRepository {
     required String orderBy,
     required int limit,
   }) {
-    final rows = _db.select(
-      'SELECT t.platform, t.track_id, t.title, t.album, t.cover_uri, '
-      't.duration_ms, t.availability, t.last_quality, h.play_count, '
-      'h.last_played_at FROM online_play_history h '
-      'JOIN online_tracks t ON t.platform = h.platform '
-      'AND t.track_id = h.track_id ORDER BY $orderBy LIMIT ?',
-      [limit],
-    );
+    final rows = _db
+        .select(
+          'SELECT t.platform, t.track_id, t.title, t.album, t.cover_uri, '
+          't.duration_ms, t.availability, t.last_quality, h.play_count, '
+          'h.last_played_at FROM online_play_history h '
+          'JOIN online_tracks t ON t.platform = h.platform '
+          'AND t.track_id = h.track_id ORDER BY $orderBy LIMIT ?',
+          [limit],
+        )
+        .toList(growable: false);
+    final artists = _readArtistsForTracks(rows);
     return rows
         .map(
           (row) => OnlineHistoryEntry(
-            track: _readTrack(row),
+            track: _readTrack(
+              row,
+              artists:
+                  artists[_trackKey(
+                    row['platform'] as String,
+                    row['track_id'] as String,
+                  )] ??
+                  const [],
+            ),
             playCount: row['play_count'] as int,
             lastPlayedAt: DateTime.parse(
               row['last_played_at'] as String,
@@ -220,6 +270,51 @@ final class OnlineLibraryRepository {
           ),
         )
         .toList(growable: false);
+  }
+
+  Map<String, List<String>> _readArtistsForTracks(List<Row> tracks) {
+    if (tracks.isEmpty) return const {};
+    final refs = <(String, String)>[];
+    final seen = <String>{};
+    for (final track in tracks) {
+      final platform = track['platform'] as String;
+      final trackId = track['track_id'] as String;
+      if (seen.add(_trackKey(platform, trackId))) {
+        refs.add((platform, trackId));
+      }
+    }
+
+    final artists = <String, List<String>>{};
+    const batchSize = 250;
+    for (var offset = 0; offset < refs.length; offset += batchSize) {
+      final end = offset + batchSize < refs.length
+          ? offset + batchSize
+          : refs.length;
+      final batch = refs.sublist(offset, end);
+      final conditions = List.filled(
+        batch.length,
+        '(platform = ? AND track_id = ?)',
+      ).join(' OR ');
+      final parameters = <Object?>[];
+      for (final ref in batch) {
+        parameters
+          ..add(ref.$1)
+          ..add(ref.$2);
+      }
+      final rows = _db.select(
+        'SELECT platform, track_id, name FROM online_track_artists '
+        'WHERE $conditions ORDER BY platform, track_id, ordinal',
+        parameters,
+      );
+      for (final row in rows) {
+        final key = _trackKey(
+          row['platform'] as String,
+          row['track_id'] as String,
+        );
+        artists.putIfAbsent(key, () => []).add(row['name'] as String);
+      }
+    }
+    return artists;
   }
 
   void _trimHistory(int limit) {
@@ -305,3 +400,5 @@ bool _isSensitiveQueryKey(String key) {
       normalized == 'signature' ||
       normalized == 'sign';
 }
+
+String _trackKey(String platform, String trackId) => '$platform\u0000$trackId';

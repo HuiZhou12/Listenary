@@ -6,7 +6,7 @@ import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/play_service/remote_playback_session_controller.dart';
 import 'package:pure_music/play_service/remote_playback_timeline.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
-import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
+import 'package:pure_music/services/music_platform/online_library/online_history_controller.dart';
 
 enum OnlineHistoryProjectionFailure { playbackStarted, playCount }
 
@@ -15,12 +15,12 @@ final class OnlineHistoryProjectionBinding {
     required RemotePlaybackQueue queue,
     required RemotePlaybackSessionController sessionController,
     required RemotePlaybackTimelineController timelineController,
-    required OnlineLibraryRepository repository,
+    required OnlineHistoryController historyController,
     void Function(OnlineHistoryProjectionFailure failure)? onFailure,
   }) : _queue = queue,
        _sessionController = sessionController,
        _timelineController = timelineController,
-       _repository = repository,
+       _historyController = historyController,
        _onFailure = onFailure ?? _logFailure,
        _controlState = sessionController.controlState {
     _queue.addListener(_synchronize);
@@ -34,7 +34,7 @@ final class OnlineHistoryProjectionBinding {
   final RemotePlaybackQueue _queue;
   final RemotePlaybackSessionController _sessionController;
   final RemotePlaybackTimelineController _timelineController;
-  final OnlineLibraryRepository _repository;
+  final OnlineHistoryController _historyController;
   final void Function(OnlineHistoryProjectionFailure failure) _onFailure;
   late final StreamSubscription<RemotePlaybackControlSnapshot>
   _controlSubscription;
@@ -89,10 +89,18 @@ final class OnlineHistoryProjectionBinding {
   void _recordPlaybackStarted() {
     if (_startAttempted) return;
     final item = _item;
-    if (item == null) return;
+    final revision = _revision;
+    if (item == null || revision == null) return;
     _startAttempted = true;
+    unawaited(_persistPlaybackStarted(revision, item));
+  }
+
+  Future<void> _persistPlaybackStarted(
+    int revision,
+    RemotePlaybackQueueItem item,
+  ) async {
     try {
-      _repository.recordPlaybackStarted(
+      await _historyController.recordPlaybackStarted(
         MusicTrack(
           ref: item.ref,
           title: item.title,
@@ -104,9 +112,13 @@ final class OnlineHistoryProjectionBinding {
         ),
         lastQuality: _sessionController.requestedQuality,
       );
-      _historyRecorded = true;
+      if (!_disposed && _revision == revision && _item?.ref == item.ref) {
+        _historyRecorded = true;
+      }
     } catch (_) {
-      _onFailure(OnlineHistoryProjectionFailure.playbackStarted);
+      if (!_disposed) {
+        _onFailure(OnlineHistoryProjectionFailure.playbackStarted);
+      }
     }
   }
 
@@ -133,12 +145,23 @@ final class OnlineHistoryProjectionBinding {
     _accumulated += delta;
     if (_accumulated < threshold) return;
     _countAttempted = true;
+    final revision = _revision;
+    final item = _item;
+    if (revision == null || item == null) return;
+    unawaited(_persistPlayCount(revision, item.ref));
+  }
+
+  Future<void> _persistPlayCount(int revision, PlatformTrackRef ref) async {
     try {
-      if (!_repository.incrementPlayCount(_item!.ref)) {
+      if (!await _historyController.incrementPlayCount(ref) &&
+          !_disposed &&
+          _revision == revision) {
         _onFailure(OnlineHistoryProjectionFailure.playCount);
       }
     } catch (_) {
-      _onFailure(OnlineHistoryProjectionFailure.playCount);
+      if (!_disposed && _revision == revision) {
+        _onFailure(OnlineHistoryProjectionFailure.playCount);
+      }
     }
   }
 

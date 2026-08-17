@@ -26,10 +26,16 @@ typedef OnlineTrackSelected =
 enum _OnlineSearchStatus { idle, loading, success, empty, error }
 
 class OnlineMusicPage extends StatefulWidget {
-  const OnlineMusicPage({super.key, this.search, this.onTrackSelected});
+  const OnlineMusicPage({
+    super.key,
+    this.search,
+    this.onTrackSelected,
+    this.onHistoryRequested,
+  });
 
   final OnlineMusicSearch? search;
   final OnlineTrackSelected? onTrackSelected;
+  final VoidCallback? onHistoryRequested;
 
   @override
   State<OnlineMusicPage> createState() => _OnlineMusicPageState();
@@ -136,7 +142,15 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
   Widget build(BuildContext context) {
     return PageScaffold(
       title: '在线音乐',
-      actions: const [],
+      actions: [
+        IconButton.filledTonal(
+          tooltip: '在线播放历史',
+          onPressed:
+              widget.onHistoryRequested ??
+              () => context.go('${app_paths.STATS_PAGE}?source=online'),
+          icon: const Icon(Symbols.history),
+        ),
+      ],
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0),
         child: Column(

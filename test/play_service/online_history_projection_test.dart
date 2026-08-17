@@ -12,6 +12,7 @@ import 'package:pure_music/play_service/remote_playback_timeline_binding.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_request.dart';
 import 'package:pure_music/services/music_platform/chksz/remote_stream_coordinator.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/online_library/online_history_controller.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -30,7 +31,7 @@ void main() {
     await harness.session.play(0, requestedQuality: 'lossless');
 
     expect(harness.repository.recentHistory(), isEmpty);
-    harness.emitPlaying();
+    await harness.emitPlaying();
 
     final history = harness.repository.recentHistory();
     expect(history, hasLength(1));
@@ -44,11 +45,12 @@ void main() {
     'counts a remote session after the local listen threshold once',
     () async {
       await harness.session.play(0, requestedQuality: 'standard');
-      harness.emitPlaying();
+      await harness.emitPlaying();
 
       for (var seconds = 1; seconds <= 9; seconds++) {
         harness.tick(Duration(seconds: seconds));
       }
+      await pumpEventQueue();
       expect(harness.repository.recentHistory().single.playCount, 1);
 
       harness.tick(const Duration(seconds: 10));
@@ -58,7 +60,7 @@ void main() {
 
   test('does not count a seek jump as accumulated listening', () async {
     await harness.session.play(0, requestedQuality: 'standard');
-    harness.emitPlaying();
+    await harness.emitPlaying();
 
     harness.tick(const Duration(seconds: 9));
     harness.tick(const Duration(seconds: 10));
@@ -70,14 +72,15 @@ void main() {
     'keeps remote history isolated across switching and local takeover',
     () async {
       await harness.session.play(0, requestedQuality: 'standard');
-      harness.emitPlaying();
+      await harness.emitPlaying();
       harness.tick(const Duration(seconds: 1));
 
       await harness.session.play(1, requestedQuality: 'lossless');
-      harness.emitPlaying();
+      await harness.emitPlaying();
       harness.tick(const Duration(seconds: 1));
       harness.localBridge.requestLocalPlayback();
       harness.tick(const Duration(seconds: 60));
+      await pumpEventQueue();
 
       expect(
         harness.repository.recentHistory().map(
@@ -109,7 +112,7 @@ void main() {
     await harness.session.play(0, requestedQuality: 'standard');
     harness.closeDatabase();
 
-    harness.emitPlaying();
+    await harness.emitPlaying();
 
     expect(harness.session.controlState.state, PlaybackBackendState.playing);
     expect(harness.failures, [OnlineHistoryProjectionFailure.playbackStarted]);
@@ -121,6 +124,9 @@ final class _Harness {
     database = sqlite3.openInMemory();
     initializeAppDatabase(database);
     repository = OnlineLibraryRepository(database);
+    historyController = OnlineHistoryController(
+      repository: Future.value(repository),
+    );
     queue.replace([_item('1', 10), _item('2', 90)]);
     queueController = RemotePlaybackQueueController(
       queue: queue,
@@ -145,13 +151,14 @@ final class _Harness {
       queue: queue,
       sessionController: session,
       timelineController: timeline,
-      repository: repository,
+      historyController: historyController,
       onFailure: failures.add,
     );
   }
 
   late final Database database;
   late final OnlineLibraryRepository repository;
+  late final OnlineHistoryController historyController;
   final queue = RemotePlaybackQueue();
   final gateway = _Gateway();
   final localBridge = _LocalBridge();
@@ -165,9 +172,10 @@ final class _Harness {
   late final OnlineHistoryProjectionBinding historyBinding;
   bool _databaseClosed = false;
 
-  void emitPlaying() {
+  Future<void> emitPlaying() async {
     backend.positions.add(Duration.zero);
     backend.emit(PlaybackBackendState.playing);
+    await pumpEventQueue();
   }
 
   void tick(Duration position) {
@@ -182,6 +190,7 @@ final class _Harness {
 
   Future<void> dispose() async {
     await historyBinding.dispose();
+    historyController.dispose();
     await timelineBinding.dispose();
     timeline.dispose();
     session.dispose();

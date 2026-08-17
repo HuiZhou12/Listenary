@@ -64,6 +64,7 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/services/music_platform/chksz/chksz_runtime.dart';
+import 'package:pure_music/services/music_platform/online_library/online_history_controller.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 
 class SlideTransitionPage<T> extends CustomTransitionPage<T> {
@@ -121,7 +122,8 @@ class _EntryState extends State<Entry>
   late final RemotePlaybackSessionController _remotePlaybackSessionController;
   late final RemotePlaybackTimelineController _remotePlaybackTimeline;
   late final RemotePlaybackTimelineBinding _remotePlaybackTimelineBinding;
-  OnlineHistoryProjectionBinding? _onlineHistoryProjectionBinding;
+  late final OnlineHistoryController _onlineHistoryController;
+  late final OnlineHistoryProjectionBinding _onlineHistoryProjectionBinding;
   late final RemoteMediaArtworkController _remoteMediaArtwork;
   late final RemoteMediaArtworkBinding _remoteMediaArtworkBinding;
   late final ActivePlaybackSessionComposition<PlaybackService>
@@ -170,7 +172,15 @@ class _EntryState extends State<Entry>
       sessionController: _remotePlaybackSessionController,
       timelineController: _remotePlaybackTimeline,
     );
-    unawaited(_bindOnlineHistoryProjection());
+    _onlineHistoryController = OnlineHistoryController(
+      repository: AppDb.instance.db().then(OnlineLibraryRepository.new),
+    );
+    _onlineHistoryProjectionBinding = OnlineHistoryProjectionBinding(
+      queue: _remotePlaybackQueue,
+      sessionController: _remotePlaybackSessionController,
+      timelineController: _remotePlaybackTimeline,
+      historyController: _onlineHistoryController,
+    );
     _activePlaybackSessionComposition =
         ActivePlaybackSessionComposition<PlaybackService>(
           remoteQueue: _remotePlaybackQueue,
@@ -277,10 +287,8 @@ class _EntryState extends State<Entry>
     _playService.clearRemotePlaybackControlHandlers();
     _playService.clearRemoteVolume();
     _playService.stopSmtcKeepAlive();
-    final onlineHistoryProjectionBinding = _onlineHistoryProjectionBinding;
-    if (onlineHistoryProjectionBinding != null) {
-      unawaited(onlineHistoryProjectionBinding.dispose());
-    }
+    unawaited(_onlineHistoryProjectionBinding.dispose());
+    _onlineHistoryController.dispose();
     unawaited(_remotePlaybackTimelineBinding.dispose());
     _remotePlaybackTimeline.dispose();
     _remotePlaybackSessionController.dispose();
@@ -289,21 +297,6 @@ class _EntryState extends State<Entry>
     unawaited(_remotePlaybackBackend.dispose());
     widget.chkszRuntime.dispose();
     super.dispose();
-  }
-
-  Future<void> _bindOnlineHistoryProjection() async {
-    try {
-      final database = await AppDb.instance.db();
-      if (!mounted) return;
-      _onlineHistoryProjectionBinding = OnlineHistoryProjectionBinding(
-        queue: _remotePlaybackQueue,
-        sessionController: _remotePlaybackSessionController,
-        timelineController: _remotePlaybackTimeline,
-        repository: OnlineLibraryRepository(database),
-      );
-    } catch (_) {
-      logger.w('[online history] initialization failed');
-    }
   }
 
   void _syncActiveMediaProjection() {
@@ -637,6 +630,9 @@ class _EntryState extends State<Entry>
                 ChangeNotifierProvider<RemotePlaybackTimelineController>.value(
                   value: _remotePlaybackTimeline,
                 ),
+                ChangeNotifierProvider<OnlineHistoryController>.value(
+                  value: _onlineHistoryController,
+                ),
                 ChangeNotifierProvider<RemoteMediaArtworkController>.value(
                   value: _remoteMediaArtwork,
                 ),
@@ -808,7 +804,11 @@ class _EntryState extends State<Entry>
             routes: [
               GoRoute(
                 path: app_paths.STATS_PAGE,
-                builder: (context, state) => const StatsPage(),
+                builder: (context, state) => StatsPage(
+                  initialSource: state.uri.queryParameters['source'] == 'online'
+                      ? StatsSource.online
+                      : StatsSource.local,
+                ),
               ),
             ],
           ),

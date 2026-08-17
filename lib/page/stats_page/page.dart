@@ -4,13 +4,20 @@ import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/rust/api/library_db.dart' as rust_library_db;
 import 'package:pure_music/page/page_scaffold.dart';
+import 'package:pure_music/page/stats_page/online_history_stats_view.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/services/music_platform/online_library/online_history_controller.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:provider/provider.dart';
+
+enum StatsSource { local, online }
 
 class StatsPage extends StatefulWidget {
-  const StatsPage({super.key});
+  const StatsPage({super.key, this.initialSource = StatsSource.local});
+
+  final StatsSource initialSource;
 
   @override
   State<StatsPage> createState() => _StatsPageState();
@@ -21,13 +28,30 @@ class _StatsPageState extends State<StatsPage> {
   bool _loading = true;
   bool _loadFailed = false;
   int _loadRequestToken = 0;
-  late final ValueListenable<int> _playCountRevision;
+  ValueListenable<int>? _playCountRevision;
+  late StatsSource _source;
 
   @override
   void initState() {
     super.initState();
-    _playCountRevision = PlayService.instance.playbackService.playCountRevision;
-    _playCountRevision.addListener(_onStatsSourceChanged);
+    _source = widget.initialSource;
+    if (_source == StatsSource.local) _ensureLocalStatsBound();
+  }
+
+  @override
+  void didUpdateWidget(StatsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialSource != widget.initialSource) {
+      _source = widget.initialSource;
+      if (_source == StatsSource.local) _ensureLocalStatsBound();
+    }
+  }
+
+  void _ensureLocalStatsBound() {
+    if (_playCountRevision != null) return;
+    final revision = PlayService.instance.playbackService.playCountRevision;
+    _playCountRevision = revision;
+    revision.addListener(_onStatsSourceChanged);
     AudioLibrary.libraryVersion.addListener(_onStatsSourceChanged);
     _loadStats();
   }
@@ -72,28 +96,50 @@ class _StatsPageState extends State<StatsPage> {
 
   @override
   void dispose() {
-    _playCountRevision.removeListener(_onStatsSourceChanged);
-    AudioLibrary.libraryVersion.removeListener(_onStatsSourceChanged);
+    _playCountRevision?.removeListener(_onStatsSourceChanged);
+    if (_playCountRevision != null) {
+      AudioLibrary.libraryVersion.removeListener(_onStatsSourceChanged);
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final onlineHistory = context.watch<OnlineHistoryController>();
+    final onlineLoading =
+        onlineHistory.snapshot.status == OnlineHistoryLoadStatus.loading;
     return PageScaffold(
       title: '统计',
       subtitle: '曲库与收听概览',
       actions: [
+        SegmentedButton<StatsSource>(
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(value: StatsSource.local, label: Text('本地')),
+            ButtonSegment(value: StatsSource.online, label: Text('在线')),
+          ],
+          selected: {_source},
+          onSelectionChanged: (selection) {
+            final source = selection.single;
+            if (source == StatsSource.local) _ensureLocalStatsBound();
+            setState(() => _source = source);
+          },
+        ),
         IconButton.filledTonal(
           icon: const Icon(Symbols.refresh),
           tooltip: '刷新',
-          onPressed: _loading ? null : _loadStats,
+          onPressed: _source == StatsSource.local
+              ? (_loading ? null : _loadStats)
+              : (onlineLoading ? null : onlineHistory.refresh),
           style: IconButton.styleFrom(
             shape: RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
           ),
         ),
       ],
-      body: _buildBody(scheme),
+      body: _source == StatsSource.local
+          ? _buildBody(scheme)
+          : const OnlineHistoryStatsView(),
     );
   }
 

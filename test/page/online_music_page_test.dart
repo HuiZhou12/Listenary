@@ -6,7 +6,9 @@ import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/page/online_music_page.dart';
+import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/services/music_platform/index.dart';
+import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 
 void main() {
   setUpAll(() {
@@ -32,6 +34,63 @@ void main() {
 
     expect(selection.tracks.map((track) => track.ref.trackId), ['1', '4']);
     expect(selection.selectedIndex, 1);
+  });
+
+  test('history selection preserves visible order and last quality', () {
+    final entries = [
+      _history('2', quality: 'standard'),
+      _history('1', quality: 'lossless'),
+    ];
+
+    final selection = OnlineTrackSelection.fromHistory(
+      entries: entries,
+      selectedRef: entries.last.track.ref,
+    );
+
+    expect(selection.tracks.map((track) => track.ref.trackId), ['2', '1']);
+    expect(selection.selectedIndex, 1);
+    expect(selection.requestedQuality, 'lossless');
+  });
+
+  test('active matching online identity is reused without a new request', () {
+    final ref = _track('1', title: 'Current').ref;
+
+    expect(
+      shouldReuseActiveOnlineTrack(
+        state: PlaybackBackendState.playing,
+        currentRef: ref,
+        selectedRef: ref,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldReuseActiveOnlineTrack(
+        state: PlaybackBackendState.failed,
+        currentRef: ref,
+        selectedRef: ref,
+      ),
+      isFalse,
+    );
+  });
+
+  testWidgets('opens online history from the page toolbar', (tester) async {
+    var requested = false;
+    await _pumpPage(
+      tester,
+      search:
+          ({
+            required keyword,
+            required limit,
+            required offset,
+            required cancelToken,
+          }) async => _page(const []),
+      onHistoryRequested: () => requested = true,
+    );
+
+    await tester.tap(find.byTooltip('在线播放历史'));
+    await tester.pump();
+
+    expect(requested, isTrue);
   });
 
   testWidgets('searches inline only after explicit submit', (tester) async {
@@ -346,6 +405,7 @@ Future<void> _pumpPage(
   WidgetTester tester, {
   required OnlineMusicSearch search,
   OnlineTrackSelected? onTrackSelected,
+  VoidCallback? onHistoryRequested,
 }) async {
   tester.view.physicalSize = const Size(1200, 900);
   tester.view.devicePixelRatio = 1;
@@ -354,7 +414,11 @@ Future<void> _pumpPage(
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
-        body: OnlineMusicPage(search: search, onTrackSelected: onTrackSelected),
+        body: OnlineMusicPage(
+          search: search,
+          onTrackSelected: onTrackSelected,
+          onHistoryRequested: onHistoryRequested,
+        ),
       ),
     ),
   );
@@ -383,6 +447,14 @@ MusicTrack _track(
   duration: const Duration(seconds: 123),
   availability: availability,
 );
+
+OnlineHistoryEntry _history(String id, {required String quality}) =>
+    OnlineHistoryEntry(
+      track: _track(id, title: 'History $id'),
+      playCount: 1,
+      lastPlayedAt: DateTime.utc(2026, 8, 18),
+      lastQuality: quality,
+    );
 
 final class _SearchCall {
   const _SearchCall(this.keyword, this.limit, this.offset, this.cancelToken);
