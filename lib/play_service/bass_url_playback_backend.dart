@@ -8,6 +8,8 @@ abstract interface class BassUrlPlaybackDriver {
 
   PlayerState get state;
 
+  double? readPositionSeconds();
+
   Future<void> open(Uri uri);
 
   Future<void> pause();
@@ -30,6 +32,9 @@ final class BassPlayerUrlPlaybackDriver implements BassUrlPlaybackDriver {
 
   @override
   PlayerState get state => _instance.playerState;
+
+  @override
+  double? readPositionSeconds() => _player?.position;
 
   @override
   Future<void> open(Uri uri) async {
@@ -59,7 +64,8 @@ final class BassPlayerUrlPlaybackDriver implements BassUrlPlaybackDriver {
   }
 }
 
-final class BassUrlPlaybackBackend implements ControllablePlaybackBackend {
+final class BassUrlPlaybackBackend
+    implements ControllablePlaybackBackend, PositionReadablePlaybackBackend {
   BassUrlPlaybackBackend({BassUrlPlaybackDriver? driver})
     : _driver = driver ?? BassPlayerUrlPlaybackDriver();
 
@@ -161,6 +167,28 @@ final class BassUrlPlaybackBackend implements ControllablePlaybackBackend {
     expectedState: PlaybackBackendState.paused,
     action: _driver.resume,
   );
+
+  @override
+  Duration? readPosition() {
+    if (_disposed || !_canReadPosition) return null;
+    try {
+      final seconds = _driver.readPositionSeconds();
+      if (seconds == null || !seconds.isFinite || seconds < 0) return null;
+      return Duration(
+        microseconds: (seconds * Duration.microsecondsPerSecond).round(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool get _canReadPosition => switch (_lastState) {
+    PlaybackBackendState.playing ||
+    PlaybackBackendState.paused ||
+    PlaybackBackendState.stalled ||
+    PlaybackBackendState.completed => true,
+    _ => false,
+  };
 
   @override
   Future<void> dispose() async {

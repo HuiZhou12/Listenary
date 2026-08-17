@@ -66,3 +66,8 @@ abstract interface class ControllablePlaybackBackend
 
   Future<void> resume();
 }
+
+abstract interface class PositionReadablePlaybackBackend
+    implements PlaybackBackend {
+  Duration? readPosition();
+}

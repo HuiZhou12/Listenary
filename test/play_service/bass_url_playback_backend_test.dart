@@ -92,6 +92,67 @@ void main() {
     expect(driver.resumeCount, 1);
   });
 
+  test('reads one position snapshot only from readable states', () async {
+    expect(backend.readPosition(), isNull);
+    expect(driver.positionReadCount, 0);
+
+    driver.state = PlayerState.playing;
+    driver.positionSeconds = 12.345;
+    await backend.open(_remoteSource());
+
+    expect(backend.readPosition(), const Duration(milliseconds: 12345));
+    expect(driver.positionReadCount, 1);
+
+    driver.emit(PlayerState.paused);
+    await pumpEventQueue();
+    expect(backend.readPosition(), const Duration(milliseconds: 12345));
+
+    driver.emit(PlayerState.stalled);
+    await pumpEventQueue();
+    expect(backend.readPosition(), const Duration(milliseconds: 12345));
+
+    driver.emit(PlayerState.completed);
+    await pumpEventQueue();
+    expect(backend.readPosition(), const Duration(milliseconds: 12345));
+    expect(driver.positionReadCount, 4);
+
+    await backend.stop();
+    expect(backend.readPosition(), isNull);
+    expect(driver.positionReadCount, 4);
+  });
+
+  test(
+    'position read degrades invalid values and driver errors to unknown',
+    () async {
+      driver.state = PlayerState.playing;
+      await backend.open(_remoteSource());
+
+      for (final value in [double.nan, double.infinity, -1.0]) {
+        driver.positionSeconds = value;
+        expect(backend.readPosition(), isNull);
+      }
+
+      driver.positionError = StateError('native position failed');
+      expect(backend.readPosition(), isNull);
+    },
+  );
+
+  test('opening and failed states do not access the position reader', () async {
+    final pendingOpen = Completer<void>();
+    driver.pendingOpens.add(pendingOpen.future);
+    final openFuture = backend.open(_remoteSource());
+    await pumpEventQueue();
+
+    expect(backend.readPosition(), isNull);
+    expect(driver.positionReadCount, 0);
+
+    driver.openError = StateError('open failed');
+    pendingOpen.complete();
+    await expectLater(openFuture, throwsA(isA<PlaybackBackendOpenException>()));
+    expect(backend.readPosition(), isNull);
+    expect(driver.positionReadCount, 0);
+  });
+
   test('control failures expose only a safe exception', () async {
     driver.state = PlayerState.playing;
     await backend.open(_remoteSource());
@@ -193,9 +254,20 @@ final class _FakeBassUrlPlaybackDriver implements BassUrlPlaybackDriver {
   int resumeCount = 0;
   int stopCount = 0;
   int disposeCount = 0;
+  double? positionSeconds;
+  Object? positionError;
+  int positionReadCount = 0;
 
   @override
   Stream<PlayerState> get stateStream => _states.stream;
+
+  @override
+  double? readPositionSeconds() {
+    positionReadCount++;
+    final error = positionError;
+    if (error != null) throw error;
+    return positionSeconds;
+  }
 
   void emit(PlayerState value) {
     state = value;
