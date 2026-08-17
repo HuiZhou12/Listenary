@@ -67,6 +67,8 @@ typedef RemotePlaybackTimelineTickerFactory =
       void Function() callback,
     );
 
+typedef RemotePlaybackTimelineClock = Duration Function();
+
 final class RemotePlaybackTimelineController
     extends ValueNotifier<RemotePlaybackTimelineSnapshot> {
   RemotePlaybackTimelineController({
@@ -74,20 +76,41 @@ final class RemotePlaybackTimelineController
     this.sampleInterval = const Duration(seconds: 1),
     RemotePlaybackTimelineTickerFactory tickerFactory =
         _createRemotePlaybackTimelineTicker,
+    RemotePlaybackTimelineClock? clock,
   }) : assert(sampleInterval > Duration.zero),
        _readPosition = readPosition,
        _tickerFactory = tickerFactory,
+       _clock = clock ?? _createRemotePlaybackTimelineClock(),
        super(const RemotePlaybackTimelineSnapshot.unknown());
 
   final Duration? Function() _readPosition;
   final RemotePlaybackTimelineTickerFactory _tickerFactory;
+  final RemotePlaybackTimelineClock _clock;
   final Duration sampleInterval;
   RemotePlaybackTimelineTicker? _ticker;
   int? _revision;
   PlaybackBackendState? _state;
   Duration? _duration;
+  Duration? _positionSampleTime;
   int _tickerGeneration = 0;
   bool _disposed = false;
+
+  bool get isAdvancing =>
+      !_disposed &&
+      _state == PlaybackBackendState.playing &&
+      value.hasKnownPosition;
+
+  RemotePlaybackTimelineSnapshot get projectedSnapshot {
+    final position = value.position;
+    final sampleTime = _positionSampleTime;
+    if (!isAdvancing || position == null || sampleTime == null) return value;
+    final elapsed = _clock() - sampleTime;
+    if (elapsed <= Duration.zero) return value;
+    return RemotePlaybackTimelineSnapshot.normalized(
+      position: position + elapsed,
+      duration: value.duration,
+    );
+  }
 
   void synchronize({
     required int revision,
@@ -108,9 +131,9 @@ final class RemotePlaybackTimelineController
 
     if (revisionChanged || state == PlaybackBackendState.opening) {
       _cancelTicker();
-      _publish(position: Duration.zero);
+      _publish(position: Duration.zero, updateSampleTime: true);
     } else {
-      _publish(position: value.position);
+      _publish(position: value.position, updateSampleTime: false);
     }
 
     if (!revisionChanged && !stateChanged) return;
@@ -141,6 +164,7 @@ final class RemotePlaybackTimelineController
     _revision = null;
     _state = null;
     _duration = null;
+    _positionSampleTime = null;
     _setValue(const RemotePlaybackTimelineSnapshot.unknown());
   }
 
@@ -173,10 +197,14 @@ final class RemotePlaybackTimelineController
       return;
     }
     if (position == null || position.isNegative) return;
-    _publish(position: position);
+    _publish(position: position, updateSampleTime: true);
   }
 
-  void _publish({required Duration? position}) {
+  void _publish({
+    required Duration? position,
+    required bool updateSampleTime,
+  }) {
+    if (updateSampleTime) _positionSampleTime = _clock();
     _setValue(
       RemotePlaybackTimelineSnapshot.normalized(
         position: position,
@@ -202,6 +230,11 @@ RemotePlaybackTimelineTicker _createRemotePlaybackTimelineTicker(
   Duration interval,
   void Function() callback,
 ) => _TimerRemotePlaybackTimelineTicker(interval, callback);
+
+RemotePlaybackTimelineClock _createRemotePlaybackTimelineClock() {
+  final stopwatch = Stopwatch()..start();
+  return () => stopwatch.elapsed;
+}
 
 final class _TimerRemotePlaybackTimelineTicker
     implements RemotePlaybackTimelineTicker {

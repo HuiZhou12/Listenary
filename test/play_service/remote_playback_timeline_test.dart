@@ -65,13 +65,16 @@ void main() {
     late _FakeTickerFactory tickerFactory;
     late List<Duration?> positions;
     late RemotePlaybackTimelineController controller;
+    late Duration now;
 
     setUp(() {
       tickerFactory = _FakeTickerFactory();
       positions = [];
+      now = Duration.zero;
       controller = RemotePlaybackTimelineController(
         readPosition: () => positions.isEmpty ? null : positions.removeAt(0),
         tickerFactory: tickerFactory.create,
+        clock: () => now,
       );
     });
 
@@ -103,6 +106,77 @@ void main() {
       expect(tickerFactory.activeCount, 1);
     });
 
+    test('playing projects between samples without another native read', () {
+      var notifications = 0;
+      controller.addListener(() => notifications++);
+      positions.add(const Duration(seconds: 2));
+      controller.synchronize(
+        revision: 1,
+        state: PlaybackBackendState.playing,
+        duration: const Duration(seconds: 10),
+      );
+      notifications = 0;
+
+      now = const Duration(milliseconds: 450);
+      final projected = controller.projectedSnapshot;
+
+      expect(controller.value.position, const Duration(seconds: 2));
+      expect(projected.position, const Duration(milliseconds: 2450));
+      expect(projected.duration, const Duration(seconds: 10));
+      expect(controller.isAdvancing, isTrue);
+      expect(positions, isEmpty);
+      expect(notifications, 0);
+      expect(tickerFactory.activeCount, 1);
+      expect(tickerFactory.created, hasLength(1));
+    });
+
+    test('projected position clamps to duration and keeps unknown explicit', () {
+      positions.add(const Duration(milliseconds: 9500));
+      controller.synchronize(
+        revision: 1,
+        state: PlaybackBackendState.playing,
+        duration: const Duration(seconds: 10),
+      );
+      now = const Duration(seconds: 2);
+
+      expect(
+        controller.projectedSnapshot.position,
+        const Duration(seconds: 10),
+      );
+
+      controller.synchronize(
+        revision: 2,
+        state: PlaybackBackendState.opening,
+        duration: Duration.zero,
+      );
+      expect(controller.projectedSnapshot.duration, isNull);
+      expect(controller.projectedSnapshot.progress, isNull);
+    });
+
+    test('metadata-only duration update preserves the interpolation anchor', () {
+      positions.add(const Duration(seconds: 2));
+      controller.synchronize(
+        revision: 1,
+        state: PlaybackBackendState.playing,
+        duration: const Duration(seconds: 10),
+      );
+      now = const Duration(milliseconds: 500);
+
+      controller.synchronize(
+        revision: 1,
+        state: PlaybackBackendState.playing,
+        duration: const Duration(seconds: 20),
+      );
+      now = const Duration(seconds: 1);
+
+      expect(controller.projectedSnapshot.position, const Duration(seconds: 3));
+      expect(
+        controller.projectedSnapshot.duration,
+        const Duration(seconds: 20),
+      );
+      expect(positions, isEmpty);
+    });
+
     test('paused stalled and completed sample once then freeze', () {
       positions.addAll([
         const Duration(seconds: 2),
@@ -121,11 +195,16 @@ void main() {
         PlaybackBackendState.stalled,
         PlaybackBackendState.completed,
       ]) {
+        now += const Duration(milliseconds: 500);
         controller.synchronize(
           revision: 1,
           state: state,
           duration: const Duration(seconds: 10),
         );
+        final frozenPosition = controller.value.position;
+        now += const Duration(milliseconds: 500);
+        expect(controller.projectedSnapshot.position, frozenPosition);
+        expect(controller.isAdvancing, isFalse);
         expect(tickerFactory.activeCount, 0);
       }
 
@@ -154,6 +233,9 @@ void main() {
       );
 
       expect(controller.value.position, const Duration(seconds: 4));
+      now = const Duration(seconds: 2);
+      expect(controller.projectedSnapshot.position, const Duration(seconds: 4));
+      expect(controller.isAdvancing, isFalse);
       expect(tickerFactory.activeCount, 0);
     });
 
@@ -177,6 +259,9 @@ void main() {
       staleTicker.tick(ignoreCancelled: true);
 
       expect(controller.value.position, Duration.zero);
+      now = const Duration(seconds: 3);
+      expect(controller.projectedSnapshot.position, Duration.zero);
+      expect(controller.isAdvancing, isFalse);
       expect(controller.value.duration, const Duration(seconds: 20));
       expect(positions, [const Duration(seconds: 9)]);
       expect(tickerFactory.activeCount, 0);
@@ -213,11 +298,35 @@ void main() {
 
       controller.synchronize(revision: 2, state: null, duration: Duration.zero);
       expect(controller.value, const RemotePlaybackTimelineSnapshot.unknown());
+      expect(
+        controller.projectedSnapshot,
+        const RemotePlaybackTimelineSnapshot.unknown(),
+      );
+      expect(controller.isAdvancing, isFalse);
       expect(tickerFactory.activeCount, 0);
 
       controller.dispose();
+      now = const Duration(seconds: 4);
+      expect(controller.projectedSnapshot.position, isNull);
+      expect(controller.isAdvancing, isFalse);
       staleTicker.tick(ignoreCancelled: true);
       expect(tickerFactory.activeCount, 0);
+    });
+
+    test('dispose freezes a known sample without another read', () {
+      positions.add(const Duration(seconds: 2));
+      controller.synchronize(
+        revision: 1,
+        state: PlaybackBackendState.playing,
+        duration: const Duration(seconds: 10),
+      );
+
+      controller.dispose();
+      now = const Duration(seconds: 4);
+
+      expect(controller.projectedSnapshot.position, const Duration(seconds: 2));
+      expect(controller.isAdvancing, isFalse);
+      expect(positions, isEmpty);
     });
   });
 }
