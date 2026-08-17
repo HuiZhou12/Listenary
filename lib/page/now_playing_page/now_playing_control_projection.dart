@@ -21,6 +21,9 @@ final class NowPlayingControlProjection {
   final bool navigationBlocked;
 }
 
+bool shouldShowNowPlayingDesktopLyric(ActivePlaybackSessionSource source) =>
+    source != ActivePlaybackSessionSource.inactive;
+
 NowPlayingControlProjection resolveNowPlayingControls(
   ActivePlaybackSessionSnapshot snapshot,
 ) {
@@ -58,7 +61,8 @@ NowPlayingControlProjection resolveNowPlayingControls(
           ActivePlaybackSessionState.completed => PlaybackControlAction.replay,
           _ => PlaybackControlAction.play,
         };
-  final navigationBlocked = isRemote &&
+  final navigationBlocked =
+      isRemote &&
       (snapshot.controlInFlight ||
           snapshot.state == ActivePlaybackSessionState.opening);
 
@@ -69,11 +73,11 @@ NowPlayingControlProjection resolveNowPlayingControls(
       isPlaying: snapshot.state == ActivePlaybackSessionState.playing,
       action: action,
     ),
-    canPrevious: hasSession &&
-        (isRemote
-            ? !navigationBlocked && capabilities.canPrevious
-            : true),
-    canNext: hasSession &&
+    canPrevious:
+        hasSession &&
+        (isRemote ? !navigationBlocked && capabilities.canPrevious : true),
+    canNext:
+        hasSession &&
         (isRemote ? !navigationBlocked && capabilities.canNext : true),
     canChangePlaybackMode: hasSession && !isRemote,
     usesRemoteQueueMode: isRemote,

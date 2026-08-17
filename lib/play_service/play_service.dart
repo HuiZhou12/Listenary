@@ -213,9 +213,11 @@ class PlayService {
       _playbackServiceHandoff.existing;
   LyricService get lyricService => _lyricService ??= LyricService(this);
   DesktopLyricService get desktopLyricService =>
-      _desktopLyricService ??= DesktopLyricService(this);
-  DesktopLyricService? get existingDesktopLyricService =>
-      _desktopLyricService;
+      _desktopLyricService ??= DesktopLyricService(
+        this,
+        localProjectionSuppressed: _remotePlaybackControls.isActive,
+      );
+  DesktopLyricService? get existingDesktopLyricService => _desktopLyricService;
   SmtcSessionOwner get _sharedSmtcSession {
     final existing = _smtcSessionOwner;
     if (existing != null) return existing;

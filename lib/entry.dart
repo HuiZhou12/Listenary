@@ -186,8 +186,9 @@ class _EntryState extends State<Entry>
           },
         );
     _activePlaybackSessionComposition.activeSession.addListener(
-      _syncDesktopLyricProjection,
+      _syncActiveMediaProjection,
     );
+    _syncActiveMediaProjection();
     _remoteMediaArtwork = RemoteMediaArtworkController();
     _remoteMediaArtworkBinding = RemoteMediaArtworkBinding(
       activeSession: _activePlaybackSessionComposition.activeSession,
@@ -262,8 +263,9 @@ class _EntryState extends State<Entry>
     _remoteMediaArtworkBinding.dispose();
     _remoteMediaArtwork.dispose();
     _activePlaybackSessionComposition.activeSession.removeListener(
-      _syncDesktopLyricProjection,
+      _syncActiveMediaProjection,
     );
+    ThemeProvider.instance.setLocalMediaThemeSuppressed(false);
     unawaited(_activeSessionSmtcComposition.dispose());
     unawaited(_activePlaybackSessionComposition.dispose());
     _playService.clearRemoteNavigationHandlers();
@@ -280,11 +282,12 @@ class _EntryState extends State<Entry>
     super.dispose();
   }
 
-  void _syncDesktopLyricProjection() {
-    final source =
-        _activePlaybackSessionComposition.activeSession.value.source;
+  void _syncActiveMediaProjection() {
+    final source = _activePlaybackSessionComposition.activeSession.value.source;
+    final usesRemoteMedia = source == ActivePlaybackSessionSource.remote;
+    ThemeProvider.instance.setLocalMediaThemeSuppressed(usesRemoteMedia);
     _playService.existingDesktopLyricService?.setLocalProjectionSuppressed(
-      source == ActivePlaybackSessionSource.remote,
+      usesRemoteMedia,
     );
   }
 

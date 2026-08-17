@@ -59,9 +59,7 @@ final nowPlayingViewMode = ValueNotifier(
 );
 
 @visibleForTesting
-bool shouldShowLocalNowPlayingActions(
-  ActivePlaybackSessionSnapshot snapshot,
-) =>
+bool shouldShowLocalNowPlayingActions(ActivePlaybackSessionSnapshot snapshot) =>
     snapshot.source == ActivePlaybackSessionSource.local &&
     snapshot.currentItem != null;
 
@@ -740,10 +738,10 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
 
   @override
   Widget build(BuildContext context) {
-    final showLocalActions = context.select<ActivePlaybackSession, bool>(
-      (session) => shouldShowLocalNowPlayingActions(session.value),
+    final showDesktopLyric = context.select<ActivePlaybackSession, bool>(
+      (session) => shouldShowNowPlayingDesktopLyric(session.value.source),
     );
-    if (!showLocalActions) return const SizedBox.shrink();
+    if (!showDesktopLyric) return const SizedBox.shrink();
 
     final useMonet = AppSettings.instance.useMaterialYouForControls;
     final playbackService = context.watch<PlaybackService>();
@@ -1361,7 +1359,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
                       final dragVolDspValue = dragVolDsp.value;
                       final currentValue = isDragging
                           ? dragVolDspValue
-                           : playService.activeVolumeDsp.value;
+                          : playService.activeVolumeDsp.value;
 
                       return LayoutBuilder(
                         builder: (context, constraints) {
@@ -1392,26 +1390,26 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
                                   onChangeStart: !hasPlaybackSession
                                       ? null
                                       : (value) {
-                                    isDragging = true;
-                                    dragVolDsp.value = value;
-                                    playService.setActiveVolumeDsp(value);
-                                    _triggerIndicator();
-                                  },
+                                          isDragging = true;
+                                          dragVolDsp.value = value;
+                                          playService.setActiveVolumeDsp(value);
+                                          _triggerIndicator();
+                                        },
                                   onChanged: !hasPlaybackSession
                                       ? null
                                       : (value) {
-                                    dragVolDsp.value = value;
-                                    playService.setActiveVolumeDsp(value);
-                                    // Also trigger indicator on drag
-                                    if (isDragging) _triggerIndicator();
-                                  },
+                                          dragVolDsp.value = value;
+                                          playService.setActiveVolumeDsp(value);
+                                          // Also trigger indicator on drag
+                                          if (isDragging) _triggerIndicator();
+                                        },
                                   onChangeEnd: !hasPlaybackSession
                                       ? null
                                       : (value) {
-                                    isDragging = false;
-                                    dragVolDsp.value = value;
-                                    playService.setActiveVolumeDsp(value);
-                                  },
+                                          isDragging = false;
+                                          dragVolDsp.value = value;
+                                          playService.setActiveVolumeDsp(value);
+                                        },
                                 ),
                                 if (_showCustomIndicator || _isHovering)
                                   Positioned(

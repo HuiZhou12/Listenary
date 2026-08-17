@@ -4,6 +4,21 @@ import 'package:pure_music/page/now_playing_page/now_playing_control_projection.
 import 'package:pure_music/play_service/active_playback_session.dart';
 
 void main() {
+  test('desktop lyric is shared by local and remote active sessions', () {
+    expect(
+      shouldShowNowPlayingDesktopLyric(ActivePlaybackSessionSource.inactive),
+      isFalse,
+    );
+    expect(
+      shouldShowNowPlayingDesktopLyric(ActivePlaybackSessionSource.local),
+      isTrue,
+    );
+    expect(
+      shouldShowNowPlayingDesktopLyric(ActivePlaybackSessionSource.remote),
+      isTrue,
+    );
+  });
+
   test('inactive session disables every primary control', () {
     final controls = resolveNowPlayingControls(
       ActivePlaybackSessionSnapshot.inactive(revision: 1),
@@ -111,9 +126,7 @@ ActivePlaybackSessionSnapshot _snapshot({
 }) => ActivePlaybackSessionSnapshot.active(
   revision: 1,
   source: source,
-  queue: const [
-    ActivePlaybackSessionItem(title: 'Track', artist: 'Artist'),
-  ],
+  queue: const [ActivePlaybackSessionItem(title: 'Track', artist: 'Artist')],
   currentIndex: 0,
   state: state,
   controlInFlight: controlInFlight,

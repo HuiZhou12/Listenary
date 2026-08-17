@@ -135,11 +135,11 @@ class _WinJobObject {
 
 class DesktopLyricService extends ChangeNotifier {
   final PlayService playService;
-  DesktopLyricService(this.playService) {
-    _positionSyncListener = _sendLyricProgressSnapshot;
-    _rateListener = _sendLyricProgressSnapshot;
-    _playbackService.positionSyncNotifier.addListener(_positionSyncListener);
-    _playbackService.rate.addListener(_rateListener);
+  DesktopLyricService(
+    this.playService, {
+    bool localProjectionSuppressed = false,
+  }) : _localProjectionSuppressed = localProjectionSuppressed {
+    if (!localProjectionSuppressed) _attachLocalPlaybackListeners();
   }
 
   PlaybackService get _playbackService => playService.playbackService;
@@ -156,7 +156,7 @@ class DesktopLyricService extends ChangeNotifier {
   int _sendQueueSize = 0;
   Future<void> _sendQueue = Future.value();
   int _processGeneration = 0;
-  bool _localProjectionSuppressed = false;
+  bool _localProjectionSuppressed;
 
   bool isLocked = false;
   bool _isStarting = false;
@@ -165,8 +165,9 @@ class DesktopLyricService extends ChangeNotifier {
 
   // ── 位置追踪 / Job Object ──────────────────────────────
   Timer? _progressSyncTimer;
-  late final VoidCallback _positionSyncListener;
-  late final VoidCallback _rateListener;
+  PlaybackService? _localPlaybackService;
+  VoidCallback? _positionSyncListener;
+  VoidCallback? _rateListener;
   int? _currentLyricLineStartMs;
   int _currentLyricLineLengthMs = 0;
   int? _currentLyricLineId;
@@ -178,6 +179,18 @@ class DesktopLyricService extends ChangeNotifier {
 
   /// 是否正在关闭中（用于 UI 层禁用按钮）
   bool get isKilling => _isKilling;
+
+  void _attachLocalPlaybackListeners() {
+    if (_localPlaybackService != null) return;
+    final playbackService = _playbackService;
+    final positionListener = _sendLyricProgressSnapshot;
+    final rateListener = _sendLyricProgressSnapshot;
+    _localPlaybackService = playbackService;
+    _positionSyncListener = positionListener;
+    _rateListener = rateListener;
+    playbackService.positionSyncNotifier.addListener(positionListener);
+    playbackService.rate.addListener(rateListener);
+  }
 
   void _monitorProcessExit(Process process, int generation) {
     process.exitCode
@@ -245,7 +258,15 @@ class DesktopLyricService extends ChangeNotifier {
       return;
     }
 
-    final nowPlaying = _playbackService.nowPlaying;
+    if (!_localProjectionSuppressed) _attachLocalPlaybackListeners();
+    final localPlaybackService = _localPlaybackService;
+    final nowPlaying = _localProjectionSuppressed
+        ? null
+        : localPlaybackService?.nowPlaying;
+    final missingMetadata = _localProjectionSuppressed ? '' : '无';
+    final isLocalPlaying =
+        !_localProjectionSuppressed &&
+        localPlaybackService?.playerState == PlayerState.playing;
     final currScheme = ThemeProvider.instance.darkScheme;
     const isDarkMode = true;
 
@@ -254,10 +275,10 @@ class DesktopLyricService extends ChangeNotifier {
       process = await Process.start(desktopLyricPath, [
         json.encode(
           msg.InitArgsMessage(
-            _playbackService.playerState == PlayerState.playing,
-            nowPlaying?.title ?? '无',
-            nowPlaying?.artist ?? '无',
-            nowPlaying?.album ?? '无',
+            isLocalPlaying,
+            nowPlaying?.title ?? missingMetadata,
+            nowPlaying?.artist ?? missingMetadata,
+            nowPlaying?.album ?? missingMetadata,
             isDarkMode,
             currScheme.primary.toARGB32(),
             currScheme.surfaceContainer.toARGB32(),
@@ -583,6 +604,8 @@ class DesktopLyricService extends ChangeNotifier {
 
   void _startProgressSync() {
     _progressSyncTimer?.cancel();
+    _progressSyncTimer = null;
+    if (_localProjectionSuppressed) return;
     _progressSyncTimer = Timer.periodic(
       const Duration(seconds: 1),
       (_) => _sendLyricProgressSnapshot(),
@@ -628,16 +651,16 @@ class DesktopLyricService extends ChangeNotifier {
         final controlEvent = msg.ControlEventMessage.fromJson(messageContent);
         switch (controlEvent.event) {
           case msg.ControlEvent.pause:
-            _playbackService.pause();
+            playService.pauseAudio();
             break;
           case msg.ControlEvent.start:
-            _playbackService.start();
+            playService.playAudio();
             break;
           case msg.ControlEvent.previousAudio:
-            _playbackService.lastAudio();
+            playService.previousAudio();
             break;
           case msg.ControlEvent.nextAudio:
-            _playbackService.nextAudio();
+            playService.nextAudio();
             break;
           case msg.ControlEvent.lock:
             isLocked = true;
@@ -655,16 +678,18 @@ class DesktopLyricService extends ChangeNotifier {
 
   void _sendInitialState() {
     if (_localProjectionSuppressed) return;
-    final nowPlaying = _playbackService.nowPlaying;
+    _attachLocalPlaybackListeners();
+    final playbackService = _localPlaybackService!;
+    final nowPlaying = playbackService.nowPlaying;
     if (nowPlaying != null) {
       sendNowPlayingMessage(nowPlaying);
     }
-    sendPlayerStateMessage(_playbackService.playerState == PlayerState.playing);
+    sendPlayerStateMessage(playbackService.playerState == PlayerState.playing);
 
     playService.lyricService.currLyricFuture.then((lyric) {
       if (lyric == null) return;
       if (lyric.lines.isEmpty) return;
-      final positionMs = (_playbackService.position * 1000).round();
+      final positionMs = (playbackService.position * 1000).round();
       final preludeLine = desktopLyricPreludeLineAt(lyric, positionMs);
       if (preludeLine != null) {
         sendLyricLineMessage(
@@ -676,7 +701,7 @@ class DesktopLyricService extends ChangeNotifier {
       }
       final update = playService.lyricService.lineUpdateForLyric(
         lyric,
-        _playbackService.position,
+        playbackService.position,
       );
       final idx = update?.primaryIndex;
       if (idx == null || idx < 0 || idx >= lyric.lines.length) return;
@@ -696,10 +721,14 @@ class DesktopLyricService extends ChangeNotifier {
     if (_localProjectionSuppressed == suppressed) return;
     _localProjectionSuppressed = suppressed;
     if (!suppressed) {
+      _attachLocalPlaybackListeners();
+      if (_isRunning) _startProgressSync();
       _sendInitialState();
       return;
     }
 
+    _progressSyncTimer?.cancel();
+    _progressSyncTimer = null;
     _currentLyricLineStartMs = null;
     _currentLyricLineLengthMs = 0;
     _currentLyricLineId = null;
@@ -748,8 +777,20 @@ class DesktopLyricService extends ChangeNotifier {
     _stderrSubscription = null;
     _progressSyncTimer?.cancel();
     _progressSyncTimer = null;
-    _playbackService.positionSyncNotifier.removeListener(_positionSyncListener);
-    _playbackService.rate.removeListener(_rateListener);
+    final localPlaybackService = _localPlaybackService;
+    final positionListener = _positionSyncListener;
+    final rateListener = _rateListener;
+    if (localPlaybackService != null && positionListener != null) {
+      localPlaybackService.positionSyncNotifier.removeListener(
+        positionListener,
+      );
+    }
+    if (localPlaybackService != null && rateListener != null) {
+      localPlaybackService.rate.removeListener(rateListener);
+    }
+    _localPlaybackService = null;
+    _positionSyncListener = null;
+    _rateListener = null;
     // 释放 Job Object 句柄
     _WinJobObject.close(_jobHandle);
     _jobHandle = null;

@@ -50,7 +50,8 @@ Color _selectThemeSeedColor(List<Color> palette) {
     if (chroma < 0.06 || hsl.saturation < 0.18) continue;
 
     final toneFit = 1.0 - (hsl.lightness - 0.5).abs() * 2.0;
-    final score = chroma * 0.65 +
+    final score =
+        chroma * 0.65 +
         hsl.saturation * 0.2 +
         toneFit * 0.1 +
         0.05 / (index + 1);
@@ -73,6 +74,18 @@ Color _configuredThemeSeedColor() {
   return Color(AppSettings.getWindowsTheme());
 }
 
+final class LocalMediaThemeOwnership {
+  bool _suppressed = false;
+
+  bool get allowsLocalMediaWrites => !_suppressed;
+
+  bool setSuppressed(bool suppressed) {
+    if (_suppressed == suppressed) return false;
+    _suppressed = suppressed;
+    return true;
+  }
+}
+
 class ThemeProvider extends ChangeNotifier {
   late ColorScheme lightScheme;
   late ColorScheme darkScheme;
@@ -80,11 +93,11 @@ class ThemeProvider extends ChangeNotifier {
   String? fontFamily = AppSettings.instance.fontFamily;
 
   Brightness get effectiveBrightness => switch (themeMode) {
-        ThemeMode.light => Brightness.light,
-        ThemeMode.dark => Brightness.dark,
-        ThemeMode.system =>
-          WidgetsBinding.instance.platformDispatcher.platformBrightness,
-      };
+    ThemeMode.light => Brightness.light,
+    ThemeMode.dark => Brightness.dark,
+    ThemeMode.system =>
+      WidgetsBinding.instance.platformDispatcher.platformBrightness,
+  };
 
   ColorScheme get currScheme =>
       effectiveBrightness == Brightness.dark ? darkScheme : lightScheme;
@@ -111,16 +124,10 @@ class ThemeProvider extends ChangeNotifier {
 
   void _updateColorSchemes(Color seedColor) {
     lightScheme = _applyLightSurfacePalette(
-      ColorScheme.fromSeed(
-        seedColor: seedColor,
-        brightness: Brightness.light,
-      ),
+      ColorScheme.fromSeed(seedColor: seedColor, brightness: Brightness.light),
     );
     darkScheme = _applyDarkSurfacePalette(
-      ColorScheme.fromSeed(
-        seedColor: seedColor,
-        brightness: Brightness.dark,
-      ),
+      ColorScheme.fromSeed(seedColor: seedColor, brightness: Brightness.dark),
     );
   }
 
@@ -133,10 +140,13 @@ class ThemeProvider extends ChangeNotifier {
 
   void _notifyThemeChanged() {
     notifyListeners();
-    PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
+    final desktopLyricService =
+        PlayService.instance.existingDesktopLyricService;
+    if (desktopLyricService == null) return;
+    desktopLyricService.canSendMessage.then((canSend) {
       if (!canSend) return;
       final scheme = currScheme;
-      PlayService.instance.desktopLyricService.sendThemeMessage(
+      desktopLyricService.sendThemeMessage(
         scheme,
         darkMode: scheme.brightness == Brightness.dark,
       );
@@ -159,6 +169,13 @@ class ThemeProvider extends ChangeNotifier {
   int _themeRequestToken = 0;
   Timer? _themeDebounceTimer;
   final ColorExtractionService _colorService = ColorExtractionService();
+  final LocalMediaThemeOwnership _mediaThemeOwnership =
+      LocalMediaThemeOwnership();
+
+  void setLocalMediaThemeSuppressed(bool suppressed) {
+    if (!_mediaThemeOwnership.setSuppressed(suppressed)) return;
+    if (suppressed) cancelPendingAudioTheme();
+  }
 
   void applyThemeMode(ThemeMode mode) {
     themeMode = mode;
@@ -178,6 +195,7 @@ class ThemeProvider extends ChangeNotifier {
 
   /// 直接应用预计算好的种子色，避免重复解码。
   void applySeedColorDirectly(Color seedColor, String cacheKey) {
+    if (!_mediaThemeOwnership.allowsLocalMediaWrites) return;
     if (!AppSettings.instance.enableCoverColorExtraction) {
       _applySeedColor(_configuredThemeSeedColor());
       return;
@@ -238,6 +256,7 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   void applyThemeFromAudio(Audio audio) {
+    if (!_mediaThemeOwnership.allowsLocalMediaWrites) return;
     if (!AppSettings.instance.enableCoverColorExtraction) {
       cancelPendingAudioTheme();
       _applySeedColor(_configuredThemeSeedColor());
