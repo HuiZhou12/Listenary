@@ -77,3 +77,8 @@ abstract interface class SpectrumReadablePlaybackBackend
     implements PlaybackBackend {
   Stream<Float32List> get spectrumStream;
 }
+
+abstract interface class VolumeControllablePlaybackBackend
+    implements PlaybackBackend {
+  void setVolume(double volume);
+}

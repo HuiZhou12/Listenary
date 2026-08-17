@@ -71,13 +71,15 @@ class _ImmersivePortraitLayout extends StatelessWidget {
                     ).createShader(bounds);
                   },
                   blendMode: BlendMode.dstIn,
-                  child: const VerticalLyricView(
-                    showControls: false,
-                    enableSeekOnTap: true,
-                    centerVertically: false,
-                    enableEdgeSpacer: true,
-                    // 压缩顶部空间后，进一步降低对齐位置，使当前行更靠上
-                    currentLineAlignment: 0.10,
+                  child: const ActiveNowPlayingLyricRegion(
+                    localChild: VerticalLyricView(
+                      showControls: false,
+                      enableSeekOnTap: true,
+                      centerVertically: false,
+                      enableEdgeSpacer: true,
+                      // 压缩顶部空间后，进一步降低对齐位置，使当前行更靠上
+                      currentLineAlignment: 0.10,
+                    ),
                   ),
                 ),
               ),
@@ -511,12 +513,14 @@ class _ImmersiveLandscapeLayout extends StatelessWidget {
                         children: [
                           Padding(
                             padding: EdgeInsets.only(right: 8.0),
-                            child: VerticalLyricView(
-                              showControls: false,
-                              enableSeekOnTap: false,
-                              centerVertically: true,
-                              enableEdgeSpacer: true,
-                              currentLineAlignment: 0.45,
+                            child: ActiveNowPlayingLyricRegion(
+                              localChild: VerticalLyricView(
+                                showControls: false,
+                                enableSeekOnTap: false,
+                                centerVertically: true,
+                                enableEdgeSpacer: true,
+                                currentLineAlignment: 0.45,
+                              ),
                             ),
                           ),
                         ],

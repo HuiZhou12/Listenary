@@ -72,6 +72,13 @@ void main() {
     await spectrumSubscription.cancel();
   });
 
+  test('routes clamped volume to the remote driver', () {
+    backend.setVolume(1.5);
+    backend.setVolume(-0.5);
+
+    expect(driver.volumeValues, [1.0, 0.0]);
+  });
+
   test('pauses and resumes the current URL without reopening it', () async {
     driver.state = PlayerState.playing;
 
@@ -272,6 +279,7 @@ final class _FakeBassUrlPlaybackDriver implements BassUrlPlaybackDriver {
   double? positionSeconds;
   Object? positionError;
   int positionReadCount = 0;
+  final volumeValues = <double>[];
 
   @override
   Stream<PlayerState> get stateStream => _states.stream;
@@ -285,6 +293,11 @@ final class _FakeBassUrlPlaybackDriver implements BassUrlPlaybackDriver {
     final error = positionError;
     if (error != null) throw error;
     return positionSeconds;
+  }
+
+  @override
+  void setVolume(double volume) {
+    volumeValues.add(volume);
   }
 
   void emit(PlayerState value) {

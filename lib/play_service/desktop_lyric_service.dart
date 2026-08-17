@@ -156,6 +156,7 @@ class DesktopLyricService extends ChangeNotifier {
   int _sendQueueSize = 0;
   Future<void> _sendQueue = Future.value();
   int _processGeneration = 0;
+  bool _localProjectionSuppressed = false;
 
   bool isLocked = false;
   bool _isStarting = false;
@@ -444,11 +445,13 @@ class DesktopLyricService extends ChangeNotifier {
   }
 
   void sendPlayerStateMessage(bool isPlaying) {
+    if (_localProjectionSuppressed) return;
     sendMessage(msg.PlayerStateChangedMessage(isPlaying));
     _sendLyricProgressSnapshot();
   }
 
   void sendNowPlayingMessage(Audio nowPlaying) {
+    if (_localProjectionSuppressed) return;
     _currentLyricLineStartMs = null;
     _currentLyricLineLengthMs = 0;
     _currentLyricLineId = null;
@@ -467,6 +470,7 @@ class DesktopLyricService extends ChangeNotifier {
     required bool isWordByWord,
     int? highlightDeadlineMs,
   }) {
+    if (_localProjectionSuppressed) return;
     final lineStartMs = line.start.inMilliseconds;
     final highlightDuration = desktopLyricHighlightDuration(line);
     final lineLengthMs = highlightDuration.inMilliseconds;
@@ -586,6 +590,7 @@ class DesktopLyricService extends ChangeNotifier {
   }
 
   void _sendLyricProgressSnapshot() {
+    if (_localProjectionSuppressed) return;
     final lineStartMs = _currentLyricLineStartMs;
     final lineId = _currentLyricLineId;
     if (!_isRunning ||
@@ -649,6 +654,7 @@ class DesktopLyricService extends ChangeNotifier {
   }
 
   void _sendInitialState() {
+    if (_localProjectionSuppressed) return;
     final nowPlaying = _playbackService.nowPlaying;
     if (nowPlaying != null) {
       sendNowPlayingMessage(nowPlaying);
@@ -684,6 +690,22 @@ class DesktopLyricService extends ChangeNotifier {
         highlightDeadlineMs: lyricHighlightDeadlineMsForLine(lyric, idx),
       );
     });
+  }
+
+  void setLocalProjectionSuppressed(bool suppressed) {
+    if (_localProjectionSuppressed == suppressed) return;
+    _localProjectionSuppressed = suppressed;
+    if (!suppressed) {
+      _sendInitialState();
+      return;
+    }
+
+    _currentLyricLineStartMs = null;
+    _currentLyricLineLengthMs = 0;
+    _currentLyricLineId = null;
+    sendMessage(const msg.PlayerStateChangedMessage(false));
+    sendMessage(const msg.NowPlayingChangedMessage('', '', ''));
+    sendMessage(const msg.LyricLineChangedMessage('', Duration.zero));
   }
 
   void _sendInitialConfig() {

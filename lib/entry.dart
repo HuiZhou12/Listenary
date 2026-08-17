@@ -185,6 +185,9 @@ class _EntryState extends State<Entry>
             return binding.dispose;
           },
         );
+    _activePlaybackSessionComposition.activeSession.addListener(
+      _syncDesktopLyricProjection,
+    );
     _remoteMediaArtwork = RemoteMediaArtworkController();
     _remoteMediaArtworkBinding = RemoteMediaArtworkBinding(
       activeSession: _activePlaybackSessionComposition.activeSession,
@@ -237,6 +240,7 @@ class _EntryState extends State<Entry>
       pause: _remotePlaybackSessionController.pause,
       resume: _remotePlaybackSessionController.resume,
     );
+    _playService.bindRemoteVolume(_remotePlaybackBackend.setVolume);
     windowManager.addListener(this);
     WidgetsBinding.instance.addObserver(this);
 
@@ -257,10 +261,14 @@ class _EntryState extends State<Entry>
     windowManager.removeListener(this);
     _remoteMediaArtworkBinding.dispose();
     _remoteMediaArtwork.dispose();
+    _activePlaybackSessionComposition.activeSession.removeListener(
+      _syncDesktopLyricProjection,
+    );
     unawaited(_activeSessionSmtcComposition.dispose());
     unawaited(_activePlaybackSessionComposition.dispose());
     _playService.clearRemoteNavigationHandlers();
     _playService.clearRemotePlaybackControlHandlers();
+    _playService.clearRemoteVolume();
     _playService.stopSmtcKeepAlive();
     unawaited(_remotePlaybackTimelineBinding.dispose());
     _remotePlaybackTimeline.dispose();
@@ -270,6 +278,14 @@ class _EntryState extends State<Entry>
     unawaited(_remotePlaybackBackend.dispose());
     widget.chkszRuntime.dispose();
     super.dispose();
+  }
+
+  void _syncDesktopLyricProjection() {
+    final source =
+        _activePlaybackSessionComposition.activeSession.value.source;
+    _playService.existingDesktopLyricService?.setLocalProjectionSuppressed(
+      source == ActivePlaybackSessionSource.remote,
+    );
   }
 
   @override

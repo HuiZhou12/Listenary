@@ -7,7 +7,6 @@ class _NowPlayingLargePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final useMonet = AppSettings.instance.useMaterialYouForControls;
     final scheme = Theme.of(context).colorScheme;
-    final playbackService = PlayService.instance.playbackService;
     final controlColor = useMonet ? scheme.primary : scheme.onSurface;
     final disabledColor = controlColor.withValues(alpha: 0.38);
     const spacer = SizedBox(width: 8.0);
@@ -53,11 +52,13 @@ class _NowPlayingLargePage extends StatelessWidget {
                         child: switch (value) {
                           NowPlayingViewMode.withPlaylist =>
                             const CurrentPlaylistView(),
-                          _ => Padding(
-                              padding: const EdgeInsets.only(right: 8.0),
-                              child: VerticalLyricView(
-                                enableEdgeSpacer: true,
-                                currentLineAlignment: currentLineAlignment,
+                          _ => ActiveNowPlayingLyricRegion(
+                              localChild: Padding(
+                                padding: const EdgeInsets.only(right: 8.0),
+                                child: VerticalLyricView(
+                                  enableEdgeSpacer: true,
+                                  currentLineAlignment: currentLineAlignment,
+                                ),
                               ),
                             ),
                         },
@@ -82,131 +83,104 @@ class _NowPlayingLargePage extends StatelessWidget {
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  Align(
+                  const Align(
                     alignment: Alignment.centerLeft,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const _DesktopLyricSwitch(),
+                        _DesktopLyricSwitch(),
                         spacer,
-                        const _ExclusiveModeSwitch(),
-                        spacer,
-                        IconButton(
-                          tooltip: '均衡器',
-                          onPressed: () {
-                            showDialog(
-                              context: context,
-                              builder: (context) => const EqualizerDialog(),
-                            );
-                          },
-                          icon: const Icon(Symbols.graphic_eq),
-                          color: useMonet
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).colorScheme.onSurface,
-                        ),
+                        NowPlayingSoundTools(),
                       ],
                     ),
                   ),
-                  _AutoHidingControlBar(
-                    child: StreamBuilder<RemotePlaybackControlState>(
-                      stream:
-                          PlayService.instance.remotePlaybackControlStateStream,
-                      initialData:
-                          PlayService.instance.remotePlaybackControlState,
-                      builder: (context, remoteSnapshot) {
-                        final remoteState = remoteSnapshot.data!;
-                        return ListenableBuilder(
-                          listenable: playbackService.nowPlayingNotifier,
-                          builder: (context, _) {
-                            final hasNowPlaying =
-                                playbackService.nowPlaying != null;
-                            return StreamBuilder<PlayerState>(
-                              stream: playbackService.playerStateStream,
-                              initialData: playbackService.playerState,
-                              builder: (context, localSnapshot) {
-                                final controlState =
-                                    resolvePlaybackControlPresentation(
-                                      remoteState: remoteState,
-                                      localState: localSnapshot.data!,
-                                      hasLocalSession: hasNowPlaying,
-                                    );
-                                final hasPlaybackSession =
-                                    controlState.hasSession;
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24.0,
+                      vertical: 8.0,
+                    ),
+                    child: Builder(
+                      builder: (context) {
+                        final controls = resolveNowPlayingControls(
+                          context.watch<ActivePlaybackSession>().value,
+                        );
+                        final controlState = controls.presentation;
+                        final hasPlaybackSession = controlState.hasSession;
 
-                                return Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const _NowPlayingPlaybackModeSwitch(),
-                                    spacer,
-                                    IconButton(
-                                      tooltip: hasPlaybackSession
-                                          ? '上一曲'
-                                          : '暂无正在播放',
-                                      onPressed: hasPlaybackSession
-                                          ? PlayService.instance.previousAudio
-                                          : null,
-                                      icon: const Icon(
-                                        Symbols.skip_previous,
-                                        fill: 1.0,
-                                      ),
-                                      iconSize: 28,
-                                      color: controlColor,
-                                      disabledColor: disabledColor,
-                                    ),
-                                    spacer,
-                                    IconButton(
-                                      tooltip: controlState.canToggle
-                                          ? (controlState.isPlaying
-                                                ? '暂停'
-                                                : '播放')
-                                          : hasPlaybackSession
-                                          ? '暂不可控制'
-                                          : '暂无正在播放',
-                                      onPressed: controlState.canToggle
-                                          ? () {
-                                              if (controlState.action ==
-                                                  PlaybackControlAction.pause) {
-                                                PlayService.instance
-                                                    .pauseAudio();
-                                              } else {
-                                                PlayService.instance
-                                                    .playAudio();
-                                              }
-                                            }
-                                          : null,
-                                      icon: Icon(
-                                        controlState.isPlaying
-                                            ? Symbols.pause
-                                            : Symbols.play_arrow,
-                                        fill: 1.0,
-                                      ),
-                                      iconSize: 36,
-                                      color: controlColor,
-                                      disabledColor: disabledColor,
-                                    ),
-                                    spacer,
-                                    IconButton(
-                                      tooltip: hasPlaybackSession
-                                          ? '下一曲'
-                                          : '暂无正在播放',
-                                      onPressed: hasPlaybackSession
-                                          ? PlayService.instance.nextAudio
-                                          : null,
-                                      icon: const Icon(
-                                        Symbols.skip_next,
-                                        fill: 1.0,
-                                      ),
-                                      iconSize: 28,
-                                      color: controlColor,
-                                      disabledColor: disabledColor,
-                                    ),
-                                    spacer,
-                                    const _NowPlayingLargeViewSwitch(),
-                                  ],
-                                );
-                              },
-                            );
-                          },
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const _NowPlayingPlaybackModeSwitch(),
+                            spacer,
+                            IconButton(
+                              tooltip: controls.canPrevious
+                                  ? '上一曲'
+                                  : hasPlaybackSession
+                                  ? controls.navigationBlocked
+                                        ? '暂不可切换'
+                                        : '没有上一曲'
+                                  : '暂无正在播放',
+                              onPressed: controls.canPrevious
+                                  ? PlayService.instance.previousAudio
+                                  : null,
+                              icon: const Icon(
+                                Symbols.skip_previous,
+                                fill: 1.0,
+                              ),
+                              iconSize: 28,
+                              color: controlColor,
+                              disabledColor: disabledColor,
+                            ),
+                            spacer,
+                            IconButton(
+                              tooltip: controlState.canToggle
+                                  ? (controlState.isPlaying ? '暂停' : '播放')
+                                  : hasPlaybackSession
+                                  ? '暂不可控制'
+                                  : '暂无正在播放',
+                              onPressed: controlState.canToggle
+                                  ? () {
+                                      if (controlState.action ==
+                                          PlaybackControlAction.pause) {
+                                        PlayService.instance.pauseAudio();
+                                      } else {
+                                        PlayService.instance.playAudio();
+                                      }
+                                    }
+                                  : null,
+                              icon: Icon(
+                                controlState.isPlaying
+                                    ? Symbols.pause
+                                    : Symbols.play_arrow,
+                                fill: 1.0,
+                              ),
+                              iconSize: 36,
+                              color: controlColor,
+                              disabledColor: disabledColor,
+                            ),
+                            spacer,
+                            IconButton(
+                              tooltip: controls.canNext
+                                  ? '下一曲'
+                                  : hasPlaybackSession
+                                  ? controls.navigationBlocked
+                                        ? '暂不可切换'
+                                        : '没有下一曲'
+                                  : '暂无正在播放',
+                              onPressed: controls.canNext
+                                  ? PlayService.instance.nextAudio
+                                  : null,
+                              icon: const Icon(
+                                Symbols.skip_next,
+                                fill: 1.0,
+                              ),
+                              iconSize: 28,
+                              color: controlColor,
+                              disabledColor: disabledColor,
+                            ),
+                            spacer,
+                            const _NowPlayingLargeViewSwitch(),
+                          ],
                         );
                       },
                     ),
@@ -218,8 +192,6 @@ class _NowPlayingLargePage extends StatelessWidget {
                       children: [
                         _NowPlayingVolDspSlider(),
                         spacer,
-                        NowPlayingPitchControl(),
-                        spacer,
                         _NowPlayingMoreAction(),
                       ],
                     ),
@@ -230,40 +202,6 @@ class _NowPlayingLargePage extends StatelessWidget {
           ],
         ),
       ],
-    );
-  }
-}
-
-class _AutoHidingControlBar extends StatefulWidget {
-  final Widget child;
-  const _AutoHidingControlBar({required this.child});
-
-  @override
-  State<_AutoHidingControlBar> createState() => _AutoHidingControlBarState();
-}
-
-class _AutoHidingControlBarState extends State<_AutoHidingControlBar> {
-  bool _isHovering = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovering = true),
-      onExit: (_) => setState(() => _isHovering = false),
-      hitTestBehavior: HitTestBehavior.translucent,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
-        decoration: BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: AppRadius.mdCircular,
-        ),
-        child: AnimatedOpacity(
-          duration: MotionDuration.base,
-          curve: MotionCurve.standard,
-          opacity: _isHovering ? 1.0 : 0.0,
-          child: widget.child,
-        ),
-      ),
     );
   }
 }

@@ -28,11 +28,12 @@ import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/page/now_playing_page/component/current_playlist_view.dart';
-import 'package:pure_music/page/now_playing_page/component/equalizer_dialog.dart';
+import 'package:pure_music/page/now_playing_page/component/active_lyric_region.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_source_view.dart';
-import 'package:pure_music/page/now_playing_page/component/pitch_control.dart';
+import 'package:pure_music/page/now_playing_page/component/sound_tools.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background.dart';
+import 'package:pure_music/page/now_playing_page/now_playing_control_projection.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
@@ -56,6 +57,13 @@ part 'immersive_page.dart';
 final nowPlayingViewMode = ValueNotifier(
   AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode,
 );
+
+@visibleForTesting
+bool shouldShowLocalNowPlayingActions(
+  ActivePlaybackSessionSnapshot snapshot,
+) =>
+    snapshot.source == ActivePlaybackSessionSource.local &&
+    snapshot.currentItem != null;
 
 bool _usesCompactNowPlayingLayout(BuildContext context, ScreenType screenType) {
   return screenType == ScreenType.small ||
@@ -732,6 +740,11 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
 
   @override
   Widget build(BuildContext context) {
+    final showLocalActions = context.select<ActivePlaybackSession, bool>(
+      (session) => shouldShowLocalNowPlayingActions(session.value),
+    );
+    if (!showLocalActions) return const SizedBox.shrink();
+
     final useMonet = AppSettings.instance.useMaterialYouForControls;
     final playbackService = context.watch<PlaybackService>();
     final nowPlaying = playbackService.nowPlaying;
@@ -951,6 +964,19 @@ class _NowPlayingPlaybackModeSwitchState
     final color = useMonet ? scheme.primary : scheme.onSurface;
     final disabledColor = color.withValues(alpha: 0.38);
     final playbackService = PlayService.instance.playbackService;
+    final controls = resolveNowPlayingControls(
+      context.watch<ActivePlaybackSession>().value,
+    );
+
+    if (controls.usesRemoteQueueMode) {
+      return IconButton(
+        tooltip: '在线队列（顺序播放）',
+        onPressed: null,
+        icon: const Icon(Symbols.queue_music, fill: 0.0, weight: 400.0),
+        color: color,
+        disabledColor: disabledColor,
+      );
+    }
 
     return ListenableBuilder(
       listenable: Listenable.merge([
@@ -975,7 +1001,7 @@ class _NowPlayingPlaybackModeSwitchState
 
         return IconButton(
           tooltip: _isSaving ? '保存中' : modeText,
-          onPressed: _isSaving
+          onPressed: _isSaving || !controls.canChangePlaybackMode
               ? null
               : () => _changeMode(shuffle: shuffle, playMode: playMode),
           icon: _isSaving
@@ -990,42 +1016,6 @@ class _NowPlayingPlaybackModeSwitchState
               : Icon(icon, fill: 0.0, weight: 400.0),
           color: color,
           disabledColor: disabledColor,
-        );
-      },
-    );
-  }
-}
-
-class _ExclusiveModeSwitch extends StatelessWidget {
-  const _ExclusiveModeSwitch();
-
-  @override
-  Widget build(BuildContext context) {
-    final useMonet = AppSettings.instance.useMaterialYouForControls;
-    final scheme = Theme.of(context).colorScheme;
-    //
-    return ValueListenableBuilder(
-      valueListenable: PlayService.instance.playbackService.wasapiExclusive,
-      builder: (context, exclusive, _) {
-        // 激活态也只跟「主题色控件」：关=浅黑/深白，开才用主题色
-        final foregroundColor = useMonet ? scheme.primary : scheme.onSurface;
-
-        return IconButton(
-          tooltip: exclusive ? '关闭独占' : '打开独占',
-          onPressed: () {
-            PlayService.instance.playbackService.useExclusiveMode(!exclusive);
-          },
-          icon: Center(
-            child: Text(
-              exclusive ? 'Excl' : 'Shrd',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: foregroundColor,
-              ),
-            ),
-          ),
-          color: foregroundColor,
         );
       },
     );
@@ -1057,6 +1047,11 @@ class _DesktopLyricSwitchState extends State<_DesktopLyricSwitch> {
 
   @override
   Widget build(BuildContext context) {
+    final showLocalActions = context.select<ActivePlaybackSession, bool>(
+      (session) => shouldShowLocalNowPlayingActions(session.value),
+    );
+    if (!showLocalActions) return const SizedBox.shrink();
+
     final useMonet = AppSettings.instance.useMaterialYouForControls;
     final scheme = Theme.of(context).colorScheme;
     //
@@ -1128,7 +1123,7 @@ class _NowPlayingVolDspSlider extends StatefulWidget {
 }
 
 class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
-  final playbackService = PlayService.instance.playbackService;
+  final playService = PlayService.instance;
   final systemVolumeService = SystemVolumeService.instance;
   final dragVolDsp = ValueNotifier(
     AppPreference.instance.playbackPref.volumeDsp,
@@ -1148,7 +1143,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
   bool _showSystemCustomIndicator = false;
   bool _isHovering = false;
   bool _isSystemHovering = false;
-  late final VoidCallback _nowPlayingListener;
+  late final VoidCallback _activeVolumeListener;
 
   Future<double?> _readSystemVol({required Duration timeout}) async {
     return systemVolumeService.read(timeout: timeout);
@@ -1157,17 +1152,17 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
   @override
   void initState() {
     super.initState();
-    _lastVolumeDsp = playbackService.volumeDsp;
-    _nowPlayingListener = () {
+    _lastVolumeDsp = playService.activeVolumeDsp.value;
+    _activeVolumeListener = () {
       if (_disposed || !mounted) return;
-      final v = playbackService.volumeDsp;
+      final v = playService.activeVolumeDsp.value;
       if ((v - _lastVolumeDsp).abs() <= 0.0001) return;
       _lastVolumeDsp = v;
       if (_isMenuOpen && !isDragging) {
         _triggerIndicator();
       }
     };
-    playbackService.nowPlayingNotifier.addListener(_nowPlayingListener);
+    playService.activeVolumeDsp.addListener(_activeVolumeListener);
     systemVolumeService.ensureBound();
     dragSystemVol.value = systemVolumeService.volume.value;
     _systemVolValueListener = () {
@@ -1203,7 +1198,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
     _systemVolBoostTimer?.cancel();
     _indicatorTimer?.cancel();
     _systemIndicatorTimer?.cancel();
-    playbackService.nowPlayingNotifier.removeListener(_nowPlayingListener);
+    playService.activeVolumeDsp.removeListener(_activeVolumeListener);
     systemVolumeService.volume.removeListener(_systemVolValueListener);
     super.dispose();
   }
@@ -1215,6 +1210,9 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
     final menuWidth = (MediaQuery.sizeOf(context).width - 64.0)
         .clamp(180.0, 300.0)
         .toDouble();
+    final hasPlaybackSession =
+        context.watch<ActivePlaybackSession>().value.isActive &&
+        playService.canSetActiveVolume;
     //
 
     return MenuAnchor(
@@ -1222,7 +1220,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
       onOpen: () {
         _isMenuOpen = true;
         if (!isDragging) {
-          dragVolDsp.value = playbackService.volumeDsp;
+          dragVolDsp.value = playService.activeVolumeDsp.value;
         }
         int ticks = 0;
         _systemVolBoostTimer?.cancel();
@@ -1355,12 +1353,15 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
                     showValueIndicator: ShowValueIndicator.never,
                   ),
                   child: ListenableBuilder(
-                    listenable: Listenable.merge([dragVolDsp, playbackService]),
+                    listenable: Listenable.merge([
+                      dragVolDsp,
+                      playService.activeVolumeDsp,
+                    ]),
                     builder: (context, _) {
                       final dragVolDspValue = dragVolDsp.value;
                       final currentValue = isDragging
                           ? dragVolDspValue
-                          : playbackService.volumeDsp;
+                           : playService.activeVolumeDsp.value;
 
                       return LayoutBuilder(
                         builder: (context, constraints) {
@@ -1388,22 +1389,28 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
                                   min: min,
                                   max: max,
                                   value: currentValue,
-                                  onChangeStart: (value) {
+                                  onChangeStart: !hasPlaybackSession
+                                      ? null
+                                      : (value) {
                                     isDragging = true;
                                     dragVolDsp.value = value;
-                                    playbackService.setVolumeDsp(value);
+                                    playService.setActiveVolumeDsp(value);
                                     _triggerIndicator();
                                   },
-                                  onChanged: (value) {
+                                  onChanged: !hasPlaybackSession
+                                      ? null
+                                      : (value) {
                                     dragVolDsp.value = value;
-                                    playbackService.setVolumeDsp(value);
+                                    playService.setActiveVolumeDsp(value);
                                     // Also trigger indicator on drag
                                     if (isDragging) _triggerIndicator();
                                   },
-                                  onChangeEnd: (value) {
+                                  onChangeEnd: !hasPlaybackSession
+                                      ? null
+                                      : (value) {
                                     isDragging = false;
                                     dragVolDsp.value = value;
-                                    playbackService.setVolumeDsp(value);
+                                    playService.setActiveVolumeDsp(value);
                                   },
                                 ),
                                 if (_showCustomIndicator || _isHovering)

@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/database.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/system_volume_service.dart';
@@ -11,6 +13,7 @@ import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
+import 'package:pure_music/play_service/active_playback_volume.dart';
 import 'package:pure_music/play_service/desktop_lyric_service.dart';
 import 'package:pure_music/play_service/lyric_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
@@ -203,6 +206,7 @@ class PlayService {
   final RemotePlaybackControlBinding _remotePlaybackControls =
       RemotePlaybackControlBinding();
   late final SmtcControlRouter _smtcControlRouter;
+  late final ActivePlaybackVolumeRouter<PlaybackService> _activeVolume;
 
   PlaybackService get playbackService => _playbackServiceHandoff.getOrCreate();
   PlaybackService? get existingPlaybackService =>
@@ -210,6 +214,8 @@ class PlayService {
   LyricService get lyricService => _lyricService ??= LyricService(this);
   DesktopLyricService get desktopLyricService =>
       _desktopLyricService ??= DesktopLyricService(this);
+  DesktopLyricService? get existingDesktopLyricService =>
+      _desktopLyricService;
   SmtcSessionOwner get _sharedSmtcSession {
     final existing = _smtcSessionOwner;
     if (existing != null) return existing;
@@ -245,6 +251,17 @@ class PlayService {
       localStop: _stopLocalFromSmtc,
       localPosition: _seekLocalFromSmtc,
     );
+    _activeVolume = ActivePlaybackVolumeRouter<PlaybackService>(
+      initialVolume: AppPreference.instance.playbackPref.volumeDsp,
+      isRemoteActive: () => _remotePlaybackControls.isActive,
+      hasLocalSession: () => hasPlaybackSession,
+      localTarget: () => existingPlaybackService,
+      setLocalVolume: (service, volume) => service.setVolumeDsp(volume),
+      persistRemoteVolume: (volume) {
+        AppPreference.instance.playbackPref.volumeDsp = volume;
+        unawaited(AppPreference.instance.savePlaybackOnly());
+      },
+    );
   }
 
   static PlayService? _instance;
@@ -259,6 +276,18 @@ class PlayService {
   Stream<RemotePlaybackControlState> get remotePlaybackControlStateStream =>
       _remotePlaybackControls.stateStream;
   bool get canSeekFromUi => _remotePlaybackControls.canSeekFromUi;
+  ValueListenable<double> get activeVolumeDsp => _activeVolume;
+  bool get canSetActiveVolume => _activeVolume.canSetVolume;
+
+  bool setActiveVolumeDsp(double volume) => _activeVolume.setVolume(volume);
+
+  void bindRemoteVolume(ActiveVolumeSetter setter) {
+    _activeVolume.bindRemote(setter);
+  }
+
+  void clearRemoteVolume() {
+    _activeVolume.clearRemote();
+  }
 
   void bindSmtcKeepAlive(void Function() handler) {
     _sharedSmtcSession.bindLocalKeepAlive(handler);
@@ -413,6 +442,7 @@ class PlayService {
       _smtcSessionOwner?.clearRemoteKeepAlive(remotePublisher);
     }
     await _remotePlaybackControls.dispose();
+    _activeVolume.dispose();
     // 按顺序关闭服务，每个操作带超时保护
     final desktopLyric = _desktopLyricService;
     if (desktopLyric != null) {

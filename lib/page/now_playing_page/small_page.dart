@@ -96,17 +96,21 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                             usePortraitCoverSize: true,
                           ),
                         ),
-                      NowPlayingViewMode.withLyric => Padding(
-                          // 负 padding 抵消歌词行内部 12px 水平 padding，让歌词贴近切换按钮
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: -12.0),
-                          child: ClipRRect(
-                            borderRadius: AppRadius.mdCircular,
-                            child: const VerticalLyricView(
-                              showControls: true,
-                              centerVertically: false,
-                              enableEdgeSpacer: true,
-                              currentLineAlignment: 0.3,
+                      NowPlayingViewMode.withLyric =>
+                        ActiveNowPlayingLyricRegion(
+                          localChild: Padding(
+                            // 负 padding 抵消歌词行内部 12px 水平 padding，让歌词贴近切换按钮
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: -12.0,
+                            ),
+                            child: ClipRRect(
+                              borderRadius: AppRadius.mdCircular,
+                              child: const VerticalLyricView(
+                                showControls: true,
+                                centerVertically: false,
+                                enableEdgeSpacer: true,
+                                currentLineAlignment: 0.3,
+                              ),
                             ),
                           ),
                         ),
@@ -147,11 +151,6 @@ class _NowPlayingSmallControlZoneState
 
   @override
   Widget build(BuildContext context) {
-    final useMonet = AppSettings.instance.useMaterialYouForControls;
-    final controlColor = useMonet
-        ? Theme.of(context).colorScheme.primary
-        : Theme.of(context).colorScheme.onSurface;
-
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovering = true),
       onExit: (_) => setState(() => _isHovering = false),
@@ -176,26 +175,14 @@ class _NowPlayingSmallControlZoneState
             opacity: _isHovering ? 1.0 : 0.0,
             child: IgnorePointer(
               ignoring: !_isHovering,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8.0),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    const _DesktopLyricSwitch(),
-                    const NowPlayingPitchControl(),
-                    const _ExclusiveModeSwitch(),
-                    IconButton(
-                      tooltip: '均衡器',
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (context) => const EqualizerDialog(),
-                        );
-                      },
-                      icon: const Icon(Symbols.graphic_eq),
-                      color: controlColor,
-                    ),
-                    const _NowPlayingMoreAction(),
+                    _DesktopLyricSwitch(),
+                    NowPlayingSoundTools(),
+                    _NowPlayingMoreAction(),
                   ],
                 ),
               ),
@@ -214,93 +201,78 @@ class _NowPlayingSmallMainControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final playbackService = PlayService.instance.playbackService;
     final useMonet = AppSettings.instance.useMaterialYouForControls;
     final controlColor = useMonet ? scheme.primary : scheme.onSurface;
     final disabledColor = controlColor.withValues(alpha: 0.38);
+    final controls = resolveNowPlayingControls(
+      context.watch<ActivePlaybackSession>().value,
+    );
+    final controlState = controls.presentation;
+    final hasPlaybackSession = controlState.hasSession;
 
-    return StreamBuilder<RemotePlaybackControlState>(
-      stream: PlayService.instance.remotePlaybackControlStateStream,
-      initialData: PlayService.instance.remotePlaybackControlState,
-      builder: (context, remoteSnapshot) {
-        final remoteState = remoteSnapshot.data!;
-        return ListenableBuilder(
-          listenable: playbackService.nowPlayingNotifier,
-          builder: (context, _) {
-            final hasNowPlaying = playbackService.nowPlaying != null;
-            return StreamBuilder<PlayerState>(
-              stream: playbackService.playerStateStream,
-              initialData: playbackService.playerState,
-              builder: (context, localSnapshot) {
-                final controlState = resolvePlaybackControlPresentation(
-                  remoteState: remoteState,
-                  localState: localSnapshot.data!,
-                  hasLocalSession: hasNowPlaying,
-                );
-                final hasPlaybackSession = controlState.hasSession;
-
-                return Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const _NowPlayingPlaybackModeSwitch(),
-                    const SizedBox(width: 16),
-                    IconButton(
-                      tooltip: hasPlaybackSession ? '上一曲' : '暂无正在播放',
-                      onPressed: hasPlaybackSession
-                          ? PlayService.instance.previousAudio
-                          : null,
-                      icon: const Icon(Symbols.skip_previous, fill: 1.0),
-                      iconSize: 28,
-                      color: controlColor,
-                      disabledColor: disabledColor,
-                    ),
-                    const SizedBox(width: 16),
-                    IconButton(
-                      tooltip: controlState.canToggle
-                          ? (controlState.isPlaying ? '暂停' : '播放')
-                          : hasPlaybackSession
-                          ? '暂不可控制'
-                          : '暂无正在播放',
-                      onPressed: controlState.canToggle
-                          ? () {
-                              if (controlState.action ==
-                                  PlaybackControlAction.pause) {
-                                PlayService.instance.pauseAudio();
-                              } else {
-                                PlayService.instance.playAudio();
-                              }
-                            }
-                          : null,
-                      icon: Icon(
-                        controlState.isPlaying
-                            ? Symbols.pause
-                            : Symbols.play_arrow,
-                        fill: 1.0,
-                      ),
-                      iconSize: 36,
-                      color: controlColor,
-                      disabledColor: disabledColor,
-                    ),
-                    const SizedBox(width: 16),
-                    IconButton(
-                      tooltip: hasPlaybackSession ? '下一曲' : '暂无正在播放',
-                      onPressed: hasPlaybackSession
-                          ? PlayService.instance.nextAudio
-                          : null,
-                      icon: const Icon(Symbols.skip_next, fill: 1.0),
-                      iconSize: 28,
-                      color: controlColor,
-                      disabledColor: disabledColor,
-                    ),
-                    const SizedBox(width: 16),
-                    const _NowPlayingVolDspSlider(),
-                  ],
-                );
-              },
-            );
-          },
-        );
-      },
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const _NowPlayingPlaybackModeSwitch(),
+        const SizedBox(width: 16),
+        IconButton(
+          tooltip: controls.canPrevious
+              ? '上一曲'
+              : hasPlaybackSession
+              ? controls.navigationBlocked
+                    ? '暂不可切换'
+                    : '没有上一曲'
+              : '暂无正在播放',
+          onPressed: controls.canPrevious
+              ? PlayService.instance.previousAudio
+              : null,
+          icon: const Icon(Symbols.skip_previous, fill: 1.0),
+          iconSize: 28,
+          color: controlColor,
+          disabledColor: disabledColor,
+        ),
+        const SizedBox(width: 16),
+        IconButton(
+          tooltip: controlState.canToggle
+              ? (controlState.isPlaying ? '暂停' : '播放')
+              : hasPlaybackSession
+              ? '暂不可控制'
+              : '暂无正在播放',
+          onPressed: controlState.canToggle
+              ? () {
+                  if (controlState.action == PlaybackControlAction.pause) {
+                    PlayService.instance.pauseAudio();
+                  } else {
+                    PlayService.instance.playAudio();
+                  }
+                }
+              : null,
+          icon: Icon(
+            controlState.isPlaying ? Symbols.pause : Symbols.play_arrow,
+            fill: 1.0,
+          ),
+          iconSize: 36,
+          color: controlColor,
+          disabledColor: disabledColor,
+        ),
+        const SizedBox(width: 16),
+        IconButton(
+          tooltip: controls.canNext
+              ? '下一曲'
+              : hasPlaybackSession
+              ? controls.navigationBlocked
+                    ? '暂不可切换'
+                    : '没有下一曲'
+              : '暂无正在播放',
+          onPressed: controls.canNext ? PlayService.instance.nextAudio : null,
+          icon: const Icon(Symbols.skip_next, fill: 1.0),
+          iconSize: 28,
+          color: controlColor,
+          disabledColor: disabledColor,
+        ),
+        const SizedBox(width: 16),
+        const _NowPlayingVolDspSlider(),
+      ],
     );
   }
 }

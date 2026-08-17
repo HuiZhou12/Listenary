@@ -160,9 +160,9 @@ class HotkeysHelper {
       scope: HotKeyScope.inapp,
     ): (_) {
       if (!_canHandlePlaybackHotkey()) return;
-      final playbackService = PlayService.instance.playbackService;
-      final next = (playbackService.volumeDsp + 0.05).clamp(0.0, 1.0);
-      playbackService.setVolumeDsp(next);
+      final playService = PlayService.instance;
+      final next = (playService.activeVolumeDsp.value + 0.05).clamp(0.0, 1.0);
+      if (!playService.setActiveVolumeDsp(next)) return;
       hotkeyUiFeedback.emit(HotkeyUiAction.volumeStep);
       showHotkeyToast(
         text: '应用音量：${(next * 100).round()}%',
@@ -175,9 +175,9 @@ class HotkeysHelper {
       scope: HotKeyScope.inapp,
     ): (_) {
       if (!_canHandlePlaybackHotkey()) return;
-      final playbackService = PlayService.instance.playbackService;
-      final next = (playbackService.volumeDsp - 0.05).clamp(0.0, 1.0);
-      playbackService.setVolumeDsp(next);
+      final playService = PlayService.instance;
+      final next = (playService.activeVolumeDsp.value - 0.05).clamp(0.0, 1.0);
+      if (!playService.setActiveVolumeDsp(next)) return;
       hotkeyUiFeedback.emit(HotkeyUiAction.volumeStep);
       showHotkeyToast(
         text: '应用音量：${(next * 100).round()}%',

@@ -13,6 +13,8 @@ abstract interface class BassUrlPlaybackDriver {
 
   double? readPositionSeconds();
 
+  void setVolume(double volume);
+
   Future<void> open(Uri uri);
 
   Future<void> pause();
@@ -41,6 +43,11 @@ final class BassPlayerUrlPlaybackDriver implements BassUrlPlaybackDriver {
 
   @override
   double? readPositionSeconds() => _player?.position;
+
+  @override
+  void setVolume(double volume) {
+    _player?.setVolumeDsp(volume);
+  }
 
   @override
   Future<void> open(Uri uri) async {
@@ -74,7 +81,8 @@ final class BassUrlPlaybackBackend
     implements
         ControllablePlaybackBackend,
         PositionReadablePlaybackBackend,
-        SpectrumReadablePlaybackBackend {
+        SpectrumReadablePlaybackBackend,
+        VolumeControllablePlaybackBackend {
   BassUrlPlaybackBackend({BassUrlPlaybackDriver? driver})
     : _driver = driver ?? BassPlayerUrlPlaybackDriver();
 
@@ -91,6 +99,12 @@ final class BassUrlPlaybackBackend
 
   @override
   Stream<Float32List> get spectrumStream => _driver.spectrumStream;
+
+  @override
+  void setVolume(double volume) {
+    if (_disposed) return;
+    _driver.setVolume(volume.clamp(0.0, 1.0));
+  }
 
   @override
   Future<void> open(PlaybackSource source) {
