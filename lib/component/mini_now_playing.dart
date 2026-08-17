@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:pure_music/component/rectangle_progress_indicator.dart';
+import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/hotkeys.dart';
@@ -22,11 +23,13 @@ final class MiniNowPlayingMetadataProjection {
     required this.title,
     required this.subtitle,
     required this.usesLocalMedia,
+    this.coverUri,
   });
 
   final String title;
   final String subtitle;
   final bool usesLocalMedia;
+  final Uri? coverUri;
 }
 
 bool miniNowPlayingUsesLocalMedia(ActivePlaybackSessionSnapshot snapshot) =>
@@ -44,6 +47,7 @@ MiniNowPlayingMetadataProjection resolveMiniNowPlayingMetadata({
       title: item?.title ?? 'Pure Music',
       subtitle: item?.artist ?? '享受音乐',
       usesLocalMedia: false,
+      coverUri: item?.coverUri,
     );
   }
 
@@ -333,7 +337,23 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                           );
                           return Row(
                             children: [
-                              metadata.usesLocalMedia && nowPlaying != null
+                              !metadata.usesLocalMedia
+                                  ? ClipRRect(
+                                      borderRadius: AppRadius.smCircular,
+                                      child: SizedBox(
+                                        width: 48.0,
+                                        height: 48.0,
+                                        child: RemoteMediaCover(
+                                          coverUri: metadata.coverUri,
+                                          cacheWidth: 96,
+                                          cacheHeight: 96,
+                                          placeholder: Center(
+                                            child: placeholder,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  : nowPlaying != null
                                   ? Builder(
                                       builder: (context) {
                                         final cover = ClipRRect(

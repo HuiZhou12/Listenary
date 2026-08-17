@@ -26,6 +26,7 @@ import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/component/responsive_builder.dart';
+import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/page/now_playing_page/component/current_playlist_view.dart';
 import 'package:pure_music/page/now_playing_page/component/equalizer_dialog.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_source_view.dart';
@@ -82,18 +83,40 @@ bool shouldCancelNowPlayingSeekDrag({
 }) => !canSeekFromUi && isDragging;
 
 @visibleForTesting
-({String title, String artist}) resolveNowPlayingMetadata({
+({String title, String artist, Uri? coverUri}) resolveNowPlayingMetadata({
   required ActivePlaybackSessionSnapshot snapshot,
   required String? localTitle,
   required String? localArtist,
 }) {
   if (snapshot.source == ActivePlaybackSessionSource.remote) {
     final item = snapshot.currentItem;
-    return (title: item?.title ?? 'Pure Music', artist: item?.artist ?? '');
+    return (
+      title: item?.title ?? 'Pure Music',
+      artist: item?.artist ?? '',
+      coverUri: item?.coverUri,
+    );
   }
   return (
     title: localTitle ?? 'Pure Music',
     artist: localArtist ?? 'Enjoy Music',
+    coverUri: null,
+  );
+}
+
+@visibleForTesting
+NowPlayingBackgroundInputs resolveNowPlayingBackgroundInputs({
+  required ActivePlaybackSessionSnapshot snapshot,
+  required NowPlayingBackgroundInputs localInputs,
+}) {
+  if (snapshot.source != ActivePlaybackSessionSource.remote) {
+    return localInputs;
+  }
+  return NowPlayingBackgroundInputs(
+    enableAnimation: false,
+    isVisible: localInputs.isVisible,
+    playerState: localInputs.playerState,
+    flowSpeed: localInputs.flowSpeed,
+    intensity: localInputs.intensity,
   );
 }
 
@@ -347,6 +370,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   }
 
   Widget _buildBackground(Brightness brightness) {
+    final activeSnapshot = context.watch<ActivePlaybackSession>().value;
     return RepaintBoundary(
       child: Stack(
         fit: StackFit.expand,
@@ -367,20 +391,26 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                         builder: (context, snapshot) {
                           final playerState =
                               snapshot.data ?? playbackService.playerState;
-                          final backgroundInputs = NowPlayingBackgroundInputs(
-                            albumCoverBytes: _nowPlayingCoverBytes,
-                            dominantColor: _dominantColor,
-                            spectrumStream: playbackService.spectrumStream,
-                            enableAnimation: dynamicFlowingLight,
-                            isVisible: _routeReady,
-                            playerState: playerState,
-                            flowSpeed: 1.0,
-                            intensity: brightness == Brightness.dark
-                                ? 1.0
-                                : 0.9,
-                            audioReactiveFlow: audioReactiveFlow,
-                            preExtractedColors: _preExtractedPalette,
-                          );
+                          final localBackgroundInputs =
+                              NowPlayingBackgroundInputs(
+                                albumCoverBytes: _nowPlayingCoverBytes,
+                                dominantColor: _dominantColor,
+                                spectrumStream: playbackService.spectrumStream,
+                                enableAnimation: dynamicFlowingLight,
+                                isVisible: _routeReady,
+                                playerState: playerState,
+                                flowSpeed: 1.0,
+                                intensity: brightness == Brightness.dark
+                                    ? 1.0
+                                    : 0.9,
+                                audioReactiveFlow: audioReactiveFlow,
+                                preExtractedColors: _preExtractedPalette,
+                              );
+                          final backgroundInputs =
+                              resolveNowPlayingBackgroundInputs(
+                                snapshot: activeSnapshot,
+                                localInputs: localBackgroundInputs,
+                              );
                           return NowPlayingBackground(
                             mode: backgroundMode,
                             inputs: backgroundInputs,
@@ -2442,8 +2472,9 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final nowPlaying = playbackService.nowPlaying;
+    final activeSnapshot = context.watch<ActivePlaybackSession>().value;
     final metadata = resolveNowPlayingMetadata(
-      snapshot: context.watch<ActivePlaybackSession>().value,
+      snapshot: activeSnapshot,
       localTitle: nowPlaying?.title,
       localArtist: nowPlaying?.artist,
     );
@@ -2486,7 +2517,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                 _immediateCoverPath == nowPlayingPath
             ? _cachedImmediateCoverImage
             : null;
-        final coverWidget = currentCover == null && fallbackCover == null
+        final localCoverWidget = currentCover == null && fallbackCover == null
             ? Center(child: placeholder)
             : Container(
                 decoration: BoxDecoration(
@@ -2512,6 +2543,40 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                   ),
                 ),
               );
+        final remoteDecodeSize =
+            (coverSize * MediaQuery.devicePixelRatioOf(context)).ceil().clamp(
+              128,
+              1024,
+            );
+        final usesRemoteMedia =
+            activeSnapshot.source == ActivePlaybackSessionSource.remote;
+        final coverWidget = usesRemoteMedia
+            ? Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12.0),
+                  boxShadow: [
+                    BoxShadow(
+                      color: scheme.shadow.withValues(alpha: 0.2),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12.0),
+                  child: RemoteMediaCover(
+                    coverUri: metadata.coverUri,
+                    cacheWidth: remoteDecodeSize,
+                    cacheHeight: remoteDecodeSize,
+                    filterQuality: FilterQuality.high,
+                    placeholder: Center(child: placeholder),
+                  ),
+                ),
+              )
+            : localCoverWidget;
+        final mediaKey = usesRemoteMedia
+            ? 'remote_${activeSnapshot.currentIndex}_${metadata.title}_${metadata.artist}'
+            : nowPlayingPath ?? 'now_playing_none';
 
         return AnimatedSwitcher(
           duration: const Duration(milliseconds: 500),
@@ -2537,7 +2602,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
             );
           },
           child: Container(
-            key: ValueKey(nowPlayingPath ?? 'now_playing_none'),
+            key: ValueKey(mediaKey),
             alignment: Alignment.center,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -2547,7 +2612,8 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                 SizedBox(
                   width: coverSize,
                   height: coverSize,
-                  child: heroEnabled && nowPlayingPath != null
+                  child:
+                      !usesRemoteMedia && heroEnabled && nowPlayingPath != null
                       ? Hero(tag: nowPlayingPath, child: coverWidget)
                       : RepaintBoundary(child: coverWidget),
                 ),

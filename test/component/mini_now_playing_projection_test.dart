@@ -18,6 +18,7 @@ void main() {
     expect(projection.title, 'Remote title');
     expect(projection.subtitle, 'Remote artist');
     expect(projection.usesLocalMedia, isFalse);
+    expect(projection.coverUri, Uri.parse('https://cover.invalid/remote.jpg'));
   });
 
   test('remote without a current item never falls back to local metadata', () {
@@ -48,6 +49,7 @@ void main() {
       expect(projection.title, 'Local title');
       expect(projection.subtitle, 'Local artist - Local album');
       expect(projection.usesLocalMedia, isTrue);
+      expect(projection.coverUri, isNull);
     }
   });
 
@@ -142,11 +144,12 @@ ActivePlaybackSessionSnapshot _remoteSnapshot({
 }) => ActivePlaybackSessionSnapshot.active(
   revision: 1,
   source: ActivePlaybackSessionSource.remote,
-  queue: const [
+  queue: [
     ActivePlaybackSessionItem(
       title: 'Remote title',
       artist: 'Remote artist',
       album: 'Remote album',
+      coverUri: Uri.parse('https://cover.invalid/remote.jpg'),
     ),
   ],
   currentIndex: currentIndex,

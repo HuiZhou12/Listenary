@@ -354,12 +354,26 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final snapshot = context.watch<ActivePlaybackSession>().value;
 
     final placeholder = Icon(
       Symbols.music_note,
       size: 64.0,
       color: scheme.onSecondaryContainer,
     );
+
+    if (snapshot.source == ActivePlaybackSessionSource.remote) {
+      return ClipRRect(
+        borderRadius: AppRadius.mdCircular,
+        child: RemoteMediaCover(
+          coverUri: snapshot.currentItem?.coverUri,
+          cacheWidth: 128,
+          cacheHeight: 128,
+          filterQuality: FilterQuality.high,
+          placeholder: Center(child: placeholder),
+        ),
+      );
+    }
 
     if (_cover == null) {
       return Center(child: placeholder);

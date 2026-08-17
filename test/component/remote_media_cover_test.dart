@@ -5,19 +5,30 @@ import 'package:pure_music/component/remote_media_cover.dart';
 void main() {
   test('remote cover URI accepts only HTTPS with a host', () {
     expect(
-      resolveRemoteMediaCoverUri('https://cover.invalid/artwork.jpg'),
+      resolveRemoteMediaCoverUri(
+        Uri.parse('https://cover.invalid/artwork.jpg'),
+      ),
       Uri.parse('https://cover.invalid/artwork.jpg'),
     );
     expect(resolveRemoteMediaCoverUri(null), isNull);
-    expect(resolveRemoteMediaCoverUri(''), isNull);
-    expect(resolveRemoteMediaCoverUri('http://cover.invalid/a.jpg'), isNull);
-    expect(resolveRemoteMediaCoverUri('file:///local/cover.jpg'), isNull);
-    expect(resolveRemoteMediaCoverUri('https:///missing-host.jpg'), isNull);
+    expect(resolveRemoteMediaCoverUri(Uri()), isNull);
+    expect(
+      resolveRemoteMediaCoverUri(Uri.parse('http://cover.invalid/a.jpg')),
+      isNull,
+    );
+    expect(
+      resolveRemoteMediaCoverUri(Uri.parse('file:///local/cover.jpg')),
+      isNull,
+    );
+    expect(
+      resolveRemoteMediaCoverUri(Uri.parse('https:///missing-host.jpg')),
+      isNull,
+    );
   });
 
   test('remote cover provider applies bounded decode dimensions', () {
     final provider = remoteMediaCoverImageProvider(
-      coverUri: 'https://cover.invalid/artwork.jpg',
+      coverUri: Uri.parse('https://cover.invalid/artwork.jpg'),
       cacheWidth: 192,
       cacheHeight: 256,
     );
@@ -34,10 +45,10 @@ void main() {
   ) async {
     const placeholderKey = Key('remote-cover-placeholder');
 
-    for (final coverUri in <String?>[
+    for (final coverUri in <Uri?>[
       null,
-      'http://cover.invalid/artwork.jpg',
-      'not a URI',
+      Uri.parse('http://cover.invalid/artwork.jpg'),
+      Uri.parse('not-a-uri'),
     ]) {
       await tester.pumpWidget(
         MaterialApp(
@@ -59,12 +70,12 @@ void main() {
     const placeholderKey = Key('failed-remote-cover-placeholder');
 
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
         home: RemoteMediaCover(
-          coverUri: 'https://cover.invalid/missing.jpg',
+          coverUri: Uri.parse('https://cover.invalid/missing.jpg'),
           cacheWidth: 96,
           cacheHeight: 96,
-          placeholder: SizedBox(key: placeholderKey),
+          placeholder: const SizedBox(key: placeholderKey),
         ),
       ),
     );

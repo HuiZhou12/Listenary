@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
 
 @visibleForTesting
-Uri? resolveRemoteMediaCoverUri(String? value) {
-  if (value == null) return null;
-  final uri = Uri.tryParse(value.trim());
+Uri? resolveRemoteMediaCoverUri(Uri? uri) {
   if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) return null;
   return uri;
 }
 
 @visibleForTesting
 ImageProvider<Object>? remoteMediaCoverImageProvider({
-  required String? coverUri,
+  required Uri? coverUri,
   required int cacheWidth,
   required int cacheHeight,
 }) {
@@ -35,7 +33,7 @@ class RemoteMediaCover extends StatelessWidget {
   }) : assert(cacheWidth > 0),
        assert(cacheHeight > 0);
 
-  final String? coverUri;
+  final Uri? coverUri;
   final Widget placeholder;
   final int cacheWidth;
   final int cacheHeight;
