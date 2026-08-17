@@ -6,6 +6,7 @@ import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background.dart';
 import 'package:pure_music/page/now_playing_page/page.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
+import 'package:pure_music/play_service/remote_media_artwork.dart';
 
 void main() {
   test('remote metadata replaces only local title and artist', () {
@@ -68,10 +69,34 @@ void main() {
     expect(projection.albumCoverBytes, isNull);
     expect(projection.dominantColor, isNull);
     expect(projection.spectrumStream, isNull);
-    expect(projection.preExtractedColors, isNull);
-    expect(projection.enableAnimation, isFalse);
+    expect(projection.preExtractedColors, isEmpty);
+    expect(projection.enableAnimation, isTrue);
     expect(projection.audioReactiveFlow, isFalse);
+    expect(projection.playerState, PlayerState.playing);
     expect(projection.isVisible, isTrue);
+  });
+
+  test('remote background consumes the shared cover bytes and palette', () {
+    final projection = resolveNowPlayingBackgroundInputs(
+      snapshot: _snapshot(source: ActivePlaybackSessionSource.remote),
+      localInputs: const NowPlayingBackgroundInputs(
+        enableAnimation: true,
+        isVisible: true,
+        playerState: PlayerState.paused,
+        audioReactiveFlow: true,
+      ),
+      remoteArtwork: RemoteMediaArtworkSnapshot.ready(
+        revision: 1,
+        bytes: Uint8List.fromList([1, 2, 3]),
+        palette: const [Colors.red, Colors.blue],
+      ),
+    );
+
+    expect(projection.albumCoverBytes, orderedEquals([1, 2, 3]));
+    expect(projection.preExtractedColors, [Colors.red, Colors.blue]);
+    expect(projection.dominantColor, Colors.red);
+    expect(projection.spectrumStream, isNull);
+    expect(projection.audioReactiveFlow, isFalse);
   });
 
   test('local and inactive backgrounds preserve the original inputs', () {

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
@@ -38,6 +40,15 @@ void main() {
     expect(resized.width, 192);
     expect(resized.height, 256);
     expect(resized.imageProvider, isA<NetworkImage>());
+
+    final memoryProvider = remoteMediaCoverImageProvider(
+      coverUri: Uri.parse('https://cover.invalid/artwork.jpg'),
+      imageBytes: Uint8List.fromList([1, 2, 3]),
+      cacheWidth: 192,
+      cacheHeight: 256,
+    );
+    expect(memoryProvider, isA<ResizeImage>());
+    expect((memoryProvider! as ResizeImage).imageProvider, isA<MemoryImage>());
   });
 
   testWidgets('missing or invalid cover displays only the placeholder', (

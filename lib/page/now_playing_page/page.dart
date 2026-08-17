@@ -38,6 +38,7 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/play_service/remote_playback_timeline.dart';
+import 'package:pure_music/play_service/remote_media_artwork.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/material.dart';
@@ -155,18 +156,33 @@ NowPlayingTimelineProjection resolveNowPlayingTimeline({
 NowPlayingBackgroundInputs resolveNowPlayingBackgroundInputs({
   required ActivePlaybackSessionSnapshot snapshot,
   required NowPlayingBackgroundInputs localInputs,
+  RemoteMediaArtworkSnapshot? remoteArtwork,
 }) {
   if (snapshot.source != ActivePlaybackSessionSource.remote) {
     return localInputs;
   }
+  final artwork = remoteArtwork;
   return NowPlayingBackgroundInputs(
-    enableAnimation: false,
+    albumCoverBytes: artwork?.hasArtwork == true ? artwork!.bytes : null,
+    dominantColor: artwork?.hasArtwork == true && artwork!.palette.isNotEmpty
+        ? artwork.palette.first
+        : null,
+    preExtractedColors: artwork?.hasArtwork == true
+        ? artwork!.palette
+        : const [],
+    enableAnimation: localInputs.enableAnimation,
     isVisible: localInputs.isVisible,
-    playerState: localInputs.playerState,
+    playerState: _remoteBackgroundPlayerState(snapshot.state),
     flowSpeed: localInputs.flowSpeed,
     intensity: localInputs.intensity,
+    audioReactiveFlow: false,
   );
 }
+
+PlayerState _remoteBackgroundPlayerState(ActivePlaybackSessionState state) =>
+    state == ActivePlaybackSessionState.playing
+    ? PlayerState.playing
+    : PlayerState.paused;
 
 // 沉浸模式封面下方区域高度（24 间距 + 进度条 40）
 const _immersiveCoverBelowHeight = 64.0;
@@ -419,6 +435,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
   Widget _buildBackground(Brightness brightness) {
     final activeSnapshot = context.watch<ActivePlaybackSession>().value;
+    final remoteArtwork = context.watch<RemoteMediaArtworkController>().value;
     return RepaintBoundary(
       child: Stack(
         fit: StackFit.expand,
@@ -458,6 +475,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                               resolveNowPlayingBackgroundInputs(
                                 snapshot: activeSnapshot,
                                 localInputs: localBackgroundInputs,
+                                remoteArtwork: remoteArtwork,
                               );
                           return NowPlayingBackground(
                             mode: backgroundMode,
@@ -2573,6 +2591,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     final scheme = Theme.of(context).colorScheme;
     final nowPlaying = playbackService.nowPlaying;
     final activeSnapshot = context.watch<ActivePlaybackSession>().value;
+    final remoteArtwork = context.watch<RemoteMediaArtworkController>().value;
     final metadata = resolveNowPlayingMetadata(
       snapshot: activeSnapshot,
       localTitle: nowPlaying?.title,
@@ -2665,7 +2684,10 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12.0),
                   child: RemoteMediaCover(
-                    coverUri: metadata.coverUri,
+                    coverUri: remoteArtwork.hasArtwork
+                        ? metadata.coverUri
+                        : null,
+                    imageBytes: remoteArtwork.bytes,
                     cacheWidth: remoteDecodeSize,
                     cacheHeight: remoteDecodeSize,
                     filterQuality: FilterQuality.high,

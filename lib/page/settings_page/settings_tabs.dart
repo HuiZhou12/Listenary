@@ -18,6 +18,8 @@ import 'package:pure_music/lyric/lyric_tag_word_format.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/play_service/active_playback_session.dart';
+import 'package:pure_music/play_service/remote_media_artwork.dart';
 import 'package:pure_music/play_service/desktop_lyric_service.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/page/settings_page/check_update.dart';
@@ -615,12 +617,24 @@ class _CoverColorExtractionSwitchState
   bool _isPickingColor = false;
 
   void _refreshTheme() {
-    final audio = PlayService.instance.playbackService.nowPlaying;
-    if (audio != null) {
-      ThemeProvider.instance.applyThemeFromAudio(audio);
-    } else {
-      ThemeProvider.instance.applyThemeOption(settings.themeOption);
+    final activeSession = context.read<ActivePlaybackSession>().value;
+    if (activeSession.source == ActivePlaybackSessionSource.remote) {
+      final artwork = context.read<RemoteMediaArtworkController>().value;
+      if (artwork.hasArtwork && artwork.palette.isNotEmpty) {
+        ThemeProvider.instance.applyPaletteDirectly(artwork.palette);
+      } else {
+        ThemeProvider.instance.applyConfiguredTheme();
+      }
+      return;
     }
+    if (activeSession.source == ActivePlaybackSessionSource.local) {
+      final audio = PlayService.instance.existingPlaybackService?.nowPlaying;
+      if (audio != null) {
+        ThemeProvider.instance.applyThemeFromAudio(audio);
+        return;
+      }
+    }
+    ThemeProvider.instance.applyConfiguredTheme();
   }
 
   Future<Color?> _openColorPicker() async {

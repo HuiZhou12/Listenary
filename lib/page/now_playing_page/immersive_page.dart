@@ -355,6 +355,7 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final snapshot = context.watch<ActivePlaybackSession>().value;
+    final remoteArtwork = context.watch<RemoteMediaArtworkController>().value;
 
     final placeholder = Icon(
       Symbols.music_note,
@@ -366,7 +367,10 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
       return ClipRRect(
         borderRadius: AppRadius.mdCircular,
         child: RemoteMediaCover(
-          coverUri: snapshot.currentItem?.coverUri,
+          coverUri: remoteArtwork.hasArtwork
+              ? snapshot.currentItem?.coverUri
+              : null,
+          imageBytes: remoteArtwork.bytes,
           cacheWidth: 128,
           cacheHeight: 128,
           filterQuality: FilterQuality.high,

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 @visibleForTesting
@@ -9,9 +11,17 @@ Uri? resolveRemoteMediaCoverUri(Uri? uri) {
 @visibleForTesting
 ImageProvider<Object>? remoteMediaCoverImageProvider({
   required Uri? coverUri,
+  Uint8List? imageBytes,
   required int cacheWidth,
   required int cacheHeight,
 }) {
+  if (imageBytes != null && imageBytes.isNotEmpty) {
+    return ResizeImage.resizeIfNeeded(
+      cacheWidth,
+      cacheHeight,
+      MemoryImage(imageBytes),
+    );
+  }
   final uri = resolveRemoteMediaCoverUri(coverUri);
   if (uri == null) return null;
   return ResizeImage.resizeIfNeeded(
@@ -25,6 +35,7 @@ class RemoteMediaCover extends StatelessWidget {
   const RemoteMediaCover({
     super.key,
     required this.coverUri,
+    this.imageBytes,
     required this.placeholder,
     required this.cacheWidth,
     required this.cacheHeight,
@@ -34,6 +45,7 @@ class RemoteMediaCover extends StatelessWidget {
        assert(cacheHeight > 0);
 
   final Uri? coverUri;
+  final Uint8List? imageBytes;
   final Widget placeholder;
   final int cacheWidth;
   final int cacheHeight;
@@ -44,6 +56,7 @@ class RemoteMediaCover extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = remoteMediaCoverImageProvider(
       coverUri: coverUri,
+      imageBytes: imageBytes,
       cacheWidth: cacheWidth,
       cacheHeight: cacheHeight,
     );

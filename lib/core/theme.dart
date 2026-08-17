@@ -186,6 +186,26 @@ class ThemeProvider extends ChangeNotifier {
     _applySeedColor(_getCachedSeedColor(cacheKey) ?? seedColor);
   }
 
+  /// Applies a palette that is already decoded by an active media source.
+  void applyPaletteDirectly(Iterable<Color> palette) {
+    if (!AppSettings.instance.enableCoverColorExtraction) {
+      applyConfiguredTheme();
+      return;
+    }
+    final colors = palette.toList(growable: false);
+    if (colors.isEmpty) {
+      applyConfiguredTheme();
+      return;
+    }
+    _applySeedColor(_selectThemeSeedColor(colors));
+  }
+
+  /// Restores the configured theme without consulting the current local song.
+  void applyConfiguredTheme() {
+    cancelPendingAudioTheme();
+    _applySeedColor(_configuredThemeSeedColor());
+  }
+
   /// 从完整封面提取与播放页一致的种子色。
   Future<Color> _extractSeedColor(String cacheKey) async {
     final cachedSeedColor = _getCachedSeedColor(cacheKey);

@@ -10,6 +10,7 @@ import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/remote_playback_timeline.dart';
+import 'package:pure_music/play_service/remote_media_artwork.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/utils.dart';
@@ -245,6 +246,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final remoteArtwork = context.watch<RemoteMediaArtworkController>().value;
 
     return IconButtonTheme(
       data: IconButtonThemeData(
@@ -392,7 +394,10 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                                         width: 48.0,
                                         height: 48.0,
                                         child: RemoteMediaCover(
-                                          coverUri: metadata.coverUri,
+                                          coverUri: remoteArtwork.hasArtwork
+                                              ? metadata.coverUri
+                                              : null,
+                                          imageBytes: remoteArtwork.bytes,
                                           cacheWidth: 96,
                                           cacheHeight: 96,
                                           placeholder: Center(

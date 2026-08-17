@@ -41,6 +41,8 @@ import 'package:pure_music/play_service/remote_playback_queue_controller.dart';
 import 'package:pure_music/play_service/remote_playback_session_controller.dart';
 import 'package:pure_music/play_service/remote_playback_timeline.dart';
 import 'package:pure_music/play_service/remote_playback_timeline_binding.dart';
+import 'package:pure_music/play_service/remote_media_artwork.dart';
+import 'package:pure_music/play_service/remote_media_artwork_binding.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/immersive.dart';
@@ -115,6 +117,8 @@ class _EntryState extends State<Entry>
   late final RemotePlaybackSessionController _remotePlaybackSessionController;
   late final RemotePlaybackTimelineController _remotePlaybackTimeline;
   late final RemotePlaybackTimelineBinding _remotePlaybackTimelineBinding;
+  late final RemoteMediaArtworkController _remoteMediaArtwork;
+  late final RemoteMediaArtworkBinding _remoteMediaArtworkBinding;
   late final ActivePlaybackSessionComposition<PlaybackService>
   _activePlaybackSessionComposition;
   late final ActiveSessionSmtcComposition<PlaybackService>
@@ -180,6 +184,21 @@ class _EntryState extends State<Entry>
             return binding.dispose;
           },
         );
+    _remoteMediaArtwork = RemoteMediaArtworkController();
+    _remoteMediaArtworkBinding = RemoteMediaArtworkBinding(
+      activeSession: _activePlaybackSessionComposition.activeSession,
+      artwork: _remoteMediaArtwork,
+      applyRemotePalette: ThemeProvider.instance.applyPaletteDirectly,
+      restoreLocalTheme: () {
+        final audio = _playService.existingPlaybackService?.nowPlaying;
+        if (audio != null) {
+          ThemeProvider.instance.applyThemeFromAudio(audio);
+        } else {
+          ThemeProvider.instance.applyConfiguredTheme();
+        }
+      },
+      restoreConfiguredTheme: ThemeProvider.instance.applyConfiguredTheme,
+    );
     final activeSmtcPublisher = ActiveSessionSmtcPublisher(
       _playService.smtcBridge,
     );
@@ -235,6 +254,8 @@ class _EntryState extends State<Entry>
     _windowResizing.dispose();
     WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
+    _remoteMediaArtworkBinding.dispose();
+    _remoteMediaArtwork.dispose();
     unawaited(_activeSessionSmtcComposition.dispose());
     unawaited(_activePlaybackSessionComposition.dispose());
     _playService.clearRemoteNavigationHandlers();
@@ -568,6 +589,9 @@ class _EntryState extends State<Entry>
                 ),
                 ChangeNotifierProvider<RemotePlaybackTimelineController>.value(
                   value: _remotePlaybackTimeline,
+                ),
+                ChangeNotifierProvider<RemoteMediaArtworkController>.value(
+                  value: _remoteMediaArtwork,
                 ),
               ],
               child: ValueListenableBuilder<bool>(
