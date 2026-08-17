@@ -39,6 +39,8 @@ import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/play_service/remote_playback_queue_controller.dart';
 import 'package:pure_music/play_service/remote_playback_session_controller.dart';
+import 'package:pure_music/play_service/remote_playback_timeline.dart';
+import 'package:pure_music/play_service/remote_playback_timeline_binding.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/immersive.dart';
@@ -111,6 +113,8 @@ class _EntryState extends State<Entry>
   late final RemotePlaybackQueue _remotePlaybackQueue;
   late final RemotePlaybackQueueController _remotePlaybackQueueController;
   late final RemotePlaybackSessionController _remotePlaybackSessionController;
+  late final RemotePlaybackTimelineController _remotePlaybackTimeline;
+  late final RemotePlaybackTimelineBinding _remotePlaybackTimelineBinding;
   late final ActivePlaybackSessionComposition<PlaybackService>
   _activePlaybackSessionComposition;
   late final ActiveSessionSmtcComposition<PlaybackService>
@@ -148,6 +152,14 @@ class _EntryState extends State<Entry>
         };
         showTextOnSnackBar(message, variant: ToastVariant.error);
       },
+    );
+    _remotePlaybackTimeline = RemotePlaybackTimelineController(
+      readPosition: _remotePlaybackBackend.readPosition,
+    );
+    _remotePlaybackTimelineBinding = RemotePlaybackTimelineBinding(
+      queue: _remotePlaybackQueue,
+      sessionController: _remotePlaybackSessionController,
+      timelineController: _remotePlaybackTimeline,
     );
     _activePlaybackSessionComposition =
         ActivePlaybackSessionComposition<PlaybackService>(
@@ -228,6 +240,8 @@ class _EntryState extends State<Entry>
     _playService.clearRemoteNavigationHandlers();
     _playService.clearRemotePlaybackControlHandlers();
     _playService.stopSmtcKeepAlive();
+    unawaited(_remotePlaybackTimelineBinding.dispose());
+    _remotePlaybackTimeline.dispose();
     _remotePlaybackSessionController.dispose();
     _remotePlaybackQueueController.dispose();
     _remotePlaybackQueue.dispose();
@@ -551,6 +565,9 @@ class _EntryState extends State<Entry>
                 ),
                 Provider<RemotePlaybackSessionController>.value(
                   value: _remotePlaybackSessionController,
+                ),
+                ChangeNotifierProvider<RemotePlaybackTimelineController>.value(
+                  value: _remotePlaybackTimeline,
                 ),
               ],
               child: ValueListenableBuilder<bool>(
