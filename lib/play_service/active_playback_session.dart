@@ -18,11 +18,15 @@ final class ActivePlaybackSessionItem {
     required this.title,
     required this.artist,
     this.album = '',
+    this.coverUri,
+    this.duration = Duration.zero,
   });
 
   final String title;
   final String artist;
   final String album;
+  final Uri? coverUri;
+  final Duration duration;
 
   @override
   bool operator ==(Object other) =>
@@ -30,10 +34,12 @@ final class ActivePlaybackSessionItem {
       other is ActivePlaybackSessionItem &&
           title == other.title &&
           artist == other.artist &&
-          album == other.album;
+          album == other.album &&
+          coverUri == other.coverUri &&
+          duration == other.duration;
 
   @override
-  int get hashCode => Object.hash(title, artist, album);
+  int get hashCode => Object.hash(title, artist, album, coverUri, duration);
 }
 
 @immutable

@@ -21,6 +21,7 @@ void main() {
     expect(item.ref.trackId, 'track-1');
     expect(item.artistDisplay, 'Artist A、Artist B');
     expect(item.album, 'Album');
+    expect(item.coverUri, Uri.parse('https://cover.invalid/image'));
     expect(item.duration, const Duration(minutes: 3));
     expect(item.toString(), isNot(contains('cover.invalid')));
   });

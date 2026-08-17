@@ -8,6 +8,7 @@ final class RemotePlaybackQueueItem {
     required this.title,
     required Iterable<String> artists,
     this.album = '',
+    this.coverUri,
     this.duration = Duration.zero,
   }) : artists = List.unmodifiable(artists);
 
@@ -17,6 +18,7 @@ final class RemotePlaybackQueueItem {
       title: track.title,
       artists: track.artists,
       album: track.album,
+      coverUri: track.coverUri,
       duration: track.duration,
     );
   }
@@ -25,6 +27,7 @@ final class RemotePlaybackQueueItem {
   final String title;
   final List<String> artists;
   final String album;
+  final Uri? coverUri;
   final Duration duration;
 
   String get artistDisplay => artists.join('、');

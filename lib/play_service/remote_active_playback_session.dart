@@ -54,6 +54,8 @@ final class RemoteActivePlaybackSessionBinding {
             title: item.title,
             artist: item.artistDisplay,
             album: item.album,
+            coverUri: item.coverUri,
+            duration: item.duration,
           ),
         )
         .toList(growable: false);

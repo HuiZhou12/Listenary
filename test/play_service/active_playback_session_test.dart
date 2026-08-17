@@ -36,6 +36,41 @@ void main() {
     );
   });
 
+  test('media metadata participates in item value identity', () {
+    final coverUri = Uri.parse('https://cover.invalid/remote');
+    final item = ActivePlaybackSessionItem(
+      title: 'Remote',
+      artist: 'Artist',
+      album: 'Album',
+      coverUri: coverUri,
+      duration: const Duration(minutes: 3),
+    );
+
+    expect(item.coverUri, coverUri);
+    expect(item.duration, const Duration(minutes: 3));
+    expect(
+      item,
+      ActivePlaybackSessionItem(
+        title: 'Remote',
+        artist: 'Artist',
+        album: 'Album',
+        coverUri: Uri.parse('https://cover.invalid/remote'),
+        duration: const Duration(minutes: 3),
+      ),
+    );
+    expect(
+      item,
+      isNot(
+        const ActivePlaybackSessionItem(
+          title: 'Remote',
+          artist: 'Artist',
+          album: 'Album',
+        ),
+      ),
+    );
+    expect(item.toString(), isNot(contains('cover.invalid')));
+  });
+
   test('remote switch rejects updates from the previous local lease', () {
     final session = ActivePlaybackSession();
     addTearDown(session.dispose);

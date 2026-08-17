@@ -223,6 +223,12 @@ ActivePlaybackSessionSnapshot _snapshot({
           ? 'Remote artist'
           : 'Local artist',
       album: source == ActivePlaybackSessionSource.local ? 'Album' : 'Hidden',
+      coverUri: source == ActivePlaybackSessionSource.remote
+          ? Uri.parse('https://cover.invalid/remote')
+          : null,
+      duration: source == ActivePlaybackSessionSource.remote
+          ? const Duration(minutes: 3)
+          : Duration.zero,
     ),
   ],
   currentIndex: 0,

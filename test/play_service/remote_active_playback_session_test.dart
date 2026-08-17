@@ -83,10 +83,12 @@ void main() {
     expect(harness.activeSession.value.currentIndex, 1);
     expect(
       harness.activeSession.value.currentItem,
-      const ActivePlaybackSessionItem(
+      ActivePlaybackSessionItem(
         title: 'Track 2',
         artist: 'Artist 2、Guest 2',
         album: 'Album 2',
+        coverUri: _coverUri,
+        duration: const Duration(minutes: 3),
       ),
     );
     expect(
@@ -224,6 +226,7 @@ void main() {
         title: 'Safe title',
         artists: const ['Safe artist'],
         album: 'Safe album',
+        coverUri: _coverUri,
         duration: const Duration(hours: 1),
       ),
     ]);
@@ -234,6 +237,9 @@ void main() {
     expect(item.title, 'Safe title');
     expect(item.artist, 'Safe artist');
     expect(item.album, 'Safe album');
+    expect(item.coverUri, _coverUri);
+    expect(item.duration, const Duration(hours: 1));
+    expect(item.toString(), isNot(contains('cover.invalid')));
     expect(
       '${item.title}|${item.artist}|${item.album}',
       isNot(contains('SECRET-REF')),
@@ -364,4 +370,8 @@ RemotePlaybackQueueItem _item(String id) => RemotePlaybackQueueItem(
   title: 'Track $id',
   artists: ['Artist $id', 'Guest $id'],
   album: 'Album $id',
+  coverUri: _coverUri,
+  duration: const Duration(minutes: 3),
 );
+
+final _coverUri = Uri.parse('https://cover.invalid/remote');
