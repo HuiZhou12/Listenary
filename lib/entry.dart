@@ -33,6 +33,7 @@ import 'package:pure_music/play_service/active_session_smtc_publisher.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/bass_url_playback_backend.dart';
 import 'package:pure_music/play_service/local_active_playback_session.dart';
+import 'package:pure_music/play_service/online_history_projection.dart';
 import 'package:pure_music/play_service/local_smtc_publisher.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
@@ -46,6 +47,7 @@ import 'package:pure_music/play_service/remote_media_artwork.dart';
 import 'package:pure_music/play_service/remote_media_artwork_binding.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
 import 'package:pure_music/core/cache.dart';
+import 'package:pure_music/core/database.dart';
 import 'package:pure_music/core/immersive.dart';
 import 'package:pure_music/core/memory_monitor.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
@@ -62,6 +64,7 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/services/music_platform/chksz/chksz_runtime.dart';
+import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 
 class SlideTransitionPage<T> extends CustomTransitionPage<T> {
   const SlideTransitionPage({
@@ -118,6 +121,7 @@ class _EntryState extends State<Entry>
   late final RemotePlaybackSessionController _remotePlaybackSessionController;
   late final RemotePlaybackTimelineController _remotePlaybackTimeline;
   late final RemotePlaybackTimelineBinding _remotePlaybackTimelineBinding;
+  OnlineHistoryProjectionBinding? _onlineHistoryProjectionBinding;
   late final RemoteMediaArtworkController _remoteMediaArtwork;
   late final RemoteMediaArtworkBinding _remoteMediaArtworkBinding;
   late final ActivePlaybackSessionComposition<PlaybackService>
@@ -166,6 +170,7 @@ class _EntryState extends State<Entry>
       sessionController: _remotePlaybackSessionController,
       timelineController: _remotePlaybackTimeline,
     );
+    unawaited(_bindOnlineHistoryProjection());
     _activePlaybackSessionComposition =
         ActivePlaybackSessionComposition<PlaybackService>(
           remoteQueue: _remotePlaybackQueue,
@@ -272,6 +277,10 @@ class _EntryState extends State<Entry>
     _playService.clearRemotePlaybackControlHandlers();
     _playService.clearRemoteVolume();
     _playService.stopSmtcKeepAlive();
+    final onlineHistoryProjectionBinding = _onlineHistoryProjectionBinding;
+    if (onlineHistoryProjectionBinding != null) {
+      unawaited(onlineHistoryProjectionBinding.dispose());
+    }
     unawaited(_remotePlaybackTimelineBinding.dispose());
     _remotePlaybackTimeline.dispose();
     _remotePlaybackSessionController.dispose();
@@ -280,6 +289,21 @@ class _EntryState extends State<Entry>
     unawaited(_remotePlaybackBackend.dispose());
     widget.chkszRuntime.dispose();
     super.dispose();
+  }
+
+  Future<void> _bindOnlineHistoryProjection() async {
+    try {
+      final database = await AppDb.instance.db();
+      if (!mounted) return;
+      _onlineHistoryProjectionBinding = OnlineHistoryProjectionBinding(
+        queue: _remotePlaybackQueue,
+        sessionController: _remotePlaybackSessionController,
+        timelineController: _remotePlaybackTimeline,
+        repository: OnlineLibraryRepository(database),
+      );
+    } catch (_) {
+      logger.w('[online history] initialization failed');
+    }
   }
 
   void _syncActiveMediaProjection() {

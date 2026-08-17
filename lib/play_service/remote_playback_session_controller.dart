@@ -177,6 +177,7 @@ final class RemotePlaybackSessionController {
 
   LocalPlaybackResumePoint? get localResumePoint => _localResumePoint;
   int get playbackRevision => _revision;
+  String? get requestedQuality => _requestedQuality;
   RemotePlaybackControlSnapshot get controlState => _controlState;
   Stream<RemotePlaybackControlSnapshot> get controlStateStream =>
       _controlStateController.stream;
