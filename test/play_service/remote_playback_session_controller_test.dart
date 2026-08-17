@@ -71,8 +71,80 @@ void main() {
       expect(localBridge.pauseCount, 1);
       expect(sessionController.localResumePoint, same(resumePoint));
       expect(gateway.refs.map((ref) => ref.trackId), ['1', '2']);
+      expect(backend.stopCount, 1);
     },
   );
+
+  test('switch selects immediately and waits for stop before opening', () async {
+    await sessionController.play(0, requestedQuality: 'lossless');
+    backend.emit(PlaybackBackendState.playing);
+    final stopGate = Completer<void>();
+    backend.pendingStops.add(stopGate.future);
+
+    final switching = sessionController.play(1, requestedQuality: 'lossless');
+    await pumpEventQueue();
+
+    expect(backend.stopCount, 1);
+    expect(queue.value.currentIndex, 1);
+    expect(sessionController.controlState.state, PlaybackBackendState.opening);
+    expect(gateway.refs.map((ref) => ref.trackId), ['1']);
+
+    stopGate.complete();
+    await switching;
+    expect(gateway.refs.map((ref) => ref.trackId), ['1', '2']);
+  });
+
+  test('repeated opening playing and paused selections do not reopen', () async {
+    final openGate = Completer<void>();
+    gateway.pending.add(openGate.future);
+    final firstPlay = sessionController.play(0, requestedQuality: 'lossless');
+    await pumpEventQueue();
+
+    await sessionController.play(0, requestedQuality: 'lossless');
+    expect(gateway.refs, hasLength(1));
+    openGate.complete();
+    await firstPlay;
+
+    backend.emit(PlaybackBackendState.playing);
+    await sessionController.play(0, requestedQuality: 'lossless');
+    backend.emit(PlaybackBackendState.paused);
+    await sessionController.play(0, requestedQuality: 'lossless');
+
+    expect(gateway.refs, hasLength(1));
+    expect(backend.stopCount, 0);
+  });
+
+  test('failed current selection can retry', () async {
+    gateway.error = StateError('open failed');
+    await expectLater(
+      sessionController.play(0, requestedQuality: 'lossless'),
+      throwsStateError,
+    );
+
+    expect(queue.value.currentIndex, 0);
+    expect(sessionController.controlState.state, PlaybackBackendState.failed);
+    gateway.error = null;
+    await sessionController.play(0, requestedQuality: 'lossless');
+
+    expect(gateway.refs.map((ref) => ref.trackId), ['1', '1']);
+    expect(backend.stopCount, 1);
+  });
+
+  test('stop failure keeps the target failed and does not open it', () async {
+    await sessionController.play(0, requestedQuality: 'lossless');
+    backend.emit(PlaybackBackendState.playing);
+    backend.stopError = StateError('stop failed');
+
+    await expectLater(
+      sessionController.play(1, requestedQuality: 'lossless'),
+      throwsA(isA<Exception>()),
+    );
+
+    expect(queue.value.currentIndex, 1);
+    expect(sessionController.controlState.state, PlaybackBackendState.failed);
+    expect(gateway.refs.map((ref) => ref.trackId), ['1']);
+    expect(failures, [RemotePlaybackSessionFailure.remoteStop]);
+  });
 
   test('opens remote directly when there is no local session', () async {
     await sessionController.play(0, requestedQuality: 'lossless');
@@ -217,7 +289,7 @@ void main() {
     expect(localBridge.captureCount, 1);
     expect(localBridge.pauseCount, 1);
     expect(sessionController.localResumePoint, same(resumePoint));
-    expect(queue.value.currentIndex, isNull);
+    expect(queue.value.currentIndex, 0);
   });
 
   test(
@@ -382,7 +454,7 @@ void main() {
     await pumpEventQueue();
 
     expect(failures, [RemotePlaybackSessionFailure.navigation]);
-    expect(queue.value.currentIndex, 0);
+    expect(queue.value.currentIndex, 1);
   });
 
   test('a newer selection suppresses cancelled navigation failure', () async {
@@ -559,8 +631,10 @@ final class _RecordingBackend implements ControllablePlaybackBackend {
   final _states = StreamController<PlaybackBackendState>.broadcast();
   final pendingPauses = <Future<void>>[];
   final pendingResumes = <Future<void>>[];
+  final pendingStops = <Future<void>>[];
   Object? pauseError;
   Object? resumeError;
+  Object? stopError;
   int pauseCount = 0;
   int resumeCount = 0;
   int stopCount = 0;
@@ -596,6 +670,10 @@ final class _RecordingBackend implements ControllablePlaybackBackend {
   @override
   Future<void> stop() async {
     stopCount++;
+    if (pendingStops.isNotEmpty) await pendingStops.removeAt(0);
+    final error = stopError;
+    if (error != null) throw error;
+    emit(PlaybackBackendState.stopped);
   }
 
   @override

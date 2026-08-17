@@ -24,7 +24,7 @@ void main() {
     queue.dispose();
   });
 
-  test('selects the target only after opening succeeds', () async {
+  test('selects the target before opening completes', () async {
     final pending = Completer<void>();
     gateway.pending.add(pending.future);
     gateway.results.add(
@@ -36,7 +36,7 @@ void main() {
     final result = controller.play(1, requestedQuality: 'lossless');
     await pumpEventQueue();
 
-    expect(queue.value.currentIndex, 0);
+    expect(queue.value.currentIndex, 1);
     expect(gateway.refs.single.trackId, '2');
     expect(gateway.qualities.single, 'lossless');
 
@@ -63,7 +63,7 @@ void main() {
     expect(queue.value.currentItem?.coverUri, searchCover);
   });
 
-  test('open failure does not change the current item', () async {
+  test('open failure keeps the selected target', () async {
     gateway.error = const RemoteStreamPlaybackException(
       kind: RemoteStreamPlaybackErrorKind.openFailed,
     );
@@ -73,7 +73,7 @@ void main() {
       throwsA(isA<RemoteStreamPlaybackException>()),
     );
 
-    expect(queue.value.currentIndex, 0);
+    expect(queue.value.currentIndex, 1);
   });
 
   test('a newer request cancels the old request and wins selection', () async {

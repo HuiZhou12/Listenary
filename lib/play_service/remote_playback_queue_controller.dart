@@ -90,6 +90,7 @@ final class RemotePlaybackQueueController {
     _activeToken?.cancel();
     final token = ChkszCancelToken();
     _activeToken = token;
+    _queue.select(index);
 
     try {
       final result = await _open(
@@ -116,7 +117,6 @@ final class RemotePlaybackQueueController {
           coverUri: coverUri,
         );
       }
-      _queue.select(index);
     } finally {
       if (identical(_activeToken, token)) {
         _activeToken = null;

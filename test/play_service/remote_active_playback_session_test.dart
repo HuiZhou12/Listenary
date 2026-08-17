@@ -27,7 +27,7 @@ void main() {
     expect(harness.activeSession.value.queue, isEmpty);
   });
 
-  test('first opening exposes the queue without a current item', () async {
+  test('first opening exposes the selected target', () async {
     final gate = Completer<void>();
     harness.gateway.nextOpen = gate.future;
 
@@ -46,17 +46,24 @@ void main() {
       'Track 2',
       'Track 3',
     ]);
-    expect(harness.activeSession.value.currentIndex, isNull);
+    expect(harness.activeSession.value.currentIndex, 0);
+    expect(harness.activeSession.value.currentItem?.title, 'Track 1');
     expect(
       harness.activeSession.value.capabilities,
-      ActivePlaybackSessionCapabilities.none,
+      const ActivePlaybackSessionCapabilities(
+        canPlay: false,
+        canPause: false,
+        canPrevious: false,
+        canNext: true,
+        canSeek: false,
+      ),
     );
 
     gate.complete();
     await play;
   });
 
-  test('first failure keeps the remote queue without a current item', () async {
+  test('first failure keeps the selected remote target', () async {
     harness.gateway.error = StateError('open failed');
 
     await expectLater(
@@ -73,7 +80,8 @@ void main() {
       ActivePlaybackSessionState.failed,
     );
     expect(harness.activeSession.value.queue, hasLength(3));
-    expect(harness.activeSession.value.currentIndex, isNull);
+    expect(harness.activeSession.value.currentIndex, 1);
+    expect(harness.activeSession.value.currentItem?.title, 'Track 2');
   });
 
   test('successful selection maps the current safe item', () async {
@@ -121,7 +129,7 @@ void main() {
     );
   });
 
-  test('switch opening preserves the last successful index', () async {
+  test('switch opening publishes the target immediately', () async {
     await harness.session.play(0, requestedQuality: 'lossless');
     harness.backend.emit(PlaybackBackendState.playing);
     final gate = Completer<void>();
@@ -133,8 +141,8 @@ void main() {
       harness.activeSession.value.state,
       ActivePlaybackSessionState.opening,
     );
-    expect(harness.activeSession.value.currentIndex, 0);
-    expect(harness.activeSession.value.currentItem?.title, 'Track 1');
+    expect(harness.activeSession.value.currentIndex, 2);
+    expect(harness.activeSession.value.currentItem?.title, 'Track 3');
 
     gate.complete();
     await play;

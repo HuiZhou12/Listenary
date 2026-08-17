@@ -21,20 +21,30 @@ void main() {
   tearDown(() => harness.dispose());
 
   test(
-    'publishes safe metadata only after the first successful select',
+    'publishes safe metadata while the first target is opening',
     () async {
       final openGate = Completer<void>();
       harness.gateway.pending.add(openGate.future);
 
       final play = harness.session.play(0, requestedQuality: 'lossless');
       await pumpEventQueue();
-      harness.backend.emit(PlaybackBackendState.playing);
       await harness.settle();
 
-      expect(harness.smtc.displayUpdates, isEmpty);
+      expect(
+        harness.smtc.displayUpdates.last,
+        const _DisplayUpdate(
+          title: 'Track 1',
+          artist: 'Artist 1',
+          album: '',
+          duration: 0,
+          path: '',
+        ),
+      );
+      expect(harness.smtc.stateUpdates.last, SMTCState.paused);
 
       openGate.complete();
       await play;
+      harness.backend.emit(PlaybackBackendState.playing);
       await harness.settle();
 
       expect(
@@ -52,7 +62,7 @@ void main() {
     },
   );
 
-  test('first open failure does not create a remote display', () async {
+  test('first open failure keeps the target display paused', () async {
     harness.gateway.error = StateError('open failed');
 
     await expectLater(
@@ -61,13 +71,13 @@ void main() {
     );
     await harness.settle();
 
-    expect(harness.smtc.displayUpdates, isEmpty);
-    expect(harness.smtc.stateUpdates, isEmpty);
+    expect(harness.smtc.displayUpdates.last.title, 'Track 1');
+    expect(harness.smtc.stateUpdates.last, SMTCState.paused);
     expect(harness.session.controlState.state, PlaybackBackendState.failed);
   });
 
   test(
-    'manual switch keeps old metadata paused until selection succeeds',
+    'manual switch publishes target metadata while opening',
     () async {
       await harness.session.play(0, requestedQuality: 'lossless');
       harness.backend.emit(PlaybackBackendState.playing);
@@ -78,7 +88,7 @@ void main() {
       final switchTrack = harness.session.play(1, requestedQuality: 'lossless');
       await harness.settle();
 
-      expect(harness.smtc.displayUpdates.last.title, 'Track 1');
+      expect(harness.smtc.displayUpdates.last.title, 'Track 2');
       expect(harness.smtc.stateUpdates.last, SMTCState.paused);
 
       switchGate.complete();
@@ -120,7 +130,7 @@ void main() {
   });
 
   test(
-    'failed and completed states preserve current metadata paused',
+    'failed state preserves current metadata and completion projects next',
     () async {
       await harness.session.play(0, requestedQuality: 'lossless');
       harness.backend.emit(PlaybackBackendState.playing);
@@ -136,7 +146,7 @@ void main() {
       harness.backend.emit(PlaybackBackendState.completed);
       await harness.settle();
 
-      expect(harness.smtc.displayUpdates.last.title, 'Track 1');
+      expect(harness.smtc.displayUpdates.last.title, 'Track 2');
       expect(harness.smtc.stateUpdates.last, SMTCState.paused);
 
       nextGate.complete();
@@ -204,7 +214,7 @@ void main() {
   });
 
   test(
-    'lazy production binding creates one projection owner after selection',
+    'lazy production binding creates one owner on target selection',
     () async {
       final lazyHarness = _Harness.lazy();
       addTearDown(lazyHarness.dispose);
@@ -214,7 +224,7 @@ void main() {
       final play = lazyHarness.session.play(0, requestedQuality: 'lossless');
       await pumpEventQueue();
 
-      expect(lazyHarness.projectionCreateCount, 0);
+      expect(lazyHarness.projectionCreateCount, 1);
       expect(lazyHarness.keepAlivePublisher, isNotNull);
       expect(lazyHarness.lifecycleEvents, ['bind']);
 
@@ -241,7 +251,7 @@ void main() {
     },
   );
 
-  test('lazy production binding does not create an owner on failure', () async {
+  test('lazy production binding keeps the failed target owner', () async {
     final lazyHarness = _Harness.lazy();
     addTearDown(lazyHarness.dispose);
     lazyHarness.gateway.error = StateError('open failed');
@@ -252,8 +262,9 @@ void main() {
     );
     await lazyHarness.settle();
 
-    expect(lazyHarness.projectionCreateCount, 0);
-    expect(lazyHarness.smtc.operations, isEmpty);
+    expect(lazyHarness.projectionCreateCount, 1);
+    expect(lazyHarness.smtc.displayUpdates.last.title, 'Track 1');
+    expect(lazyHarness.smtc.stateUpdates.last, SMTCState.paused);
     expect(lazyHarness.keepAlivePublisher, isNotNull);
 
     await lazyHarness.binding.dispose();

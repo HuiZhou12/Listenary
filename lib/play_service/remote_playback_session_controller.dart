@@ -6,6 +6,7 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/play_service/remote_playback_queue_controller.dart';
+import 'package:pure_music/services/music_platform/chksz/remote_stream_coordinator.dart';
 
 abstract interface class LocalPlaybackResumePoint {}
 
@@ -170,6 +171,7 @@ final class RemotePlaybackSessionController {
   int _revision = 0;
   int _controlRevision = 0;
   int? _activeRemoteRevision;
+  int? _stopTransitionRevision;
   bool _sessionStarted = false;
   bool _disposed = false;
 
@@ -204,9 +206,11 @@ final class RemotePlaybackSessionController {
     final expectedRevision = _revision + 1;
     unawaited(
       _playRemote(targetIndex, requestedQuality: requestedQuality).catchError((
-        _,
+        error,
       ) {
-        if (!_disposed && _revision == expectedRevision) {
+        if (error is! _RemoteTransitionStopException &&
+            !_disposed &&
+            _revision == expectedRevision) {
           _onFailure?.call(RemotePlaybackSessionFailure.navigation);
         }
       }),
@@ -217,6 +221,8 @@ final class RemotePlaybackSessionController {
   Future<void> play(int index, {required String requestedQuality}) async {
     _throwIfDisposed();
     RangeError.checkValidIndex(index, _queue.value.items, 'index');
+    if (_ignoresRepeatedSelection(index)) return;
+    final hadRemoteSession = _sessionStarted;
     if (!_sessionStarted) {
       final resumePoint = _localBridge.capture();
       if (resumePoint != null) {
@@ -225,24 +231,57 @@ final class RemotePlaybackSessionController {
       _localResumePoint = resumePoint;
       _sessionStarted = true;
     }
-    await _playRemote(index, requestedQuality: requestedQuality);
+    await _playRemote(
+      index,
+      requestedQuality: requestedQuality,
+      stopCurrent: hadRemoteSession,
+    );
   }
 
   Future<void> _playRemote(
     int index, {
     required String requestedQuality,
+    bool stopCurrent = true,
   }) async {
     final revision = ++_revision;
     _invalidateControl();
+    _remoteController.cancel();
     _setControlState(
       const RemotePlaybackControlSnapshot(
         state: PlaybackBackendState.opening,
         controlInFlight: false,
       ),
     );
+    _queue.select(index);
     _activeRemoteRevision = null;
     _requestedQuality = requestedQuality;
     try {
+      if (stopCurrent) {
+        _stopTransitionRevision = revision;
+        try {
+          await _backend.stop();
+        } catch (_) {
+          if (!_disposed && revision == _revision) {
+            _onFailure?.call(RemotePlaybackSessionFailure.remoteStop);
+          }
+          throw const _RemoteTransitionStopException();
+        } finally {
+          if (_stopTransitionRevision == revision) {
+            _stopTransitionRevision = null;
+          }
+        }
+        if (_disposed || revision != _revision) {
+          throw const RemoteStreamPlaybackException(
+            kind: RemoteStreamPlaybackErrorKind.cancelled,
+          );
+        }
+        _setControlState(
+          const RemotePlaybackControlSnapshot(
+            state: PlaybackBackendState.opening,
+            controlInFlight: false,
+          ),
+        );
+      }
       await _remoteController.play(index, requestedQuality: requestedQuality);
     } catch (_) {
       if (!_disposed && revision == _revision) {
@@ -262,6 +301,7 @@ final class RemotePlaybackSessionController {
 
   void _onBackendState(PlaybackBackendState state) {
     if (_disposed || !_sessionStarted) return;
+    if (_stopTransitionRevision != null) return;
     _setControlState(
       RemotePlaybackControlSnapshot(
         state: state,
@@ -348,8 +388,10 @@ final class RemotePlaybackSessionController {
       final nextRevision = _revision + 1;
       try {
         await _playRemote(currentIndex + 1, requestedQuality: requestedQuality);
-      } catch (_) {
-        if (!_disposed && _revision == nextRevision) {
+      } catch (error) {
+        if (error is! _RemoteTransitionStopException &&
+            !_disposed &&
+            _revision == nextRevision) {
           _onFailure?.call(RemotePlaybackSessionFailure.nextTrack);
         }
       }
@@ -378,7 +420,20 @@ final class RemotePlaybackSessionController {
     _localResumePoint = null;
     _requestedQuality = null;
     _activeRemoteRevision = null;
+    _stopTransitionRevision = null;
     _setControlState(RemotePlaybackControlSnapshot.inactive);
+  }
+
+  bool _ignoresRepeatedSelection(int index) {
+    if (!_sessionStarted || _queue.value.currentIndex != index) return false;
+    return switch (_controlState.state) {
+      PlaybackBackendState.opening ||
+      PlaybackBackendState.playing ||
+      PlaybackBackendState.paused ||
+      PlaybackBackendState.stalled ||
+      PlaybackBackendState.completed => true,
+      _ => false,
+    };
   }
 
   void _invalidateControl() {
@@ -422,4 +477,8 @@ final class RemotePlaybackSessionController {
       throw StateError('RemotePlaybackSessionController has been disposed');
     }
   }
+}
+
+final class _RemoteTransitionStopException implements Exception {
+  const _RemoteTransitionStopException();
 }
