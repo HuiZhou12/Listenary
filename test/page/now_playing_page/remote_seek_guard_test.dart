@@ -32,6 +32,7 @@ void main() {
     binding.bind(
       initialState: const _State(PlaybackBackendState.playing),
       stateStream: source.stream,
+      isActive: () => true,
       pause: () => true,
       resume: () => true,
     );

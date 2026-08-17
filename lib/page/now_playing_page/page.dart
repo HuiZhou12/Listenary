@@ -37,6 +37,7 @@ import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/playback_service.dart';
+import 'package:pure_music/play_service/remote_playback_timeline.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/material.dart';
@@ -81,6 +82,53 @@ bool shouldCancelNowPlayingSeekDrag({
   required bool canSeekFromUi,
   required bool isDragging,
 }) => !canSeekFromUi && isDragging;
+
+@immutable
+final class NowPlayingTimelineProjection {
+  const NowPlayingTimelineProjection({
+    required this.positionSeconds,
+    required this.durationSeconds,
+    required this.isAdvancing,
+    required this.usesRemoteTimeline,
+  });
+
+  final double positionSeconds;
+  final double? durationSeconds;
+  final bool isAdvancing;
+  final bool usesRemoteTimeline;
+
+  double get paintPositionSeconds =>
+      usesRemoteTimeline && durationSeconds == null ? 0 : positionSeconds;
+}
+
+@visibleForTesting
+NowPlayingTimelineProjection resolveNowPlayingTimeline({
+  required ActivePlaybackSessionSnapshot activeSession,
+  required RemotePlaybackTimelineSnapshot remoteTimeline,
+  required double localPositionSeconds,
+  required double localDurationSeconds,
+  required bool localIsPlaying,
+}) {
+  if (activeSession.source == ActivePlaybackSessionSource.remote) {
+    final duration = remoteTimeline.duration;
+    return NowPlayingTimelineProjection(
+      positionSeconds:
+          (remoteTimeline.position ?? Duration.zero).inMicroseconds / 1000000.0,
+      durationSeconds: duration == null
+          ? null
+          : duration.inMicroseconds / 1000000.0,
+      isAdvancing:
+          activeSession.state == ActivePlaybackSessionState.playing,
+      usesRemoteTimeline: true,
+    );
+  }
+  return NowPlayingTimelineProjection(
+    positionSeconds: localPositionSeconds,
+    durationSeconds: localDurationSeconds,
+    isAdvancing: localIsPlaying,
+    usesRemoteTimeline: false,
+  );
+}
 
 @visibleForTesting
 ({String title, String artist, Uri? coverUri}) resolveNowPlayingMetadata({
@@ -1800,12 +1848,17 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
     with TickerProviderStateMixin {
   final dragPosition = ValueNotifier(0.0);
   final livePosition = ValueNotifier(0.0);
+  final paintPosition = ValueNotifier(0.0);
   final livePositionSeconds = ValueNotifier(0);
   final isDragging = ValueNotifier(false);
   late final PlayService _playService;
   late final PlaybackService _playbackService;
+  late final ActivePlaybackSession _activePlaybackSession;
+  late final RemotePlaybackTimelineController _remotePlaybackTimeline;
   late final VoidCallback _playerStateListener;
   late final VoidCallback _nowPlayingListener;
+  late final VoidCallback _activeSessionListener;
+  late final VoidCallback _remoteTimelineListener;
   late final StreamSubscription<RemotePlaybackControlState>
   _remotePlaybackControlSubscription;
   Timer? _positionSyncTimer;
@@ -1817,6 +1870,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   bool _isPlaying = false;
   bool _canSeekFromUi = true;
   double _trackLength = 1.0;
+  bool _trackLengthKnown = true;
   late final AnimationController _wavyController;
 
   @override
@@ -1828,26 +1882,40 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
     );
     _playService = PlayService.instance;
     _playbackService = context.read<PlaybackService>();
+    _activePlaybackSession = context.read<ActivePlaybackSession>();
+    _remotePlaybackTimeline =
+        context.read<RemotePlaybackTimelineController>();
     _canSeekFromUi = _playService.canSeekFromUi;
     _remotePlaybackControlSubscription = _playService
         .remotePlaybackControlStateStream
         .listen(_onRemotePlaybackControlStateChanged);
-    _isPlaying = _playbackService.playerState == PlayerState.playing;
-    _syncFromNative(force: true);
     _syncWavyAnimation(_playbackService.playerState);
-    _syncProgressDriver(_playbackService.playerState);
+    _syncProgressDriver();
     _playerStateListener = () {
       final state = _playbackService.playerState;
       _syncWavyAnimation(state);
-      _syncProgressDriver(state);
+      _syncProgressDriver();
     };
     _playbackService.playerStateNotifier.addListener(_playerStateListener);
     _nowPlayingListener = () {
-      _syncFromNative(force: true);
-      _syncProgressDriver(_playbackService.playerState);
+      _syncProgressDriver();
       if (mounted) setState(() {});
     };
     _playbackService.nowPlayingNotifier.addListener(_nowPlayingListener);
+    _activeSessionListener = () {
+      _syncProgressDriver();
+      if (mounted) setState(() {});
+    };
+    _activePlaybackSession.addListener(_activeSessionListener);
+    _remoteTimelineListener = () {
+      if (_activePlaybackSession.value.source !=
+          ActivePlaybackSessionSource.remote) {
+        return;
+      }
+      _syncFromSource(force: true);
+      if (mounted) setState(() {});
+    };
+    _remotePlaybackTimeline.addListener(_remoteTimelineListener);
   }
 
   void _onRemotePlaybackControlStateChanged(RemotePlaybackControlState state) {
@@ -1859,14 +1927,31 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
       isDragging: isDragging.value,
     )) {
       isDragging.value = false;
-      _syncFromNative(force: true);
+      _syncFromSource(force: true);
     }
     if (mounted) setState(() {});
   }
 
-  void _syncFromNative({bool force = false}) {
-    _trackLength = _playbackService.length;
-    _syncLivePosition(_playbackService.position, force: force);
+  NowPlayingTimelineProjection _syncFromSource({bool force = false}) {
+    final activeSession = _activePlaybackSession.value;
+    final usesRemote =
+        activeSession.source == ActivePlaybackSessionSource.remote;
+    final projection = resolveNowPlayingTimeline(
+      activeSession: activeSession,
+      remoteTimeline: _remotePlaybackTimeline.projectedSnapshot,
+      localPositionSeconds: usesRemote ? 0 : _playbackService.position,
+      localDurationSeconds: usesRemote ? 0 : _playbackService.length,
+      localIsPlaying:
+          !usesRemote && _playbackService.playerState == PlayerState.playing,
+    );
+    _trackLengthKnown = projection.durationSeconds != null;
+    _trackLength = projection.durationSeconds ?? 0;
+    _syncLivePosition(
+      projection.positionSeconds,
+      paintPositionOverride: projection.paintPositionSeconds,
+      force: force,
+    );
+    return projection;
   }
 
   void _syncWavyAnimation(PlayerState state) {
@@ -1880,9 +1965,8 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
     }
   }
 
-  void _syncProgressDriver(PlayerState state) {
-    _isPlaying = state == PlayerState.playing;
-    _syncFromNative(force: true);
+  void _syncProgressDriver() {
+    _isPlaying = _syncFromSource(force: true).isAdvancing;
     if (!_isPlaying) {
       _positionSyncTimer?.cancel();
       _positionSyncTimer = null;
@@ -1890,7 +1974,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
       return;
     }
     _positionSyncTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
-      _syncFromNative(force: true);
+      _syncFromSource(force: true);
     });
     _startProgressTicker();
   }
@@ -1918,14 +2002,27 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
     if (delta <= Duration.zero) return;
     final length = _trackLength;
     final next = livePosition.value + delta.inMicroseconds / 1000000.0;
-    _syncLivePosition(length > 0 ? next.clamp(0.0, length).toDouble() : next);
+    _syncLivePosition(
+      length > 0 ? next.clamp(0.0, length).toDouble() : next,
+      paintPositionOverride: _trackLengthKnown ? null : 0,
+    );
   }
 
-  void _syncLivePosition(double position, {bool force = false}) {
+  void _syncLivePosition(
+    double position, {
+    double? paintPositionOverride,
+    bool force = false,
+  }) {
     final nowMs = (position * 1000).round();
-    if (!force && nowMs == _lastPositionMs) return;
+    final nextPaintPosition = paintPositionOverride ?? position;
+    if (!force &&
+        nowMs == _lastPositionMs &&
+        paintPosition.value == nextPaintPosition) {
+      return;
+    }
     _lastPositionMs = nowMs;
     livePosition.value = position;
+    paintPosition.value = nextPaintPosition;
     final seconds = position.floor();
     if (livePositionSeconds.value != seconds) {
       livePositionSeconds.value = seconds;
@@ -1935,8 +2032,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   @override
   void activate() {
     super.activate();
-    _syncFromNative(force: true);
-    _syncProgressDriver(_playbackService.playerState);
+    _syncProgressDriver();
   }
 
   @override
@@ -1946,8 +2042,11 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
     unawaited(_remotePlaybackControlSubscription.cancel());
     _playbackService.playerStateNotifier.removeListener(_playerStateListener);
     _playbackService.nowPlayingNotifier.removeListener(_nowPlayingListener);
+    _activePlaybackSession.removeListener(_activeSessionListener);
+    _remotePlaybackTimeline.removeListener(_remoteTimelineListener);
     dragPosition.dispose();
     livePosition.dispose();
+    paintPosition.dispose();
     livePositionSeconds.dispose();
     isDragging.dispose();
     _wavyController.dispose();
@@ -1957,8 +2056,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final playbackService = context.read<PlaybackService>();
-    final nowPlayingLength = playbackService.length;
+    final nowPlayingLength = _trackLength;
     final useMonetBar = AppSettings.instance.useMaterialYouForProgressBar;
     final useWavyBar = AppSettings.instance.wavyBarEnabledModes.contains(
       widget.mode,
@@ -1981,9 +2079,11 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
                 color: scheme.onSurface,
               ),
               Text(
-                Duration(
-                  milliseconds: (nowPlayingLength * 1000).toInt(),
-                ).toStringMSS(),
+                _trackLengthKnown
+                    ? Duration(
+                        milliseconds: (nowPlayingLength * 1000).toInt(),
+                      ).toStringMSS()
+                    : '--:--',
                 style: TextStyle(
                   color: scheme.onSurface,
                   fontSize: 12,
@@ -2034,7 +2134,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
                       ? (details) {
                           isDragging.value = false;
                           if (!_playService.canSeekFromUi) {
-                            _syncFromNative(force: true);
+                            _syncFromSource(force: true);
                             return;
                           }
                           _syncLivePosition(dragPosition.value, force: true);
@@ -2056,7 +2156,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
                       : null,
                   child: CustomPaint(
                     painter: _ProgressSliderPainter(
-                      livePosition: livePosition,
+                      livePosition: paintPosition,
                       dragPosition: dragPosition,
                       isDragging: isDragging,
                       max: max,
