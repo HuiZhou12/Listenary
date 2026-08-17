@@ -117,6 +117,35 @@ void main() {
       expect(pageWithInvalidCover.items.single.coverUri, isNull);
     });
 
+    test('upgrades an HTTP search cover candidate to HTTPS', () {
+      final page = adapter.parseSearchResponse(
+        const {
+          'code': 200,
+          'msg': 'success',
+          'data': {
+            'songs': [
+              {
+                'id': 1,
+                'name': 'Test Track',
+                'artists': 'Test Artist',
+                'album': 'Test Album',
+                'picUrl': 'http://cover.invalid/test.jpg',
+                'duration': 1,
+              },
+            ],
+            'total': 1,
+          },
+        },
+        limit: 30,
+        offset: 0,
+      );
+
+      expect(
+        page.items.single.coverUri,
+        Uri.parse('https://cover.invalid/test.jpg'),
+      );
+    });
+
     test('rejects malformed responses with a safe error', () {
       const secretUrl = 'https://media.invalid/test?signature=TEST_ONLY';
       final malformedBodies = <Map<String, dynamic>>[

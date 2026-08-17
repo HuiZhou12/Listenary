@@ -738,10 +738,10 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
 
   @override
   Widget build(BuildContext context) {
-    final showDesktopLyric = context.select<ActivePlaybackSession, bool>(
-      (session) => shouldShowNowPlayingDesktopLyric(session.value.source),
+    final showLocalActions = context.select<ActivePlaybackSession, bool>(
+      (session) => shouldShowLocalNowPlayingActions(session.value),
     );
-    if (!showDesktopLyric) return const SizedBox.shrink();
+    if (!showLocalActions) return const SizedBox.shrink();
 
     final useMonet = AppSettings.instance.useMaterialYouForControls;
     final playbackService = context.watch<PlaybackService>();
@@ -1045,10 +1045,10 @@ class _DesktopLyricSwitchState extends State<_DesktopLyricSwitch> {
 
   @override
   Widget build(BuildContext context) {
-    final showLocalActions = context.select<ActivePlaybackSession, bool>(
-      (session) => shouldShowLocalNowPlayingActions(session.value),
+    final showDesktopLyric = context.select<ActivePlaybackSession, bool>(
+      (session) => shouldShowNowPlayingDesktopLyric(session.value.source),
     );
-    if (!showLocalActions) return const SizedBox.shrink();
+    if (!showDesktopLyric) return const SizedBox.shrink();
 
     final useMonet = AppSettings.instance.useMaterialYouForControls;
     final scheme = Theme.of(context).colorScheme;

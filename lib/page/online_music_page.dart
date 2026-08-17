@@ -4,6 +4,8 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
+import 'package:pure_music/component/remote_media_cover.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/search_action_state.dart';
@@ -261,7 +263,10 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
         ].join(' · ');
         return ListTile(
           enabled: canPlay,
-          leading: const Icon(Symbols.music_note),
+          leading: _OnlineTrackCover(
+            key: ValueKey('online-track-cover-${track.ref.trackId}'),
+            coverUri: track.coverUri,
+          ),
           title: Text(
             track.title,
             maxLines: 1,
@@ -297,5 +302,30 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     final minutes = totalSeconds ~/ 60;
     final seconds = totalSeconds % 60;
     return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+}
+
+class _OnlineTrackCover extends StatelessWidget {
+  const _OnlineTrackCover({super.key, required this.coverUri});
+
+  final Uri? coverUri;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final placeholder = ColoredBox(color: scheme.surfaceContainerHighest);
+    return ClipRRect(
+      borderRadius: AppRadius.xsCircular,
+      child: SizedBox.square(
+        dimension: 44.0,
+        child: RemoteMediaCover(
+          coverUri: coverUri,
+          placeholder: placeholder,
+          cacheWidth: 96,
+          cacheHeight: 96,
+          filterQuality: FilterQuality.medium,
+        ),
+      ),
+    );
   }
 }

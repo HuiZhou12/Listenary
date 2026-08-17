@@ -100,7 +100,7 @@ final class NeteaseAdapter {
       title: _requiredString(song['name']),
       artists: [_requiredString(song['artists'])],
       album: _requiredString(song['album']),
-      coverUri: _optionalHttpUri(song['picUrl']),
+      coverUri: _optionalSearchCoverUri(song['picUrl']),
       duration: Duration(milliseconds: duration),
     );
   }
@@ -157,6 +157,12 @@ Uri? _optionalHttpUri(Object? value) {
     return null;
   }
   return uri;
+}
+
+Uri? _optionalSearchCoverUri(Object? value) {
+  final uri = _optionalHttpUri(value);
+  if (uri == null || uri.scheme == 'https') return uri;
+  return uri.replace(scheme: 'https');
 }
 
 Uri _requiredHttpUri(Object? value) {

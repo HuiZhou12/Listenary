@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/page/online_music_page.dart';
 import 'package:pure_music/services/music_platform/index.dart';
@@ -68,6 +69,38 @@ void main() {
     expect(find.text('Explicit Result'), findsOneWidget);
     expect(find.text('Test Artist · Test Album'), findsOneWidget);
     expect(find.text('2:03'), findsOneWidget);
+  });
+
+  testWidgets('renders result cover without a music-note placeholder', (
+    tester,
+  ) async {
+    await _pumpPage(
+      tester,
+      search:
+          ({
+            required keyword,
+            required limit,
+            required offset,
+            required cancelToken,
+          }) async => _page([
+            _track(
+              '1',
+              title: 'Covered Result',
+              coverUri: Uri.parse('https://cover.invalid/result.jpg'),
+            ),
+          ]),
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('online-search-field')),
+      'cover',
+    );
+    await tester.pump();
+    await tester.tap(find.byTooltip('在线搜索'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('online-track-cover-1')), findsOneWidget);
+    expect(find.byIcon(Symbols.music_note), findsNothing);
   });
 
   testWidgets('enter submits and playable result preserves current page', (
@@ -340,11 +373,13 @@ MusicTrack _track(
   String id, {
   required String title,
   TrackAvailability availability = TrackAvailability.playable,
+  Uri? coverUri,
 }) => MusicTrack(
   ref: PlatformTrackRef(platform: MusicPlatform.netease, trackId: id),
   title: title,
   artists: const ['Test Artist'],
   album: 'Test Album',
+  coverUri: coverUri,
   duration: const Duration(seconds: 123),
   availability: availability,
 );
