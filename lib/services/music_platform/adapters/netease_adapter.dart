@@ -84,6 +84,7 @@ final class NeteaseAdapter {
       ref: expectedRef,
       uri: _requiredHttpUri(data['url']),
       requestedQuality: defaultQuality,
+      coverUri: _optionalHttpsUri(data['picUrl']),
       actualQuality: actualQuality,
       bitrate: _requiredPositiveInt(data['br']),
       resolvedAt: resolvedAt,
@@ -161,6 +162,13 @@ Uri? _optionalHttpUri(Object? value) {
 Uri _requiredHttpUri(Object? value) {
   final uri = _optionalHttpUri(value);
   if (uri == null) throw _invalidResponse();
+  return uri;
+}
+
+Uri? _optionalHttpsUri(Object? value) {
+  if (value is! String || value.isEmpty) return null;
+  final uri = Uri.tryParse(value);
+  if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) return null;
   return uri;
 }
 

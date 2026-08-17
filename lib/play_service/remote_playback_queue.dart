@@ -31,6 +31,17 @@ final class RemotePlaybackQueueItem {
   final Duration duration;
 
   String get artistDisplay => artists.join('、');
+
+  RemotePlaybackQueueItem withCoverUri(Uri value) {
+    return RemotePlaybackQueueItem(
+      ref: ref,
+      title: title,
+      artists: artists,
+      album: album,
+      coverUri: value,
+      duration: duration,
+    );
+  }
 }
 
 @immutable
@@ -82,6 +93,28 @@ final class RemotePlaybackQueue
     );
   }
 
+  bool enrichCover(
+    int index, {
+    required PlatformTrackRef expectedRef,
+    required Uri coverUri,
+  }) {
+    final snapshot = value;
+    if (index < 0 || index >= snapshot.items.length) return false;
+    final item = snapshot.items[index];
+    if (item.ref != expectedRef ||
+        _isRenderableHttpsUri(item.coverUri) ||
+        !_isRenderableHttpsUri(coverUri)) {
+      return false;
+    }
+    final nextItems = List<RemotePlaybackQueueItem>.of(snapshot.items);
+    nextItems[index] = item.withCoverUri(coverUri);
+    value = RemotePlaybackQueueSnapshot(
+      items: nextItems,
+      currentIndex: snapshot.currentIndex,
+    );
+    return true;
+  }
+
   void clear() {
     if (value.isEmpty) return;
     value = const RemotePlaybackQueueSnapshot.empty();
@@ -93,3 +126,6 @@ final class RemotePlaybackQueue
     super.dispose();
   }
 }
+
+bool _isRenderableHttpsUri(Uri? uri) =>
+    uri != null && uri.scheme == 'https' && uri.host.isNotEmpty;

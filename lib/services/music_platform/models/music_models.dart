@@ -52,6 +52,7 @@ final class ResolvedStream {
     required this.ref,
     required this.uri,
     required this.requestedQuality,
+    this.coverUri,
     this.actualQuality,
     this.bitrate,
     this.format,
@@ -62,6 +63,7 @@ final class ResolvedStream {
   final PlatformTrackRef ref;
   final Uri uri;
   final String requestedQuality;
+  final Uri? coverUri;
   final String? actualQuality;
   final int? bitrate;
   final String? format;

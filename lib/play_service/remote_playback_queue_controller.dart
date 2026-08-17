@@ -13,8 +13,23 @@ abstract interface class RemoteQueuePlaybackGateway {
   });
 }
 
-final class ChkszRemoteQueuePlaybackGateway
+final class RemoteQueuePlaybackResult {
+  const RemoteQueuePlaybackResult({this.coverUri});
+
+  final Uri? coverUri;
+}
+
+abstract interface class RemoteQueuePlaybackMetadataGateway
     implements RemoteQueuePlaybackGateway {
+  Future<RemoteQueuePlaybackResult> openWithMetadata(
+    PlatformTrackRef ref, {
+    required String requestedQuality,
+    required ChkszCancelToken cancelToken,
+  });
+}
+
+final class ChkszRemoteQueuePlaybackGateway
+    implements RemoteQueuePlaybackMetadataGateway {
   const ChkszRemoteQueuePlaybackGateway({
     required ChkszRuntime runtime,
     required PlaybackBackend backend,
@@ -30,12 +45,26 @@ final class ChkszRemoteQueuePlaybackGateway
     required String requestedQuality,
     required ChkszCancelToken cancelToken,
   }) async {
-    await _runtime.resolveAndOpenNetease(
+    await openWithMetadata(
+      ref,
+      requestedQuality: requestedQuality,
+      cancelToken: cancelToken,
+    );
+  }
+
+  @override
+  Future<RemoteQueuePlaybackResult> openWithMetadata(
+    PlatformTrackRef ref, {
+    required String requestedQuality,
+    required ChkszCancelToken cancelToken,
+  }) async {
+    final stream = await _runtime.resolveAndOpenNetease(
       ref,
       requestedQuality: requestedQuality,
       backend: _backend,
       cancelToken: cancelToken,
     );
+    return RemoteQueuePlaybackResult(coverUri: stream.coverUri);
   }
 }
 
@@ -63,7 +92,7 @@ final class RemotePlaybackQueueController {
     _activeToken = token;
 
     try {
-      await _gateway.open(
+      final result = await _open(
         item.ref,
         requestedQuality: requestedQuality,
         cancelToken: token,
@@ -79,12 +108,41 @@ final class RemotePlaybackQueueController {
           kind: RemoteStreamPlaybackErrorKind.cancelled,
         );
       }
+      final coverUri = result.coverUri;
+      if (coverUri != null) {
+        _queue.enrichCover(
+          index,
+          expectedRef: item.ref,
+          coverUri: coverUri,
+        );
+      }
       _queue.select(index);
     } finally {
       if (identical(_activeToken, token)) {
         _activeToken = null;
       }
     }
+  }
+
+  Future<RemoteQueuePlaybackResult> _open(
+    PlatformTrackRef ref, {
+    required String requestedQuality,
+    required ChkszCancelToken cancelToken,
+  }) async {
+    final gateway = _gateway;
+    if (gateway is RemoteQueuePlaybackMetadataGateway) {
+      return gateway.openWithMetadata(
+        ref,
+        requestedQuality: requestedQuality,
+        cancelToken: cancelToken,
+      );
+    }
+    await gateway.open(
+      ref,
+      requestedQuality: requestedQuality,
+      cancelToken: cancelToken,
+    );
+    return const RemoteQueuePlaybackResult();
   }
 
   void cancel() {

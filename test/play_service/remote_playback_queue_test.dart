@@ -52,6 +52,84 @@ void main() {
     queue.dispose();
   });
 
+  test('enriches only a matching item without a usable HTTPS cover', () {
+    final queue = RemotePlaybackQueue();
+    final ref = _item('1').ref;
+    queue.replace([
+      RemotePlaybackQueueItem(
+        ref: ref,
+        title: 'Track 1',
+        artists: const ['Artist'],
+        coverUri: Uri.parse('http://cover.invalid/search'),
+      ),
+      _item('2'),
+    ], currentIndex: 0);
+
+    expect(
+      queue.enrichCover(
+        0,
+        expectedRef: ref,
+        coverUri: Uri.parse('https://cover.invalid/resolved'),
+      ),
+      isTrue,
+    );
+    expect(
+      queue.value.currentItem?.coverUri,
+      Uri.parse('https://cover.invalid/resolved'),
+    );
+    expect(queue.value.currentIndex, 0);
+    queue.dispose();
+  });
+
+  test('rejects unsafe, stale, and unnecessary cover enrichment', () {
+    final queue = RemotePlaybackQueue();
+    final ref = _item('1').ref;
+    final existing = Uri.parse('https://cover.invalid/search');
+    queue.replace([
+      RemotePlaybackQueueItem(
+        ref: ref,
+        title: 'Track 1',
+        artists: const ['Artist'],
+        coverUri: existing,
+      ),
+    ], currentIndex: 0);
+
+    expect(
+      queue.enrichCover(
+        0,
+        expectedRef: ref,
+        coverUri: Uri.parse('https://cover.invalid/resolved'),
+      ),
+      isFalse,
+    );
+    expect(
+      queue.enrichCover(
+        0,
+        expectedRef: _item('2').ref,
+        coverUri: Uri.parse('https://cover.invalid/resolved'),
+      ),
+      isFalse,
+    );
+    expect(
+      queue.enrichCover(
+        1,
+        expectedRef: ref,
+        coverUri: Uri.parse('https://cover.invalid/resolved'),
+      ),
+      isFalse,
+    );
+    expect(
+      queue.enrichCover(
+        0,
+        expectedRef: ref,
+        coverUri: Uri.parse('http://cover.invalid/resolved'),
+      ),
+      isFalse,
+    );
+    expect(queue.value.currentItem?.coverUri, existing);
+    queue.dispose();
+  });
+
   test('replace rejects empty queues and invalid indexes', () {
     final queue = RemotePlaybackQueue();
 

@@ -254,11 +254,35 @@ void main() {
         Uri.parse('https://media.invalid/test.flac?signature=TEST_ONLY'),
       );
       expect(stream.requestedQuality, NeteaseAdapter.defaultQuality);
+      expect(stream.coverUri, Uri.parse('https://cover.invalid/test.jpg'));
+      expect(stream.toString(), isNot(contains('cover.invalid')));
       expect(stream.actualQuality, 'lossless');
       expect(stream.bitrate, 1000000);
       expect(stream.format, isNull);
       expect(stream.resolvedAt, resolvedAt);
       expect(stream.expiresAt, isNull);
+    });
+
+    test('ignores unusable optional resolve covers without failing', () {
+      for (final cover in <Object?>[
+        null,
+        1,
+        'not-an-http-url',
+        'http://cover.invalid/test.jpg',
+      ]) {
+        final body = _resolveBody();
+        final data = Map<String, dynamic>.from(body['data']! as Map);
+        data['picUrl'] = cover;
+        body['data'] = data;
+
+        final stream = adapter.parseResolveResponse(
+          body,
+          expectedRef: ref,
+          resolvedAt: resolvedAt,
+        );
+
+        expect(stream.coverUri, isNull);
+      }
     });
 
     test('rejects an unrequested quality instead of degrading silently', () {

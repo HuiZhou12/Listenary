@@ -97,6 +97,30 @@ void main() {
     );
   });
 
+  test('resolved cover enrichment republishes the active item', () async {
+    harness.queue.replace([
+      RemotePlaybackQueueItem(
+        ref: const PlatformTrackRef(
+          platform: MusicPlatform.netease,
+          trackId: '1',
+        ),
+        title: 'Track 1',
+        artists: const ['Artist 1'],
+        coverUri: Uri.parse('http://cover.invalid/search'),
+      ),
+    ]);
+    harness.gateway.result = RemoteQueuePlaybackResult(
+      coverUri: Uri.parse('https://cover.invalid/resolved'),
+    );
+
+    await harness.session.play(0, requestedQuality: 'lossless');
+
+    expect(
+      harness.activeSession.value.currentItem?.coverUri,
+      Uri.parse('https://cover.invalid/resolved'),
+    );
+  });
+
   test('switch opening preserves the last successful index', () async {
     await harness.session.play(0, requestedQuality: 'lossless');
     harness.backend.emit(PlaybackBackendState.playing);
@@ -286,12 +310,26 @@ final class _Harness {
   }
 }
 
-final class _Gateway implements RemoteQueuePlaybackGateway {
+final class _Gateway implements RemoteQueuePlaybackMetadataGateway {
   Future<void>? nextOpen;
   Object? error;
+  RemoteQueuePlaybackResult result = const RemoteQueuePlaybackResult();
 
   @override
   Future<void> open(
+    PlatformTrackRef ref, {
+    required String requestedQuality,
+    required ChkszCancelToken cancelToken,
+  }) async {
+    await openWithMetadata(
+      ref,
+      requestedQuality: requestedQuality,
+      cancelToken: cancelToken,
+    );
+  }
+
+  @override
+  Future<RemoteQueuePlaybackResult> openWithMetadata(
     PlatformTrackRef ref, {
     required String requestedQuality,
     required ChkszCancelToken cancelToken,
@@ -301,6 +339,7 @@ final class _Gateway implements RemoteQueuePlaybackGateway {
     final pending = nextOpen;
     nextOpen = null;
     if (pending != null) await pending;
+    return result;
   }
 }
 
