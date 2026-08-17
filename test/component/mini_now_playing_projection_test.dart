@@ -5,6 +5,7 @@ import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_source.dart';
+import 'package:pure_music/play_service/remote_playback_timeline.dart';
 
 void main() {
   test('remote metadata ignores the paused local session', () {
@@ -126,6 +127,33 @@ void main() {
     expect(projection.presentation.action, PlaybackControlAction.replay);
     expect(projection.canPrevious, isTrue);
     expect(projection.canNext, isTrue);
+  });
+
+  test('remote timeline text uses projected position and known duration', () {
+    final projection = MiniNowPlayingTimelineTextProjection.fromRemote(
+      RemotePlaybackTimelineSnapshot.normalized(
+        position: const Duration(seconds: 65),
+        duration: const Duration(seconds: 245),
+      ),
+    );
+
+    expect(projection.positionSeconds, 65);
+    expect(projection.durationSeconds, 245);
+    expect(projection.positionText, '01:05');
+    expect(projection.durationText, '04:05');
+  });
+
+  test('remote timeline text keeps unknown duration explicit', () {
+    final projection = MiniNowPlayingTimelineTextProjection.fromRemote(
+      RemotePlaybackTimelineSnapshot.normalized(
+        position: Duration.zero,
+        duration: null,
+      ),
+    );
+
+    expect(projection.positionText, '00:00');
+    expect(projection.durationSeconds, isNull);
+    expect(projection.durationText, '--:--');
   });
 }
 

@@ -9,6 +9,7 @@ import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/play_service/remote_playback_timeline.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/utils.dart';
@@ -58,6 +59,36 @@ MiniNowPlayingMetadataProjection resolveMiniNowPlayingMetadata({
         : '${localArtist ?? ''} - ${localAlbum ?? ''}',
     usesLocalMedia: true,
   );
+}
+
+@immutable
+final class MiniNowPlayingTimelineTextProjection {
+  const MiniNowPlayingTimelineTextProjection({
+    required this.positionSeconds,
+    required this.durationSeconds,
+  });
+
+  factory MiniNowPlayingTimelineTextProjection.fromRemote(
+    RemotePlaybackTimelineSnapshot snapshot,
+  ) => MiniNowPlayingTimelineTextProjection(
+    positionSeconds: snapshot.position?.inSeconds ?? 0,
+    durationSeconds: snapshot.duration?.inSeconds,
+  );
+
+  final int positionSeconds;
+  final int? durationSeconds;
+
+  String get positionText => Duration(
+    seconds: positionSeconds,
+  ).toStringHMMSS().replaceFirst(RegExp(r'^0:'), '');
+
+  String get durationText {
+    final seconds = durationSeconds;
+    if (seconds == null) return '--:--';
+    return Duration(
+      seconds: seconds,
+    ).toStringHMMSS().replaceFirst(RegExp(r'^0:'), '');
+  }
 }
 
 final class MiniNowPlayingControlProjection {
@@ -121,6 +152,13 @@ class MiniNowPlaying extends StatelessWidget {
     return ResponsiveBuilder(
       builder: (context, screenType) {
         final activeSnapshot = context.watch<ActivePlaybackSession>().value;
+        final remoteTimeline = activeSnapshot.source ==
+                ActivePlaybackSessionSource.remote
+            ? context.read<RemotePlaybackTimelineController>()
+            : null;
+        final remoteTimelineAdvancing =
+            activeSnapshot.source == ActivePlaybackSessionSource.remote &&
+            activeSnapshot.state == ActivePlaybackSessionState.playing;
         return Align(
           alignment: Alignment.bottomCenter,
           child: Padding(
@@ -149,11 +187,12 @@ class MiniNowPlaying extends StatelessWidget {
                             constraints.maxWidth,
                             constraints.maxHeight,
                           ),
-                          progressEnabled: miniNowPlayingUsesLocalMedia(
-                            activeSnapshot,
-                          ),
+                          remoteTimeline: remoteTimeline,
+                          remoteTimelineAdvancing: remoteTimelineAdvancing,
                           child: _NowPlayingForeground(
                             activeSnapshot: activeSnapshot,
+                            remoteTimeline: remoteTimeline,
+                            remoteTimelineAdvancing: remoteTimelineAdvancing,
                           ),
                         );
                       },
@@ -170,9 +209,15 @@ class MiniNowPlaying extends StatelessWidget {
 }
 
 class _NowPlayingForeground extends StatefulWidget {
-  const _NowPlayingForeground({required this.activeSnapshot});
+  const _NowPlayingForeground({
+    required this.activeSnapshot,
+    required this.remoteTimeline,
+    required this.remoteTimelineAdvancing,
+  });
 
   final ActivePlaybackSessionSnapshot activeSnapshot;
+  final RemotePlaybackTimelineController? remoteTimeline;
+  final bool remoteTimelineAdvancing;
 
   @override
   State<_NowPlayingForeground> createState() => _NowPlayingForegroundState();
@@ -329,9 +374,12 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                                   color: scheme.onSecondaryContainer,
                                 ),
                               if (!dense) const SizedBox(width: 8.0),
-                              if (!dense && metadata.usesLocalMedia)
+                              if (!dense)
                                 _MiniTimeText(
                                   color: scheme.onSecondaryContainer,
+                                  remoteTimeline: widget.remoteTimeline,
+                                  remoteTimelineAdvancing:
+                                      widget.remoteTimelineAdvancing,
                                 ),
                             ],
                           );
@@ -612,9 +660,15 @@ class _AnimatedPlayPauseIconButtonState
 }
 
 class _MiniTimeText extends StatefulWidget {
-  const _MiniTimeText({required this.color});
+  const _MiniTimeText({
+    required this.color,
+    required this.remoteTimeline,
+    required this.remoteTimelineAdvancing,
+  });
 
   final Color color;
+  final RemotePlaybackTimelineController? remoteTimeline;
+  final bool remoteTimelineAdvancing;
 
   @override
   State<_MiniTimeText> createState() => _MiniTimeTextState();
@@ -638,10 +692,25 @@ class _MiniTimeTextState extends State<_MiniTimeText> {
     _lengthSeconds = playbackService.length.floor();
     playbackService.playerStateNotifier.addListener(_syncTimer);
     playbackService.nowPlayingNotifier.addListener(_onNowPlayingChanged);
+    widget.remoteTimeline?.addListener(_syncTimer);
     _syncTimer();
   }
 
   void _syncTimer() {
+    final remoteTimeline = widget.remoteTimeline;
+    if (remoteTimeline != null) {
+      _syncRemotePosition(remoteTimeline);
+      if (!widget.remoteTimelineAdvancing) {
+        _positionTimer?.cancel();
+        _positionTimer = null;
+        return;
+      }
+      _positionTimer ??= Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => _syncRemotePosition(remoteTimeline),
+      );
+      return;
+    }
     _syncNativePosition();
     final isPlaying =
         playbackService.playerStateNotifier.value == PlayerState.playing;
@@ -657,6 +726,26 @@ class _MiniTimeTextState extends State<_MiniTimeText> {
       } else {
         _emitLocalPosition();
       }
+    });
+  }
+
+  void _syncRemotePosition(RemotePlaybackTimelineController timeline) {
+    final projection = MiniNowPlayingTimelineTextProjection.fromRemote(
+      timeline.projectedSnapshot,
+    );
+    final nextLengthSeconds = projection.durationSeconds ?? -1;
+    if (projection.positionSeconds == _positionSeconds &&
+        nextLengthSeconds == _lengthSeconds) {
+      return;
+    }
+    if (!mounted) {
+      _positionSeconds = projection.positionSeconds;
+      _lengthSeconds = nextLengthSeconds;
+      return;
+    }
+    setState(() {
+      _positionSeconds = projection.positionSeconds;
+      _lengthSeconds = nextLengthSeconds;
     });
   }
 
@@ -694,13 +783,30 @@ class _MiniTimeTextState extends State<_MiniTimeText> {
   }
 
   void _onNowPlayingChanged() {
+    if (widget.remoteTimeline != null) return;
     _syncNativePosition();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MiniTimeText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.remoteTimeline, widget.remoteTimeline)) {
+      oldWidget.remoteTimeline?.removeListener(_syncTimer);
+      widget.remoteTimeline?.addListener(_syncTimer);
+    }
+    if (!identical(oldWidget.remoteTimeline, widget.remoteTimeline) ||
+        oldWidget.remoteTimelineAdvancing != widget.remoteTimelineAdvancing) {
+      _positionTimer?.cancel();
+      _positionTimer = null;
+      _syncTimer();
+    }
   }
 
   @override
   void dispose() {
     playbackService.playerStateNotifier.removeListener(_syncTimer);
     playbackService.nowPlayingNotifier.removeListener(_onNowPlayingChanged);
+    widget.remoteTimeline?.removeListener(_syncTimer);
     _positionTimer?.cancel();
     super.dispose();
   }
@@ -710,9 +816,11 @@ class _MiniTimeTextState extends State<_MiniTimeText> {
     final posText = Duration(
       seconds: _positionSeconds,
     ).toStringHMMSS().replaceFirst(RegExp(r'^0:'), '');
-    final lenText = Duration(
-      seconds: _lengthSeconds,
-    ).toStringHMMSS().replaceFirst(RegExp(r'^0:'), '');
+    final lenText = _lengthSeconds < 0
+        ? '--:--'
+        : Duration(
+            seconds: _lengthSeconds,
+          ).toStringHMMSS().replaceFirst(RegExp(r'^0:'), '');
     return Text(
       '$posText / $lenText',
       style: TextStyle(
