@@ -33,13 +33,17 @@ final class RemotePlaybackQueueItem {
   String get artistDisplay => artists.join('、');
 
   RemotePlaybackQueueItem withCoverUri(Uri value) {
+    return withMetadata(coverUri: value);
+  }
+
+  RemotePlaybackQueueItem withMetadata({Uri? coverUri, Duration? duration}) {
     return RemotePlaybackQueueItem(
       ref: ref,
       title: title,
       artists: artists,
       album: album,
-      coverUri: value,
-      duration: duration,
+      coverUri: coverUri ?? this.coverUri,
+      duration: duration ?? this.duration,
     );
   }
 }
@@ -98,16 +102,43 @@ final class RemotePlaybackQueue
     required PlatformTrackRef expectedRef,
     required Uri coverUri,
   }) {
+    return enrichMetadata(index, expectedRef: expectedRef, coverUri: coverUri);
+  }
+
+  bool enrichDuration(
+    int index, {
+    required PlatformTrackRef expectedRef,
+    required Duration duration,
+  }) {
+    return enrichMetadata(index, expectedRef: expectedRef, duration: duration);
+  }
+
+  bool enrichMetadata(
+    int index, {
+    required PlatformTrackRef expectedRef,
+    Uri? coverUri,
+    Duration? duration,
+  }) {
     final snapshot = value;
     if (index < 0 || index >= snapshot.items.length) return false;
     final item = snapshot.items[index];
-    if (item.ref != expectedRef ||
-        _isRenderableHttpsUri(item.coverUri) ||
-        !_isRenderableHttpsUri(coverUri)) {
-      return false;
-    }
+    if (item.ref != expectedRef) return false;
+    final nextCover =
+        !_isRenderableHttpsUri(item.coverUri) && _isRenderableHttpsUri(coverUri)
+        ? coverUri
+        : null;
+    final nextDuration =
+        item.duration <= Duration.zero &&
+            duration != null &&
+            duration > Duration.zero
+        ? duration
+        : null;
+    if (nextCover == null && nextDuration == null) return false;
     final nextItems = List<RemotePlaybackQueueItem>.of(snapshot.items);
-    nextItems[index] = item.withCoverUri(coverUri);
+    nextItems[index] = item.withMetadata(
+      coverUri: nextCover,
+      duration: nextDuration,
+    );
     value = RemotePlaybackQueueSnapshot(
       items: nextItems,
       currentIndex: snapshot.currentIndex,

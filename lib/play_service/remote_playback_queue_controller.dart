@@ -14,9 +14,10 @@ abstract interface class RemoteQueuePlaybackGateway {
 }
 
 final class RemoteQueuePlaybackResult {
-  const RemoteQueuePlaybackResult({this.coverUri});
+  const RemoteQueuePlaybackResult({this.coverUri, this.duration});
 
   final Uri? coverUri;
+  final Duration? duration;
 }
 
 abstract interface class RemoteQueuePlaybackMetadataGateway
@@ -58,15 +59,29 @@ final class OnlineServiceRemoteQueuePlaybackGateway
     required String requestedQuality,
     required OnlineMusicCancelToken cancelToken,
   }) async {
-    final stream = await RemoteStreamCoordinator(
-      resolver: _service.resolve,
-      backend: _backend,
-    ).resolveAndOpen(
-      ref,
-      requestedQuality: requestedQuality,
-      cancelToken: cancelToken,
+    final stream =
+        await RemoteStreamCoordinator(
+          resolver: _service.resolve,
+          backend: _backend,
+        ).resolveAndOpen(
+          ref,
+          requestedQuality: requestedQuality,
+          cancelToken: cancelToken,
+        );
+    return RemoteQueuePlaybackResult(
+      coverUri: stream.coverUri,
+      duration: _readDuration(),
     );
-    return RemoteQueuePlaybackResult(coverUri: stream.coverUri);
+  }
+
+  Duration? _readDuration() {
+    final backend = _backend;
+    if (backend is! DurationReadablePlaybackBackend) return null;
+    try {
+      return backend.readDuration();
+    } catch (_) {
+      return null;
+    }
   }
 }
 
@@ -111,14 +126,12 @@ final class RemotePlaybackQueueController {
           kind: RemoteStreamPlaybackErrorKind.cancelled,
         );
       }
-      final coverUri = result.coverUri;
-      if (coverUri != null) {
-        _queue.enrichCover(
-          index,
-          expectedRef: item.ref,
-          coverUri: coverUri,
-        );
-      }
+      _queue.enrichMetadata(
+        index,
+        expectedRef: item.ref,
+        coverUri: result.coverUri,
+        duration: result.duration,
+      );
     } finally {
       if (identical(_activeToken, token)) {
         _activeToken = null;

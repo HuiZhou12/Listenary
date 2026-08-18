@@ -13,6 +13,8 @@ abstract interface class BassUrlPlaybackDriver {
 
   double? readPositionSeconds();
 
+  double? readDurationSeconds();
+
   void setVolume(double volume);
 
   Future<void> open(Uri uri);
@@ -43,6 +45,9 @@ final class BassPlayerUrlPlaybackDriver implements BassUrlPlaybackDriver {
 
   @override
   double? readPositionSeconds() => _player?.position;
+
+  @override
+  double? readDurationSeconds() => _player?.knownLength;
 
   @override
   void setVolume(double volume) {
@@ -81,6 +86,7 @@ final class BassUrlPlaybackBackend
     implements
         ControllablePlaybackBackend,
         PositionReadablePlaybackBackend,
+        DurationReadablePlaybackBackend,
         SpectrumReadablePlaybackBackend,
         VolumeControllablePlaybackBackend {
   BassUrlPlaybackBackend({BassUrlPlaybackDriver? driver})
@@ -208,7 +214,30 @@ final class BassUrlPlaybackBackend
     }
   }
 
+  @override
+  Duration? readDuration() {
+    if (_disposed || !_canReadDuration) return null;
+    try {
+      final seconds = _driver.readDurationSeconds();
+      if (seconds == null || !seconds.isFinite || seconds <= 0) return null;
+      return Duration(
+        microseconds: (seconds * Duration.microsecondsPerSecond).round(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   bool get _canReadPosition => switch (_lastState) {
+    PlaybackBackendState.playing ||
+    PlaybackBackendState.paused ||
+    PlaybackBackendState.stalled ||
+    PlaybackBackendState.completed => true,
+    _ => false,
+  };
+
+  bool get _canReadDuration => switch (_lastState) {
+    PlaybackBackendState.opening ||
     PlaybackBackendState.playing ||
     PlaybackBackendState.paused ||
     PlaybackBackendState.stalled ||

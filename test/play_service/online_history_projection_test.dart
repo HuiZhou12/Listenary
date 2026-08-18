@@ -58,6 +58,39 @@ void main() {
     },
   );
 
+  test(
+    'late stream duration updates history and enables play counting',
+    () async {
+      harness.queue.replace([_item('1', 0), _item('2', 90)]);
+      await harness.session.play(0, requestedQuality: 'standard');
+      await harness.emitPlaying();
+
+      expect(
+        harness.repository.recentHistory().single.track.duration,
+        Duration.zero,
+      );
+      expect(
+        harness.queue.enrichDuration(
+          0,
+          expectedRef: harness.queue.value.currentItem!.ref,
+          duration: const Duration(seconds: 10),
+        ),
+        isTrue,
+      );
+      await pumpEventQueue();
+
+      expect(
+        harness.repository.recentHistory().single.track.duration,
+        const Duration(seconds: 10),
+      );
+      for (var seconds = 1; seconds <= 9; seconds++) {
+        harness.tick(Duration(seconds: seconds));
+      }
+      await pumpEventQueue();
+      expect(harness.repository.recentHistory().single.playCount, 1);
+    },
+  );
+
   test('does not count a seek jump as accumulated listening', () async {
     await harness.session.play(0, requestedQuality: 'standard');
     await harness.emitPlaying();

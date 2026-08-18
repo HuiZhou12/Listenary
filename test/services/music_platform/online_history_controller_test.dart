@@ -64,6 +64,16 @@ void main() {
     await pumpEventQueue();
     expect(controller.snapshot.totalPlayCount, 1);
 
+    await controller.updateTrackMetadata(
+      _track('1', duration: const Duration(minutes: 4)),
+      lastQuality: 'lossless',
+    );
+    await pumpEventQueue();
+    expect(
+      controller.snapshot.recent.single.track.duration,
+      const Duration(minutes: 4),
+    );
+
     await controller.clearHistory();
     expect(controller.snapshot.status, OnlineHistoryLoadStatus.ready);
     expect(controller.snapshot.hasData, isFalse);
@@ -88,12 +98,15 @@ void main() {
 PlatformTrackRef _ref(String id) =>
     PlatformTrackRef(platform: MusicPlatform.netease, trackId: id);
 
-MusicTrack _track(String id, {List<String> artists = const ['Artist']}) =>
-    MusicTrack(
-      ref: _ref(id),
-      title: 'Track $id',
-      artists: artists,
-      album: 'Album',
-      duration: const Duration(minutes: 3),
-      availability: TrackAvailability.playable,
-    );
+MusicTrack _track(
+  String id, {
+  List<String> artists = const ['Artist'],
+  Duration duration = const Duration(minutes: 3),
+}) => MusicTrack(
+  ref: _ref(id),
+  title: 'Track $id',
+  artists: artists,
+  album: 'Album',
+  duration: duration,
+  availability: TrackAvailability.playable,
+);

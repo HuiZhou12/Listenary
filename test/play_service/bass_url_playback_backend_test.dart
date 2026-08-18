@@ -142,6 +142,28 @@ void main() {
     expect(driver.positionReadCount, 4);
   });
 
+  test('reads the opened remote stream duration safely', () async {
+    expect(backend.readDuration(), isNull);
+    expect(driver.durationReadCount, 0);
+
+    driver.state = PlayerState.playing;
+    driver.durationSeconds = 185.25;
+    await backend.open(_remoteSource());
+
+    expect(backend.readDuration(), const Duration(milliseconds: 185250));
+    expect(driver.durationReadCount, 1);
+
+    for (final value in [double.nan, double.infinity, 0.0, -1.0]) {
+      driver.durationSeconds = value;
+      expect(backend.readDuration(), isNull);
+    }
+    driver.durationError = StateError('native duration failed');
+    expect(backend.readDuration(), isNull);
+
+    await backend.stop();
+    expect(backend.readDuration(), isNull);
+  });
+
   test(
     'position read degrades invalid values and driver errors to unknown',
     () async {
@@ -279,6 +301,9 @@ final class _FakeBassUrlPlaybackDriver implements BassUrlPlaybackDriver {
   double? positionSeconds;
   Object? positionError;
   int positionReadCount = 0;
+  double? durationSeconds;
+  Object? durationError;
+  int durationReadCount = 0;
   final volumeValues = <double>[];
 
   @override
@@ -293,6 +318,14 @@ final class _FakeBassUrlPlaybackDriver implements BassUrlPlaybackDriver {
     final error = positionError;
     if (error != null) throw error;
     return positionSeconds;
+  }
+
+  @override
+  double? readDurationSeconds() {
+    durationReadCount++;
+    final error = durationError;
+    if (error != null) throw error;
+    return durationSeconds;
   }
 
   @override

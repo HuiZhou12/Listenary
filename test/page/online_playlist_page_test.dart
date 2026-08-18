@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/database.dart';
+import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/page/online_playlist_detail_page.dart';
 import 'package:pure_music/page/online_playlists_page.dart';
+import 'package:pure_music/page/playlists_page.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:pure_music/services/music_platform/online_library/online_playlist_controller.dart';
@@ -21,7 +26,7 @@ void main() {
     initializeAppDatabase(database);
     repository = OnlineLibraryRepository(database);
     controller = OnlinePlaylistController(
-      repository: Future.value(repository),
+      repository: SynchronousFuture(repository),
       service: _FakeOnlineMusicService(),
     );
   });
@@ -51,19 +56,92 @@ void main() {
   });
 
   testWidgets(
-    'detail page renders the stored track snapshot without edit tools',
+    'detail page renders cover, creator and playback actions without errors',
     (tester) async {
       final saved = repository.replaceSubscriptionSnapshot(_playlist());
+      expect(repository.readSubscriptionSnapshot(saved.localId), isNotNull);
+      await controller.loadSubscriptions();
 
       await _pump(
         tester,
         controller,
         OnlinePlaylistDetailPage(localId: saved.localId),
       );
+      await _pumpUntilFound(tester, find.byType(RemoteMediaCover));
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Remote Playlist'), findsOneWidget);
+      expect(find.text('Remote Creator'), findsOneWidget);
+      expect(find.text('1 首歌曲 · 只读订阅'), findsOneWidget);
+      expect(find.text('播放全部'), findsOneWidget);
+      expect(find.byTooltip('随机播放'), findsOneWidget);
       expect(find.byTooltip('刷新'), findsOneWidget);
       expect(find.byTooltip('编辑'), findsNothing);
+      final cover = tester
+          .widgetList<RemoteMediaCover>(find.byType(RemoteMediaCover))
+          .singleWhere((widget) => widget.coverUri == _playlistCoverUri);
+      expect(cover.coverUri, _playlistCoverUri);
     },
   );
+
+  testWidgets('unified playlist entry opens the online detail page', (
+    tester,
+  ) async {
+    repository.replaceSubscriptionSnapshot(_playlist());
+    await controller.loadSubscriptions();
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final router = GoRouter(
+      initialLocation: app_paths.PLAYLISTS_PAGE,
+      routes: [
+        GoRoute(
+          path: app_paths.PLAYLISTS_PAGE,
+          builder: (context, state) => const PlaylistsPage(),
+        ),
+        GoRoute(
+          path: app_paths.ONLINE_PLAYLIST_DETAIL_PAGE,
+          builder: (context, state) =>
+              OnlinePlaylistDetailPage(localId: state.extra! as int),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<OnlinePlaylistController>.value(
+        value: controller,
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await _pumpUntilFound(tester, find.text('Remote Playlist'));
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Remote Playlist'));
+    await _pumpUntilFound(tester, find.text('Remote Creator'));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byType(OnlinePlaylistDetailPage), findsOneWidget);
+    expect(find.text('Remote Creator'), findsOneWidget);
+    expect(find.text('播放全部'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('detail header remains valid at compact width', (tester) async {
+    final saved = repository.replaceSubscriptionSnapshot(_playlist());
+    await controller.loadSubscriptions();
+    await tester.binding.setSurfaceSize(const Size(420, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await _pump(
+      tester,
+      controller,
+      OnlinePlaylistDetailPage(localId: saved.localId),
+    );
+    await _pumpUntilFound(tester, find.byType(RemoteMediaCover));
+
+    expect(find.text('Remote Playlist'), findsOneWidget);
+    expect(find.byTooltip('随机播放'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Future<void> _pump(
@@ -76,6 +154,22 @@ Future<void> _pump(
       value: controller,
       child: MaterialApp(home: Scaffold(body: child)),
     ),
+  );
+}
+
+Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
+  for (var attempt = 0; attempt < 20; attempt++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (finder.evaluate().isNotEmpty) return;
+  }
+  final visibleText = tester
+      .widgetList<Text>(find.byType(Text))
+      .map((widget) => widget.data)
+      .whereType<String>()
+      .toList(growable: false);
+  throw TestFailure(
+    'Timed out waiting for ${finder.describeMatch(Plurality.one)}; '
+    'visible text: $visibleText',
   );
 }
 
@@ -117,10 +211,13 @@ final class _FakeOnlineMusicService implements OnlineMusicService {
   void dispose() {}
 }
 
+final _playlistCoverUri = Uri.parse('https://cover.invalid/playlist.jpg');
+
 RemotePlaylist _playlist() => RemotePlaylist(
   platform: MusicPlatform.netease,
   id: '500',
   name: 'Remote Playlist',
+  coverUri: _playlistCoverUri,
   creator: 'Remote Creator',
   trackCount: 1,
   tracks: [

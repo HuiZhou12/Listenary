@@ -73,6 +73,11 @@ abstract interface class PositionReadablePlaybackBackend
   Duration? readPosition();
 }
 
+abstract interface class DurationReadablePlaybackBackend
+    implements PlaybackBackend {
+  Duration? readDuration();
+}
+
 abstract interface class SpectrumReadablePlaybackBackend
     implements PlaybackBackend {
   Stream<Float32List> get spectrumStream;

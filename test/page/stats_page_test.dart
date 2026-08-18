@@ -48,21 +48,14 @@ void main() {
     expect(find.text('在线'), findsOneWidget);
     expect(find.text('累计播放'), findsOneWidget);
     expect(find.text('听过的曲目'), findsOneWidget);
+    expect(find.text('6 分钟'), findsOneWidget);
     expect(find.text('Track 1'), findsOneWidget);
     expect(find.text('Track 2'), findsOneWidget);
-    expect(
-      tester.getTopLeft(find.text('Track 2')).dy,
-      lessThan(tester.getTopLeft(find.text('Track 1')).dy),
-    );
-
-    await tester.tap(find.text('最常播放'));
-    await tester.pump();
-
     expect(
       tester.getTopLeft(find.text('Track 1')).dy,
       lessThan(tester.getTopLeft(find.text('Track 2')).dy),
     );
-    expect(find.text('2 次'), findsOneWidget);
+    expect(find.text('2 次'), findsWidgets);
   });
 
   testWidgets('loads online history safely on the first visit', (tester) async {

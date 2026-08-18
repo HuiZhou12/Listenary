@@ -30,6 +30,7 @@ void main() {
     gateway.results.add(
       RemoteQueuePlaybackResult(
         coverUri: Uri.parse('https://cover.invalid/resolved'),
+        duration: const Duration(minutes: 3),
       ),
     );
 
@@ -47,6 +48,20 @@ void main() {
       queue.value.currentItem?.coverUri,
       Uri.parse('https://cover.invalid/resolved'),
     );
+    expect(queue.value.currentItem?.duration, const Duration(minutes: 3));
+  });
+
+  test('keeps an existing known queue duration', () async {
+    queue.replace([
+      _item('1', duration: const Duration(minutes: 4)),
+    ], currentIndex: 0);
+    gateway.results.add(
+      const RemoteQueuePlaybackResult(duration: Duration(minutes: 3)),
+    );
+
+    await controller.play(0, requestedQuality: 'lossless');
+
+    expect(queue.value.currentItem?.duration, const Duration(minutes: 4));
   });
 
   test('keeps an existing HTTPS search cover', () async {
@@ -189,12 +204,17 @@ void main() {
   });
 }
 
-RemotePlaybackQueueItem _item(String trackId, {Uri? coverUri}) {
+RemotePlaybackQueueItem _item(
+  String trackId, {
+  Uri? coverUri,
+  Duration duration = Duration.zero,
+}) {
   return RemotePlaybackQueueItem(
     ref: PlatformTrackRef(platform: MusicPlatform.netease, trackId: trackId),
     title: 'Track $trackId',
     artists: const ['Artist'],
     coverUri: coverUri,
+    duration: duration,
   );
 }
 

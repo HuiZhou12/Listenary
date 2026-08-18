@@ -130,6 +130,40 @@ void main() {
     queue.dispose();
   });
 
+  test('enriches only a matching item with missing duration', () {
+    final queue = RemotePlaybackQueue();
+    final ref = _item('1').ref;
+    queue.replace([_item('1')], currentIndex: 0);
+
+    expect(
+      queue.enrichDuration(
+        0,
+        expectedRef: ref,
+        duration: const Duration(minutes: 3),
+      ),
+      isTrue,
+    );
+    expect(queue.value.currentItem?.duration, const Duration(minutes: 3));
+    expect(
+      queue.enrichDuration(
+        0,
+        expectedRef: ref,
+        duration: const Duration(minutes: 4),
+      ),
+      isFalse,
+    );
+    expect(
+      queue.enrichDuration(
+        0,
+        expectedRef: _item('2').ref,
+        duration: const Duration(minutes: 4),
+      ),
+      isFalse,
+    );
+    expect(queue.value.currentItem?.duration, const Duration(minutes: 3));
+    queue.dispose();
+  });
+
   test('replace rejects empty queues and invalid indexes', () {
     final queue = RemotePlaybackQueue();
 

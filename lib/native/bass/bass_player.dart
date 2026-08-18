@@ -199,26 +199,22 @@ class BassPlayer {
   }
 
   /// audio's length in seconds
-  double get length {
-    if (_fstream == null) return 1.0;
+  double get length => knownLength ?? 1.0;
+
+  double? get knownLength {
+    if (_fstream == null) return null;
     final cached = _cachedLengthSeconds;
     if (cached != null && cached > 0) return cached;
-    return _refreshCachedLength();
-  }
-
-  double _refreshCachedLength() {
-    if (_fstream == null) {
-      _cachedLengthSeconds = null;
-      return 1.0;
-    }
     final len = _bass.BASS_ChannelBytes2Seconds(
       _fstream!,
       _bass.BASS_ChannelGetLength(_fstream!, bass.BASS_POS_BYTE),
     );
-    final value = len > 0 ? len : 1.0;
-    _cachedLengthSeconds = value;
-    return value;
+    if (!len.isFinite || len <= 0) return null;
+    _cachedLengthSeconds = len;
+    return len;
   }
+
+  double _refreshCachedLength() => knownLength ?? 1.0;
 
   /// current position in seconds
   double get position => _fstream == null ? 0.0 : _getPosition();

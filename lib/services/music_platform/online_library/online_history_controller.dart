@@ -110,6 +110,29 @@ final class OnlineHistoryController extends ChangeNotifier {
     return _incrementPlayCountAfterOpen(ref);
   }
 
+  Future<void> updateTrackMetadata(MusicTrack track, {String? lastQuality}) {
+    final repository = _repository;
+    if (repository != null) {
+      if (!_disposed) {
+        repository.upsertTrack(track, lastQuality: lastQuality);
+        _markChanged();
+      }
+      return Future.value();
+    }
+    return _updateTrackMetadataAfterOpen(track, lastQuality: lastQuality);
+  }
+
+  Future<void> _updateTrackMetadataAfterOpen(
+    MusicTrack track, {
+    required String? lastQuality,
+  }) async {
+    if (_disposed) return;
+    final repository = await _resolveRepository();
+    if (_disposed) return;
+    repository.upsertTrack(track, lastQuality: lastQuality);
+    _markChanged();
+  }
+
   Future<bool> _incrementPlayCountAfterOpen(PlatformTrackRef ref) async {
     if (_disposed) return false;
     final repository = await _resolveRepository();

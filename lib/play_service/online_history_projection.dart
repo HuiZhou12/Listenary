@@ -8,7 +8,7 @@ import 'package:pure_music/play_service/remote_playback_timeline.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_library/online_history_controller.dart';
 
-enum OnlineHistoryProjectionFailure { playbackStarted, playCount }
+enum OnlineHistoryProjectionFailure { playbackStarted, metadata, playCount }
 
 final class OnlineHistoryProjectionBinding {
   OnlineHistoryProjectionBinding({
@@ -45,6 +45,9 @@ final class OnlineHistoryProjectionBinding {
   Duration _accumulated = Duration.zero;
   bool _startAttempted = false;
   bool _historyRecorded = false;
+  Duration _persistedDuration = Duration.zero;
+  Uri? _persistedCoverUri;
+  bool _metadataUpdateInFlight = false;
   bool _countAttempted = false;
   bool _disposed = false;
 
@@ -67,6 +70,7 @@ final class OnlineHistoryProjectionBinding {
       _beginSession(revision, item);
     } else {
       _item = item;
+      _persistEnrichedMetadataIfNeeded();
     }
 
     if (_controlState.state == PlaybackBackendState.playing) {
@@ -83,6 +87,9 @@ final class OnlineHistoryProjectionBinding {
     _accumulated = Duration.zero;
     _startAttempted = false;
     _historyRecorded = false;
+    _persistedDuration = Duration.zero;
+    _persistedCoverUri = null;
+    _metadataUpdateInFlight = false;
     _countAttempted = false;
   }
 
@@ -101,23 +108,55 @@ final class OnlineHistoryProjectionBinding {
   ) async {
     try {
       await _historyController.recordPlaybackStarted(
-        MusicTrack(
-          ref: item.ref,
-          title: item.title,
-          artists: item.artists,
-          album: item.album,
-          coverUri: item.coverUri,
-          duration: item.duration,
-          availability: TrackAvailability.playable,
-        ),
+        _trackFromQueueItem(item),
         lastQuality: _sessionController.requestedQuality,
       );
       if (!_disposed && _revision == revision && _item?.ref == item.ref) {
         _historyRecorded = true;
+        _persistedDuration = item.duration;
+        _persistedCoverUri = item.coverUri;
+        _persistEnrichedMetadataIfNeeded();
       }
     } catch (_) {
       if (!_disposed) {
         _onFailure(OnlineHistoryProjectionFailure.playbackStarted);
+      }
+    }
+  }
+
+  void _persistEnrichedMetadataIfNeeded() {
+    if (!_historyRecorded || _metadataUpdateInFlight) return;
+    final item = _item;
+    final revision = _revision;
+    if (item == null || revision == null) return;
+    final hasNewDuration = item.duration > _persistedDuration;
+    final hasNewCover =
+        !_isRenderableHttpsUri(_persistedCoverUri) &&
+        _isRenderableHttpsUri(item.coverUri);
+    if (!hasNewDuration && !hasNewCover) return;
+    _metadataUpdateInFlight = true;
+    _persistedDuration = item.duration;
+    _persistedCoverUri = item.coverUri;
+    unawaited(_persistEnrichedMetadata(revision, item));
+  }
+
+  Future<void> _persistEnrichedMetadata(
+    int revision,
+    RemotePlaybackQueueItem item,
+  ) async {
+    try {
+      await _historyController.updateTrackMetadata(
+        _trackFromQueueItem(item),
+        lastQuality: _sessionController.requestedQuality,
+      );
+    } catch (_) {
+      if (!_disposed && _revision == revision && _item?.ref == item.ref) {
+        _onFailure(OnlineHistoryProjectionFailure.metadata);
+      }
+    } finally {
+      if (!_disposed && _revision == revision && _item?.ref == item.ref) {
+        _metadataUpdateInFlight = false;
+        _persistEnrichedMetadataIfNeeded();
       }
     }
   }
@@ -172,6 +211,9 @@ final class OnlineHistoryProjectionBinding {
     _accumulated = Duration.zero;
     _startAttempted = false;
     _historyRecorded = false;
+    _persistedDuration = Duration.zero;
+    _persistedCoverUri = null;
+    _metadataUpdateInFlight = false;
     _countAttempted = false;
   }
 
@@ -184,6 +226,19 @@ final class OnlineHistoryProjectionBinding {
     _reset();
   }
 }
+
+MusicTrack _trackFromQueueItem(RemotePlaybackQueueItem item) => MusicTrack(
+  ref: item.ref,
+  title: item.title,
+  artists: item.artists,
+  album: item.album,
+  coverUri: item.coverUri,
+  duration: item.duration,
+  availability: TrackAvailability.playable,
+);
+
+bool _isRenderableHttpsUri(Uri? uri) =>
+    uri != null && uri.scheme == 'https' && uri.host.isNotEmpty;
 
 Duration _listenThreshold(Duration duration) {
   if (duration <= Duration.zero) return Duration.zero;
