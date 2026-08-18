@@ -46,7 +46,7 @@ if ($currentAppDir.Equals($previousAppDir, [System.StringComparison]::OrdinalIgn
     throw "The previous and current package directories are the same."
 }
 if ((Test-ProcessFromDirectory $currentAppDir) -or (Test-ProcessFromDirectory $previousAppDir)) {
-    throw "Close Pure Music in both package directories before migrating data."
+    throw "Close Listenary in both package directories before migrating data."
 }
 
 $previousDataDir = Join-Path $previousAppDir "data"

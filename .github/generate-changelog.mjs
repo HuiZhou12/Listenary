@@ -4,10 +4,10 @@
  *
  * 环境变量:
  *   GITHUB_TOKEN / GH_TOKEN  — 可选，提高 API 限额
- *   GITHUB_REPOSITORY        — owner/repo，默认 qingyueyin/Pure-music
- *   MIN_TAG                  — 收录的最低版本，默认 v2.0.0
+ *   GITHUB_REPOSITORY        — owner/repo，默认 HuiZhou12/Listenary
+ *   MIN_TAG                  — 收录的最低版本，默认 v3.0.0
  */
-import { writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -20,12 +20,8 @@ const latestReleasePath = join(
   'page/docs/public/latest-release.json',
 )
 
-const repo = process.env.GITHUB_REPOSITORY || 'qingyueyin/Pure-music'
-const giteeRepo =
-  process.env.GITEE_REPOSITORY ||
-  process.env.GITEE_REPO ||
-  'qingyueyin/Pure-music'
-const minTag = (process.env.MIN_TAG || 'v2.0.0').trim()
+const repo = process.env.GITHUB_REPOSITORY || 'HuiZhou12/Listenary'
+const minTag = (process.env.MIN_TAG || 'v3.0.0').trim()
 const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || ''
 
 function parseVersion(tag) {
@@ -114,7 +110,22 @@ function extraNote(tag, name) {
   return notes.length ? `（${notes.join(' · ')}）` : ''
 }
 
-function buildChangelogMarkdown(releases) {
+const legacyStart = '<!-- legacy-history:start -->'
+const legacyEnd = '<!-- legacy-history:end -->'
+
+function readLegacyHistory() {
+  try {
+    const current = readFileSync(changelogPath, 'utf8')
+    const start = current.indexOf(legacyStart)
+    const end = current.indexOf(legacyEnd)
+    if (start < 0 || end <= start) return ''
+    return current.slice(start + legacyStart.length, end).trim()
+  } catch {
+    return ''
+  }
+}
+
+function buildChangelogMarkdown(releases, legacyHistory) {
   const blocks = releases.map((r) => {
     const ver = displayVersion(r.tag_name, r.name)
     const note = extraNote(r.tag_name, r.name)
@@ -141,12 +152,17 @@ outline: false
 
 从 **${minTag.replace(/^v/i, '')}** 起。每个版本默认折叠，点版本号展开。最新：**${latestLabel}**。
 
-完整发布页：[GitHub](https://github.com/${repo}/releases) · [Gitee 镜像](https://gitee.com/${giteeRepo})（同步常滞后）
+完整发布页：[GitHub](https://github.com/${repo}/releases)
 
 ${blocks.join('\n')}
+${
+  legacyHistory
+    ? `## 迁移前历史\n\n${legacyStart}\n${legacyHistory}\n${legacyEnd}\n`
+    : ''
+}
 ---
 
-更早版本见 [GitHub Releases](https://github.com/${repo}/releases)。下载见 [下载页](/download)。
+Listenary 独立发行版本见 [GitHub Releases](https://github.com/${repo}/releases)。下载见 [下载页](/download)。
 `
 }
 
@@ -205,7 +221,6 @@ function writeVersionJson(release) {
     body:
       (release.body && String(release.body).trim()) ||
       '## 更新内容\n\n请前往 GitHub Releases 查看完整更新日志',
-    // 应用内「获取更新」优先打开 GitHub；访问慢时可改用文档站上的 Gitee 镜像说明
     html_url: githubUrl,
   }
   mkdirSync(dirname(versionJsonPath), { recursive: true })
@@ -213,7 +228,7 @@ function writeVersionJson(release) {
   console.log(`wrote ${versionJsonPath} -> ${payload.tag_name}`)
 }
 
-/** 文档站下载卡片用：最新版号 + GitHub / Gitee 入口 */
+/** 文档站下载卡片用：最新版号 + GitHub 入口 */
 function writeLatestReleaseJson(release) {
   if (!release) return
   const ver = displayVersion(release.tag_name, release.name)
@@ -225,10 +240,6 @@ function writeLatestReleaseJson(release) {
     github_release_url:
       release.html_url ||
       `https://github.com/${repo}/releases/tag/${release.tag_name}`,
-    gitee_repo_url: `https://gitee.com/${giteeRepo}`,
-    gitee_releases_url: `https://gitee.com/${giteeRepo}/releases`,
-    // Gitee 镜像同步常滞后，前端可展示提示
-    gitee_may_lag: true,
     generated_at: new Date().toISOString(),
   }
   mkdirSync(dirname(latestReleasePath), { recursive: true })
@@ -241,14 +252,14 @@ function writeLatestReleaseJson(release) {
 }
 
 async function main() {
-  console.log(`repo=${repo} gitee=${giteeRepo} minTag=${minTag}`)
+  console.log(`repo=${repo} minTag=${minTag}`)
   const raw = await fetchAllReleases()
   const releases = pickReleases(raw)
   if (releases.length === 0) {
     throw new Error(`No releases >= ${minTag}`)
   }
 
-  const md = buildChangelogMarkdown(releases)
+  const md = buildChangelogMarkdown(releases, readLegacyHistory())
   mkdirSync(dirname(changelogPath), { recursive: true })
   writeFileSync(changelogPath, md, 'utf8')
   console.log(`wrote ${changelogPath} (${releases.length} versions)`)

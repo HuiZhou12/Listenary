@@ -222,7 +222,7 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
     if (parts.length == 2 && parts[0].isNotEmpty && parts[1].isNotEmpty) {
       return (parts[0], parts[1]);
     }
-    return ('qingyueyin', 'Pure-music');
+    return ('HuiZhou12', 'Listenary');
   }
 
   Future<void> _openIssueLink() async {

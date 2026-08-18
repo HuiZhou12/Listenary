@@ -44,7 +44,7 @@ void main() {
       localArtist: null,
     );
 
-    expect(metadata.title, 'Pure Music');
+    expect(metadata.title, 'Listenary');
     expect(metadata.artist, 'Enjoy Music');
     expect(metadata.coverUri, isNull);
   });

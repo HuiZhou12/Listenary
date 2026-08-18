@@ -90,7 +90,7 @@ List<_Word> _parseWords(
 }
 
 // ──────────────────────────────────────────────
-// 构建 Pure Music 的 SyncLyricLine
+// 构建 Listenary 的 SyncLyricLine
 // ──────────────────────────────────────────────
 SyncLyricLine _buildLine(
   Duration lineStart,
@@ -110,10 +110,10 @@ SyncLyricLine _buildLine(
 }
 
 // ──────────────────────────────────────────────
-// 🎯 主入口：解析 KaraOK 格式文本 → Pure Music Lyric
+// 主入口：解析 KaraOK 格式文本为 Listenary Lyric
 // ──────────────────────────────────────────────
 
-/// 解析 YRC/QRC/KRC 格式歌词文本，返回 Pure Music 的 Lyric 对象。
+/// 解析 YRC/QRC/KRC 格式歌词文本，返回 Listenary 的 Lyric 对象。
 ///
 /// [ext] 扩展名（.yrc / .qrc / .krc）
 /// [content] 已解密/解码的歌词文本

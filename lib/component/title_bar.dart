@@ -70,7 +70,7 @@ class _TitleBar_Small extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8.0),
                       child: Text(
-                        'Pure Music',
+                        'Listenary',
                         style: TextStyle(
                           color: scheme.onSurface,
                           fontSize: AppType.subtitle,
@@ -121,7 +121,7 @@ class _TitleBar_Medium extends StatelessWidget {
                   child: Row(
                     children: [
                       Text(
-                        'Pure Music',
+                        'Listenary',
                         style: TextStyle(
                           color: scheme.onSurface,
                           fontSize: AppType.subtitle,
@@ -193,7 +193,7 @@ class _TitleBar_Large extends StatelessWidget {
                               ),
                               const SizedBox(width: 8.0),
                               Text(
-                                'Pure Music',
+                                'Listenary',
                                 style: TextStyle(
                                   color: scheme.onSurface,
                                   fontSize: AppType.subtitle,

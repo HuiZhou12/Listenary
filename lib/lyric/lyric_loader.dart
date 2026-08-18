@@ -246,7 +246,7 @@ Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
 }
 
 // ──────────────────────────────────────────────
-// 将外挂文件解析为 Pure Music 的 Lyric 类型
+// 将外挂文件解析为 Listenary 的 Lyric 类型
 // ──────────────────────────────────────────────
 Lyric? _parseExternalToPureLyric(
   _ExternalLyricResult result, {
@@ -275,7 +275,7 @@ Lyric? _parseExternalToPureLyric(
 }
 
 // ──────────────────────────────────────────────
-// 将 Rust 内嵌歌词解析为 Pure Music 的 Lyric 类型
+// 将 Rust 内嵌歌词解析为 Listenary 的 Lyric 类型
 // ──────────────────────────────────────────────
 @visibleForTesting
 bool isVttLyricText(String text) {

@@ -30,7 +30,7 @@ void main() {
       localAlbum: 'Old local album',
     );
 
-    expect(projection.title, 'Pure Music');
+    expect(projection.title, 'Listenary');
     expect(projection.subtitle, '享受音乐');
     expect(projection.usesLocalMedia, isFalse);
   });

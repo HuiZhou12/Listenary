@@ -19,15 +19,15 @@ Windows 7 / 8 等更旧系统**不在支持范围**。本软件基于 Flutter �
 
 | 形态 | 适合谁 | 程序位置 | 数据位置 |
 |------|--------|----------|----------|
-| 安装版 | 固定本机使用，需要开始菜单 / 可选桌面快捷方式 | 默认 `%LOCALAPPDATA%\Programs\Pure Music` | `%LOCALAPPDATA%\pure_music` |
+| 安装版 | 固定本机使用，需要开始菜单 / 可选桌面快捷方式 | 新安装默认 `%LOCALAPPDATA%\Programs\Listenary` | `%LOCALAPPDATA%\pure_music` |
 | 便携版 | U 盘、绿色部署、整目录带走 | 解压目录内 `app\` | 程序旁 `data/` |
 
 两者功能一致。从 [下载页](/download) 获取对应文件：安装版带 `installer`，便携版带 `portable`。不要下载 Source code 源码归档。
 
-优先用 **GitHub Releases**。访问慢可到 [Gitee](https://gitee.com/qingyueyin/Pure-music) 镜像，但那边自动同步往往很慢，**版本可能暂时对不齐**，以 GitHub / 本站更新日志为准更稳妥。
+安装包只通过 **GitHub Releases** 发布，当前没有维护其他镜像。
 
 ::: tip 程序目录 ≠ 数据目录
-安装版可执行文件在 `Programs\Pure Music`，设置与曲库在 `pure_music`。备份用户数据时拷贝数据目录即可，不必备份整个安装目录。
+新安装的可执行文件在 `Programs\Listenary`，设置与曲库仍在 `pure_music`。从旧版本升级时，安装目录可能继续保留原名称。备份用户数据时拷贝数据目录即可，不必备份整个安装目录。
 :::
 
 ## 安装版步骤
@@ -37,7 +37,7 @@ Windows 7 / 8 等更旧系统**不在支持范围**。本软件基于 Flutter �
     <div class="pm-step-num">1</div>
     <div class="pm-step-body">
       <h3>运行安装程序</h3>
-      <p>下载名称中带 <code>installer</code> 的 <code>.exe</code> 并运行。默认安装到当前用户目录（<code>%LOCALAPPDATA%\Programs\Pure Music</code>），无需管理员权限。桌面快捷方式默认不勾选，可在向导任务页勾选。</p>
+      <p>下载名称中带 <code>installer</code> 的 <code>.exe</code> 并运行。新安装默认位于当前用户目录（<code>%LOCALAPPDATA%\Programs\Listenary</code>），无需管理员权限。桌面快捷方式默认不勾选，可在向导任务页勾选。</p>
     </div>
   </div>
   <div class="pm-step">
@@ -84,7 +84,7 @@ Windows 7 / 8 等更旧系统**不在支持范围**。本软件基于 Flutter �
 
 | 形态 | 路径 |
 |------|------|
-| 安装版 · 程序 | `%LOCALAPPDATA%\Programs\Pure Music` |
+| 安装版 · 程序 | `%LOCALAPPDATA%\Programs\Listenary`（旧安装可能保留原目录） |
 | 安装版 · 数据 | `%LOCALAPPDATA%\pure_music`（通常为 `C:\Users\<用户>\AppData\Local\pure_music`） |
 | 便携版 | 程序旁 `data/`（配置、曲库、歌单与缓存） |
 
@@ -118,14 +118,14 @@ Windows 7 / 8 等更旧系统**不在支持范围**。本软件基于 Flutter �
 
 ### 安装版
 
-1. 完全退出 Pure Music
-2. 在 Windows「已安装的应用」或「控制面板 → 程序和功能」中卸载 Pure Music  
+1. 完全退出 Listenary
+2. 在 Windows「已安装的应用」或「控制面板 → 程序和功能」中卸载 Listenary
    （也可运行安装目录下的卸载程序）
 3. 卸载结束时会询问是否**同时删除用户数据**（设置、曲库索引、歌单、歌词来源与缓存）  
    - 选「是」：删除 `%LOCALAPPDATA%\pure_music`  
    - 选「否」（默认倾向）：保留数据，便于以后重装恢复
 
-程序文件在 `%LOCALAPPDATA%\Programs\Pure Music`，用户数据在 `%LOCALAPPDATA%\pure_music`，二者分开。
+新安装的程序文件在 `%LOCALAPPDATA%\Programs\Listenary`，用户数据在 `%LOCALAPPDATA%\pure_music`，二者分开。
 
 ### 便携版
 

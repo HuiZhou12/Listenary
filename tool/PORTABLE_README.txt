@@ -1,4 +1,4 @@
-Pure Music Windows 便携版
+Listenary Windows 便携版
 
 首次使用
 1. 完整解压 ZIP，不要只复制 pure_music.exe。
@@ -7,7 +7,7 @@ Pure Music Windows 便携版
 
 从旧便携版升级
 1. 把新版完整解压到新的空目录，不要覆盖旧目录。
-2. 关闭新旧两个目录中的 Pure Music。
+2. 关闭新旧两个目录中的 Listenary。
 3. 运行新版包根目录的 upgrade_from_previous.ps1，选择旧版包目录。
 4. 迁移完成后运行新版 app\pure_music.exe，确认曲库和设置正常，再保留或删除旧目录。
 

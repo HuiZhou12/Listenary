@@ -168,9 +168,9 @@ function Update-VersionJson([string]$version) {
     $json = [System.Text.StringBuilder]::new()
     [void]$json.AppendLine("{")
     [void]$json.AppendLine("  ""tag_name"": ""v$version"",")
-    [void]$json.AppendLine("  ""name"": ""v$version"",")
+    [void]$json.AppendLine("  ""name"": ""$version"",")
     [void]$json.AppendLine("  ""body"": ""## 更新内容\n\n请前往 GitHub Releases 查看完整更新日志"",")
-    [void]$json.AppendLine("  ""html_url"": ""https://github.com/qingyueyin/Pure-music/releases""")
+    [void]$json.AppendLine("  ""html_url"": ""https://github.com/HuiZhou12/Listenary/releases""")
     [void]$json.AppendLine("}")
     Write-Utf8NoBom $versionJsonPath $json.ToString()
     Write-Host "Generated update/version.json: tag=v$version" -ForegroundColor Gray
@@ -502,7 +502,7 @@ trap {
     exit 1
 }
 
-Write-Host "`n===== Pure Music Build =====" -ForegroundColor Cyan
+Write-Host "`n===== Listenary Build =====" -ForegroundColor Cyan
 Write-Host "  1. 编译便携版（只出文件夹，不打包）" -ForegroundColor White
 Write-Host "  2. 编译便携版并打包 zip" -ForegroundColor White
 Write-Host "  3. 编译并制作 Inno Setup 安装器" -ForegroundColor White
@@ -542,6 +542,6 @@ switch ($selectedMode) {
     5 { New-InstallerPackage $version $false }
 }
 
-Write-Host "The running Pure Music process was not stopped." -ForegroundColor Gray
+Write-Host "The running Listenary process was not stopped." -ForegroundColor Gray
 Wait-ForExitPrompt
 exit 0

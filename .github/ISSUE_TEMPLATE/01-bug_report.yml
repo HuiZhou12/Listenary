@@ -7,14 +7,14 @@ body:
   - type: markdown
     attributes:
       value: |
-        为了更快区分程序问题、配置问题和文件问题，请先阅读[常见问题](https://qingyueyin.github.io/Pure-music/guide/faq)，按文档完成排查，再搜索已有 Issue 并使用最新版本复现。还不能确认是程序问题时，更适合先到 [Discussions](https://github.com/qingyueyin/Pure-music/discussions/categories/general) 交流。暂时缺少日志、复现步骤、相关文件或自查结果时，Issue 可能会先关闭；补充完整后可以重新评估。
+        为了更快区分程序问题、配置问题和文件问题，请先阅读仓库中的[常见问题](https://github.com/HuiZhou12/Listenary/blob/main/page/docs/guide/faq.md)，按文档完成排查，再搜索已有 Issue 并使用最新版本复现。还不能确认是程序问题时，更适合先到 [Discussions](https://github.com/HuiZhou12/Listenary/discussions/categories/general) 交流。暂时缺少日志、复现步骤、相关文件或自查结果时，Issue 可能会先关闭；补充完整后可以重新评估。
 
   - type: input
     id: version
     attributes:
       label: 软件版本
       description: 填写“关于”页面显示的完整版本号。自行构建时还需填写提交版本和本地改动。
-      placeholder: 例如：2.2.0；main@COMMIT，未修改源码
+      placeholder: 例如：3.0.0；main@COMMIT，未修改源码
     validations:
       required: true
 

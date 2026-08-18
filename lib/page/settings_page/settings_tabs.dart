@@ -2423,15 +2423,8 @@ class _AboutTabContent extends StatelessWidget {
         _AboutSectionHeader('相关链接'),
         SizedBox(height: 4.0),
         _AboutLinkItem(
-          title: '官方网站',
-          url: 'https://qingyueyin.github.io/Pure-music/',
-          actionLabel: '访问官网',
-          icon: Symbols.language,
-        ),
-        SizedBox(height: 16.0),
-        _AboutLinkItem(
           title: '项目主页',
-          url: 'https://github.com/qingyueyin/Pure-music',
+          url: 'https://github.com/HuiZhou12/Listenary',
           actionLabel: '打开仓库',
           icon: Symbols.code,
         ),
@@ -2439,7 +2432,7 @@ class _AboutTabContent extends StatelessWidget {
         _AboutLinkItem(
           title: '反馈与建议',
           subtitle: '在 GitHub 提交 Issue',
-          url: 'https://github.com/qingyueyin/Pure-music/issues/new/choose',
+          url: 'https://github.com/HuiZhou12/Listenary/issues/new/choose',
           actionLabel: '提交 Issue',
           icon: Symbols.lightbulb,
         ),

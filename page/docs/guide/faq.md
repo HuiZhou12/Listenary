@@ -15,11 +15,9 @@ outline: deep
 
 详见 [安装](/guide/install)。
 
-### GitHub 很慢，能用 Gitee 吗？
+### GitHub 很慢，有其他下载镜像吗？
 
-可以。[Gitee 仓库](https://gitee.com/qingyueyin/Pure-music) 是镜像，方便国内访问。
-
-注意：**Gitee 上的自动同步经常很慢，约等于没有**，Release / 代码可能长时间落后于 GitHub。若两边版本号或说明不一致，以 **GitHub Releases** 和本站 [更新日志](/guide/changelog) 为准；应用内检查更新也会优先 GitHub，失败时再试备用 JSON（其中含 Gitee 上的 `version.json` 路径，同样可能滞后）。
+当前没有维护 Gitee 或其他下载镜像，GitHub Releases 是唯一正式发布入口。网络无法访问 GitHub 时，应用内更新检查和安装包下载都可能失败。
 
 ### 被 SmartScreen 拦住？
 
@@ -485,29 +483,29 @@ TTML 等格式若文件里自己写了空白段，也会当间奏用，规则不
 
 键位是固定的，设置里不能改，见 [快捷键](/guide/hotkeys)。
 
-### 检查更新失败？/ 提示的版本和 Gitee 上不一样？
+### 检查更新失败或版本信息不一致？
 
-- 应用会先查 **GitHub**，再试备用地址（含 Gitee 上的 `version.json`）  
-- 网络到不了 GitHub 时可能失败或只能拿到较旧的备用信息  
-- **Gitee 镜像不同步时**，备用源也可能是旧版——请到 GitHub Releases 或本站更新日志核对  
+- 应用会先查 **GitHub Releases**，失败后再读取新仓库中的备用 `version.json`
+- 网络无法访问 GitHub 时，更新检查可能失败
+- 可到 GitHub Releases 或仓库中的更新日志核对版本
 
 可到「关于」里关「启动时自动检查」，改用手动检查。
 
 ### 怎么反馈问题？
 
-先在本页搜索现象并按相关条目排查。常见问题没有答案、但还不能确认是程序问题时，可以先到 [Discussions](https://github.com/qingyueyin/Pure-music/discussions/categories/general) 交流；已经能够复现的异常，再使用对应的 [Issue 模板](https://github.com/qingyueyin/Pure-music/issues/new/choose) 提交。
+先在本页搜索现象并按相关条目排查。常见问题没有答案、但还不能确认是程序问题时，可以先到 [Discussions](https://github.com/HuiZhou12/Listenary/discussions/categories/general) 交流；已经能够复现的异常，再使用对应的 [Issue 模板](https://github.com/HuiZhou12/Listenary/issues/new/choose) 提交。
 
 提交 Bug 前，在「设置 → 创建问题」中写清复现步骤并获取完整日志。音频、标签或歌词问题还要检查原文件和标签，并提供可复现样本；怪声、回声可先开日志录制再写快照。公开前记得遮盖账号、访问令牌和无关的私人路径。
 
 提交前可以按下面的顺序自查：
 
-1. **先确认问题类型**：已经能稳定说明异常行为和复现条件，使用 Bug 模板；还在确认原因或只是询问用法，先到 [Discussions](https://github.com/qingyueyin/Pure-music/discussions/categories/general)；功能请求、改进建议和文档问题分别使用对应模板。
+1. **先确认问题类型**：已经能稳定说明异常行为和复现条件，使用 Bug 模板；还在确认原因或只是询问用法，先到 [Discussions](https://github.com/HuiZhou12/Listenary/discussions/categories/general)；功能请求、改进建议和文档问题分别使用对应模板。
 2. **确认版本和环境**：填写软件版本、Windows 版本、安装方式、复现频率和最后正常版本；自行构建或其他来源的版本还要写提交版本和本地改动。
 3. **确认不是文件或设置问题**：音频、标签和歌词问题先检查原文件能否读取、标签是否正确，并用一个已确认有效的文件做对照；只影响单个文件时，请附原文件或可复现样本。
 4. **准备对应材料**：播放问题写输出设备和音频格式；性能或崩溃问题写硬件、曲库规模和可量化数据；界面问题附分辨率、缩放和截图；在线服务问题写发生时间、网络环境、所用来源和手动查询结果。
 5. **保护公开信息**：日志和附件中遮盖访问令牌、账号、无关私人路径等敏感信息，但保留错误前后的上下文。
 
-完整的[Issue 提交规范](https://github.com/qingyueyin/Pure-music/blob/main/.github/ISSUE_GUIDELINES.md)包含字段说明和后续跟进方式。
+完整的[贡献与反馈说明](https://github.com/HuiZhou12/Listenary/blob/main/page/docs/guide/contribute.md)包含提交方式和后续跟进要求。
 
 ---
 
@@ -539,6 +537,6 @@ U 盘或目标文件夹必须能写入。只读盘无法写 `data`。
 | 设置项 | [外观与设置](/guide/settings) |
 | 桌面歌词 | [桌面歌词](/guide/desktop-lyric) |
 | 鼠标操作 | [交互](/guide/interactions) |
-| 使用问题与交流 | [Discussions](https://github.com/qingyueyin/Pure-music/discussions/categories/general) |
-| Bug、功能建议与文档问题 | [Issue 模板](https://github.com/qingyueyin/Pure-music/issues/new/choose) |
-| 源码 | [GitHub](https://github.com/qingyueyin/Pure-music) · [Gitee 镜像](https://gitee.com/qingyueyin/Pure-music)（可能滞后） |
+| 使用问题与交流 | [Discussions](https://github.com/HuiZhou12/Listenary/discussions/categories/general) |
+| Bug、功能建议与文档问题 | [Issue 模板](https://github.com/HuiZhou12/Listenary/issues/new/choose) |
+| 源码 | [GitHub](https://github.com/HuiZhou12/Listenary) |

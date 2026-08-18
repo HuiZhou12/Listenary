@@ -360,7 +360,7 @@ class _TitleBar extends StatelessWidget {
                     child: Image.asset('app_icon.ico', width: 24, height: 24),
                   ),
                   Text(
-                    'Pure Music',
+                    'Listenary',
                     style: TextStyle(
                       color: scheme.onSurface,
                       fontSize: AppType.subtitle,

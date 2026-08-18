@@ -20,19 +20,7 @@
       >
         GitHub 下载
       </a>
-      <a
-        :href="giteeUrl"
-        class="download-btn download-btn-alt"
-        target="_blank"
-        rel="noreferrer"
-      >
-        Gitee 镜像
-      </a>
     </div>
-    <p v-if="showGiteeHint" class="download-mirror-hint">
-      GitHub 访问慢可用 Gitee；镜像同步往往较慢，版本或安装包可能暂时落后于
-      GitHub，请以更新日志 / 版本号自行核对。
-    </p>
   </section>
 </template>
 
@@ -46,17 +34,12 @@ const meta = ref(null)
 const githubUrl = computed(
   () =>
     meta.value?.github_releases_url ||
-    'https://github.com/qingyueyin/Pure-music/releases',
-)
-const giteeUrl = computed(
-  () =>
-    meta.value?.gitee_repo_url || 'https://gitee.com/qingyueyin/Pure-music',
+    'https://github.com/HuiZhou12/Listenary/releases',
 )
 const kicker = computed(() => {
   const v = meta.value?.version
   return v ? `当前最新 ${v}` : '当前提供'
 })
-const showGiteeHint = computed(() => meta.value?.gitee_may_lag !== false)
 
 onMounted(async () => {
   try {
@@ -65,7 +48,7 @@ onMounted(async () => {
     })
     if (res.ok) meta.value = await res.json()
   } catch {
-    /* 无 JSON 时仍显示默认双链接 */
+    /* 无 JSON 时仍显示默认 GitHub 链接 */
   }
 })
 </script>

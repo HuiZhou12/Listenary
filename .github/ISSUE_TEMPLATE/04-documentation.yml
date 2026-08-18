@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        感谢帮助改进文档。请指出具体页面和内容，便于核对并完成修正；使用方法上的疑问更适合先到 [Discussions](https://github.com/qingyueyin/Pure-music/discussions/categories/general) 交流。
+        感谢帮助改进文档。请指出具体页面和内容，便于核对并完成修正；使用方法上的疑问更适合先到 [Discussions](https://github.com/HuiZhou12/Listenary/discussions/categories/general) 交流。
 
   - type: dropdown
     id: category

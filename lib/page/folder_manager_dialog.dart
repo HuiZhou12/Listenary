@@ -217,7 +217,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
     return showDangerConfirmDialog(
       context: context,
       title: '从曲库移除文件夹？',
-      message: '不会删除本地音乐文件，只会从 Pure Music 的曲库扫描范围中移除。',
+      message: '不会删除本地音乐文件，只会从 Listenary 的曲库扫描范围中移除。',
       confirmLabel: '移除',
       details: Text(
         folderPath,

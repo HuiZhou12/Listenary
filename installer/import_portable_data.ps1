@@ -36,7 +36,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $source "app.so") -PathType Leaf) -o
     throw "所选目录不是完整的便携版运行数据目录。"
 }
 if (Test-ProcessFromDirectory (Split-Path $source -Parent)) {
-    throw "导入数据前请先关闭正在运行的便携版 Pure Music。"
+    throw "导入数据前请先关闭正在运行的便携版 Listenary。"
 }
 if (Test-Path -LiteralPath $destination) {
     $existing = @(Get-ChildItem -LiteralPath $destination -Force)

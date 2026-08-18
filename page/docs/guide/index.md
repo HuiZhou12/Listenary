@@ -4,7 +4,7 @@ outline: deep
 
 # 简介
 
-打开 Pure Music，选一个音乐文件夹，剩下的交给它。索引与设置写在应用数据目录（便携版在程序旁 `data/`，安装版在 `%LOCALAPPDATA%\pure_music`），不碰你的源文件。
+打开 Listenary，选一个音乐文件夹，剩下的交给它。索引与设置写在应用数据目录（便携版在程序旁 `data/`，安装版在 `%LOCALAPPDATA%\pure_music`），不碰你的源文件。除本地曲库外，也可以按需使用在线搜索、在线播放、在线歌单和远程歌词。
 
 <div class="pm-cards">
   <div class="pm-card">
@@ -35,6 +35,7 @@ outline: deep
 | 方向 | 能力 |
 |------|------|
 | 音乐库 | 按歌曲 / 艺术家 / 专辑 / 文件夹 / 歌单浏览，全局搜索，播放统计 |
+| 在线音乐 | 可选的搜索、在线播放、订阅歌单和播放历史；使用独立远程队列 |
 | 播放 | 顺序 / 循环 / 单曲，随机，会话恢复，淡入淡出 |
 | 音频 | 10 段 EQ、半音音调、速度、KeepPitch、ReplayGain、WASAPI 独占 |
 | 歌词 | 本地外挂 + 内嵌 + 在线（QQ / 网易 / 酷狗 / AMLL），原文 / 翻译 / 罗马音 |
@@ -46,7 +47,7 @@ outline: deep
 1. [安装](/guide/install) — 下载、卸载与数据目录
 2. [快速上手](/guide/quickstart) — 导入曲库并播放
 3. [歌词](/guide/lyrics) — 外挂、同步高亮与动效
-4. [外观与设置](/guide/settings) — 设置项一览
+4. [外观与设置](/guide/settings) — 在线凭据、歌词和外观设置
 5. [常见问题](/guide/faq) — 安装、曲库、播放、歌词动效、桌面歌词、热键
 
 开发者请看 [架构](/dev/) 与 [构建](/dev/build)。

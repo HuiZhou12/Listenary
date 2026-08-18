@@ -4,13 +4,13 @@ outline: deep
 
 # 贡献指南
 
-欢迎为 Pure Music 贡献代码、文档或反馈。
+欢迎为 Listenary 贡献代码、文档或反馈。
 
 ## 报告问题
 
 - 先查看[常见问题](/guide/faq)并完成相关排查
-- 还不能确认是程序问题或需要询问使用方法时，先到 [Discussions](https://github.com/qingyueyin/Pure-music/discussions/categories/general) 交流
-- 能够复现的异常使用对应的 [Issue 模板](https://github.com/qingyueyin/Pure-music/issues/new/choose) 提交
+- 还不能确认是程序问题或需要询问使用方法时，先到 [Discussions](https://github.com/HuiZhou12/Listenary/discussions/categories/general) 交流
+- 能够复现的异常使用对应的 [Issue 模板](https://github.com/HuiZhou12/Listenary/issues/new/choose) 提交
 - 「设置 → 创建问题」可以生成并复制日志；请将完整日志、复现步骤、系统版本和相关样本附在 Issue 中
 
 ## 提交代码
@@ -41,7 +41,7 @@ outline: deep
 
 ## 发版说明（给维护者）
 
-在 GitHub 发 Release 后，仓库 workflow 会同步更新日志页与检查更新用的版本信息，并部署文档站。细节见 `.github/workflows/sync-release-docs.yml`。发版以 **GitHub** 为准；[Gitee](https://gitee.com/qingyueyin/Pure-music) 仅为镜像，可能滞后。
+在 GitHub 发 Release 后，仓库 workflow 会同步更新日志页与检查更新用的版本信息。细节见 `.github/workflows/sync-release-docs.yml`。GitHub Releases 是唯一正式发布入口。
 
 ## 行为准则
 

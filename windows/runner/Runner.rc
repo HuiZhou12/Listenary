@@ -60,11 +60,11 @@ IDI_APP_ICON            ICON                    "resources\\app_icon.ico"
 // Version
 //
 
-#define VERSION_AS_NUMBER 2,2,0,0
+#define VERSION_AS_NUMBER 3,0,0,0
 
-#define PRODUCT_VERSION "2.2.1"
+#define PRODUCT_VERSION "3.0.0"
 
-#define FILE_VERSION_STR "2.2.1.0"
+#define FILE_VERSION_STR "3.0.0.0"
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION VERSION_AS_NUMBER
@@ -83,13 +83,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "qingyueyin" "\0"
-            VALUE "FileDescription", "Pure Music" "\0"
+            VALUE "CompanyName", "HuiZhou12" "\0"
+            VALUE "FileDescription", "Listenary" "\0"
             VALUE "FileVersion", FILE_VERSION_STR "\0"
             VALUE "InternalName", "pure_music" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 qingyueyin. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 HuiZhou12" "\0"
             VALUE "OriginalFilename", "pure_music.exe" "\0"
-            VALUE "ProductName", "Pure Music" "\0"
+            VALUE "ProductName", "Listenary" "\0"
             VALUE "ProductVersion", PRODUCT_VERSION "\0"
         END
     END

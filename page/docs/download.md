@@ -12,8 +12,7 @@ outline: deep
 
 | 渠道 | 说明 |
 |------|------|
-| **GitHub Releases** | 推荐；版本与安装包最全 |
-| **[Gitee](https://gitee.com/qingyueyin/Pure-music)** | 访问慢时用；镜像常滞后，请核对版本号 |
+| **GitHub Releases** | 当前唯一发布与下载入口；版本与安装包以此为准 |
 
 进入最新版本后：
 
@@ -32,14 +31,14 @@ outline: deep
 ## 安装版
 
 1. 下载 `*_release_installer.exe` 并运行
-2. 按向导完成安装（默认装到 `%LOCALAPPDATA%\Programs\Pure Music`，当前用户，无需管理员）
+2. 按向导完成安装（新安装默认装到 `%LOCALAPPDATA%\Programs\Listenary`，当前用户，无需管理员）
 3. 可选创建桌面快捷方式（默认不勾选）；开始菜单项会创建
 4. 可选：从原便携版导入设置与曲库（本机尚无安装版数据时才出现该页）
 5. 启动后按欢迎页提示添加音乐文件夹
 
 | 用途 | 路径 |
 |------|------|
-| 程序 | `%LOCALAPPDATA%\Programs\Pure Music` |
+| 程序 | `%LOCALAPPDATA%\Programs\Listenary`（旧安装可能仍保留原目录） |
 | 数据 | `%LOCALAPPDATA%\pure_music` |
 
 ## 便携版

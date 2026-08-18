@@ -32,4 +32,4 @@ outline: deep
 
 ---
 
-有建议或遇到问题，请优先前往 [GitHub Issues](https://github.com/qingyueyin/Pure-music/issues)。[Gitee](https://gitee.com/qingyueyin/Pure-music) 仅作为下载镜像，版本更新可能稍有延迟。
+有建议或遇到问题，请优先前往 [GitHub Issues](https://github.com/HuiZhou12/Listenary/issues)；使用问题也可以在 [Discussions](https://github.com/HuiZhou12/Listenary/discussions) 交流。

@@ -574,10 +574,9 @@ class PlaybackPreference {
 }
 
 class AppPreference {
-  static const defaultUpdateRepoSlug = 'qingyueyin/Pure-music';
+  static const defaultUpdateRepoSlug = 'HuiZhou12/Listenary';
   static const defaultUpdateCheckUrls = [
-    'https://raw.githubusercontent.com/qingyueyin/Pure-music/main/update/version.json',
-    'https://gitee.com/qingyueyin/Pure-music/raw/main/update/version.json',
+    'https://raw.githubusercontent.com/HuiZhou12/Listenary/main/update/version.json',
   ];
 
   var audiosPagePref = PagePreference(0, SortOrder.ascending, ContentView.list);

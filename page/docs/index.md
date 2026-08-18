@@ -2,12 +2,12 @@
 layout: home
 
 hero:
-  name: Pure Music
+  name: Listenary
   text: 为 Windows 而生
-  tagline: 本地曲库、多格式歌词、专业音频。导入文件夹即可播放。
+  tagline: 本地曲库、多格式歌词、在线能力与专业音频。导入文件夹即可播放。
   image:
     src: /logo.png
-    alt: Pure Music
+    alt: Listenary
   actions:
     - theme: brand
       text: 立即下载
@@ -28,7 +28,7 @@ features:
     details: 10 段 EQ、音调 / 速度、ReplayGain、WASAPI 独占。
   - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg>'
     title: 音乐库
-    details: 艺术家 / 专辑 / 文件夹 / 歌单、播放统计，SQLite 持久化。
+    details: 本地曲库与可选在线搜索、订阅歌单、播放历史，分别持久化。
   - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'
     title: 桌面歌词
     details: 独立窗口、置顶、描边与翻译 / 注音显示。

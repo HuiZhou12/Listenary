@@ -1,32 +1,38 @@
-# Pure Music
+# Listenary
 
 <p align="center">
-  <img src="app_icon.png" width="80" height="80" alt="Pure Music Logo">
+  <img src="app_icon.png" width="80" height="80" alt="Listenary Logo">
 </p>
 
 <p align="center">
-  专为 Windows 打造的本地音乐播放器
+  面向 Windows、以本地曲库为核心的音乐播放器
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Platform-Windows-blue?style=flat-square" alt="Platform">  
-  <img src="https://badgen.net/github/release/qingyueyin/Pure-music?icon=github" alt="Version">
-  <img src="https://img.shields.io/github/downloads/qingyueyin/Pure-music/total?style=flat-square" alt="Downloads">
-  <img src="https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square" alt="License">
-  <a href="https://linux.do"><img src="https://img.shields.io/badge/LINUX_DO-%E7%A4%BE%E5%8C%BA%20%E9%93%BE%E6%8E%A5-blue?style=flat-square" alt="LINUX DO"></a>
+  <img src="https://img.shields.io/badge/Platform-Windows-blue?style=flat-square" alt="Platform">
+  <img src="https://img.shields.io/badge/Version-3.0.0-blue?style=flat-square" alt="Version 3.0.0">
+  <img src="https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square" alt="License GPL-3.0">
 </p>
 
-一款纯粹的本地音乐播放器。
+Listenary 管理和播放本地音乐，也提供可选的在线搜索、在线播放、订阅歌单、在线历史与远程歌词能力。在线功能依赖网络、第三方平台和用户自行配置的服务凭据；不使用这些功能时，本地曲库与本地播放仍可独立工作。
 
----
+## 功能
 
-## 截图预览
+- 本地曲库：歌曲、艺术家、专辑、文件夹、歌单、全局搜索与播放统计
+- 在线音乐：搜索、在线播放、订阅歌单、在线历史，以及独立的远程播放队列
+- 歌词：YRC、QRC、KRC、TTML、LRC，本地、内嵌与多个在线来源，支持原文、翻译和罗马音
+- 音频：BASS 播放、10 段 EQ、音调与速度、ReplayGain、WASAPI 独占
+- 界面：Material 3、封面取色、流动渐变与流光背景、竖屏/横屏/沉浸布局
+- 系统集成：SMTC、全局快捷键、单实例、窗口状态记忆和桌面歌词
+
+当前版本不承诺远程 seek、个人在线歌单、在线队列排序/播放模式或音质选择等尚未完成或仍待确认的能力。
+
+## 截图
 
 **深色模式**
 
 <img src="screenshot/深色主页.png" width="380" alt="深色主页">
 <img src="screenshot/深色播放页.png" width="380" alt="深色播放页">
-
 <img src="screenshot/深色专辑页.png" width="380" alt="深色专辑页">
 <img src="screenshot/深色沉浸模式.png" width="380" alt="深色沉浸模式">
 
@@ -38,7 +44,6 @@
 
 <img src="screenshot/浅色主页.png" width="380" alt="浅色主页">
 <img src="screenshot/浅色播放页.png" width="380" alt="浅色播放页">
-
 <img src="screenshot/浅色专辑页.png" width="380" alt="浅色专辑页">
 <img src="screenshot/浅色沉浸模式.png" width="380" alt="浅色沉浸模式">
 
@@ -46,140 +51,53 @@
 <img src="screenshot/浅色竖屏歌词.png" width="180" alt="浅色竖屏歌词">
 <img src="screenshot/浅色竖屏沉浸模式.png" width="180" alt="浅色竖屏沉浸模式">
 
-**曲库浏览**
+**曲库、桌面歌词与系统集成**
 
 <img src="screenshot/歌单页.png" width="330" alt="歌单页">
 <img src="screenshot/文件夹页.png" width="330" alt="文件夹页">
 <img src="screenshot/统计页.png" width="330" alt="统计页">
+<img src="screenshot/左对齐主题色歌词.png" width="330" alt="左对齐桌面歌词">
+<img src="screenshot/居中主题色歌词信息歌词.png" width="330" alt="居中桌面歌词">
+<img src="screenshot/右对齐主题色歌词.png" width="330" alt="右对齐桌面歌词">
+<img src="screenshot/SMTC.png" width="380" alt="Windows SMTC">
+<img src="screenshot/内嵌数据编辑.png" width="330" alt="歌曲信息编辑">
 
-**桌面歌词样式**
+## 下载与支持
 
-<img src="screenshot/左对齐主题色歌词.png" width="330" alt="左对齐主题色歌词">
-<img src="screenshot/居中主题色歌词信息歌词.png" width="330" alt="居中主题色歌词">
-<img src="screenshot/右对齐主题色歌词.png" width="330" alt="右对齐主题色歌词">
+- [GitHub Releases](https://github.com/HuiZhou12/Listenary/releases)
+- [源码仓库](https://github.com/HuiZhou12/Listenary)
+- [问题反馈](https://github.com/HuiZhou12/Listenary/issues)
+- [Discussions](https://github.com/HuiZhou12/Listenary/discussions)
+- [用户与开发文档](page/docs/)
 
-**媒体集成**
+Listenary 支持 Windows 10 和 Windows 11，提供安装版与便携版。新安装默认位于 `%LOCALAPPDATA%\Programs\Listenary`；安装版数据保存在 `%LOCALAPPDATA%\pure_music`，便携版数据保存在程序旁的 `data/`。内部数据目录和可执行文件名为兼容既有安装而保留，升级时不要手工改名或迁移数据。
 
-<img src="screenshot/SMTC.png" width="380" alt="SMTC">
+## 在线服务与隐私
 
-**标签编辑**
+在线搜索、在线播放、在线歌单与远程歌词会连接第三方服务，内容版权归相应平台和权利人所有。安装版的 ChKSz 凭据使用当前 Windows 用户的 Credential Manager；便携版凭据仅保存在内存中，不写入设置、数据库或日志。项目不随软件分发音乐内容，也不保证第三方服务长期可用。
 
-<img src="screenshot/内嵌数据编辑.png" width="330" alt="内嵌编辑页面">
+## 构建
 
----
+需要 Flutter `>=3.38.4`、Dart `>=3.10.3`、stable Rust、Visual Studio C++、Windows SDK 与 CMake。
 
-## 特色
-
-**🎨 沉浸式界面** — 封面 k-means 取色驱动 Material You，动态背景，竖屏·横屏·沉浸三档响应式布局
-
-**📝 多格式歌词** — YRC / QRC / KRC / TTML / LRC（含增强 LRC），逐字跟唱，QQ·网易·酷狗·AMLL 在线源，原文 / 翻译 / 注音并排
-
-**🎛️ 专业音频** — 10 段 EQ、半音音调与速度、WASAPI 独占、ReplayGain
-
-**📐 本地曲库** — 艺术家 / 专辑 / 文件夹 / 歌单 / 统计，全局搜索，会话恢复，便携或安装双数据目录
-
----
-
-## 快速开始
-
-<details>
-<summary>构建流程</summary>
-
-```bash
+```powershell
 flutter pub get
-flutter run
-
-# 构建 Release
-flutter build windows --release
-
-# 修改 Rust 后重新生成 FRB 绑定
-# 需先安装: cargo install flutter_rust_bridge_codegen
-flutter_rust_bridge_codegen generate
+flutter run -d windows
+flutter build windows --debug
+flutter analyze
+flutter test
 ```
 
-</details>
+正式发布打包由维护者使用 `build_windows.ps1` 完成；普通开发和验证不应运行该脚本。仅在 Rust 对外签名或类型变化时运行 `flutter_rust_bridge_codegen generate`。
 
-<details>
-<summary>功能总览</summary>
+## 许可与致谢
 
-**播放** — 顺序 / 列表循环 / 单曲循环、随机、下一首播放、淡入淡出、会话恢复、迷你播放条
-**音频** — WASAPI 独占、10 段 EQ（前级 / 预设 / AutoEq）、半音音调、速度、KeepPitch、ReplayGain、应用音量 + 系统音量
-**主题** — Material You、封面自动取色 / 自定义固定色、系统主题同步、网格渐变与流光背景（音频律动）、主题色进度条·歌词·间奏·控件、自定义字体、沉浸模式
-**歌词** — 本地外挂 + 内嵌 + 在线（QQ / 网易 / 酷狗 / AMLL）、逐字随格式、注音 / 翻译、简繁转换、行模糊、行动效、逐字上抬、辉光缩放、间奏动画、桌面歌词
-**音乐库** — 歌曲 / 艺术家 / 专辑 / 文件夹 / 歌单浏览、列表·表格与排序记忆、全局搜索、歌单导出、播放统计、SQLite、封面缓存
-**布局** — 响应式三档（竖屏 / 横屏 / 沉浸）、播放页仅主区 / 带歌词 / 带队列、波浪进度条分模式开关
-**系统** — SMTC 媒体键、全局快捷键、单实例、窗口记忆、自动检查更新、便携 `data/` 或 `%LOCALAPPDATA%\pure_music`、回声排查日志、问题报告
-**交互** — 鼠标侧键返回、长按多选 / 拖选、右键菜单、悬停显示控件、歌词点击跳转、侧栏启动页记忆
+Listenary 依据 [GNU General Public License v3.0](LICENSE) 发布。GPL-3.0 允许在遵守许可证条件的前提下使用、修改和再分发，包括商业使用；本项目不附加“禁止商业使用”限制。
 
-**快捷键：** `Esc` 关闭/返回、`Space` 暂停/播放、`Ctrl + ←/→` 切歌、`Ctrl + ↑/↓` 应用音量、`F1` 沉浸模式、`F11` 最大化/还原窗口、鼠标侧键 返回
-
-详细说明见仓库 `page/docs/guide/`。
-
-</details>
-
-
----
-## 致谢
-
-<details>
-<summary>开源库</summary>
-
-图标：[Silicon7921](https://ray.so/icon)、字体：[MiSans VF](https://hyperos.mi.com/font/zh/)
-
-BASS、flutter_rust_bridge、dio、lofty、provider、go_router、window_manager、hotkey_manager、flutter_single_instance、material_symbols_icons、sqlite3、file_picker、flutter_volume_controller、pinyin、fl_charset、logger、xml
-
-</details>
-
-<details>
-<summary>参考项目</summary>
-
-[coriander_player](https://github.com/Ferry-200/coriander_player)、[ZeroBit-Player](https://github.com/Empty-57/ZeroBit-Player)、[Lyrico](https://github.com/Replica0110/Lyrico)、[original-sound-hq-player](https://github.com/Johnwikix/original-sound-hq-player)、[SPlayer](https://github.com/imsyy/SPlayer)、[Unilyric](https://github.com/apoint123/Unilyric)
-
-
-
-
-
-</details>
-
----
-
-## 贡献者
-
-[![contrib.rocks](https://contrib.rocks/image?repo=qingyueyin/Pure-music&max=1000)](https://github.com/qingyueyin/Pure-music/graphs/contributors)
-
----
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=qingyueyin%2FPure-music&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=qingyueyin/Pure-music&type=date&theme=dark&legend=top-left&sealed_token=3xg2arWalPfLMWP-v8tF6oiUigXHChZGv3G5byMARkfFx4mAH_bKPZWuYsOGt0OXyQAacmwE94DO-yNQKFu3d1xE7KqjHBRQ1PXDBRrIb9-lsK6IVQyzdA" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=qingyueyin/Pure-music&type=date&theme=light&legend=top-left&sealed_token=3xg2arWalPfLMWP-v8tF6oiUigXHChZGv3G5byMARkfFx4mAH_bKPZWuYsOGt0OXyQAacmwE94DO-yNQKFu3d1xE7KqjHBRQ1PXDBRrIb9-lsK6IVQyzdA" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=qingyueyin/Pure-music&type=date&legend=top-left&sealed_token=3xg2arWalPfLMWP-v8tF6oiUigXHChZGv3G5byMARkfFx4mAH_bKPZWuYsOGt0OXyQAacmwE94DO-yNQKFu3d1xE7KqjHBRQ1PXDBRrIb9-lsK6IVQyzdA" />
- </picture>
-</a>
-
----
-
-## License
-
-**GNU General Public License v3.0** — 法律上遵循此许可。
-
-**附加要求（非法律条款，但请尊重）：**
-- 本软件**仅限非商业用途**
-- 若使用或修改本软件，**请注明出处**（附上本仓库链接）
-
-Pure Music 始于 [coriander_player](https://github.com/Ferry-200/coriander_player)（GPL-3.0），历经大量重写与扩展，已成为独立发行的项目。
-
----
+Listenary 始于 [coriander_player](https://github.com/Ferry-200/coriander_player)（GPL-3.0），并保留上游及第三方项目的版权、许可和归属信息。主要依赖与资源包括 BASS、flutter_rust_bridge、lofty、dio、provider、go_router、SQLite、MiSans VF 和 Silicon7921 图标；完整清单见[致谢文档](page/docs/guide/credits.md)。
 
 ## 免责声明
 
-- 本项目为开源学习项目，仅限个人学习、研究、交流使用，禁止用于任何商业用途
-- 软件本身不包含任何音乐、歌词等版权内容，播放的是你本地已有的文件
-- 在线歌词搜索的数据来自第三方平台，版权归原平台及权利人所有，仅供个人学习参考，请勿传播或商用
-- 使用本软件产生的任何版权、法律问题由使用者自行承担，与项目作者无关
+软件按 GPL-3.0 以“现状”提供，不附带适销性或特定用途适用性的保证。用户应确保自己有权访问和使用本地文件及第三方平台内容，并自行承担使用第三方在线服务产生的风险。
 
----
-
-<div align="center">Made with ❤️ by qingyueyin</div>
+<div align="center">Listenary · Copyright © 2026 HuiZhou12</div>

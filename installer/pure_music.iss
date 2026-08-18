@@ -5,7 +5,7 @@
   #error AppVersion is required
 #endif
 
-#define AppName "Pure Music"
+#define AppName "Listenary"
 #define AppExeName "pure_music.exe"
 
 [Setup]
@@ -13,13 +13,13 @@ AppId={{42C4470A-72BE-49A0-B32F-DF7A941DD48C}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
-AppPublisher=qingyueyin
-AppPublisherURL=https://github.com/qingyueyin/Pure-music
-AppSupportURL=https://github.com/qingyueyin/Pure-music/issues
-AppUpdatesURL=https://github.com/qingyueyin/Pure-music/releases
-AppContact=qingyueyin
-AppComments=Windows 本地音乐播放器
-AppCopyright=Copyright (C) 2026 qingyueyin
+AppPublisher=HuiZhou12
+AppPublisherURL=https://github.com/HuiZhou12/Listenary
+AppSupportURL=https://github.com/HuiZhou12/Listenary/issues
+AppUpdatesURL=https://github.com/HuiZhou12/Listenary/releases
+AppContact=HuiZhou12
+AppComments=Windows 音乐播放器
+AppCopyright=Copyright (C) 2026 HuiZhou12
 DefaultDirName={localappdata}\Programs\{#AppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -31,8 +31,8 @@ SetupIconFile=..\app_icon.ico
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExeName}
 VersionInfoDescription={#AppName} 安装程序
-VersionInfoCompany=qingyueyin
-VersionInfoCopyright=Copyright (C) 2026 qingyueyin
+VersionInfoCompany=HuiZhou12
+VersionInfoCopyright=Copyright (C) 2026 HuiZhou12
 VersionInfoProductName={#AppName}
 VersionInfoProductVersion={#AppVersion}
 VersionInfoVersion={#AppVersion}.0
@@ -60,12 +60,12 @@ PortableDataOption=从原便携版导入个人数据(&I)
 PortableDataPathTitle=选择便携版位置
 PortableDataPathDescription=原便携版位于哪个文件夹？
 PortableDataPathSubCaption=请选择包含 pure_music.exe 的原便携版文件夹。
-PortableDataInvalid=所选文件夹不是完整的 Pure Music 便携版目录，请重新选择。
+PortableDataInvalid=所选文件夹不是完整的 Listenary 便携版目录，请重新选择。
 PortableDataImporting=正在导入便携版数据...
-PortableDataImportFailed=Pure Music 已安装完成，但便携版数据导入失败。原便携版数据没有被修改，可稍后重新迁移。
+PortableDataImportFailed=Listenary 已安装完成，但便携版数据导入失败。原便携版数据没有被修改，可稍后重新迁移。
 DesktopIcon=创建桌面快捷方式(&D)
 DeleteUserDataPrompt=是否同时删除设置、媒体库索引、播放列表、歌词来源记录和缓存？%n%n选择“否”会保留这些数据，便于以后重新安装。
-DeleteUserDataFailed=部分用户数据未能删除，请关闭仍在使用 Pure Music 数据的程序后手动清理：%n%n%1
+DeleteUserDataFailed=部分用户数据未能删除，请关闭仍在使用 Listenary 数据的程序后手动清理：%n%n%1
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

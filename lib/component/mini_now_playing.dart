@@ -46,7 +46,7 @@ MiniNowPlayingMetadataProjection resolveMiniNowPlayingMetadata({
   if (!miniNowPlayingUsesLocalMedia(snapshot)) {
     final item = snapshot.currentItem;
     return MiniNowPlayingMetadataProjection(
-      title: item?.title ?? 'Pure Music',
+      title: item?.title ?? 'Listenary',
       subtitle: item?.artist ?? '享受音乐',
       usesLocalMedia: false,
       coverUri: item?.coverUri,
@@ -54,7 +54,7 @@ MiniNowPlayingMetadataProjection resolveMiniNowPlayingMetadata({
   }
 
   return MiniNowPlayingMetadataProjection(
-    title: localTitle ?? 'Pure Music',
+    title: localTitle ?? 'Listenary',
     subtitle: localTitle == null
         ? '享受音乐'
         : '${localArtist ?? ''} - ${localAlbum ?? ''}',

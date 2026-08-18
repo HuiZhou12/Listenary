@@ -146,13 +146,13 @@ NowPlayingTimelineProjection resolveNowPlayingTimeline({
   if (snapshot.source == ActivePlaybackSessionSource.remote) {
     final item = snapshot.currentItem;
     return (
-      title: item?.title ?? 'Pure Music',
+      title: item?.title ?? 'Listenary',
       artist: item?.artist ?? '',
       coverUri: item?.coverUri,
     );
   }
   return (
-    title: localTitle ?? 'Pure Music',
+    title: localTitle ?? 'Listenary',
     artist: localArtist ?? 'Enjoy Music',
     coverUri: null,
   );

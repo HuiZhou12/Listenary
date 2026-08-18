@@ -92,10 +92,10 @@ flutter build windows --release
 
 ```powershell
 # 便携 zip（Mode 2）
-.\build_windows.ps1 -Version 2.3.0 -Mode 2 -NonInteractive
+.\build_windows.ps1 -Version 3.0.0 -Mode 2 -NonInteractive
 
 # 安装器（Mode 3，需本机已装 Inno Setup 6/7）
-.\build_windows.ps1 -Version 2.3.0 -Mode 3 -NonInteractive
+.\build_windows.ps1 -Version 3.0.0 -Mode 3 -NonInteractive
 ```
 
 `PORTABLE_BUILD` 由脚本按产物类型注入：便携为 `true`（数据在 exe 旁 `data/`），安装版为 `false`（数据在 `%LOCALAPPDATA%\pure_music`）。
@@ -112,7 +112,7 @@ flutter build windows --release
 
 - `output/pure_music_{ver}_release_installer.exe` 与 `.sha256`
 - 脚本：`installer/pure_music.iss`；可选从便携版导入数据：`installer/import_portable_data.ps1`
-- 默认安装到 `%LOCALAPPDATA%\Programs\Pure Music`，`PrivilegesRequired=lowest`（当前用户，无需管理员）
+- 新安装默认到 `%LOCALAPPDATA%\Programs\Listenary`，`PrivilegesRequired=lowest`（当前用户，无需管理员）；旧安装可能继续使用原目录
 
 ## 文档站
 

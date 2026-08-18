@@ -4,9 +4,20 @@ outline: false
 
 # 更新日志
 
-从 **2.0.0** 起。每个版本默认折叠，点版本号展开。最新：**2.2.1**。
+从 **2.0.0** 起。每个版本默认折叠，点版本号展开。当前版本：**3.0.0**。
 
-完整发布页：[GitHub](https://github.com/qingyueyin/Pure-music/releases) · [Gitee 镜像](https://gitee.com/qingyueyin/Pure-music)（同步常滞后）
+Listenary 独立发行版本见 [GitHub Releases](https://github.com/HuiZhou12/Listenary/releases)。3.0.0 的完整发布说明将在正式 Release 发布时补充；下方 2.x 内容作为迁移前历史记录保留。
+
+<details>
+<summary><strong>3.0.0</strong></summary>
+
+Listenary 首次独立发行。完整说明待 GitHub Release 发布。
+
+</details>
+
+## 迁移前历史
+
+<!-- legacy-history:start -->
 
 <details>
 <summary><strong>2.2.1</strong></summary>
@@ -433,6 +444,8 @@ outline: false
 
 </details>
 
+<!-- legacy-history:end -->
+
 ---
 
-更早版本见 [GitHub Releases](https://github.com/qingyueyin/Pure-music/releases)。下载见 [下载页](/download)。
+Listenary 发行版本见 [GitHub Releases](https://github.com/HuiZhou12/Listenary/releases)。下载见 [下载页](/download)。

@@ -220,7 +220,7 @@ class AppSettings {
   static final rebuildNotifier = RebuildNotifier();
   static const String version = String.fromEnvironment(
     'APP_VERSION',
-    defaultValue: '2.2.2',
+    defaultValue: '3.0.0',
   );
 
   static GitHub? _github;
