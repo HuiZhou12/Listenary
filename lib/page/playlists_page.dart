@@ -14,11 +14,29 @@ import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/native/folder_picker_windows.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/menu_styles.dart';
+import 'package:pure_music/component/remote_media_cover.dart';
+import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
+import 'package:pure_music/services/music_platform/online_library/online_playlist_controller.dart';
+import 'package:provider/provider.dart';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
+
+final class _PlaylistEntry {
+  const _PlaylistEntry.local(this.playlist) : subscription = null;
+  const _PlaylistEntry.online(this.subscription) : playlist = null;
+
+  final Playlist? playlist;
+  final OnlinePlaylistSnapshot? subscription;
+
+  bool get isOnline => subscription != null;
+  String get name => playlist?.name ?? subscription!.playlist.name;
+  int get trackCount =>
+      playlist?.paths.length ?? subscription!.playlist.tracks.length;
+}
 
 class PlaylistsPage extends StatefulWidget {
   const PlaylistsPage({super.key});
@@ -28,13 +46,38 @@ class PlaylistsPage extends StatefulWidget {
 }
 
 class _PlaylistsPageState extends State<PlaylistsPage> {
-  final multiSelectController = MultiSelectController<Playlist>();
+  final multiSelectController = MultiSelectController<_PlaylistEntry>();
   final Set<Playlist> _deletingPlaylists = <Playlist>{};
   final Set<Playlist> _exportingPlaylists = <Playlist>{};
   bool _isImportingPlaylist = false;
   bool _isImportingFolder = false;
   bool _isDeletingSelected = false;
   bool _isCreatingPlaylist = false;
+  bool _requestedOnlineLoad = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _requestedOnlineLoad) return;
+      _requestedOnlineLoad = true;
+      final controller = context.read<OnlinePlaylistController>();
+      if (controller.snapshot.status == OnlinePlaylistLoadStatus.idle) {
+        controller.loadSubscriptions();
+      }
+    });
+  }
+
+  List<_PlaylistEntry> _entries(OnlinePlaylistViewSnapshot onlineSnapshot) {
+    return [
+      ...playlists.map(_PlaylistEntry.local),
+      ...onlineSnapshot.subscriptions.map(_PlaylistEntry.online),
+    ];
+  }
+
+  List<_PlaylistEntry> _localEntries() {
+    return playlists.map(_PlaylistEntry.local).toList(growable: false);
+  }
 
   Future<void> newPlaylist(BuildContext context) async {
     if (_isCreatingPlaylist) return;
@@ -65,6 +108,54 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         setState(() => _isCreatingPlaylist = false);
       }
     }
+  }
+
+  Future<void> _addOnlinePlaylist() async {
+    final remoteId = await showDialog<String>(
+      context: context,
+      builder: (_) => const _OnlinePlaylistIdDialog(),
+    );
+    if (remoteId == null || !mounted) return;
+    final saved = await context.read<OnlinePlaylistController>().addOrRefresh(
+      platform: MusicPlatform.netease,
+      remotePlaylistId: remoteId,
+    );
+    if (!mounted) return;
+    if (saved == null) {
+      showTextOnSnackBar('在线歌单创建失败', variant: ToastVariant.error);
+      return;
+    }
+    showTextOnSnackBar('已添加在线歌单', variant: ToastVariant.success);
+  }
+
+  Future<void> _refreshOnlinePlaylist(OnlinePlaylistSnapshot item) async {
+    final refreshed = await context.read<OnlinePlaylistController>().refresh(
+      item.localId,
+    );
+    if (!mounted) return;
+    showTextOnSnackBar(
+      refreshed == null ? '在线歌单刷新失败' : '在线歌单已刷新',
+      variant: refreshed == null ? ToastVariant.error : ToastVariant.success,
+    );
+  }
+
+  Future<void> _deleteOnlinePlaylist(OnlinePlaylistSnapshot item) async {
+    final confirmed = await showDangerConfirmDialog(
+      context: context,
+      title: '移除在线歌单？',
+      message: '只会移除本地订阅，不会删除第三方平台歌单。',
+      confirmLabel: '移除',
+    );
+    if (!confirmed || !mounted) return;
+    final deleted = await context.read<OnlinePlaylistController>().delete(
+      platform: item.playlist.platform,
+      remotePlaylistId: item.playlist.id,
+    );
+    if (!mounted) return;
+    showTextOnSnackBar(
+      deleted ? '已移除在线歌单' : '移除在线歌单失败',
+      variant: deleted ? ToastVariant.success : ToastVariant.error,
+    );
   }
 
   void editPlaylist(BuildContext context, Playlist playlist) async {
@@ -304,7 +395,11 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
 
   Future<void> _deleteSelectedPlaylists() async {
     if (_isDeletingSelected || multiSelectController.selected.isEmpty) return;
-    final selected = List<Playlist>.from(multiSelectController.selected);
+    final selected = multiSelectController.selected
+        .map((entry) => entry.playlist)
+        .whereType<Playlist>()
+        .toList(growable: false);
+    if (selected.isEmpty) return;
     final indexed = selected
         .map((playlist) => MapEntry(playlists.indexOf(playlist), playlist))
         .where((entry) => entry.key >= 0)
@@ -342,23 +437,154 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
     }
   }
 
+  Widget _buildOnlinePlaylistEntry(
+    BuildContext context,
+    OnlinePlaylistSnapshot item,
+    MultiSelectController<_PlaylistEntry>? _,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final onlineState = context.read<OnlinePlaylistController>().snapshot;
+    final busy = onlineState.status == OnlinePlaylistLoadStatus.loading;
+    final menuStyle = appMenuStyle;
+    final menuItemStyle = appMenuItemStyle;
+    return MenuTheme(
+      data: MenuThemeData(style: menuStyle),
+      child: MenuAnchor(
+        consumeOutsideTap: true,
+        style: menuStyle,
+        menuChildren: [
+          MenuItemButton(
+            style: menuItemStyle,
+            onPressed: busy ? null : () => _refreshOnlinePlaylist(item),
+            leadingIcon: const Icon(Symbols.refresh),
+            child: const Text('刷新'),
+          ),
+          MenuItemButton(
+            style: menuItemStyle,
+            onPressed: busy ? null : () => _deleteOnlinePlaylist(item),
+            leadingIcon: Icon(Symbols.delete, color: scheme.error),
+            child: const Text('移除订阅'),
+          ),
+        ],
+        builder: (context, controller, _) => Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            borderRadius: AppRadius.smCircular,
+            onTap: busy
+                ? null
+                : () => context.push(
+                    app_paths.ONLINE_PLAYLIST_DETAIL_PAGE,
+                    extra: item.localId,
+                  ),
+            onSecondaryTapDown: (details) {
+              if (!busy) {
+                controller.open(
+                  position: details.localPosition.translate(0, -160),
+                );
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Row(
+                children: [
+                  _OnlinePlaylistCover(uri: item.playlist.coverUri),
+                  const SizedBox(width: 16.0),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                item.playlist.name,
+                                softWrap: false,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: AppType.subtitle,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Icon(
+                              Symbols.cloud,
+                              size: 16,
+                              color: scheme.primary,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4.0),
+                        Text(
+                          [
+                            if (item.playlist.creator?.isNotEmpty == true)
+                              item.playlist.creator!,
+                            '${item.playlist.trackCount ?? item.playlist.tracks.length}首乐曲',
+                            '在线订阅',
+                          ].join(' · '),
+                          softWrap: false,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: scheme.onSurface.withAlpha(153),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '刷新',
+                    onPressed: busy ? null : () => _refreshOnlinePlaylist(item),
+                    icon: busy
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Symbols.refresh),
+                  ),
+                  IconButton(
+                    tooltip: '移除订阅',
+                    onPressed: busy ? null : () => _deleteOnlinePlaylist(item),
+                    color: scheme.error,
+                    icon: const Icon(Symbols.delete),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final menuStyle = appMenuStyle;
     final menuItemStyle = appMenuItemStyle;
-    final canSortPlaylists = hasEnoughItemsToSort(playlists.length);
-    final canSwitchContentView = canShowContentViewSwitch(playlists.length);
+    final onlineSnapshot = context.watch<OnlinePlaylistController>().snapshot;
+    final contentList = _entries(onlineSnapshot);
+    final localEntries = _localEntries();
+    final canSortPlaylists = hasEnoughItemsToSort(contentList.length);
+    final canSwitchContentView = canShowContentViewSwitch(contentList.length);
 
-    return UniPage<Playlist>(
+    return UniPage<_PlaylistEntry>(
       pref: AppPreference.instance.playlistsPagePref,
       title: '歌单',
-      subtitle: '${playlists.length} 个歌单',
-      contentList: playlists,
+      subtitle: '${contentList.length} 个歌单',
+      contentList: contentList,
       contentBuilder: (context, item, i, multiSelectController, _) {
-        final playlist = playlists[i];
+        if (item.isOnline) {
+          return _buildOnlinePlaylistEntry(
+            context,
+            item.subscription!,
+            multiSelectController,
+          );
+        }
+        final playlist = item.playlist!;
         final isSelected =
-            multiSelectController?.selected.contains(playlist) == true;
+            multiSelectController?.selected.contains(item) == true;
         final isMultiSelectView =
             multiSelectController?.enableMultiSelectView == true;
         final isDeleting = _isDeletingPlaylist(playlist);
@@ -431,7 +657,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                       ? null
                       : () {
                           multiSelectController.useMultiSelectView(true);
-                          multiSelectController.select(playlist);
+                          multiSelectController.select(item);
                         },
                   leadingIcon: const Icon(Symbols.select),
                   child: const Text('多选'),
@@ -464,9 +690,9 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                             return;
                           }
                           if (isSelected) {
-                            multiSelectController?.unselect(playlist);
+                            multiSelectController?.unselect(item);
                           } else {
-                            multiSelectController?.select(playlist);
+                            multiSelectController?.select(item);
                           }
                         },
                   onLongPress: isBusy
@@ -475,7 +701,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                           if (multiSelectController == null) return;
                           if (isMultiSelectView) return;
                           multiSelectController.useMultiSelectView(true);
-                          multiSelectController.select(playlist);
+                          multiSelectController.select(item);
                         },
                   onSecondaryTapDown: (details) {
                     if (isBusy || isMultiSelectView) return;
@@ -521,9 +747,9 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                                 ? null
                                 : (v) {
                                     if (v == true) {
-                                      multiSelectController?.select(playlist);
+                                      multiSelectController?.select(item);
                                     } else {
-                                      multiSelectController?.unselect(playlist);
+                                      multiSelectController?.unselect(item);
                                     }
                                   },
                           )
@@ -565,27 +791,34 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       primaryAction: MenuAnchor(
         style: appMenuStyle,
         menuChildren: [
-          MenuItemButton(
+          SubmenuButton(
             style: const ButtonStyle(
               padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
             ),
-            leadingIcon: _isCreatingPlaylist
-                ? const SizedBox(
-                    width: 18.0,
-                    height: 18.0,
-                    child: CircularProgressIndicator(strokeWidth: 2.0),
-                  )
-                : const Icon(Symbols.add),
-            onPressed: _isCreatingPlaylist ? null : () => newPlaylist(context),
-            child: Text(_isCreatingPlaylist ? '创建中' : '新建歌单'),
-          ),
-          MenuItemButton(
-            style: const ButtonStyle(
-              padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
-            ),
-            leadingIcon: const Icon(Symbols.cloud),
-            onPressed: () => context.push(app_paths.ONLINE_PLAYLISTS_PAGE),
-            child: const Text('在线歌单'),
+            leadingIcon: const Icon(Symbols.add),
+            menuChildren: [
+              MenuItemButton(
+                style: menuItemStyle,
+                leadingIcon: _isCreatingPlaylist
+                    ? const SizedBox(
+                        width: 18.0,
+                        height: 18.0,
+                        child: CircularProgressIndicator(strokeWidth: 2.0),
+                      )
+                    : const Icon(Symbols.library_music),
+                onPressed: _isCreatingPlaylist
+                    ? null
+                    : () => newPlaylist(context),
+                child: Text(_isCreatingPlaylist ? '创建中' : '本地歌单'),
+              ),
+              MenuItemButton(
+                style: menuItemStyle,
+                leadingIcon: const Icon(Symbols.cloud),
+                onPressed: _addOnlinePlaylist,
+                child: const Text('在线歌单'),
+              ),
+            ],
+            child: const Text('新建歌单'),
           ),
           MenuItemButton(
             style: const ButtonStyle(
@@ -686,7 +919,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         ),
         MultiSelectSelectOrClearAll(
           multiSelectController: multiSelectController,
-          contentList: playlists,
+          contentList: localEntries,
         ),
         MultiSelectExit(multiSelectController: multiSelectController),
       ],
@@ -711,14 +944,89 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
-                list.sort((a, b) => a.paths.length.compareTo(b.paths.length));
+                list.sort((a, b) => a.trackCount.compareTo(b.trackCount));
                 break;
               case SortOrder.decending:
-                list.sort((a, b) => b.paths.length.compareTo(a.paths.length));
+                list.sort((a, b) => b.trackCount.compareTo(a.trackCount));
                 break;
             }
           },
         ),
+      ],
+    );
+  }
+}
+
+class _OnlinePlaylistCover extends StatelessWidget {
+  const _OnlinePlaylistCover({required this.uri});
+
+  final Uri? uri;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ClipRRect(
+      borderRadius: AppRadius.smCircular,
+      child: SizedBox.square(
+        dimension: 48,
+        child: RemoteMediaCover(
+          coverUri: uri,
+          placeholder: ColoredBox(
+            color: scheme.surfaceContainerHighest,
+            child: Icon(Symbols.cloud, color: scheme.onSurfaceVariant),
+          ),
+          cacheWidth: 96,
+          cacheHeight: 96,
+        ),
+      ),
+    );
+  }
+}
+
+class _OnlinePlaylistIdDialog extends StatefulWidget {
+  const _OnlinePlaylistIdDialog();
+
+  @override
+  State<_OnlinePlaylistIdDialog> createState() =>
+      _OnlinePlaylistIdDialogState();
+}
+
+class _OnlinePlaylistIdDialogState extends State<_OnlinePlaylistIdDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final value = _controller.text.trim();
+    if (!RegExp(r'^[1-9][0-9]*$').hasMatch(value)) return;
+    Navigator.of(context).pop(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('新建在线歌单'),
+      content: TextField(
+        autofocus: true,
+        controller: _controller,
+        keyboardType: TextInputType.number,
+        textInputAction: TextInputAction.done,
+        decoration: const InputDecoration(
+          labelText: '网易歌单 ID',
+          hintText: '输入数字 ID',
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('创建')),
       ],
     );
   }

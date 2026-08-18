@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
@@ -41,9 +43,9 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
       _error = null;
     });
     try {
-      final snapshot = await context.read<OnlinePlaylistController>().readSnapshot(
-        widget.localId,
-      );
+      final snapshot = await context
+          .read<OnlinePlaylistController>()
+          .readSnapshot(widget.localId);
       if (!mounted || request != _loadRequest) return;
       setState(() {
         _snapshot = snapshot;
@@ -73,6 +75,18 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
     );
   }
 
+  Future<void> _playRandom(Iterable<MusicTrack> tracks) async {
+    final playable = tracks
+        .where(
+          (track) =>
+              track.availability != TrackAvailability.unavailable &&
+              track.availability != TrackAvailability.paid,
+        )
+        .toList(growable: false);
+    if (playable.isEmpty) return;
+    await _play(playable[math.Random().nextInt(playable.length)]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final snapshot = _snapshot;
@@ -80,7 +94,7 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
       title: snapshot?.playlist.name ?? '在线歌单',
       subtitle: snapshot == null
           ? null
-          : '${snapshot.playlist.trackCount ?? snapshot.playlist.tracks.length} 首歌曲 · 只读订阅',
+          : '${snapshot.playlist.trackCount ?? snapshot.playlist.tracks.length} 首歌曲 · 网易订阅',
       actions: [
         IconButton.filledTonal(
           tooltip: '刷新',
@@ -120,71 +134,144 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
         message: '刷新后会重新读取第三方平台的完整快照。',
       );
     }
+    final tracks = snapshot.playlist.tracks;
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 16),
-      itemCount: snapshot.playlist.tracks.length + 1,
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
+      itemCount: tracks.length + 2,
       itemBuilder: (context, index) {
         if (index == 0) return _buildHeader(snapshot);
-        final track = snapshot.playlist.tracks[index - 1];
-        final playable = track.availability != TrackAvailability.unavailable &&
-            track.availability != TrackAvailability.paid;
-        final details = [
-          if (track.artistDisplay.isNotEmpty) track.artistDisplay,
-          if (track.album.isNotEmpty) track.album,
-        ].join(' · ');
-        return DirectionalListItemEntrance(
-          identity: track.ref,
-          child: OnlineTrackRow(
-            track: track,
-            details: details,
-            enabled: playable,
-            onTap: playable ? () => _play(track) : null,
-          ),
-        );
+        if (index == 1) return const SizedBox(height: 12);
+        return _buildTrackRow(tracks[index - 2]);
       },
+    );
+  }
+
+  Widget _buildTrackRow(MusicTrack track) {
+    final playable =
+        track.availability != TrackAvailability.unavailable &&
+        track.availability != TrackAvailability.paid;
+    final details = [
+      if (track.artistDisplay.isNotEmpty) track.artistDisplay,
+      if (track.album.isNotEmpty) track.album,
+    ].join(' · ');
+    return DirectionalListItemEntrance(
+      identity: track.ref,
+      child: OnlineTrackRow(
+        track: track,
+        details: details,
+        enabled: playable,
+        onTap: playable ? () => _play(track) : null,
+      ),
     );
   }
 
   Widget _buildHeader(OnlinePlaylistSnapshot snapshot) {
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+    final playable = snapshot.playlist.tracks.where(
+      (track) =>
+          track.availability != TrackAvailability.unavailable &&
+          track.availability != TrackAvailability.paid,
+    );
+    final hasPlayableTracks = playable.isNotEmpty;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: AppRadius.mdCircular,
+      ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ClipRRect(
-            borderRadius: AppRadius.smCircular,
+            borderRadius: AppRadius.mdCircular,
             child: SizedBox.square(
-              dimension: 72,
+              dimension: 176,
               child: RemoteMediaCover(
                 coverUri: snapshot.playlist.coverUri,
                 placeholder: ColoredBox(
                   color: scheme.surfaceContainerHighest,
-                  child: Icon(Symbols.cloud, color: scheme.onSurfaceVariant),
+                  child: Icon(
+                    Symbols.cloud,
+                    size: 48,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
-                cacheWidth: 144,
-                cacheHeight: 144,
+                cacheWidth: 352,
+                cacheHeight: 352,
               ),
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 20),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  snapshot.playlist.creator ?? '网易在线歌单',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: scheme.onSurfaceVariant),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '仅保存本地快照，曲目播放时重新解析',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: scheme.onSurfaceVariant),
-                ),
-              ],
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 176),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          snapshot.playlist.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(Symbols.cloud, size: 20, color: scheme.primary),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Icon(
+                        Symbols.account_circle,
+                        size: 20,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          snapshot.playlist.creator ?? '网易用户',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: scheme.onSurfaceVariant),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${snapshot.playlist.trackCount ?? snapshot.playlist.tracks.length} 首歌曲 · 只读订阅',
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  ),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      FilledButton.icon(
+                        onPressed: hasPlayableTracks
+                            ? () => _play(playable.first)
+                            : null,
+                        icon: const Icon(Symbols.play_arrow),
+                        label: const Text('播放全部'),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
+                        tooltip: '随机播放',
+                        onPressed: hasPlayableTracks
+                            ? () => _playRandom(snapshot.playlist.tracks)
+                            : null,
+                        icon: const Icon(Symbols.shuffle),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],
