@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pure_music/services/music_platform/index.dart';
+import 'package:pure_music/services/music_platform/chksz/index.dart';
 
 const _fakeApiKey = 'chksz_TEST_ONLY';
 

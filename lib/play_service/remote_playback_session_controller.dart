@@ -6,7 +6,7 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/play_service/remote_playback_queue_controller.dart';
-import 'package:pure_music/services/music_platform/chksz/remote_stream_coordinator.dart';
+import 'package:pure_music/services/music_platform/remote_stream_coordinator.dart';
 
 abstract interface class LocalPlaybackResumePoint {}
 

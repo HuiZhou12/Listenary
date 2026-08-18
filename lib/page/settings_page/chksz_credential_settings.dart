@@ -4,9 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/core/settings.dart';
-import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider.dart';
-import 'package:pure_music/services/music_platform/chksz/chksz_request.dart';
-import 'package:pure_music/services/music_platform/chksz/chksz_runtime.dart';
+import 'package:pure_music/services/music_platform/index.dart';
 
 class ChkszCredentialSettings extends StatefulWidget {
   const ChkszCredentialSettings({super.key, required this.active});
@@ -19,7 +17,7 @@ class ChkszCredentialSettings extends StatefulWidget {
 }
 
 class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
-  late final ChkszRuntime _runtime;
+  late final OnlineMusicCredentialController _credentials;
   bool _hasLoaded = false;
   bool _loading = false;
   bool _configured = false;
@@ -31,7 +29,7 @@ class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
   @override
   void initState() {
     super.initState();
-    _runtime = context.read<ChkszRuntime>();
+    _credentials = context.read<OnlineMusicCredentialController>();
     if (widget.active) _load();
   }
 
@@ -48,14 +46,14 @@ class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
       _error = null;
     });
     try {
-      final apiKey = await _runtime.readApiKey();
+      final configured = await _credentials.isConfigured();
       if (!mounted) return;
       setState(() {
-        _configured = apiKey != null;
+        _configured = configured;
         _hasLoaded = true;
         _loading = false;
       });
-    } on ChkszCredentialStorageException catch (error) {
+    } on OnlineMusicCredentialException catch (error) {
       if (!mounted) return;
       setState(() {
         _error = error.safeMessage;
@@ -64,7 +62,7 @@ class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = '无法读取 ChKSz API Key';
+        _error = '无法读取 $_providerName $_credentialName';
         _loading = false;
       });
     }
@@ -74,12 +72,18 @@ class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
     if (_isBusy) return;
     await showDialog<void>(
       context: context,
-      builder: (context) => _ChkszApiKeyDialog(onSave: _saveApiKey),
+      builder: (context) => _ChkszApiKeyDialog(
+        credentials: _credentials,
+        onSave: _saveApiKey,
+      ),
     );
   }
 
+  String get _providerName => _credentials.providerDisplayName;
+  String get _credentialName => _credentials.credentialDisplayName;
+
   Future<void> _saveApiKey(String apiKey) async {
-    await _runtime.writeApiKey(apiKey);
+    await _credentials.saveCredential(apiKey);
     if (!mounted) return;
     setState(() {
       _configured = true;
@@ -92,7 +96,7 @@ class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
     if (_isBusy) return;
     final confirmed = await showDangerConfirmDialog(
       context: context,
-      title: '清除 ChKSz API Key？',
+      title: '清除 $_providerName $_credentialName？',
       message: portableBuild
           ? '这会清除本次运行中的 API Key，关闭应用后也不会保留。'
           : '这会删除当前 Windows 用户凭据中的 API Key。',
@@ -105,16 +109,18 @@ class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
       _error = null;
     });
     try {
-      await _runtime.clearApiKey();
+      await _credentials.clearCredential();
       if (!mounted) return;
       setState(() {
         _configured = false;
         _hasLoaded = true;
       });
-    } on ChkszCredentialStorageException catch (error) {
+    } on OnlineMusicCredentialException catch (error) {
       if (mounted) setState(() => _error = error.safeMessage);
     } catch (_) {
-      if (mounted) setState(() => _error = '无法清除 ChKSz API Key');
+      if (mounted) {
+        setState(() => _error = '无法清除 $_providerName $_credentialName');
+      }
     } finally {
       if (mounted) setState(() => _busyLabel = null);
     }
@@ -178,7 +184,7 @@ class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: 'ChKSz API Key',
+      description: '$_providerName $_credentialName',
       subtitle: '$_statusDescription · $_modeDescription · 仅在发起在线请求时发送',
       action: _buildAction(),
     );
@@ -186,8 +192,9 @@ class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
 }
 
 class _ChkszApiKeyDialog extends StatefulWidget {
-  const _ChkszApiKeyDialog({required this.onSave});
+  const _ChkszApiKeyDialog({required this.credentials, required this.onSave});
 
+  final OnlineMusicCredentialController credentials;
   final Future<void> Function(String apiKey) onSave;
 
   @override
@@ -200,7 +207,7 @@ class _ChkszApiKeyDialogState extends State<_ChkszApiKeyDialog> {
   bool _saving = false;
   String? _saveError;
 
-  bool get _isValid => isValidChkszApiKeyFormat(_controller.text);
+  bool get _isValid => widget.credentials.isCredentialFormatValid(_controller.text);
 
   String? get _formatError {
     if (_controller.text.isEmpty || _isValid) return null;
@@ -222,12 +229,18 @@ class _ChkszApiKeyDialogState extends State<_ChkszApiKeyDialog> {
     try {
       await widget.onSave(_controller.text);
       if (mounted) Navigator.of(context).pop();
-    } on ChkszCredentialStorageException catch (error) {
+    } on OnlineMusicCredentialException catch (error) {
       if (mounted) setState(() => _saveError = error.safeMessage);
     } on FormatException {
       if (mounted) setState(() => _saveError = 'API Key 格式无效');
     } catch (_) {
-      if (mounted) setState(() => _saveError = '无法保存 ChKSz API Key');
+      if (mounted) {
+        setState(
+          () => _saveError =
+              '无法保存 ${widget.credentials.providerDisplayName} '
+              '${widget.credentials.credentialDisplayName}',
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -237,7 +250,10 @@ class _ChkszApiKeyDialogState extends State<_ChkszApiKeyDialog> {
   Widget build(BuildContext context) {
     final errorText = _saveError ?? _formatError;
     return AlertDialog(
-      title: const Text('配置 ChKSz API Key'),
+      title: Text(
+        '配置 ${widget.credentials.providerDisplayName} '
+        '${widget.credentials.credentialDisplayName}',
+      ),
       content: SizedBox(
         width: 420,
         child: TextField(
@@ -252,7 +268,7 @@ class _ChkszApiKeyDialogState extends State<_ChkszApiKeyDialog> {
           },
           decoration: InputDecoration(
             labelText: 'API Key',
-            hintText: 'chksz_...',
+            hintText: widget.credentials.inputHint,
             errorText: errorText,
             suffixIcon: IconButton(
               tooltip: _obscureText ? '显示 API Key' : '隐藏 API Key',

@@ -1,15 +1,15 @@
 import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/play_service/remote_playback_queue.dart';
-import 'package:pure_music/services/music_platform/chksz/chksz_request.dart';
-import 'package:pure_music/services/music_platform/chksz/chksz_runtime.dart';
-import 'package:pure_music/services/music_platform/chksz/remote_stream_coordinator.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/online_music_request.dart';
+import 'package:pure_music/services/music_platform/online_music_service.dart';
+import 'package:pure_music/services/music_platform/remote_stream_coordinator.dart';
 
 abstract interface class RemoteQueuePlaybackGateway {
   Future<void> open(
     PlatformTrackRef ref, {
     required String requestedQuality,
-    required ChkszCancelToken cancelToken,
+    required OnlineMusicCancelToken cancelToken,
   });
 }
 
@@ -24,26 +24,26 @@ abstract interface class RemoteQueuePlaybackMetadataGateway
   Future<RemoteQueuePlaybackResult> openWithMetadata(
     PlatformTrackRef ref, {
     required String requestedQuality,
-    required ChkszCancelToken cancelToken,
+    required OnlineMusicCancelToken cancelToken,
   });
 }
 
-final class ChkszRemoteQueuePlaybackGateway
+final class OnlineServiceRemoteQueuePlaybackGateway
     implements RemoteQueuePlaybackMetadataGateway {
-  const ChkszRemoteQueuePlaybackGateway({
-    required ChkszRuntime runtime,
+  const OnlineServiceRemoteQueuePlaybackGateway({
+    required OnlineMusicService service,
     required PlaybackBackend backend,
-  }) : _runtime = runtime,
+  }) : _service = service,
        _backend = backend;
 
-  final ChkszRuntime _runtime;
+  final OnlineMusicService _service;
   final PlaybackBackend _backend;
 
   @override
   Future<void> open(
     PlatformTrackRef ref, {
     required String requestedQuality,
-    required ChkszCancelToken cancelToken,
+    required OnlineMusicCancelToken cancelToken,
   }) async {
     await openWithMetadata(
       ref,
@@ -56,12 +56,14 @@ final class ChkszRemoteQueuePlaybackGateway
   Future<RemoteQueuePlaybackResult> openWithMetadata(
     PlatformTrackRef ref, {
     required String requestedQuality,
-    required ChkszCancelToken cancelToken,
+    required OnlineMusicCancelToken cancelToken,
   }) async {
-    final stream = await _runtime.resolveAndOpenNetease(
+    final stream = await RemoteStreamCoordinator(
+      resolver: _service.resolve,
+      backend: _backend,
+    ).resolveAndOpen(
       ref,
       requestedQuality: requestedQuality,
-      backend: _backend,
       cancelToken: cancelToken,
     );
     return RemoteQueuePlaybackResult(coverUri: stream.coverUri);
@@ -77,7 +79,7 @@ final class RemotePlaybackQueueController {
 
   final RemotePlaybackQueue _queue;
   final RemoteQueuePlaybackGateway _gateway;
-  ChkszCancelToken? _activeToken;
+  OnlineMusicCancelToken? _activeToken;
   int _operation = 0;
   bool _disposed = false;
 
@@ -88,7 +90,7 @@ final class RemotePlaybackQueueController {
     final item = snapshot.items[index];
     final operation = ++_operation;
     _activeToken?.cancel();
-    final token = ChkszCancelToken();
+    final token = OnlineMusicCancelToken();
     _activeToken = token;
     _queue.select(index);
 
@@ -127,7 +129,7 @@ final class RemotePlaybackQueueController {
   Future<RemoteQueuePlaybackResult> _open(
     PlatformTrackRef ref, {
     required String requestedQuality,
-    required ChkszCancelToken cancelToken,
+    required OnlineMusicCancelToken cancelToken,
   }) async {
     final gateway = _gateway;
     if (gateway is RemoteQueuePlaybackMetadataGateway) {

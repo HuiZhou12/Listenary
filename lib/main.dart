@@ -16,6 +16,7 @@ import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider_factory.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_runtime_factory.dart';
+import 'package:pure_music/services/music_platform/chksz/chksz_online_music_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
@@ -129,7 +130,14 @@ Future<void> main() async {
   final chkszRuntime = createChkszRuntime(
     credentialProvider: credentialProvider,
   );
-  runApp(Entry(welcome: welcome, chkszRuntime: chkszRuntime));
+  final onlineMusicProvider = ChkszOnlineMusicProvider(runtime: chkszRuntime);
+  runApp(
+    Entry(
+      welcome: welcome,
+      onlineMusicService: onlineMusicProvider,
+      onlineMusicCredentials: onlineMusicProvider,
+    ),
+  );
 }
 
 StreamSubscription<String>? _rustLoggerSub;

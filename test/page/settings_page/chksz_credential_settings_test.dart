@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/page/settings_page/chksz_credential_settings.dart';
-import 'package:pure_music/services/music_platform/index.dart';
+import 'package:pure_music/services/music_platform/chksz/index.dart';
 
 const _apiKey = 'chksz_SETTINGS_TEST_ONLY';
 
@@ -121,21 +121,27 @@ void main() {
   });
 }
 
-Widget _host(ChkszRuntime runtime, {bool active = true}) {
+Widget _host(
+  OnlineMusicCredentialController credentials, {
+  bool active = true,
+}) {
   return MaterialApp(
     home: Scaffold(
-      body: Provider<ChkszRuntime>.value(
-        value: runtime,
+      body: Provider<OnlineMusicCredentialController>.value(
+        value: credentials,
         child: ChkszCredentialSettings(active: active),
       ),
     ),
   );
 }
 
-ChkszRuntime _runtime(ChkszCredentialProvider provider) => ChkszRuntime(
-  credentialProvider: provider,
-  transport: _UnexpectedTransport(),
-);
+ChkszOnlineMusicProvider _runtime(ChkszCredentialProvider provider) =>
+    ChkszOnlineMusicProvider(
+      runtime: ChkszRuntime(
+        credentialProvider: provider,
+        transport: _UnexpectedTransport(),
+      ),
+    );
 
 final class _UnexpectedTransport implements ChkszTransport {
   @override

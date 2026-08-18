@@ -11,9 +11,7 @@ import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/play_service/remote_playback_queue_controller.dart';
 import 'package:pure_music/play_service/remote_playback_session_controller.dart';
-import 'package:pure_music/services/music_platform/adapters/netease_adapter.dart';
-import 'package:pure_music/services/music_platform/chksz/chksz_request.dart';
-import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/index.dart';
 
 void main() {
   late _Harness harness;
@@ -127,7 +125,7 @@ void main() {
 
     expect(harness.gateway.calls, 1);
     expect(harness.gateway.lastRef, harness.remoteItems[1].ref);
-    expect(harness.gateway.lastQuality, NeteaseAdapter.defaultQuality);
+    expect(harness.gateway.lastQuality, 'lossless');
     expect(harness.queue.value.currentIndex, 1);
   });
 
@@ -185,6 +183,7 @@ final class _Harness {
           value: remoteController,
         ),
         ChangeNotifierProvider<RemotePlaybackQueue>.value(value: queue),
+        Provider<OnlineMusicService>.value(value: _OnlineService()),
       ],
       child: const MaterialApp(
         home: Scaffold(
@@ -289,12 +288,42 @@ final class _Gateway implements RemoteQueuePlaybackGateway {
   Future<void> open(
     PlatformTrackRef ref, {
     required String requestedQuality,
-    required ChkszCancelToken cancelToken,
+    required OnlineMusicCancelToken cancelToken,
   }) async {
     calls++;
     lastRef = ref;
     lastQuality = requestedQuality;
   }
+}
+
+final class _OnlineService implements OnlineMusicService {
+  @override
+  final capabilities = OnlineMusicCapabilities(
+    searchablePlatforms: [MusicPlatform.netease],
+    resolvablePlatforms: [MusicPlatform.netease],
+  );
+
+  @override
+  Future<MusicSearchPage> search({
+    required MusicPlatform platform,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<ResolvedStream> resolve(
+    PlatformTrackRef ref, {
+    required String requestedQuality,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnimplementedError();
+
+  @override
+  String defaultQualityFor(MusicPlatform platform) => 'lossless';
+
+  @override
+  void dispose() {}
 }
 
 final class _LocalBridge implements LocalPlaybackSessionBridge {

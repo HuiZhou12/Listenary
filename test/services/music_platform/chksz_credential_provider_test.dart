@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pure_music/services/music_platform/index.dart';
+import 'package:pure_music/services/music_platform/chksz/index.dart';
 
 const _firstApiKey = 'chksz_FIRST_TEST_ONLY';
 const _secondApiKey = 'chksz_SECOND_TEST_ONLY';

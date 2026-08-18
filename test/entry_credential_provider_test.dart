@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/entry.dart';
-import 'package:pure_music/services/music_platform/index.dart';
+import 'package:pure_music/services/music_platform/chksz/index.dart';
 
 void main() {
   test('Entry keeps the explicitly injected ChKSz runtime', () {
@@ -8,10 +8,16 @@ void main() {
       credentialProvider: InMemoryChkszCredentialProvider(),
       transport: _UnexpectedTransport(),
     );
-    final entry = Entry(welcome: true, chkszRuntime: runtime);
+    final provider = ChkszOnlineMusicProvider(runtime: runtime);
+    final entry = Entry(
+      welcome: true,
+      onlineMusicService: provider,
+      onlineMusicCredentials: provider,
+    );
 
-    expect(entry.chkszRuntime, same(runtime));
-    runtime.dispose();
+    expect(entry.onlineMusicService, same(provider));
+    expect(entry.onlineMusicCredentials, same(provider));
+    provider.dispose();
   });
 }
 

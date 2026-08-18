@@ -5,9 +5,9 @@ import 'package:pure_music/services/music_platform/chksz/chksz_credential_provid
 import 'package:pure_music/services/music_platform/chksz/chksz_quota.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_request.dart';
 import 'package:pure_music/services/music_platform/chksz/netease_stream_resolver.dart';
-import 'package:pure_music/services/music_platform/chksz/remote_stream_coordinator.dart';
+import 'package:pure_music/services/music_platform/remote_stream_coordinator.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
-import 'package:pure_music/services/music_platform/music_catalog_service.dart';
+import 'package:pure_music/services/music_platform/chksz/music_catalog_service.dart';
 
 typedef ChkszTransportDispose = void Function();
 

@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/play_service/playback_source.dart';
-import 'package:pure_music/services/music_platform/index.dart';
+import 'package:pure_music/services/music_platform/chksz/index.dart';
 
 const _fakeApiKey = 'chksz_TEST_ONLY';
 const _replacementApiKey = 'chksz_REPLACED_TEST_ONLY';

@@ -18,7 +18,7 @@ typedef OnlineMusicSearch =
       required String keyword,
       required int limit,
       required int offset,
-      required ChkszCancelToken cancelToken,
+      required OnlineMusicCancelToken cancelToken,
     });
 
 typedef OnlineTrackSelected =
@@ -46,8 +46,8 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
   late final TextEditingController _searchController = TextEditingController();
   _OnlineSearchStatus _status = _OnlineSearchStatus.idle;
   MusicSearchPage? _page;
-  ChkszException? _error;
-  ChkszCancelToken? _cancelToken;
+  OnlineMusicException? _error;
+  OnlineMusicCancelToken? _cancelToken;
   int _requestVersion = 0;
 
   @override
@@ -90,7 +90,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     }
 
     _cancelToken?.cancel();
-    final token = ChkszCancelToken();
+    final token = OnlineMusicCancelToken();
     final requestVersion = ++_requestVersion;
     _cancelToken = token;
     setState(() {
@@ -100,14 +100,21 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     });
 
     try {
-      final search =
-          widget.search ?? context.read<ChkszRuntime>().searchNetease;
-      final page = await search(
-        keyword: query,
-        limit: 30,
-        offset: 0,
-        cancelToken: token,
-      );
+      final search = widget.search;
+      final page = search != null
+          ? await search(
+              keyword: query,
+              limit: 30,
+              offset: 0,
+              cancelToken: token,
+            )
+          : await context.read<OnlineMusicService>().search(
+              platform: MusicPlatform.netease,
+              keyword: query,
+              limit: 30,
+              offset: 0,
+              cancelToken: token,
+            );
       if (!mounted || requestVersion != _requestVersion) return;
       setState(() {
         _page = page;
@@ -115,9 +122,9 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
             ? _OnlineSearchStatus.empty
             : _OnlineSearchStatus.success;
       });
-    } on ChkszException catch (error) {
+    } on OnlineMusicException catch (error) {
       if (!mounted || requestVersion != _requestVersion) return;
-      if (error.kind == ChkszErrorKind.cancelled) {
+      if (error.kind == OnlineMusicErrorKind.cancelled) {
         setState(() => _status = _OnlineSearchStatus.idle);
         return;
       }
@@ -128,8 +135,8 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     } catch (_) {
       if (!mounted || requestVersion != _requestVersion) return;
       setState(() {
-        _error = const ChkszException(
-          kind: ChkszErrorKind.unknown,
+        _error = const OnlineMusicException(
+          kind: OnlineMusicErrorKind.unknown,
           safeMessage: '音乐服务请求失败',
         );
         _status = _OnlineSearchStatus.error;
@@ -246,7 +253,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
 
   Widget _buildError() {
     final error = _error!;
-    final unauthorized = error.kind == ChkszErrorKind.unauthorized;
+    final unauthorized = error.kind == OnlineMusicErrorKind.notConfigured;
     return QuietEmptyState(
       icon: unauthorized ? Symbols.key_off : Symbols.cloud_off,
       title: '在线搜索失败',

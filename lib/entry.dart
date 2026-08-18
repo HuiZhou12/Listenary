@@ -63,7 +63,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
-import 'package:pure_music/services/music_platform/chksz/chksz_runtime.dart';
+import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/online_history_controller.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 
@@ -105,9 +105,15 @@ class SlideTransitionPage<T> extends CustomTransitionPage<T> {
 }
 
 class Entry extends StatefulWidget {
-  const Entry({super.key, required this.welcome, required this.chkszRuntime});
+  const Entry({
+    super.key,
+    required this.welcome,
+    required this.onlineMusicService,
+    required this.onlineMusicCredentials,
+  });
   final bool welcome;
-  final ChkszRuntime chkszRuntime;
+  final OnlineMusicService onlineMusicService;
+  final OnlineMusicCredentialController onlineMusicCredentials;
 
   @override
   State<Entry> createState() => _EntryState();
@@ -141,8 +147,8 @@ class _EntryState extends State<Entry>
     _remotePlaybackQueue = RemotePlaybackQueue();
     _remotePlaybackQueueController = RemotePlaybackQueueController(
       queue: _remotePlaybackQueue,
-      gateway: ChkszRemoteQueuePlaybackGateway(
-        runtime: widget.chkszRuntime,
+      gateway: OnlineServiceRemoteQueuePlaybackGateway(
+        service: widget.onlineMusicService,
         backend: _remotePlaybackBackend,
       ),
     );
@@ -295,7 +301,7 @@ class _EntryState extends State<Entry>
     _remotePlaybackQueueController.dispose();
     _remotePlaybackQueue.dispose();
     unawaited(_remotePlaybackBackend.dispose());
-    widget.chkszRuntime.dispose();
+    widget.onlineMusicService.dispose();
     super.dispose();
   }
 
@@ -614,7 +620,12 @@ class _EntryState extends State<Entry>
             scrollBehavior: const AppScrollBehavior(),
             builder: (context, child) => MultiProvider(
               providers: [
-                Provider<ChkszRuntime>.value(value: widget.chkszRuntime),
+                Provider<OnlineMusicService>.value(
+                  value: widget.onlineMusicService,
+                ),
+                Provider<OnlineMusicCredentialController>.value(
+                  value: widget.onlineMusicCredentials,
+                ),
                 ChangeNotifierProvider<ActivePlaybackSession>.value(
                   value: _activePlaybackSessionComposition.activeSession,
                 ),

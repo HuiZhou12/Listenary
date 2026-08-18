@@ -115,14 +115,17 @@ Future<void> playOnlineTrackSelection(
     await controller.play(
       selection.selectedIndex,
       requestedQuality:
-          selection.requestedQuality ?? NeteaseAdapter.defaultQuality,
+          selection.requestedQuality ??
+              context
+                  .read<OnlineMusicService>()
+                  .defaultQualityFor(selection.selectedTrack.ref.platform),
     );
   } on RemoteStreamPlaybackException catch (error) {
     if (error.kind != RemoteStreamPlaybackErrorKind.cancelled) {
       showTextOnSnackBar(error.safeMessage, variant: ToastVariant.error);
     }
-  } on ChkszException catch (error) {
-    if (error.kind != ChkszErrorKind.cancelled) {
+  } on OnlineMusicException catch (error) {
+    if (error.kind != OnlineMusicErrorKind.cancelled) {
       showTextOnSnackBar(error.safeMessage, variant: ToastVariant.error);
     }
   } catch (_) {

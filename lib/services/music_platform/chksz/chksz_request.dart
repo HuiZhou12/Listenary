@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'package:pure_music/services/music_platform/online_music_request.dart';
 
 enum ChkszHttpMethod { get, post }
 
@@ -52,16 +52,7 @@ bool isValidChkszApiKeyFormat(String value) {
   return RegExp(r'^chksz_\S+$').hasMatch(value);
 }
 
-final class ChkszCancelToken {
-  final Completer<void> _cancelled = Completer<void>();
-
-  bool get isCancelled => _cancelled.isCompleted;
-  Future<void> get whenCancelled => _cancelled.future;
-
-  void cancel() {
-    if (!_cancelled.isCompleted) _cancelled.complete();
-  }
-}
+typedef ChkszCancelToken = OnlineMusicCancelToken;
 
 abstract interface class ChkszTransport {
   Future<ChkszTransportResponse> send(

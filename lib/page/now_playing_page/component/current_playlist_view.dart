@@ -108,7 +108,8 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
             )
             .toList(growable: false),
         currentIndex: remoteQueue.currentIndex,
-        onSelect: (index) => _selectRemote(controller, index),
+        onSelect: (index) =>
+            _selectRemote(context, controller, remoteQueue, index),
       );
     }
 
@@ -168,19 +169,27 @@ class _QueueSourceSwitcher extends StatelessWidget {
   }
 }
 
-void _selectRemote(RemotePlaybackSessionController controller, int index) {
+void _selectRemote(
+  BuildContext context,
+  RemotePlaybackSessionController controller,
+  RemotePlaybackQueueSnapshot queue,
+  int index,
+) {
   unawaited(() async {
     try {
+      final service = context.read<OnlineMusicService>();
       await controller.play(
         index,
-        requestedQuality: NeteaseAdapter.defaultQuality,
+        requestedQuality: service.defaultQualityFor(
+          queue.items[index].ref.platform,
+        ),
       );
     } on RemoteStreamPlaybackException catch (error) {
       if (error.kind != RemoteStreamPlaybackErrorKind.cancelled) {
         showTextOnSnackBar(error.safeMessage, variant: ToastVariant.error);
       }
-    } on ChkszException catch (error) {
-      if (error.kind != ChkszErrorKind.cancelled) {
+    } on OnlineMusicException catch (error) {
+      if (error.kind != OnlineMusicErrorKind.cancelled) {
         showTextOnSnackBar(error.safeMessage, variant: ToastVariant.error);
       }
     } catch (_) {

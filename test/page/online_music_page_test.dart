@@ -99,7 +99,7 @@ void main() {
       required String keyword,
       required int limit,
       required int offset,
-      required ChkszCancelToken cancelToken,
+      required OnlineMusicCancelToken cancelToken,
     }) async {
       calls.add(_SearchCall(keyword, limit, offset, cancelToken));
       return _page([_track('1', title: 'Explicit Result')]);
@@ -264,7 +264,7 @@ void main() {
 
   testWidgets('disposal cancels an active request', (tester) async {
     final response = Completer<MusicSearchPage>();
-    ChkszCancelToken? token;
+    OnlineMusicCancelToken? token;
     await _pumpPage(
       tester,
       search:
@@ -327,7 +327,12 @@ void main() {
             required cancelToken,
           }) async {
             attempts++;
-            if (attempts == 1) throw ChkszException.network();
+            if (attempts == 1) {
+              throw const OnlineMusicException(
+                kind: OnlineMusicErrorKind.network,
+                safeMessage: '网络请求失败，请稍后重试',
+              );
+            }
             return _page([_track('1', title: 'Retry Result')]);
           },
     );
@@ -352,8 +357,8 @@ void main() {
             required offset,
             required cancelToken,
           }) {
-            throw const ChkszException(
-              kind: ChkszErrorKind.unauthorized,
+            throw const OnlineMusicException(
+              kind: OnlineMusicErrorKind.notConfigured,
               safeMessage: '请先配置有效的 ChKSz API Key',
             );
           },
@@ -375,7 +380,7 @@ void main() {
       required String keyword,
       required int limit,
       required int offset,
-      required ChkszCancelToken cancelToken,
+      required OnlineMusicCancelToken cancelToken,
     }) async {
       requestCount++;
       return _page([_track('1', title: 'Persistent Result')]);
@@ -462,7 +467,7 @@ final class _SearchCall {
   final String keyword;
   final int limit;
   final int offset;
-  final ChkszCancelToken cancelToken;
+  final OnlineMusicCancelToken cancelToken;
 }
 
 final class _FakeHotKeyManager extends HotKeyManagerPlatform {
