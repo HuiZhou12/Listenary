@@ -40,6 +40,8 @@ import 'package:pure_music/play_service/local_smtc_publisher.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/play_service/playback_source.dart';
+import 'package:pure_music/play_service/remote_desktop_lyric_binding.dart';
+import 'package:pure_music/play_service/remote_lyric_controller.dart';
 import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/play_service/remote_playback_queue_controller.dart';
 import 'package:pure_music/play_service/remote_playback_session_controller.dart';
@@ -131,6 +133,8 @@ class _EntryState extends State<Entry>
   late final RemotePlaybackSessionController _remotePlaybackSessionController;
   late final RemotePlaybackTimelineController _remotePlaybackTimeline;
   late final RemotePlaybackTimelineBinding _remotePlaybackTimelineBinding;
+  late final RemoteLyricController _remoteLyricController;
+  late final RemoteDesktopLyricBinding _remoteDesktopLyricBinding;
   late final OnlineHistoryController _onlineHistoryController;
   late final OnlinePlaylistController _onlinePlaylistController;
   late final OnlineHistoryProjectionBinding _onlineHistoryProjectionBinding;
@@ -218,6 +222,19 @@ class _EntryState extends State<Entry>
       _syncActiveMediaProjection,
     );
     _syncActiveMediaProjection();
+    _remoteLyricController = RemoteLyricController(
+      service: widget.onlineMusicService,
+      activeSession: _activePlaybackSessionComposition.activeSession,
+      queue: _remotePlaybackQueue,
+      timeline: _remotePlaybackTimeline,
+    );
+    _remoteDesktopLyricBinding = RemoteDesktopLyricBinding(
+      playService: _playService,
+      activeSession: _activePlaybackSessionComposition.activeSession,
+      queue: _remotePlaybackQueue,
+      timeline: _remotePlaybackTimeline,
+      lyrics: _remoteLyricController,
+    );
     _remoteMediaArtwork = RemoteMediaArtworkController();
     _remoteMediaArtworkBinding = RemoteMediaArtworkBinding(
       activeSession: _activePlaybackSessionComposition.activeSession,
@@ -289,6 +306,8 @@ class _EntryState extends State<Entry>
     _windowResizing.dispose();
     WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
+    _remoteDesktopLyricBinding.dispose();
+    _remoteLyricController.dispose();
     _remoteMediaArtworkBinding.dispose();
     _remoteMediaArtwork.dispose();
     _activePlaybackSessionComposition.activeSession.removeListener(
@@ -649,6 +668,9 @@ class _EntryState extends State<Entry>
                 ),
                 ChangeNotifierProvider<RemotePlaybackTimelineController>.value(
                   value: _remotePlaybackTimeline,
+                ),
+                ChangeNotifierProvider<RemoteLyricController>.value(
+                  value: _remoteLyricController,
                 ),
                 ChangeNotifierProvider<OnlineHistoryController>.value(
                   value: _onlineHistoryController,

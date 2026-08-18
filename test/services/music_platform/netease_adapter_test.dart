@@ -471,6 +471,70 @@ void main() {
       }
     });
   });
+
+  group('NeteaseAdapter lyric contract', () {
+    const ref = PlatformTrackRef(
+      platform: MusicPlatform.netease,
+      trackId: '123456',
+    );
+
+    test('builds the confirmed lyric request without an API key', () {
+      final request = adapter.createLyricsRequest(ref);
+
+      expect(request.path, '/api/163_lyric');
+      expect(request.method, ChkszHttpMethod.get);
+      expect(request.queryParameters, {'id': '123456'});
+      expect(request.queryParameters, isNot(contains('apikey')));
+    });
+
+    test('maps original, translation, and romanization tracks', () async {
+      final lyrics = await adapter.parseLyricsResponse(const {
+        'code': 200,
+        'msg': 'success',
+        'data': {
+          'lrc': '[00:01.00]Test line',
+          'tlyric': '[00:01.00]Translated line',
+          'romalrc': '[00:01.00]Romanized line',
+        },
+      });
+
+      expect(lyrics.original, '[00:01.00]Test line');
+      expect(lyrics.translation, '[00:01.00]Translated line');
+      expect(lyrics.romanization, '[00:01.00]Romanized line');
+      expect(lyrics.parsed, isNotNull);
+      expect(lyrics.parsed!.lines.single.translation, 'Translated line');
+      expect(lyrics.parsed!.lines.single.romanLyric, 'Romanized line');
+    });
+
+    test('keeps a missing original track as a safe empty result', () async {
+      final lyrics = await adapter.parseLyricsResponse(const {
+        'code': 200,
+        'msg': 'success',
+        'data': {'lrc': '', 'tlyric': '[00:01.00]Translation only'},
+      });
+
+      expect(lyrics.original, isNull);
+      expect(lyrics.translation, '[00:01.00]Translation only');
+      expect(lyrics.parsed, isNull);
+    });
+
+    test('rejects malformed lyric tracks with a safe error', () async {
+      await expectLater(
+        adapter.parseLyricsResponse(const {
+          'code': 200,
+          'msg': 'success',
+          'data': {'lrc': 123},
+        }),
+        throwsA(
+          isA<ChkszException>().having(
+            (error) => error.kind,
+            'kind',
+            ChkszErrorKind.invalidResponse,
+          ),
+        ),
+      );
+    });
+  });
 }
 
 Map<String, dynamic> _playlistBody({

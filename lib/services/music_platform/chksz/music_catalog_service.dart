@@ -57,6 +57,23 @@ final class MusicCatalogService {
     );
   }
 
+  Future<MusicLyrics> fetchNeteaseLyrics({
+    required PlatformTrackRef ref,
+    required ChkszCancelToken cancelToken,
+  }) async {
+    _throwIfCancelled(cancelToken);
+    final request = _neteaseAdapter.createLyricsRequest(ref);
+    final response = await _client.sendJson(
+      request,
+      isBusinessSuccess: _neteaseAdapter.isBusinessSuccess,
+      cancelToken: cancelToken,
+    );
+    _throwIfCancelled(cancelToken);
+    final lyrics = await _neteaseAdapter.parseLyricsResponse(response.body);
+    _throwIfCancelled(cancelToken);
+    return lyrics;
+  }
+
   void _throwIfCancelled(ChkszCancelToken token) {
     if (token.isCancelled) throw ChkszException.cancelled();
   }

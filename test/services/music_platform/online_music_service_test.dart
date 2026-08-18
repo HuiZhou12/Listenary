@@ -102,6 +102,12 @@ final class _FakeOnlineMusicService implements OnlineMusicService {
   }) => throw UnsupportedError('playlist');
 
   @override
+  Future<MusicLyrics> fetchLyrics(
+    PlatformTrackRef ref, {
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('lyrics');
+
+  @override
   String defaultQualityFor(MusicPlatform platform) => 'standard';
 
   @override

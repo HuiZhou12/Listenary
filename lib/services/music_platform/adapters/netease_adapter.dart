@@ -1,6 +1,8 @@
 import 'package:pure_music/services/music_platform/chksz/chksz_error.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_request.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/online_lyric/parsed_lyric_converter.dart';
+import 'package:pure_music/services/online_lyric/parsers/lrc_tool.dart';
 
 final class NeteaseAdapter {
   const NeteaseAdapter();
@@ -31,6 +33,14 @@ final class NeteaseAdapter {
     return ChkszRequest(
       path: '/api/163_playlist',
       queryParameters: {'id': playlistId},
+    );
+  }
+
+  ChkszRequest createLyricsRequest(PlatformTrackRef ref) {
+    _validateTrackRef(ref);
+    return ChkszRequest(
+      path: '/api/163_lyric',
+      queryParameters: {'id': ref.trackId},
     );
   }
 
@@ -134,6 +144,35 @@ final class NeteaseAdapter {
     );
   }
 
+  Future<MusicLyrics> parseLyricsResponse(
+    Map<String, dynamic> body,
+  ) async {
+    if (!isBusinessSuccess(body)) throw _invalidResponse();
+    final data = _requiredMap(body['data']);
+    final original = _optionalLyricTrack(data, 'lrc');
+    final translation = _optionalLyricTrack(data, 'tlyric');
+    final romanization = _optionalLyricTrack(data, 'romalrc');
+    if (original == null) {
+      return MusicLyrics(
+        translation: translation,
+        romanization: romanization,
+      );
+    }
+    final parsed = await parseLyricInIsolate(
+      text: original,
+      transText: translation,
+      romanizationText: romanization,
+    );
+    return MusicLyrics(
+      original: original,
+      translation: translation,
+      romanization: romanization,
+      parsed: parsed == null
+          ? null
+          : parsedLyricToLyric(parsed, rawText: original),
+    );
+  }
+
   MusicTrack _parseTrack(Object? value) {
     final song = _requiredMap(value);
     final id = _requiredPositiveInt(song['id']);
@@ -220,6 +259,13 @@ String? _optionalString(Object? value) {
   if (value is! String) return null;
   final result = value.trim();
   return result.isEmpty ? null : value;
+}
+
+String? _optionalLyricTrack(Map<Object?, Object?> data, String key) {
+  final value = data[key];
+  if (value == null) return null;
+  if (value is! String) throw _invalidResponse();
+  return value.trim().isEmpty ? null : value;
 }
 
 Map<Object?, Object?>? _optionalMap(Object? value) {

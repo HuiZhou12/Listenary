@@ -471,6 +471,11 @@ class DesktopLyricService extends ChangeNotifier {
     _sendLyricProgressSnapshot();
   }
 
+  void sendRemotePlayerStateMessage(bool isPlaying) {
+    if (!_localProjectionSuppressed) return;
+    sendMessage(msg.PlayerStateChangedMessage(isPlaying));
+  }
+
   void sendNowPlayingMessage(Audio nowPlaying) {
     if (_localProjectionSuppressed) return;
     _currentLyricLineStartMs = null;
@@ -485,19 +490,40 @@ class DesktopLyricService extends ChangeNotifier {
     );
   }
 
+  void sendRemoteNowPlayingMessage({
+    required String title,
+    required String artist,
+    required String album,
+  }) {
+    if (!_localProjectionSuppressed) return;
+    _resetCurrentLyricProjection();
+    sendMessage(msg.NowPlayingChangedMessage(title, artist, album));
+  }
+
+  void clearRemoteLyricMessage() {
+    if (!_localProjectionSuppressed) return;
+    _resetCurrentLyricProjection();
+    sendMessage(const msg.LyricLineChangedMessage('', Duration.zero));
+  }
+
   void sendLyricLineMessage(
     LyricLine line, {
     LyricLine? nextLine,
     required bool isWordByWord,
     int? highlightDeadlineMs,
+    Duration? projectedPosition,
   }) {
-    if (_localProjectionSuppressed) return;
+    final isRemoteProjection = projectedPosition != null;
+    if (_localProjectionSuppressed != isRemoteProjection) return;
     final lineStartMs = line.start.inMilliseconds;
     final highlightDuration = desktopLyricHighlightDuration(line);
     final lineLengthMs = highlightDuration.inMilliseconds;
     final lineId = ++_nextLyricLineId;
     final progressMs =
-        ((_playbackService.position * 1000).round() - lineStartMs).clamp(
+        ((projectedPosition?.inMilliseconds ??
+                    (_playbackService.position * 1000).round()) -
+                lineStartMs)
+            .clamp(
           -60000,
           lineLengthMs,
         );
@@ -522,7 +548,7 @@ class DesktopLyricService extends ChangeNotifier {
       logger.i(
         '[desktop lyric] sendLyricLineMessage: line is SyncLyricLine, words count = ${words.length}, progressMs=$progressMs',
       );
-      if (words.isNotEmpty) {
+      if (words.isNotEmpty && !isRemoteProjection) {
         logger.i(
           '[desktop lyric] first word: ${words[0].content}, startMs=${words[0].startMs}, lengthMs=${words[0].lengthMs}',
         );
@@ -599,7 +625,57 @@ class DesktopLyricService extends ChangeNotifier {
         ),
       );
     }
-    _sendLyricProgressSnapshot();
+    if (!isRemoteProjection) _sendLyricProgressSnapshot();
+  }
+
+  void sendRemoteLyricLineMessage(
+    LyricLine line, {
+    LyricLine? nextLine,
+    required bool isWordByWord,
+    required Duration position,
+    int? highlightDeadlineMs,
+  }) {
+    sendLyricLineMessage(
+      line,
+      nextLine: nextLine,
+      isWordByWord: isWordByWord,
+      highlightDeadlineMs: highlightDeadlineMs,
+      projectedPosition: position,
+    );
+  }
+
+  void sendRemoteLyricProgressMessage({
+    required Duration position,
+    required bool isPlaying,
+  }) {
+    if (!_localProjectionSuppressed) return;
+    final lineStartMs = _currentLyricLineStartMs;
+    final lineId = _currentLyricLineId;
+    if (!_isRunning ||
+        _process == null ||
+        lineStartMs == null ||
+        lineId == null) {
+      return;
+    }
+    final progressMs = (position.inMilliseconds - lineStartMs).clamp(
+      -60000,
+      _currentLyricLineLengthMs,
+    );
+    sendMessage(
+      msg.LyricProgressChangedMessage(
+        progressMs,
+        DateTime.now().millisecondsSinceEpoch,
+        1.0,
+        isPlaying,
+        lineId,
+      ),
+    );
+  }
+
+  void _resetCurrentLyricProjection() {
+    _currentLyricLineStartMs = null;
+    _currentLyricLineLengthMs = 0;
+    _currentLyricLineId = null;
   }
 
   void _startProgressSync() {

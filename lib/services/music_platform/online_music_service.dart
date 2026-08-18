@@ -6,13 +6,16 @@ final class OnlineMusicCapabilities {
     required Iterable<MusicPlatform> searchablePlatforms,
     required Iterable<MusicPlatform> resolvablePlatforms,
     Iterable<MusicPlatform> playlistPlatforms = const [],
+    Iterable<MusicPlatform> lyricPlatforms = const [],
   }) : searchablePlatforms = Set.unmodifiable(searchablePlatforms),
        resolvablePlatforms = Set.unmodifiable(resolvablePlatforms),
-       playlistPlatforms = Set.unmodifiable(playlistPlatforms);
+       playlistPlatforms = Set.unmodifiable(playlistPlatforms),
+       lyricPlatforms = Set.unmodifiable(lyricPlatforms);
 
   final Set<MusicPlatform> searchablePlatforms;
   final Set<MusicPlatform> resolvablePlatforms;
   final Set<MusicPlatform> playlistPlatforms;
+  final Set<MusicPlatform> lyricPlatforms;
 }
 
 abstract interface class OnlineMusicService {
@@ -37,6 +40,11 @@ abstract interface class OnlineMusicService {
     required String playlistId,
     required OnlineMusicCancelToken cancelToken,
   }) => throw UnsupportedError('Playlist reading is not supported');
+
+  Future<MusicLyrics> fetchLyrics(
+    PlatformTrackRef ref, {
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Lyric reading is not supported');
 
   String defaultQualityFor(MusicPlatform platform);
 

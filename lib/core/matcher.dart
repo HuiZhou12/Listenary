@@ -3,20 +3,15 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:pure_music/library/audio_library.dart';
-import 'package:pure_music/services/online_lyric/models/lyric_entry.dart'
-    hide LyricFormat;
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/lyric/krc.dart';
-import 'package:pure_music/lyric/qrc.dart';
 import 'package:pure_music/lyric/ttml.dart';
 import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart'
     as net_api;
+import 'package:pure_music/services/online_lyric/parsed_lyric_converter.dart';
 import 'package:pure_music/core/utils.dart' as utils;
-import 'package:pure_music/lyric/lyric_stripper.dart';
-import 'package:pure_music/lyric/exclude_data.dart';
-import 'package:pure_music/core/settings.dart';
 
 final logger = utils.logger;
 
@@ -1277,7 +1272,7 @@ Future<Lyric?> _getQQSyncLyric(
 
     final parsed = await lyricResult.toParsedLyric();
     if (parsed != null && parsed.isNotEmpty) {
-      return _parsedToLyric(parsed, rawText: lyricResult.mainLyric);
+      return parsedLyricToLyric(parsed, rawText: lyricResult.mainLyric);
     }
     logger.d('[QQ lyric] toParsedLyric returned null or empty');
   } catch (err, trace) {
@@ -1330,7 +1325,7 @@ Future<Lyric?> _getKugouSyncLyric(String kugouSongHash) async {
         }
       }
       final result = Krc(syncLines, LyricFormat.local, lyricResult.mainLyric);
-      return _postStripMetadata(result);
+      return stripOnlineLyricMetadata(result);
     }
     logger.d('[KG lyric] toParsedLyric returned null or empty');
   } catch (err, trace) {
@@ -1348,7 +1343,7 @@ Future<Lyric?> _getNeSyncLyric(int neSongId) async {
 
     final parsed = await lyricResult.toParsedLyric();
     if (parsed != null && parsed.isNotEmpty) {
-      return _parsedToLyric(parsed, rawText: lyricResult.mainLyric);
+      return parsedLyricToLyric(parsed, rawText: lyricResult.mainLyric);
     }
     logger.d('[NE lyric] toParsedLyric returned null or empty');
   } catch (err, trace) {
@@ -1377,104 +1372,4 @@ Future<Lyric?> getAmllLyric(String id) async {
   final cached = getCachedLyric(amllTtmlFile: id);
   if (cached != null) return cached;
   return getOnlineLyric(amllTtmlFile: id);
-}
-
-Lyric? _parsedToLyric(ParsedLyricResult parsed, {String? rawText}) {
-  logger.i(
-      '[parsedToLyric] hasWordByWord=${parsed.hasWordByWord} format=${parsed.format.name} lines=${parsed.lines.length}');
-  if (parsed.hasWordByWord) {
-    final syncLines = <SyncLyricLine>[];
-    for (final entry in parsed.lines) {
-      // 过滤同步歌词中的元数据行
-      final lineContent = entry.content;
-      if (lineContent.isNotEmpty && LrcLine.isLyricMetadataLine(lineContent)) {
-        continue;
-      }
-
-      if (entry.words != null && entry.words!.isNotEmpty) {
-        final words = entry.words!.map((w) {
-          return SyncLyricWord(
-            w.start,
-            w.length,
-            w.content,
-          );
-        }).toList();
-        final length = entry.nextTime - entry.start;
-        syncLines.add(SyncLyricLine(
-          entry.start,
-          length,
-          words,
-          entry.translation,
-        )..romanLyric = entry.romanization);
-      } else {
-        final length = entry.nextTime - entry.start;
-        if (entry.content.isEmpty) {
-          // 间奏空白行：保持 words 为空，让 UI 识别为 LyricTransitionTile
-          syncLines.add(SyncLyricLine(entry.start, length, []));
-        } else {
-          syncLines.add(SyncLyricLine(
-            entry.start,
-            length,
-            [SyncLyricWord(entry.start, length, entry.content)],
-            entry.translation,
-          )..romanLyric = entry.romanization);
-        }
-      }
-    }
-    final result = Qrc(syncLines, LyricFormat.local, rawText);
-    return _postStripMetadata(result);
-  }
-
-  final unsyncLines = <LrcLine>[];
-  for (int i = 0; i < parsed.lines.length; i++) {
-    final entry = parsed.lines[i];
-    // 过滤非同步歌词中的元数据行
-    if (entry.content.isNotEmpty &&
-        LrcLine.isLyricMetadataLine(entry.content)) {
-      continue;
-    }
-
-    final line = LrcLine(
-      entry.start,
-      entry.content,
-      requiredIsBlank: entry.content.isEmpty,
-      translation: entry.translation,
-    )..romanLyric = entry.romanization;
-    // 设置歌词行时长：前奏/间奏空白行需要正确的 length 才能被 UI 显示
-    if (entry.content.isEmpty) {
-      line.length = entry.nextTime - entry.start;
-    } else if (i < parsed.lines.length - 1) {
-      line.length = parsed.lines[i + 1].start - entry.start;
-    } else {
-      line.length = entry.nextTime - entry.start;
-    }
-    unsyncLines.add(line);
-  }
-  final result = Lrc(unsyncLines, LyricFormat.web, rawText);
-  return _postStripMetadata(result);
-}
-
-/// 在线歌词的后处理：用 stripLyricMetadata 做全方位元数据剥离
-/// 对齐本地歌词的 loadLyricFromAudio → _stripMetadata 行为
-Lyric? _postStripMetadata(Lyric lyric) {
-  if (lyric.lines.isEmpty) return lyric;
-  if (AppSettings.instance.keepLyricMetadata) return lyric;
-  final regList = defaultExcludeRegexes
-      .map((p) => RegExp(p, caseSensitive: false))
-      .toList();
-  final softRegList = defaultExcludeSoftRegexes
-      .map((p) => RegExp(p, caseSensitive: false))
-      .toList();
-  final options = StripOptions(
-    keywords: defaultExcludeKeywords,
-    regexes: regList,
-    softRegexes: softRegList,
-  );
-  final filtered = stripLyricMetadata(lyric.lines, options);
-  if (!identical(lyric.lines, filtered)) {
-    lyric.lines
-      ..clear()
-      ..addAll(filtered);
-  }
-  return lyric;
 }

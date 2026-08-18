@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:provider/provider.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/route_visibility.dart';
@@ -9,6 +10,8 @@ import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_tile.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/play_service/active_playback_session.dart';
+import 'package:pure_music/play_service/remote_lyric_controller.dart';
 import 'package:flutter/material.dart';
 
 class HorizontalLyricView extends StatelessWidget {
@@ -21,39 +24,169 @@ class HorizontalLyricView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final usesRemoteMedia = context.select<ActivePlaybackSession, bool>(
+      (session) =>
+          session.value.source == ActivePlaybackSessionSource.remote,
+    );
 
     return DecoratedBox(
       decoration: BoxDecoration(
         color: scheme.secondaryContainer,
         borderRadius: AppRadius.mdCircular,
       ),
-      child: ListenableBuilder(
-        listenable: Listenable.merge([
-          PlayService.instance.lyricService,
-          LyricViewController.instance,
-        ]),
-        builder: (context, _) => FutureBuilder(
-          key: ValueKey(PlayService.instance.lyricService.currLyricFuture),
-          future: PlayService.instance.lyricService.currLyricFuture,
-          builder: (context, snapshot) {
-            if (snapshot.data == null) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '快来播放音乐吧~',
-                    style: TextStyle(color: scheme.onSecondaryContainer),
-                  ),
+      child: usesRemoteMedia
+          ? const _RemoteLyricHorizontalScrollArea()
+          : ListenableBuilder(
+              listenable: Listenable.merge([
+                PlayService.instance.lyricService,
+                LyricViewController.instance,
+              ]),
+              builder: (context, _) => FutureBuilder(
+                key: ValueKey(
+                  PlayService.instance.lyricService.currLyricFuture,
                 ),
-              );
-            }
+                future: PlayService.instance.lyricService.currLyricFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.data == null) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '快来播放音乐吧~',
+                          style: TextStyle(
+                            color: scheme.onSecondaryContainer,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
 
-            return _LyricHorizontalScrollArea(snapshot.data!, compact);
-          },
+                  return _LyricHorizontalScrollArea(snapshot.data!, compact);
+                },
+              ),
+            ),
+    );
+  }
+}
+
+class _RemoteLyricHorizontalScrollArea extends StatefulWidget {
+  const _RemoteLyricHorizontalScrollArea();
+
+  @override
+  State<_RemoteLyricHorizontalScrollArea> createState() =>
+      _RemoteLyricHorizontalScrollAreaState();
+}
+
+class _RemoteLyricHorizontalScrollAreaState
+    extends State<_RemoteLyricHorizontalScrollArea> {
+  final ScrollController _scrollController = ScrollController();
+  RemoteLyricController? _controller;
+  Object? _lastRef;
+  int? _lastLineIndex;
+  String _content = '暂无歌词';
+  int _scrollRevision = 0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final controller = context.read<RemoteLyricController>();
+    if (identical(controller, _controller)) return;
+    _controller?.removeListener(_onLyricChanged);
+    _controller = controller..addListener(_onLyricChanged);
+    _lastRef = null;
+    _lastLineIndex = null;
+    _onLyricChanged();
+  }
+
+  void _onLyricChanged() {
+    if (!mounted) return;
+    final snapshot = _controller!.value;
+    final line = snapshot.currentLine;
+    final nextContent = line == null
+        ? '暂无歌词'
+        : _contentForLine(line);
+    final lineChanged =
+        snapshot.ref != _lastRef ||
+        snapshot.currentLineIndex != _lastLineIndex;
+    if (!lineChanged && nextContent == _content) return;
+    _lastRef = snapshot.ref;
+    _lastLineIndex = snapshot.currentLineIndex;
+    setState(() => _content = nextContent);
+    if (lineChanged) {
+      final revision = ++_scrollRevision;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _startScroll(revision, line, snapshot.position),
+      );
+    }
+  }
+
+  String _contentForLine(LyricLine line) {
+    final content = remoteLyricLineContent(line);
+    final translation = line.translation;
+    if (translation == null || translation.isEmpty) return content;
+    return '$content\u2503$translation';
+  }
+
+  void _startScroll(
+    int revision,
+    LyricLine? line,
+    Duration? position,
+  ) {
+    if (!mounted || revision != _scrollRevision) return;
+    if (!_scrollController.hasClients) return;
+    _scrollController.jumpTo(0);
+    final extent = _scrollController.position.maxScrollExtent;
+    if (line == null || extent <= 0) return;
+    final elapsed = (position ?? line.start) - line.start;
+    final remaining = line.length - elapsed - const Duration(milliseconds: 600);
+    if (remaining <= Duration.zero) return;
+    Timer(const Duration(milliseconds: 300), () {
+      if (!mounted || revision != _scrollRevision) return;
+      if (!_scrollController.hasClients) return;
+      unawaited(
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: remaining,
+          curve: Curves.easeOutQuart,
+        ),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            scrollDirection: Axis.horizontal,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: Text(
+                _content,
+                key: ValueKey('$_lastRef:$_lastLineIndex:$_content'),
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(color: scheme.onSecondaryContainer),
+              ),
+            ),
+          ),
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _controller?.removeListener(_onLyricChanged);
+    _scrollController.dispose();
+    super.dispose();
   }
 }
 

@@ -21,6 +21,7 @@ final class ChkszOnlineMusicProvider
     searchablePlatforms: [MusicPlatform.netease],
     resolvablePlatforms: [MusicPlatform.netease],
     playlistPlatforms: [MusicPlatform.netease],
+    lyricPlatforms: [MusicPlatform.netease],
   );
 
   @override
@@ -72,6 +73,22 @@ final class ChkszOnlineMusicProvider
     try {
       return await _runtime.fetchNeteasePlaylist(
         playlistId: playlistId,
+        cancelToken: cancelToken,
+      );
+    } catch (error) {
+      throw _mapError(error);
+    }
+  }
+
+  @override
+  Future<MusicLyrics> fetchLyrics(
+    PlatformTrackRef ref, {
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    _ensurePlatform(ref.platform, capabilities.lyricPlatforms);
+    try {
+      return await _runtime.fetchNeteaseLyrics(
+        ref: ref,
         cancelToken: cancelToken,
       );
     } catch (error) {

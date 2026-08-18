@@ -204,6 +204,39 @@ void main() {
       expect(error.safeMessage, isNot(contains(secretUrl)));
     }
   });
+
+  test('builds and maps a NetEase lyric request', () async {
+    final transport = _FakeTransport(
+      (_, _) async => ChkszTransportResponse(
+        statusCode: 200,
+        data: const {
+          'code': 200,
+          'msg': 'success',
+          'data': {
+            'lrc': '[00:01.00]Test line',
+            'tlyric': '[00:01.00]Translated line',
+          },
+        },
+      ),
+    );
+    final service = MusicCatalogService(client: _client(transport));
+    final token = ChkszCancelToken();
+
+    final lyrics = await service.fetchNeteaseLyrics(
+      ref: const PlatformTrackRef(
+        platform: MusicPlatform.netease,
+        trackId: '123456',
+      ),
+      cancelToken: token,
+    );
+
+    final sent = transport.requests.single;
+    expect(transport.cancelTokens.single, same(token));
+    expect(sent.path, '/api/163_lyric');
+    expect(sent.queryParameters, {'id': '123456', 'apikey': _fakeApiKey});
+    expect(lyrics.parsed, isNotNull);
+    expect(lyrics.parsed!.lines.single.translation, 'Translated line');
+  });
 }
 
 ChkszClient _client(_FakeTransport transport) {

@@ -86,6 +86,17 @@ final class ChkszRuntime {
     ),
   );
 
+  Future<MusicLyrics> fetchNeteaseLyrics({
+    required PlatformTrackRef ref,
+    required ChkszCancelToken cancelToken,
+  }) => _runRequest(
+    cancelToken,
+    () => _catalogService.fetchNeteaseLyrics(
+      ref: ref,
+      cancelToken: cancelToken,
+    ),
+  );
+
   Future<ResolvedStream> resolveNetease(
     PlatformTrackRef ref, {
     required String requestedQuality,

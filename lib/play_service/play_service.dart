@@ -197,6 +197,8 @@ class PlayService {
   late final PlaybackServiceHandoff<PlaybackService> _playbackServiceHandoff;
   LyricService? _lyricService;
   DesktopLyricService? _desktopLyricService;
+  final Set<PlaybackServiceCreatedListener<DesktopLyricService>>
+  _desktopLyricServiceCreatedListeners = {};
   SmtcSessionOwner? _smtcSessionOwner;
   bool _smtcKeepAliveRequested = false;
   void Function()? _remoteSmtcKeepAlivePublisher;
@@ -212,11 +214,19 @@ class PlayService {
   PlaybackService? get existingPlaybackService =>
       _playbackServiceHandoff.existing;
   LyricService get lyricService => _lyricService ??= LyricService(this);
-  DesktopLyricService get desktopLyricService =>
-      _desktopLyricService ??= DesktopLyricService(
-        this,
-        localProjectionSuppressed: _remotePlaybackControls.isActive,
-      );
+  DesktopLyricService get desktopLyricService {
+    final existing = _desktopLyricService;
+    if (existing != null) return existing;
+    final created = DesktopLyricService(
+      this,
+      localProjectionSuppressed: _remotePlaybackControls.isActive,
+    );
+    _desktopLyricService = created;
+    for (final listener in List.of(_desktopLyricServiceCreatedListeners)) {
+      listener(created);
+    }
+    return created;
+  }
   DesktopLyricService? get existingDesktopLyricService => _desktopLyricService;
   SmtcSessionOwner get _sharedSmtcSession {
     final existing = _smtcSessionOwner;
@@ -351,6 +361,20 @@ class PlayService {
     _playbackServiceHandoff.removeCreatedListener(listener);
   }
 
+  void addDesktopLyricServiceCreatedListener(
+    PlaybackServiceCreatedListener<DesktopLyricService> listener,
+  ) {
+    if (!_desktopLyricServiceCreatedListeners.add(listener)) return;
+    final existing = _desktopLyricService;
+    if (existing != null) listener(existing);
+  }
+
+  void removeDesktopLyricServiceCreatedListener(
+    PlaybackServiceCreatedListener<DesktopLyricService> listener,
+  ) {
+    _desktopLyricServiceCreatedListeners.remove(listener);
+  }
+
   void setRemoteNavigationHandlers({
     required bool Function() previous,
     required bool Function() next,
@@ -437,6 +461,7 @@ class PlayService {
     stopSmtcKeepAlive();
     _localPlaybackRequestListeners.clear();
     _playbackServiceHandoff.clearCreatedListeners();
+    _desktopLyricServiceCreatedListeners.clear();
     clearRemoteNavigationHandlers();
     final remotePublisher = _remoteSmtcKeepAlivePublisher;
     _remoteSmtcKeepAlivePublisher = null;
