@@ -770,6 +770,13 @@ class AppSettings {
       if (!isMaximized) {
         sizeToSave = await windowManager.getSize();
       }
+      if (sizeToSave.width <= minimumWindowSizeSetting.width &&
+          sizeToSave.height <= minimumWindowSizeSetting.height) {
+        sizeToSave = Size(
+          defaultWindowSizeSetting.width,
+          defaultWindowSizeSetting.height,
+        );
+      }
       settingsMap['WindowSize'] =
           '${sizeToSave.width.toStringAsFixed(1)},${sizeToSave.height.toStringAsFixed(1)}';
 

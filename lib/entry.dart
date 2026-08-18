@@ -696,6 +696,10 @@ class _EntryState extends State<Entry>
         : app_paths.UPDATING_DIALOG,
     observers: [routeVisibilityObserver],
     routes: [
+      GoRoute(
+        path: '/',
+        redirect: (_, _) => app_paths.AUDIOS_PAGE,
+      ),
       StatefulShellRoute(
         builder: (context, state, navigationShell) =>
             AppShell(navigationShell: navigationShell),
@@ -724,21 +728,6 @@ class _EntryState extends State<Entry>
                   return const AudiosPage();
                 },
                 routes: [
-                  GoRoute(
-                    path: 'online',
-                    builder: (context, state) => const OnlinePlaylistsPage(),
-                    routes: [
-                      GoRoute(
-                        path: 'detail',
-                        pageBuilder: (context, state) => SlideTransitionPage(
-                          key: state.pageKey,
-                          child: OnlinePlaylistDetailPage(
-                            localId: state.extra as int,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
                   GoRoute(
                     path: 'detail',
                     pageBuilder: (context, state) => SlideTransitionPage(
@@ -818,6 +807,21 @@ class _EntryState extends State<Entry>
                 path: app_paths.PLAYLISTS_PAGE,
                 builder: (context, state) => const PlaylistsPage(),
                 routes: [
+                  GoRoute(
+                    path: 'online',
+                    builder: (context, state) => const OnlinePlaylistsPage(),
+                    routes: [
+                      GoRoute(
+                        path: 'detail',
+                        pageBuilder: (context, state) => SlideTransitionPage(
+                          key: state.pageKey,
+                          child: OnlinePlaylistDetailPage(
+                            localId: state.extra as int,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                   GoRoute(
                     path: 'detail',
                     pageBuilder: (context, state) {
