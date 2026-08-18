@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/page/stats_page/stats_components.dart';
 import 'package:pure_music/services/music_platform/online_library/online_history_controller.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 
@@ -101,8 +103,8 @@ class _OnlineHistoryStatsViewState extends State<OnlineHistoryStatsView> {
           ),
           child: Row(
             children: [
-              SegmentedButton<_OnlineHistoryMode>(
-                showSelectedIcon: false,
+              StatsSegmentedControl<_OnlineHistoryMode>(
+                key: const ValueKey('online-history-mode-switcher'),
                 segments: const [
                   ButtonSegment(
                     value: _OnlineHistoryMode.recent,
@@ -134,13 +136,16 @@ class _OnlineHistoryStatsViewState extends State<OnlineHistoryStatsView> {
             padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
             itemCount: entries.length,
             separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, index) => _OnlineHistoryRow(
-              entry: entries[index],
-              mode: _mode,
-              onTap: () => playOnlineHistoryEntry(
-                context,
-                entries: entries,
-                selectedRef: entries[index].track.ref,
+            itemBuilder: (context, index) => DirectionalListItemEntrance(
+              identity: entries[index].track.ref,
+              child: _OnlineHistoryRow(
+                entry: entries[index],
+                mode: _mode,
+                onTap: () => playOnlineHistoryEntry(
+                  context,
+                  entries: entries,
+                  selectedRef: entries[index].track.ref,
+                ),
               ),
             ),
           ),
@@ -204,6 +209,7 @@ class _OnlineHistoryOverview extends StatelessWidget {
             child: _metric(
               scheme,
               icon: Symbols.play_arrow,
+              color: scheme.primary,
               label: '累计播放',
               value: snapshot.totalPlayCount.toString(),
             ),
@@ -216,6 +222,7 @@ class _OnlineHistoryOverview extends StatelessWidget {
             child: _metric(
               scheme,
               icon: Symbols.library_music,
+              color: scheme.tertiary,
               label: '听过的曲目',
               value: snapshot.trackCount.toString(),
             ),
@@ -228,13 +235,14 @@ class _OnlineHistoryOverview extends StatelessWidget {
   Widget _metric(
     ColorScheme scheme, {
     required IconData icon,
+    required Color color,
     required String label,
     required String value,
   }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(icon, color: scheme.primary),
+        StatsMetricIcon(icon: icon, color: color),
         const SizedBox(width: Spacing.sm),
         Flexible(
           child: Column(

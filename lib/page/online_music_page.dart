@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
@@ -275,24 +276,27 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
           if (track.artistDisplay.isNotEmpty) track.artistDisplay,
           if (track.album.isNotEmpty) track.album,
         ].join(' · ');
-        return ListTile(
-          enabled: canPlay,
-          leading: _OnlineTrackCover(
-            key: ValueKey('online-track-cover-${track.ref.trackId}'),
-            coverUri: track.coverUri,
+        return DirectionalListItemEntrance(
+          identity: track.ref,
+          child: ListTile(
+            enabled: canPlay,
+            leading: _OnlineTrackCover(
+              key: ValueKey('online-track-cover-${track.ref.trackId}'),
+              coverUri: track.coverUri,
+            ),
+            title: Text(
+              track.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: details.isEmpty
+                ? null
+                : Text(details, maxLines: 1, overflow: TextOverflow.ellipsis),
+            trailing: track.duration == Duration.zero
+                ? null
+                : Text(_formatTrackDuration(track.duration)),
+            onTap: canPlay ? () => _selectTrack(page, track) : null,
           ),
-          title: Text(
-            track.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: details.isEmpty
-              ? null
-              : Text(details, maxLines: 1, overflow: TextOverflow.ellipsis),
-          trailing: track.duration == Duration.zero
-              ? null
-              : Text(_formatTrackDuration(track.duration)),
-          onTap: canPlay ? () => _selectTrack(page, track) : null,
         );
       },
     );

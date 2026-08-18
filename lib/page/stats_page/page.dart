@@ -5,6 +5,7 @@ import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/rust/api/library_db.dart' as rust_library_db;
 import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/page/stats_page/online_history_stats_view.dart';
+import 'package:pure_music/page/stats_page/stats_components.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/services/music_platform/online_library/online_history_controller.dart';
 import 'package:flutter/foundation.dart';
@@ -113,8 +114,8 @@ class _StatsPageState extends State<StatsPage> {
       title: '统计',
       subtitle: '曲库与收听概览',
       actions: [
-        SegmentedButton<StatsSource>(
-          showSelectedIcon: false,
+        StatsSegmentedControl<StatsSource>(
+          key: const ValueKey('stats-source-switcher'),
           segments: const [
             ButtonSegment(value: StatsSource.local, label: Text('本地')),
             ButtonSegment(value: StatsSource.online, label: Text('在线')),
@@ -326,15 +327,7 @@ class _StatsPageState extends State<StatsPage> {
         padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
         child: Row(
           children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: AppRadius.smCircular,
-              ),
-              child: Icon(icon, size: 20, color: color),
-            ),
+            StatsMetricIcon(icon: icon, color: color),
             const SizedBox(width: Spacing.md),
             Expanded(
               child: Column(
