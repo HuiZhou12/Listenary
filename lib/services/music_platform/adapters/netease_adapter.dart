@@ -26,6 +26,14 @@ final class NeteaseAdapter {
     );
   }
 
+  ChkszRequest createPlaylistRequest(String playlistId) {
+    _validatePlaylistId(playlistId);
+    return ChkszRequest(
+      path: '/api/163_playlist',
+      queryParameters: {'id': playlistId},
+    );
+  }
+
   bool isBusinessSuccess(Map<String, dynamic> body) =>
       body['code'] == 200 && body['msg'] == 'success';
 
@@ -59,6 +67,41 @@ final class NeteaseAdapter {
       offset: offset,
       limit: limit,
       total: total,
+    );
+  }
+
+  RemotePlaylist parsePlaylistResponse(
+    Map<String, dynamic> body, {
+    String? expectedPlaylistId,
+  }) {
+    if (!isBusinessSuccess(body)) throw _invalidResponse();
+
+    final data = _requiredMap(body['data']);
+    final playlistId = _requiredPositiveInt(data['id']);
+    if (expectedPlaylistId != null && '$playlistId' != expectedPlaylistId) {
+      throw _invalidResponse();
+    }
+    final name = _requiredNonEmptyString(data['name']);
+    final trackCount = _requiredNonNegativeInt(data['trackCount']);
+    final rawTracks = _requiredList(data['tracks']);
+    if (trackCount != rawTracks.length) throw _invalidResponse();
+
+    final trackIds = <String>{};
+    final tracks = <MusicTrack>[];
+    for (final rawTrack in rawTracks) {
+      final track = _parsePlaylistTrack(rawTrack);
+      if (!trackIds.add(track.ref.trackId)) throw _invalidResponse();
+      tracks.add(track);
+    }
+
+    return RemotePlaylist(
+      platform: MusicPlatform.netease,
+      id: '$playlistId',
+      name: name,
+      coverUri: _optionalSearchCoverUri(data['coverImgUrl']),
+      creator: _optionalNestedString(data['creator'], 'nickname'),
+      trackCount: trackCount,
+      tracks: tracks,
     );
   }
 
@@ -104,12 +147,42 @@ final class NeteaseAdapter {
       duration: Duration(milliseconds: duration),
     );
   }
+
+  MusicTrack _parsePlaylistTrack(Object? value) {
+    final song = _requiredMap(value);
+    final id = _requiredPositiveInt(song['id']);
+    final title = _requiredNonEmptyString(song['name']);
+    final rawArtists = _requiredList(song['ar']);
+    if (rawArtists.isEmpty) throw _invalidResponse();
+    final artists = rawArtists
+        .map((artist) {
+          final artistMap = _requiredMap(artist);
+          return _requiredNonEmptyString(artistMap['name']);
+        })
+        .toList(growable: false);
+    final album = _optionalMap(song['al']);
+    return MusicTrack(
+      ref: PlatformTrackRef(platform: MusicPlatform.netease, trackId: '$id'),
+      title: title,
+      artists: artists,
+      album: _optionalString(album?['name']) ?? '',
+      coverUri: _optionalSearchCoverUri(album?['picUrl']),
+      duration: Duration.zero,
+      availability: TrackAvailability.unknown,
+    );
+  }
 }
 
 void _validateTrackRef(PlatformTrackRef ref) {
   if (ref.platform != MusicPlatform.netease ||
       !RegExp(r'^[1-9][0-9]*$').hasMatch(ref.trackId)) {
     throw ArgumentError('Must be a valid NetEase track reference');
+  }
+}
+
+void _validatePlaylistId(String playlistId) {
+  if (!RegExp(r'^[1-9][0-9]*$').hasMatch(playlistId)) {
+    throw ArgumentError.value(playlistId, 'playlistId');
   }
 }
 
@@ -135,6 +208,27 @@ List<Object?> _requiredList(Object? value) {
 String _requiredString(Object? value) {
   if (value is String) return value;
   throw _invalidResponse();
+}
+
+String _requiredNonEmptyString(Object? value) {
+  final result = _requiredString(value);
+  if (result.trim().isEmpty) throw _invalidResponse();
+  return result;
+}
+
+String? _optionalString(Object? value) {
+  if (value is! String) return null;
+  final result = value.trim();
+  return result.isEmpty ? null : value;
+}
+
+Map<Object?, Object?>? _optionalMap(Object? value) {
+  if (value == null) return null;
+  return value is Map<Object?, Object?> ? value : null;
+}
+
+String? _optionalNestedString(Object? value, String key) {
+  return _optionalString(_optionalMap(value)?[key]);
 }
 
 int _requiredPositiveInt(Object? value) {

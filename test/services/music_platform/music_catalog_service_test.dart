@@ -68,6 +68,61 @@ void main() {
     expect(transport.requests, isEmpty);
   });
 
+  test('builds and maps a complete NetEase playlist snapshot', () async {
+    final transport = _FakeTransport(
+      (_, _) async =>
+          ChkszTransportResponse(statusCode: 200, data: _playlistBody()),
+    );
+    final service = MusicCatalogService(client: _client(transport));
+    final token = ChkszCancelToken();
+
+    final playlist = await service.fetchNeteasePlaylist(
+      playlistId: '5202687076',
+      cancelToken: token,
+    );
+
+    final sent = transport.requests.single;
+    expect(transport.cancelTokens.single, same(token));
+    expect(sent.path, '/api/163_playlist');
+    expect(sent.queryParameters, {
+      'id': '5202687076',
+      'apikey': _fakeApiKey,
+    });
+    expect(playlist.id, '5202687076');
+    expect(playlist.tracks, hasLength(2));
+  });
+
+  test('honours playlist cancellation before and after transport', () async {
+    final response = Completer<ChkszTransportResponse>();
+    final transport = _FakeTransport((_, _) => response.future);
+    final service = MusicCatalogService(client: _client(transport));
+    final cancelledBefore = ChkszCancelToken()..cancel();
+
+    final earlyError = await _captureChkszException(
+      service.fetchNeteasePlaylist(
+        playlistId: '5202687076',
+        cancelToken: cancelledBefore,
+      ),
+    );
+    expect(earlyError.kind, ChkszErrorKind.cancelled);
+    expect(transport.requests, isEmpty);
+
+    final token = ChkszCancelToken();
+    final future = service.fetchNeteasePlaylist(
+      playlistId: '5202687076',
+      cancelToken: token,
+    );
+    await Future<void>.delayed(Duration.zero);
+    token.cancel();
+    response.complete(
+      ChkszTransportResponse(statusCode: 200, data: _playlistBody()),
+    );
+
+    final lateError = await _captureChkszException(future);
+    expect(lateError.kind, ChkszErrorKind.cancelled);
+    expect(transport.cancelTokens.single, same(token));
+  });
+
   test('honours cancellation before and after transport', () async {
     final response = Completer<ChkszTransportResponse>();
     final transport = _FakeTransport((_, _) => response.future);
@@ -178,6 +233,30 @@ Map<String, dynamic> _searchBody({
       },
     ],
     'total': 31,
+  },
+};
+
+Map<String, dynamic> _playlistBody() => {
+  'code': 200,
+  'msg': 'success',
+  'data': {
+    'id': 5202687076,
+    'name': 'Test Playlist',
+    'trackCount': 2,
+    'tracks': [
+      {
+        'id': 123456,
+        'name': 'Test Track',
+        'ar': [{'name': 'Test Artist'}],
+        'al': {'name': 'Test Album'},
+      },
+      {
+        'id': 654321,
+        'name': 'Second Track',
+        'ar': [{'name': 'Second Artist'}],
+        'al': {'name': 'Second Album'},
+      },
+    ],
   },
 };
 

@@ -184,6 +184,70 @@ void main() {
     expect(repository.findTrack(_ref('100')), isNotNull);
     expect(repository.findTrack(_ref('200')), isNull);
   });
+
+  test('creates, deduplicates and reads an ordered subscription snapshot', () {
+    final refreshedAt = DateTime.utc(2026, 8, 18, 10);
+    final first = repository.replaceSubscriptionSnapshot(
+      _playlist(),
+      refreshedAt: refreshedAt,
+    );
+    final second = repository.replaceSubscriptionSnapshot(
+      _playlist(name: 'Renamed'),
+      refreshedAt: refreshedAt.add(const Duration(minutes: 1)),
+    );
+
+    expect(first.localId, second.localId);
+    expect(repository.listSubscriptions(), hasLength(1));
+    final stored = repository.readSubscriptionSnapshot(first.localId)!;
+    expect(stored.playlist.name, 'Renamed');
+    expect(stored.playlist.tracks.map((track) => track.ref.trackId), [
+      '100',
+      '200',
+    ]);
+    expect(stored.lastRefreshedAt, refreshedAt.add(const Duration(minutes: 1)));
+    expect(
+      repository.findSubscription(
+        platform: MusicPlatform.netease,
+        remotePlaylistId: '500',
+      )!.localId,
+      first.localId,
+    );
+  });
+
+  test('rolls back invalid replacement and keeps the previous snapshot', () {
+    final original = repository.replaceSubscriptionSnapshot(_playlist());
+    expect(
+      () => repository.replaceSubscriptionSnapshot(
+        _playlist(trackCount: 1),
+      ),
+      throwsArgumentError,
+    );
+
+    final stored = repository.readSubscriptionSnapshot(original.localId)!;
+    expect(stored.playlist.name, 'Remote Playlist');
+    expect(stored.playlist.tracks, hasLength(2));
+  });
+
+  test('deletes a subscription without retaining unreferenced metadata', () {
+    repository.replaceSubscriptionSnapshot(_playlist());
+
+    expect(
+      repository.deleteSubscription(
+        platform: MusicPlatform.netease,
+        remotePlaylistId: '500',
+      ),
+      isTrue,
+    );
+    expect(repository.listSubscriptions(), isEmpty);
+    expect(repository.findTrack(_ref('100')), isNull);
+    expect(
+      repository.deleteSubscription(
+        platform: MusicPlatform.netease,
+        remotePlaylistId: '500',
+      ),
+      isFalse,
+    );
+  });
 }
 
 PlatformTrackRef _ref(String id) => PlatformTrackRef(
@@ -206,4 +270,19 @@ MusicTrack _track({
   coverUri: coverUri ?? Uri.https('example.test', '/cover.jpg'),
   duration: duration,
   availability: TrackAvailability.playable,
+);
+
+RemotePlaylist _playlist({
+  String name = 'Remote Playlist',
+  int trackCount = 2,
+}) => RemotePlaylist(
+  platform: MusicPlatform.netease,
+  id: '500',
+  name: name,
+  creator: 'Remote Creator',
+  trackCount: trackCount,
+  tracks: [
+    _track(id: '100', title: 'First'),
+    _track(id: '200', title: 'Second'),
+  ],
 );

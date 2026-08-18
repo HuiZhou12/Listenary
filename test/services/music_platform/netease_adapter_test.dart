@@ -248,6 +248,111 @@ void main() {
     });
   });
 
+  group('NeteaseAdapter playlist request', () {
+    test('builds the confirmed playlist request without an API key', () {
+      final request = adapter.createPlaylistRequest('5202687076');
+
+      expect(request.path, '/api/163_playlist');
+      expect(request.method, ChkszHttpMethod.get);
+      expect(request.queryParameters, {'id': '5202687076'});
+      expect(request.queryParameters, isNot(contains('apikey')));
+    });
+
+    test('rejects invalid playlist IDs locally', () {
+      for (final id in ['', '0', '1.2', 'playlist']) {
+        expect(() => adapter.createPlaylistRequest(id), throwsArgumentError);
+      }
+    });
+  });
+
+  group('NeteaseAdapter playlist response', () {
+    test('maps the complete snapshot and conservative track fields', () {
+      final playlist = adapter.parsePlaylistResponse(_playlistBody());
+
+      expect(playlist.platform, MusicPlatform.netease);
+      expect(playlist.id, '5202687076');
+      expect(playlist.name, 'Test Playlist');
+      expect(playlist.creator, 'Test Creator');
+      expect(playlist.trackCount, 2);
+      expect(playlist.coverUri, Uri.parse('https://cover.invalid/list.jpg'));
+      expect(playlist.tracks, hasLength(2));
+      expect(playlist.tracks.first.ref.trackId, '123456');
+      expect(playlist.tracks.first.artists, ['Test Artist']);
+      expect(playlist.tracks.first.album, 'Test Album');
+      expect(playlist.tracks.first.duration, Duration.zero);
+      expect(playlist.tracks.first.availability, TrackAvailability.unknown);
+    });
+
+    test('upgrades optional HTTP covers to HTTPS and tolerates absent metadata', () {
+      final body = _playlistBody();
+      final data = Map<String, dynamic>.from(body['data']! as Map);
+      data['coverImgUrl'] = 'http://cover.invalid/list.jpg';
+      data.remove('creator');
+      final tracks = List<Map<String, dynamic>>.from(
+        data['tracks']! as List,
+      );
+      final album = Map<String, dynamic>.from(tracks.first['al']! as Map);
+      album.remove('picUrl');
+      tracks.first['al'] = album;
+      data['tracks'] = tracks;
+      body['data'] = data;
+
+      final playlist = adapter.parsePlaylistResponse(body);
+
+      expect(playlist.coverUri, Uri.parse('https://cover.invalid/list.jpg'));
+      expect(playlist.creator, isNull);
+      expect(playlist.tracks.first.coverUri, isNull);
+    });
+
+    test('rejects incomplete snapshots and invalid track identity safely', () {
+      final malformedBodies = <Map<String, dynamic>>[
+        _playlistBody(trackCount: 1),
+        _playlistBody(duplicateTrack: true),
+        _playlistBody(missingTrackTitle: true),
+        _playlistBody(missingArtist: true),
+        {
+          'code': 200,
+          'msg': 'success',
+          'data': {
+            'id': 5202687076,
+            'name': 'Test Playlist',
+            'trackCount': 0,
+            'tracks': 'invalid',
+          },
+        },
+      ];
+
+      for (final body in malformedBodies) {
+        expect(
+          () => adapter.parsePlaylistResponse(body),
+          throwsA(
+            isA<ChkszException>().having(
+              (error) => error.kind,
+              'kind',
+              ChkszErrorKind.invalidResponse,
+            ),
+          ),
+        );
+      }
+    });
+
+    test('rejects a playlist identity different from the request', () {
+      expect(
+        () => adapter.parsePlaylistResponse(
+          _playlistBody(),
+          expectedPlaylistId: '1',
+        ),
+        throwsA(
+          isA<ChkszException>().having(
+            (error) => error.kind,
+            'kind',
+            ChkszErrorKind.invalidResponse,
+          ),
+        ),
+      );
+    });
+  });
+
   group('NeteaseAdapter resolve response', () {
     const ref = PlatformTrackRef(
       platform: MusicPlatform.netease,
@@ -367,6 +472,40 @@ void main() {
     });
   });
 }
+
+Map<String, dynamic> _playlistBody({
+  int trackCount = 2,
+  bool duplicateTrack = false,
+  bool missingTrackTitle = false,
+  bool missingArtist = false,
+}) => {
+  'code': 200,
+  'msg': 'success',
+  'data': {
+    'id': 5202687076,
+    'name': 'Test Playlist',
+    'coverImgUrl': 'https://cover.invalid/list.jpg',
+    'creator': {'nickname': 'Test Creator'},
+    'trackCount': trackCount,
+    'tracks': [
+      {
+        'id': 123456,
+        if (!missingTrackTitle) 'name': 'Test Track',
+        'ar': [if (!missingArtist) {'name': 'Test Artist'}],
+        'al': {
+          'name': 'Test Album',
+          'picUrl': 'https://cover.invalid/test.jpg',
+        },
+      },
+      {
+        'id': duplicateTrack ? 123456 : 654321,
+        'name': 'Second Track',
+        'ar': [{'name': 'Second Artist'}],
+        'al': {'name': 'Second Album'},
+      },
+    ],
+  },
+};
 
 Map<String, dynamic> _resolveBody({
   int id = 123456,

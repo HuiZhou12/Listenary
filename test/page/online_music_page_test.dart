@@ -3,8 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
-import 'package:material_symbols_icons/symbols.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
+import 'package:pure_music/component/online_track_row.dart';
+import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/page/online_music_page.dart';
 import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/services/music_platform/index.dart';
@@ -159,7 +160,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('online-track-cover-1')), findsOneWidget);
-    expect(find.byIcon(Symbols.music_note), findsNothing);
+    final cover = tester.widget<RemoteMediaCover>(
+      find.descendant(
+        of: find.byKey(const ValueKey('online-track-cover-1')),
+        matching: find.byType(RemoteMediaCover),
+      ),
+    );
+    expect(cover.coverUri, Uri.parse('https://cover.invalid/result.jpg'));
   });
 
   testWidgets('enter submits and playable result preserves current page', (
@@ -199,10 +206,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(requestCount, 1);
-    expect(
-      tester.widget<ListTile>(find.widgetWithText(ListTile, 'Paid')).enabled,
-      isFalse,
+    final paidRow = tester.widget<OnlineTrackRow>(
+      find.ancestor(
+        of: find.text('Paid'),
+        matching: find.byType(OnlineTrackRow),
+      ),
     );
+    expect(paidRow.enabled, isFalse);
 
     await tester.tap(find.text('Playable'));
     await tester.pump();

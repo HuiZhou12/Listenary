@@ -583,6 +583,14 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
             style: const ButtonStyle(
               padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
             ),
+            leadingIcon: const Icon(Symbols.cloud),
+            onPressed: () => context.push(app_paths.ONLINE_PLAYLISTS_PAGE),
+            child: const Text('在线歌单'),
+          ),
+          MenuItemButton(
+            style: const ButtonStyle(
+              padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
+            ),
             leadingIcon: _isImportingFolder
                 ? const SizedBox(
                     width: 18.0,

@@ -31,6 +31,18 @@ final class OnlineHistoryLibrarySnapshot {
   int get trackCount => recent.length;
 }
 
+final class OnlinePlaylistSnapshot {
+  const OnlinePlaylistSnapshot({
+    required this.localId,
+    required this.playlist,
+    required this.lastRefreshedAt,
+  });
+
+  final int localId;
+  final RemotePlaylist playlist;
+  final DateTime? lastRefreshedAt;
+}
+
 final class OnlineLibraryRepository {
   OnlineLibraryRepository(this._db);
 
@@ -141,6 +153,167 @@ final class OnlineLibraryRepository {
     });
   }
 
+  OnlinePlaylistSnapshot? findSubscription({
+    required MusicPlatform platform,
+    required String remotePlaylistId,
+  }) {
+    final rows = _db.select(
+      'SELECT id, platform, remote_playlist_id, name, cover_uri, creator, '
+      'remote_track_count, last_refreshed_at FROM online_playlists '
+      "WHERE kind = 'subscription' AND platform = ? AND remote_playlist_id = ?",
+      [_platformValue(platform), _requiredRemotePlaylistId(remotePlaylistId)],
+    );
+    if (rows.isEmpty) return null;
+    return _readPlaylistSnapshot(rows.single);
+  }
+
+  List<OnlinePlaylistSnapshot> listSubscriptions() {
+    final rows = _db.select(
+      'SELECT id, platform, remote_playlist_id, name, cover_uri, creator, '
+      'remote_track_count, last_refreshed_at FROM online_playlists '
+      "WHERE kind = 'subscription' ORDER BY updated_at DESC, id DESC",
+    );
+    return rows.map(_readPlaylistSnapshot).toList(growable: false);
+  }
+
+  OnlinePlaylistSnapshot? readSubscriptionSnapshot(int localId) {
+    if (localId <= 0) throw ArgumentError.value(localId, 'localId');
+    final rows = _db.select(
+      'SELECT id, platform, remote_playlist_id, name, cover_uri, creator, '
+      'remote_track_count, last_refreshed_at FROM online_playlists '
+      "WHERE id = ? AND kind = 'subscription'",
+      [localId],
+    );
+    if (rows.isEmpty) return null;
+    final base = _readPlaylistSnapshot(rows.single);
+    final playlist = base.playlist;
+    final itemRows = _db.select(
+      'SELECT t.platform, t.track_id, t.title, t.album, t.cover_uri, '
+      't.duration_ms, t.availability FROM online_playlist_items i '
+      'JOIN online_tracks t ON t.platform = i.platform AND t.track_id = i.track_id '
+      'WHERE i.playlist_id = ? ORDER BY i.sort_order, i.rowid',
+      [localId],
+    );
+    final tracks = itemRows.map(_readTrack).toList(growable: false);
+    return OnlinePlaylistSnapshot(
+      localId: base.localId,
+      playlist: RemotePlaylist(
+        platform: playlist.platform,
+        id: playlist.id,
+        name: playlist.name,
+        coverUri: playlist.coverUri,
+        creator: playlist.creator,
+        trackCount: playlist.trackCount,
+        tracks: tracks,
+      ),
+      lastRefreshedAt: base.lastRefreshedAt,
+    );
+  }
+
+  OnlinePlaylistSnapshot replaceSubscriptionSnapshot(
+    RemotePlaylist playlist, {
+    DateTime? refreshedAt,
+  }) {
+    _validatePlaylistSnapshot(playlist);
+    final timestamp = (refreshedAt ?? DateTime.now()).toUtc();
+    late OnlinePlaylistSnapshot result;
+    _transaction(() {
+      final platform = _platformValue(playlist.platform);
+      final remoteId = _requiredRemotePlaylistId(playlist.id);
+      final existing = _db.select(
+        'SELECT id FROM online_playlists '
+        "WHERE kind = 'subscription' AND platform = ? AND remote_playlist_id = ?",
+        [platform, remoteId],
+      );
+      late final int localId;
+      if (existing.isEmpty) {
+        _db.execute(
+          'INSERT INTO online_playlists('
+          'kind, name, platform, remote_playlist_id, cover_uri, creator, '
+          'remote_track_count, last_refreshed_at, created_at, updated_at) '
+          "VALUES('subscription', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          [
+            playlist.name.trim(),
+            platform,
+            remoteId,
+            _safeCoverUri(playlist.coverUri),
+            _optionalText(playlist.creator),
+            playlist.trackCount,
+            timestamp.toIso8601String(),
+            timestamp.toIso8601String(),
+            timestamp.toIso8601String(),
+          ],
+        );
+        localId = _db.lastInsertRowId;
+      } else {
+        localId = existing.single['id'] as int;
+        _db.execute(
+          'UPDATE online_playlists SET name = ?, cover_uri = ?, creator = ?, '
+          'remote_track_count = ?, last_refreshed_at = ?, updated_at = ? '
+          'WHERE id = ?',
+          [
+            playlist.name.trim(),
+            _safeCoverUri(playlist.coverUri),
+            _optionalText(playlist.creator),
+            playlist.trackCount,
+            timestamp.toIso8601String(),
+            timestamp.toIso8601String(),
+            localId,
+          ],
+        );
+      }
+
+      _db.execute('DELETE FROM online_playlist_items WHERE playlist_id = ?', [
+        localId,
+      ]);
+      final addedAt = timestamp.toIso8601String();
+      final statement = _db.prepare(
+        'INSERT INTO online_playlist_items('
+        'playlist_id, platform, track_id, sort_order, added_at) '
+        'VALUES(?, ?, ?, ?, ?)',
+      );
+      try {
+        for (var index = 0; index < playlist.tracks.length; index++) {
+          final track = playlist.tracks[index];
+          _upsertTrack(track, lastQuality: null, updatedAt: timestamp);
+          statement.execute([
+            localId,
+            platform,
+            _requiredTrackId(track.ref.trackId),
+            index,
+            addedAt,
+          ]);
+        }
+      } finally {
+        statement.dispose();
+      }
+      _removeUnreferencedTracks();
+      result = readSubscriptionSnapshot(localId)!;
+    });
+    return result;
+  }
+
+  bool deleteSubscription({
+    required MusicPlatform platform,
+    required String remotePlaylistId,
+  }) {
+    var deleted = false;
+    _transaction(() {
+      final rows = _db.select(
+        'SELECT id FROM online_playlists '
+        "WHERE kind = 'subscription' AND platform = ? AND remote_playlist_id = ?",
+        [_platformValue(platform), _requiredRemotePlaylistId(remotePlaylistId)],
+      );
+      if (rows.isEmpty) return;
+      _db.execute('DELETE FROM online_playlists WHERE id = ?', [
+        rows.single['id'],
+      ]);
+      _removeUnreferencedTracks();
+      deleted = true;
+    });
+    return deleted;
+  }
+
   void _upsertTrack(
     MusicTrack track, {
     required String? lastQuality,
@@ -208,6 +381,27 @@ final class OnlineLibraryRepository {
     } finally {
       statement.dispose();
     }
+  }
+
+  OnlinePlaylistSnapshot _readPlaylistSnapshot(Row row) {
+    final platform = _parsePlatform(row['platform'] as String);
+    final remoteId = row['remote_playlist_id'] as String;
+    final cover = row['cover_uri'] as String?;
+    final refreshed = row['last_refreshed_at'] as String?;
+    return OnlinePlaylistSnapshot(
+      localId: row['id'] as int,
+      playlist: RemotePlaylist(
+        platform: platform,
+        id: remoteId,
+        name: row['name'] as String,
+        coverUri: cover == null ? null : Uri.tryParse(cover),
+        creator: row['creator'] as String?,
+        trackCount: row['remote_track_count'] as int?,
+      ),
+      lastRefreshedAt: refreshed == null
+          ? null
+          : DateTime.parse(refreshed).toUtc(),
+    );
   }
 
   MusicTrack _readTrack(Row row, {List<String>? artists}) {
@@ -367,6 +561,37 @@ String _requiredTrackId(String value) {
   final normalized = value.trim();
   if (normalized.isEmpty) throw ArgumentError.value(value, 'trackId');
   return normalized;
+}
+
+String _requiredRemotePlaylistId(String value) {
+  final normalized = value.trim();
+  if (!RegExp(r'^[1-9][0-9]*$').hasMatch(normalized)) {
+    throw ArgumentError.value(value, 'remotePlaylistId');
+  }
+  return normalized;
+}
+
+String? _optionalText(String? value) {
+  final normalized = value?.trim();
+  return normalized == null || normalized.isEmpty ? null : normalized;
+}
+
+void _validatePlaylistSnapshot(RemotePlaylist playlist) {
+  _requiredRemotePlaylistId(playlist.id);
+  if (playlist.name.trim().isEmpty) {
+    throw ArgumentError.value(playlist.name, 'playlist.name');
+  }
+  final count = playlist.trackCount;
+  if (count != null && (count < 0 || count != playlist.tracks.length)) {
+    throw ArgumentError.value(count, 'playlist.trackCount');
+  }
+  final ids = <String>{};
+  for (final track in playlist.tracks) {
+    if (track.ref.platform != playlist.platform ||
+        !ids.add(_requiredTrackId(track.ref.trackId))) {
+      throw ArgumentError.value(track.ref, 'playlist.tracks');
+    }
+  }
 }
 
 String? _optionalQuality(String? value) {

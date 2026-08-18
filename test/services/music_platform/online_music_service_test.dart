@@ -88,6 +88,13 @@ final class _FakeOnlineMusicService implements OnlineMusicService {
   );
 
   @override
+  Future<RemotePlaylist> fetchPlaylist({
+    required MusicPlatform platform,
+    required String playlistId,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('playlist');
+
+  @override
   String defaultQualityFor(MusicPlatform platform) => 'standard';
 
   @override

@@ -75,6 +75,17 @@ final class ChkszRuntime {
     ),
   );
 
+  Future<RemotePlaylist> fetchNeteasePlaylist({
+    required String playlistId,
+    required ChkszCancelToken cancelToken,
+  }) => _runRequest(
+    cancelToken,
+    () => _catalogService.fetchNeteasePlaylist(
+      playlistId: playlistId,
+      cancelToken: cancelToken,
+    ),
+  );
+
   Future<ResolvedStream> resolveNetease(
     PlatformTrackRef ref, {
     required String requestedQuality,

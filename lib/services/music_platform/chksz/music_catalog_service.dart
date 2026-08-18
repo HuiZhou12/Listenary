@@ -39,6 +39,24 @@ final class MusicCatalogService {
     );
   }
 
+  Future<RemotePlaylist> fetchNeteasePlaylist({
+    required String playlistId,
+    required ChkszCancelToken cancelToken,
+  }) async {
+    _throwIfCancelled(cancelToken);
+    final request = _neteaseAdapter.createPlaylistRequest(playlistId);
+    final response = await _client.sendJson(
+      request,
+      isBusinessSuccess: _neteaseAdapter.isBusinessSuccess,
+      cancelToken: cancelToken,
+    );
+    _throwIfCancelled(cancelToken);
+    return _neteaseAdapter.parsePlaylistResponse(
+      response.body,
+      expectedPlaylistId: playlistId,
+    );
+  }
+
   void _throwIfCancelled(ChkszCancelToken token) {
     if (token.isCancelled) throw ChkszException.cancelled();
   }

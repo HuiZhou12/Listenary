@@ -18,6 +18,8 @@ import 'package:pure_music/page/now_playing_page/page.dart';
 import 'package:pure_music/page/online_music_page.dart';
 import 'package:pure_music/page/playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
+import 'package:pure_music/page/online_playlists_page.dart';
+import 'package:pure_music/page/online_playlist_detail_page.dart';
 import 'package:pure_music/page/settings_page/check_update.dart';
 import 'package:pure_music/page/settings_page/create_issue.dart';
 import 'package:pure_music/page/stats_page/page.dart';
@@ -66,6 +68,7 @@ import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/online_history_controller.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
+import 'package:pure_music/services/music_platform/online_library/online_playlist_controller.dart';
 
 class SlideTransitionPage<T> extends CustomTransitionPage<T> {
   const SlideTransitionPage({
@@ -129,6 +132,7 @@ class _EntryState extends State<Entry>
   late final RemotePlaybackTimelineController _remotePlaybackTimeline;
   late final RemotePlaybackTimelineBinding _remotePlaybackTimelineBinding;
   late final OnlineHistoryController _onlineHistoryController;
+  late final OnlinePlaylistController _onlinePlaylistController;
   late final OnlineHistoryProjectionBinding _onlineHistoryProjectionBinding;
   late final RemoteMediaArtworkController _remoteMediaArtwork;
   late final RemoteMediaArtworkBinding _remoteMediaArtworkBinding;
@@ -180,6 +184,10 @@ class _EntryState extends State<Entry>
     );
     _onlineHistoryController = OnlineHistoryController(
       repository: AppDb.instance.db().then(OnlineLibraryRepository.new),
+    );
+    _onlinePlaylistController = OnlinePlaylistController(
+      repository: AppDb.instance.db().then(OnlineLibraryRepository.new),
+      service: widget.onlineMusicService,
     );
     _onlineHistoryProjectionBinding = OnlineHistoryProjectionBinding(
       queue: _remotePlaybackQueue,
@@ -295,6 +303,7 @@ class _EntryState extends State<Entry>
     _playService.stopSmtcKeepAlive();
     unawaited(_onlineHistoryProjectionBinding.dispose());
     _onlineHistoryController.dispose();
+    _onlinePlaylistController.dispose();
     unawaited(_remotePlaybackTimelineBinding.dispose());
     _remotePlaybackTimeline.dispose();
     _remotePlaybackSessionController.dispose();
@@ -644,6 +653,9 @@ class _EntryState extends State<Entry>
                 ChangeNotifierProvider<OnlineHistoryController>.value(
                   value: _onlineHistoryController,
                 ),
+                ChangeNotifierProvider<OnlinePlaylistController>.value(
+                  value: _onlinePlaylistController,
+                ),
                 ChangeNotifierProvider<RemoteMediaArtworkController>.value(
                   value: _remoteMediaArtwork,
                 ),
@@ -712,6 +724,21 @@ class _EntryState extends State<Entry>
                   return const AudiosPage();
                 },
                 routes: [
+                  GoRoute(
+                    path: 'online',
+                    builder: (context, state) => const OnlinePlaylistsPage(),
+                    routes: [
+                      GoRoute(
+                        path: 'detail',
+                        pageBuilder: (context, state) => SlideTransitionPage(
+                          key: state.pageKey,
+                          child: OnlinePlaylistDetailPage(
+                            localId: state.extra as int,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                   GoRoute(
                     path: 'detail',
                     pageBuilder: (context, state) => SlideTransitionPage(

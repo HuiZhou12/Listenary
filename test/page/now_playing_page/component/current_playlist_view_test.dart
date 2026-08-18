@@ -320,6 +320,13 @@ final class _OnlineService implements OnlineMusicService {
   }) => throw UnimplementedError();
 
   @override
+  Future<RemotePlaylist> fetchPlaylist({
+    required MusicPlatform platform,
+    required String playlistId,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnimplementedError();
+
+  @override
   String defaultQualityFor(MusicPlatform platform) => 'lossless';
 
   @override

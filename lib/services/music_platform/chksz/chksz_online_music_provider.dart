@@ -20,6 +20,7 @@ final class ChkszOnlineMusicProvider
   final OnlineMusicCapabilities capabilities = OnlineMusicCapabilities(
     searchablePlatforms: [MusicPlatform.netease],
     resolvablePlatforms: [MusicPlatform.netease],
+    playlistPlatforms: [MusicPlatform.netease],
   );
 
   @override
@@ -54,6 +55,23 @@ final class ChkszOnlineMusicProvider
       return await _runtime.resolveNetease(
         ref,
         requestedQuality: requestedQuality,
+        cancelToken: cancelToken,
+      );
+    } catch (error) {
+      throw _mapError(error);
+    }
+  }
+
+  @override
+  Future<RemotePlaylist> fetchPlaylist({
+    required MusicPlatform platform,
+    required String playlistId,
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    _ensurePlatform(platform, capabilities.playlistPlatforms);
+    try {
+      return await _runtime.fetchNeteasePlaylist(
+        playlistId: playlistId,
         cancelToken: cancelToken,
       );
     } catch (error) {
