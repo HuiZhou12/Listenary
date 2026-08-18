@@ -13,8 +13,6 @@ import 'package:pure_music/page/stats_page/stats_components.dart';
 import 'package:pure_music/services/music_platform/online_library/online_history_controller.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 
-enum _OnlineHistoryMode { recent, topPlayed }
-
 class OnlineHistoryStatsView extends StatefulWidget {
   const OnlineHistoryStatsView({super.key});
 
@@ -23,7 +21,6 @@ class OnlineHistoryStatsView extends StatefulWidget {
 }
 
 class _OnlineHistoryStatsViewState extends State<OnlineHistoryStatsView> {
-  _OnlineHistoryMode _mode = _OnlineHistoryMode.recent;
   bool _initialLoadRequested = false;
 
   @override
@@ -72,75 +69,99 @@ class _OnlineHistoryStatsViewState extends State<OnlineHistoryStatsView> {
       );
     }
 
-    final entries = _mode == _OnlineHistoryMode.recent
-        ? snapshot.recent
-        : snapshot.topPlayed;
-    return Column(
-      children: [
+    final entries = snapshot.topPlayed;
+    final artists = _buildTopArtists(entries);
+    final maxPlays = entries.isEmpty ? 0 : entries.first.playCount;
+    return CustomScrollView(
+      slivers: [
         if (snapshot.status == OnlineHistoryLoadStatus.loading)
-          const LinearProgressIndicator(minHeight: 2),
+          const SliverToBoxAdapter(
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
         if (snapshot.status == OnlineHistoryLoadStatus.failed)
-          Padding(
-            padding: const EdgeInsets.only(bottom: Spacing.xs),
-            child: Text(
-              '刷新失败，显示上次结果',
-              style: TextStyle(color: scheme.error, fontSize: AppType.caption),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: Spacing.xs),
+              child: Text(
+                '刷新失败，显示上次结果',
+                style: TextStyle(
+                  color: scheme.error,
+                  fontSize: AppType.caption,
+                ),
+              ),
             ),
           ),
-        Padding(
+        SliverPadding(
           padding: const EdgeInsets.fromLTRB(
             Spacing.sm,
             Spacing.sm,
             Spacing.sm,
             0,
           ),
-          child: _OnlineHistoryOverview(snapshot: snapshot),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: Spacing.sm,
-            vertical: Spacing.md,
-          ),
-          child: Row(
-            children: [
-              StatsSegmentedControl<_OnlineHistoryMode>(
-                key: const ValueKey('online-history-mode-switcher'),
-                segments: const [
-                  ButtonSegment(
-                    value: _OnlineHistoryMode.recent,
-                    label: Text('最近播放'),
-                  ),
-                  ButtonSegment(
-                    value: _OnlineHistoryMode.topPlayed,
-                    label: Text('最常播放'),
-                  ),
-                ],
-                selected: {_mode},
-                onSelectionChanged: (selection) {
-                  setState(() => _mode = selection.single);
-                },
-              ),
-              const Spacer(),
-              IconButton(
-                tooltip: '清空在线播放历史',
-                onPressed: snapshot.status == OnlineHistoryLoadStatus.loading
-                    ? null
-                    : () => _confirmClear(context, controller),
-                icon: const Icon(Symbols.delete_sweep),
-              ),
-            ],
+          sliver: SliverToBoxAdapter(
+            child: _OnlineHistoryOverview(snapshot: snapshot),
           ),
         ),
-        Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
+        if (artists.isNotEmpty)
+          SliverToBoxAdapter(
+            child: _OnlineArtistSection(artists: artists),
+          ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              Spacing.sm,
+              Spacing.xl,
+              Spacing.sm,
+              Spacing.md,
+            ),
+            child: Row(
+              children: [
+                Text(
+                  '最常播放',
+                  style: TextStyle(
+                    fontSize: AppType.sectionTitle,
+                    fontWeight: AppType.weightSemibold,
+                    color: scheme.onSurface,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${entries.length} 首曲目',
+                  style: TextStyle(
+                    fontSize: AppType.caption,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: Spacing.sm),
+                IconButton(
+                  tooltip: '清空在线播放历史',
+                  onPressed:
+                      snapshot.status == OnlineHistoryLoadStatus.loading
+                      ? null
+                      : () => _confirmClear(context, controller),
+                  icon: const Icon(Symbols.delete_sweep),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (entries.isEmpty)
+          const SliverToBoxAdapter(
+            child: QuietEmptyState(
+              icon: Symbols.bar_chart,
+              title: '暂无播放排行',
+              message: '成功播放在线歌曲后，这里会出现排行。',
+            ),
+          )
+        else
+          SliverList.builder(
             itemCount: entries.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, index) => DirectionalListItemEntrance(
               identity: entries[index].track.ref,
               child: _OnlineHistoryRow(
                 entry: entries[index],
-                mode: _mode,
+                index: index,
+                maxPlays: maxPlays,
                 onTap: () => playOnlineHistoryEntry(
                   context,
                   entries: entries,
@@ -149,6 +170,8 @@ class _OnlineHistoryStatsViewState extends State<OnlineHistoryStatsView> {
               ),
             ),
           ),
+        const SliverToBoxAdapter(
+          child: SizedBox(height: Spacing.bottomNav),
         ),
       ],
     );
@@ -194,6 +217,15 @@ class _OnlineHistoryOverview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final tracks = snapshot.recent;
+    final artists = <String>{};
+    final albums = <String>{};
+    var duration = 0;
+    for (final entry in tracks) {
+      artists.addAll(entry.track.artists.where((artist) => artist.isNotEmpty));
+      if (entry.track.album.isNotEmpty) albums.add(entry.track.album);
+      duration += entry.track.duration.inSeconds;
+    }
     return Container(
       padding: const EdgeInsets.all(Spacing.md),
       decoration: BoxDecoration(
@@ -203,73 +235,105 @@ class _OnlineHistoryOverview extends StatelessWidget {
           color: scheme.outlineVariant.withValues(alpha: 0.45),
         ),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _metric(
-              scheme,
-              icon: Symbols.play_arrow,
-              color: scheme.primary,
-              label: '累计播放',
-              value: snapshot.totalPlayCount.toString(),
-            ),
-          ),
-          SizedBox(
-            height: 40,
-            child: VerticalDivider(color: scheme.outlineVariant),
-          ),
-          Expanded(
-            child: _metric(
-              scheme,
-              icon: Symbols.library_music,
-              color: scheme.tertiary,
-              label: '听过的曲目',
-              value: snapshot.trackCount.toString(),
-            ),
-          ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final columns = constraints.maxWidth >= 1000
+              ? 4
+              : constraints.maxWidth >= 520
+              ? 2
+              : 1;
+          final width =
+              (constraints.maxWidth - (columns - 1) * Spacing.sm) / columns;
+          return Wrap(
+            spacing: Spacing.sm,
+            runSpacing: Spacing.sm,
+            children: [
+              _metric(
+                scheme,
+                width: width,
+                icon: Symbols.play_arrow,
+                color: scheme.primary,
+                label: '累计播放',
+                value: _formatCount(snapshot.totalPlayCount),
+              ),
+              _metric(
+                scheme,
+                width: width,
+                icon: Symbols.library_music,
+                color: scheme.tertiary,
+                label: '听过的曲目',
+                value: snapshot.trackCount.toString(),
+              ),
+              _metric(
+                scheme,
+                width: width,
+                icon: Symbols.album,
+                color: scheme.secondary,
+                label: '艺术家 / 专辑',
+                value: '${artists.length} / ${albums.length}',
+              ),
+              _metric(
+                scheme,
+                width: width,
+                icon: Symbols.schedule,
+                color: scheme.onSurfaceVariant,
+                label: '曲目总时长',
+                value: _formatDuration(duration),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
   Widget _metric(
     ColorScheme scheme, {
+    required double width,
     required IconData icon,
     required Color color,
     required String label,
     required String value,
   }) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        StatsMetricIcon(icon: icon, color: color),
-        const SizedBox(width: Spacing.sm),
-        Flexible(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                value,
-                style: TextStyle(
-                  color: scheme.onSurface,
-                  fontSize: AppType.sectionTitle,
-                  fontWeight: AppType.weightSemibold,
-                ),
+    return SizedBox(
+      width: width,
+      height: 68,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
+        child: Row(
+          children: [
+            StatsMetricIcon(icon: icon, color: color),
+            const SizedBox(width: Spacing.md),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: AppType.pageTitle,
+                      fontWeight: AppType.weightSemibold,
+                    ),
+                  ),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: AppType.caption,
+                    ),
+                  ),
+                ],
               ),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: scheme.onSurfaceVariant,
-                  fontSize: AppType.caption,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -277,38 +341,130 @@ class _OnlineHistoryOverview extends StatelessWidget {
 class _OnlineHistoryRow extends StatelessWidget {
   const _OnlineHistoryRow({
     required this.entry,
-    required this.mode,
+    required this.index,
+    required this.maxPlays,
     required this.onTap,
   });
 
   final OnlineHistoryEntry entry;
-  final _OnlineHistoryMode mode;
+  final int index;
+  final int maxPlays;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final track = entry.track;
-    final details = [
-      if (track.artistDisplay.isNotEmpty) track.artistDisplay,
-      if (track.album.isNotEmpty) track.album,
-    ].join(' · ');
-    return ListTile(
-      minTileHeight: 64,
-      leading: _OnlineHistoryCover(coverUri: track.coverUri),
-      title: Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: details.isEmpty
-          ? null
-          : Text(details, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: Text(
-        mode == _OnlineHistoryMode.recent
-            ? _formatPlayedAt(entry.lastPlayedAt)
-            : '${entry.playCount} 次',
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-          fontSize: AppType.caption,
+    final fraction = maxPlays > 0 ? entry.playCount / maxPlays : 0.0;
+    final showAlbum = MediaQuery.sizeOf(context).width >= 760;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: 2),
+      child: SizedBox(
+        height: 64,
+        child: Material(
+          type: MaterialType.transparency,
+          borderRadius: AppRadius.smCircular,
+          child: InkWell(
+            onTap: onTap,
+            hoverColor: scheme.onSurface.withValues(alpha: Alpha.hover),
+            borderRadius: AppRadius.smCircular,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 36,
+                    child: Text(
+                      '${index + 1}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: AppType.caption,
+                        fontWeight: index < 3
+                            ? AppType.weightBold
+                            : AppType.weightRegular,
+                        color: index < 3
+                            ? scheme.primary
+                            : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  _OnlineHistoryCover(coverUri: track.coverUri),
+                  const SizedBox(width: Spacing.md),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          track.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: scheme.onSurface,
+                            fontSize: AppType.subtitle,
+                            fontWeight: AppType.weightMedium,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          track.artistDisplay,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: scheme.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (showAlbum && track.album.isNotEmpty) ...[
+                    const SizedBox(width: Spacing.lg),
+                    SizedBox(
+                      width: 180,
+                      child: Text(
+                        track.album,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: Spacing.lg),
+                  SizedBox(
+                    width: 84,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '${_formatCount(entry.playCount)} 次',
+                          style: TextStyle(
+                            color: scheme.primary,
+                            fontSize: AppType.body,
+                            fontWeight: AppType.weightSemibold,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: AppRadius.xsCircular,
+                          child: LinearProgressIndicator(
+                            value: fraction,
+                            minHeight: 3,
+                            backgroundColor: scheme.primaryContainer.withValues(
+                              alpha: 0.3,
+                            ),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              scheme.primary.withValues(alpha: 0.68),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
-      onTap: onTap,
     );
   }
 }
@@ -326,9 +482,9 @@ class _OnlineHistoryCover extends StatelessWidget {
       child: Icon(Symbols.music_note, color: scheme.onSurfaceVariant, size: 20),
     );
     return ClipRRect(
-      borderRadius: AppRadius.xsCircular,
+      borderRadius: AppRadius.smCircular,
       child: SizedBox.square(
-        dimension: 44,
+        dimension: 48,
         child: RemoteMediaCover(
           coverUri: coverUri,
           placeholder: placeholder,
@@ -340,9 +496,189 @@ class _OnlineHistoryCover extends StatelessWidget {
   }
 }
 
-String _formatPlayedAt(DateTime value) {
-  final local = value.toLocal();
-  String twoDigits(int number) => number.toString().padLeft(2, '0');
-  return '${local.month}/${local.day} '
-      '${twoDigits(local.hour)}:${twoDigits(local.minute)}';
+class _OnlineArtistSection extends StatelessWidget {
+  const _OnlineArtistSection({required this.artists});
+
+  final List<_OnlineArtistPlayStat> artists;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final maxPlays = artists.first.playCount;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Spacing.sm, Spacing.xl, Spacing.sm, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '常听艺术家',
+            style: TextStyle(
+              fontSize: AppType.sectionTitle,
+              fontWeight: AppType.weightSemibold,
+              color: scheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: Spacing.md),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = constraints.maxWidth >= 980
+                  ? 3
+                  : constraints.maxWidth >= 560
+                  ? 2
+                  : 1;
+              final width =
+                  (constraints.maxWidth - (columns - 1) * Spacing.lg) / columns;
+              return Wrap(
+                spacing: Spacing.lg,
+                runSpacing: Spacing.md,
+                children: [
+                  for (var i = 0; i < artists.length; i++)
+                    SizedBox(
+                      width: width,
+                      child: _OnlineArtistStat(
+                        artist: artists[i],
+                        rank: i + 1,
+                        maxPlays: maxPlays,
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OnlineArtistStat extends StatelessWidget {
+  const _OnlineArtistStat({
+    required this.artist,
+    required this.rank,
+    required this.maxPlays,
+  });
+
+  final _OnlineArtistPlayStat artist;
+  final int rank;
+  final int maxPlays;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final fraction = maxPlays > 0 ? artist.playCount / maxPlays : 0.0;
+    return Row(
+      children: [
+        SizedBox(
+          width: 28,
+          child: Text(
+            rank.toString().padLeft(2, '0'),
+            style: TextStyle(
+              fontSize: AppType.caption,
+              fontWeight: AppType.weightSemibold,
+              color: rank <= 3 ? scheme.tertiary : scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      artist.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: AppType.body,
+                        fontWeight: AppType.weightMedium,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: Spacing.sm),
+                  Text(
+                    '${_formatCount(artist.playCount)} 次',
+                    style: TextStyle(
+                      fontSize: AppType.caption,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: AppRadius.xsCircular,
+                child: LinearProgressIndicator(
+                  value: fraction,
+                  minHeight: 3,
+                  backgroundColor: scheme.surfaceContainerHighest.withValues(
+                    alpha: 0.5,
+                  ),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    scheme.tertiary.withValues(alpha: 0.72),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OnlineArtistPlayStat {
+  const _OnlineArtistPlayStat(this.name, this.playCount);
+
+  final String name;
+  final int playCount;
+}
+
+List<_OnlineArtistPlayStat> _buildTopArtists(
+  List<OnlineHistoryEntry> entries,
+) {
+  final counts = <String, int>{};
+  for (final entry in entries) {
+    for (final artist in entry.track.artists) {
+      final name = artist.trim();
+      if (name.isEmpty) continue;
+      counts.update(
+        name,
+        (value) => value + entry.playCount,
+        ifAbsent: () => entry.playCount,
+      );
+    }
+  }
+  final result =
+      counts.entries
+          .map((entry) => _OnlineArtistPlayStat(entry.key, entry.value))
+          .toList()
+        ..sort((a, b) {
+          final byCount = b.playCount.compareTo(a.playCount);
+          return byCount != 0 ? byCount : a.name.compareTo(b.name);
+        });
+  return result.take(6).toList(growable: false);
+}
+
+String _formatCount(int value) {
+  if (value >= 10000) {
+    return '${(value / 10000).toStringAsFixed(1)} 万'.replaceFirst('.0', '');
+  }
+  if (value >= 1000) {
+    return '${(value / 1000).toStringAsFixed(1)} 千'.replaceFirst('.0', '');
+  }
+  return value.toString();
+}
+
+String _formatDuration(int seconds) {
+  if (seconds <= 0) return '0 分钟';
+  final totalMinutes = seconds ~/ 60;
+  final days = totalMinutes ~/ (24 * 60);
+  final hours = totalMinutes.remainder(24 * 60) ~/ 60;
+  final minutes = totalMinutes.remainder(60);
+  if (days > 0) return '$days 天 $hours 小时';
+  if (hours > 0) return '$hours 小时 $minutes 分钟';
+  return '$minutes 分钟';
 }

@@ -270,10 +270,9 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
 
   Widget _buildResultList() {
     final page = _page!;
-    return ListView.separated(
+    return ListView.builder(
       padding: const EdgeInsets.only(bottom: 16.0),
       itemCount: page.items.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, index) {
         final track = page.items[index];
         final canPlay =
@@ -285,23 +284,10 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
         ].join(' · ');
         return DirectionalListItemEntrance(
           identity: track.ref,
-          child: ListTile(
+          child: _OnlineTrackRow(
+            track: track,
+            details: details,
             enabled: canPlay,
-            leading: _OnlineTrackCover(
-              key: ValueKey('online-track-cover-${track.ref.trackId}'),
-              coverUri: track.coverUri,
-            ),
-            title: Text(
-              track.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: details.isEmpty
-                ? null
-                : Text(details, maxLines: 1, overflow: TextOverflow.ellipsis),
-            trailing: track.duration == Duration.zero
-                ? null
-                : Text(_formatTrackDuration(track.duration)),
             onTap: canPlay ? () => _selectTrack(page, track) : null,
           ),
         );
@@ -338,17 +324,105 @@ class _OnlineTrackCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final placeholder = ColoredBox(color: scheme.surfaceContainerHighest);
+    final placeholder = ColoredBox(
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+      child: Icon(
+        Symbols.music_note,
+        size: 22,
+        color: scheme.onSurfaceVariant.withValues(alpha: 0.65),
+      ),
+    );
     return ClipRRect(
-      borderRadius: AppRadius.xsCircular,
+      borderRadius: AppRadius.smCircular,
       child: SizedBox.square(
-        dimension: 44.0,
+        dimension: 48.0,
         child: RemoteMediaCover(
           coverUri: coverUri,
           placeholder: placeholder,
           cacheWidth: 96,
           cacheHeight: 96,
           filterQuality: FilterQuality.medium,
+        ),
+      ),
+    );
+  }
+}
+
+class _OnlineTrackRow extends StatelessWidget {
+  const _OnlineTrackRow({
+    required this.track,
+    required this.details,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final MusicTrack track;
+  final String details;
+  final bool enabled;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final titleColor = enabled ? scheme.onSurface : scheme.onSurfaceVariant;
+    final metadataColor = enabled
+        ? scheme.onSurfaceVariant
+        : scheme.onSurfaceVariant.withValues(alpha: 0.55);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: 2),
+      child: SizedBox(
+        height: 64,
+        child: Material(
+          type: MaterialType.transparency,
+          borderRadius: AppRadius.smCircular,
+          child: InkWell(
+            onTap: onTap,
+            hoverColor: scheme.onSurface.withValues(alpha: Alpha.hover),
+            borderRadius: AppRadius.smCircular,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
+              child: Row(
+                children: [
+                  _OnlineTrackCover(
+                    key: ValueKey('online-track-cover-${track.ref.trackId}'),
+                    coverUri: track.coverUri,
+                  ),
+                  const SizedBox(width: Spacing.md),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          track.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: titleColor,
+                            fontSize: AppType.subtitle,
+                            fontWeight: AppType.weightMedium,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          details,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: metadataColor),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: Spacing.md),
+                  if (track.duration != Duration.zero)
+                    Text(
+                      _formatTrackDuration(track.duration),
+                      style: TextStyle(color: metadataColor),
+                    ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
