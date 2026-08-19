@@ -17,11 +17,14 @@ $ErrorActionPreference = "Stop"
 
 $finalOutputDir = Join-Path $PSScriptRoot "output"
 $script:stagingContainer = $null
+$script:currentStep = "startup"
 
 try {
     $psv = $PSVersionTable.PSVersion
     $enc = [Console]::OutputEncoding.WebName
     Write-Host ("Env: PowerShell {0}, ConsoleEncoding {1}" -f $psv, $enc) -ForegroundColor Gray
+    Write-Host ("Script: {0}" -f $PSCommandPath) -ForegroundColor Gray
+    Write-Host ("Script SHA256: {0}" -f (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash) -ForegroundColor Gray
 } catch {}
 
 function Get-AppSettingsVersion() {
@@ -85,10 +88,12 @@ function Wait-ForExitPrompt() {
 
 function Invoke-Step([string]$name, [scriptblock]$action) {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $script:currentStep = $name
     Write-Host ("`n>>> {0}" -f $name) -ForegroundColor Cyan
     & $action
     $sw.Stop()
     Write-Host ("<<< {0} done in {1:n1}s" -f $name, $sw.Elapsed.TotalSeconds) -ForegroundColor Gray
+    $script:currentStep = "idle"
 }
 
 function Invoke-RoboCopy([string]$src, [string]$dest) {
@@ -117,6 +122,132 @@ function Get-InnoSetupCompilerPath() {
     $command = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
     if ($command) { return $command.Source }
     return $null
+}
+
+function Get-ModeDefinition([int]$mode) {
+    switch ($mode) {
+        1 {
+            return [pscustomobject]@{
+                Mode = 1
+                Name = "portable-folder"
+                Description = "编译便携版，只输出文件夹"
+                BuildFirst = $true
+                PortableBuild = $true
+                MakeZip = $false
+                RequiresInno = $false
+            }
+        }
+        2 {
+            return [pscustomobject]@{
+                Mode = 2
+                Name = "portable-zip"
+                Description = "编译便携版并生成 ZIP"
+                BuildFirst = $true
+                PortableBuild = $true
+                MakeZip = $true
+                RequiresInno = $false
+            }
+        }
+        3 {
+            return [pscustomobject]@{
+                Mode = 3
+                Name = "installer"
+                Description = "编译安装版并生成 Inno Setup 安装器"
+                BuildFirst = $true
+                PortableBuild = $false
+                MakeZip = $false
+                RequiresInno = $true
+            }
+        }
+        4 {
+            return [pscustomobject]@{
+                Mode = 4
+                Name = "portable-zip-existing-build"
+                Description = "使用现有 Release 产物生成便携 ZIP"
+                BuildFirst = $false
+                PortableBuild = $null
+                MakeZip = $true
+                RequiresInno = $false
+            }
+        }
+        5 {
+            return [pscustomobject]@{
+                Mode = 5
+                Name = "installer-existing-build"
+                Description = "使用现有 Release 产物生成 Inno Setup 安装器"
+                BuildFirst = $false
+                PortableBuild = $null
+                MakeZip = $false
+                RequiresInno = $true
+            }
+        }
+        default {
+            throw "Unsupported build mode: $mode"
+        }
+    }
+}
+
+function Write-BuildPlan([pscustomobject]$modeDefinition, [string]$version) {
+    $buildText = if ($modeDefinition.BuildFirst) { "yes" } else { "no (reuse existing Release output)" }
+    $portableText = if ($null -eq $modeDefinition.PortableBuild) { "unchanged; existing output decides" } elseif ($modeDefinition.PortableBuild) { "true" } else { "false" }
+    $requiresText = if ($modeDefinition.RequiresInno) { "yes" } else { "no" }
+    $artifactText = if ($modeDefinition.Name -like "portable*") {
+        "output\Listenary_${version}_release_portable[.zip]"
+    }
+    else {
+        "output\Listenary_${version}_release_installer.exe + .sha256"
+    }
+
+    Write-Host "`n===== Build plan =====" -ForegroundColor Cyan
+    Write-Host ("Mode:             {0} ({1})" -f $modeDefinition.Mode, $modeDefinition.Description) -ForegroundColor White
+    Write-Host ("Mode key:         {0}" -f $modeDefinition.Name) -ForegroundColor White
+    Write-Host ("Version:          {0}" -f $version) -ForegroundColor White
+    Write-Host ("Run Flutter build: {0}" -f $buildText) -ForegroundColor White
+    Write-Host ("PORTABLE_BUILD:   {0}" -f $portableText) -ForegroundColor White
+    Write-Host ("Needs Inno Setup:  {0}" -f $requiresText) -ForegroundColor White
+    Write-Host ("Expected output:  {0}" -f $artifactText) -ForegroundColor White
+    Write-Host "======================`n" -ForegroundColor Cyan
+}
+
+function Assert-Command([string]$name, [string]$hint) {
+    if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
+        throw "$name was not found in PATH. $hint"
+    }
+}
+
+function Test-BuildPrerequisites([pscustomobject]$modeDefinition) {
+    if ($modeDefinition.BuildFirst) {
+        Assert-Command "flutter" "Install Flutter and enable Windows desktop support."
+    }
+
+    if ($modeDefinition.RequiresInno) {
+        $innoCompiler = Get-InnoSetupCompilerPath
+        if (-not $innoCompiler) {
+            throw "This mode requires Inno Setup, but ISCC.exe was not found. Install Inno Setup 6/7 or add ISCC.exe to PATH. No build was started."
+        }
+        Write-Host "Inno Setup:      $innoCompiler" -ForegroundColor Gray
+    }
+
+    foreach ($requiredPath in @("BASS", "desktop_lyric")) {
+        $path = Join-Path $PSScriptRoot $requiredPath
+        if (-not (Test-Path -LiteralPath $path -PathType Container)) {
+            throw "Required runtime directory is missing: $path"
+        }
+    }
+
+    if (-not $modeDefinition.BuildFirst) {
+        $existingReleaseExe = Join-Path $PSScriptRoot "build\windows\x64\runner\Release\Listenary.exe"
+        if (-not (Test-Path -LiteralPath $existingReleaseExe -PathType Leaf)) {
+            throw "This mode reuses an existing Release build, but Listenary.exe was not found at $existingReleaseExe. Run Mode 2 or Mode 3 first."
+        }
+    }
+
+    if ($modeDefinition.RequiresInno) {
+        $installerScript = Join-Path $PSScriptRoot "installer\pure_music.iss"
+        if (-not (Test-Path -LiteralPath $installerScript -PathType Leaf)) {
+            throw "Inno Setup script not found: $installerScript"
+        }
+    }
 }
 
 function Assert-PathWithin([string]$path, [string]$parent) {
@@ -200,9 +331,7 @@ function Update-BuildVersionFiles([string]$version) {
 }
 
 function Invoke-Build([string]$version, [bool]$isPortable) {
-    if (-not (Get-Command "flutter" -ErrorAction SilentlyContinue)) {
-        throw "flutter command not found in PATH."
-    }
+    Assert-Command "flutter" "Install Flutter and enable Windows desktop support."
 
     Invoke-Step "pub get" {
         $needPubGet = $true
@@ -496,7 +625,7 @@ $script:exitCode = 0
 
 trap {
     Remove-StagingContainer
-    Write-Host $_.Exception.Message -ForegroundColor Red
+    Write-Host ("FAILED in step '{0}': {1}" -f $script:currentStep, $_.Exception.Message) -ForegroundColor Red
     $script:exitCode = 1
     Wait-ForExitPrompt
     exit 1
@@ -534,12 +663,18 @@ else {
 }
 $version = Test-Version $version
 
-switch ($selectedMode) {
-    1 { New-PortablePackage $version $true $false }
-    2 { New-PortablePackage $version $true $true }
-    3 { New-InstallerPackage $version $true }
-    4 { New-PortablePackage $version $false $true }
-    5 { New-InstallerPackage $version $false }
+$modeDefinition = Get-ModeDefinition $selectedMode
+Write-BuildPlan $modeDefinition $version
+Test-BuildPrerequisites $modeDefinition
+Write-Host ("Starting mode {0}: {1}" -f $modeDefinition.Mode, $modeDefinition.Description) -ForegroundColor Green
+
+switch ($modeDefinition.Name) {
+    "portable-folder" { New-PortablePackage $version $true $false }
+    "portable-zip" { New-PortablePackage $version $true $true }
+    "installer" { New-InstallerPackage $version $true }
+    "portable-zip-existing-build" { New-PortablePackage $version $false $true }
+    "installer-existing-build" { New-InstallerPackage $version $false }
+    default { throw "No implementation is registered for mode key: $($modeDefinition.Name)" }
 }
 
 Write-Host "The running Listenary process was not stopped." -ForegroundColor Gray

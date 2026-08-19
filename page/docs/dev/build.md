@@ -78,6 +78,8 @@ flutter build windows --release
 
 根目录的 `build_windows.ps1` 用于正式发布打包：同步版本、清理旧构建、整理运行文件，并写入 `output/`。脚本先在临时目录组装并校验完整性，成功后再替换同版本旧产物，不会关闭正在运行的主程序。
 
+脚本启动时会打印脚本路径和 SHA-256、最终模式、是否重新编译、`PORTABLE_BUILD`、Inno Setup 是否必需以及预期产物。Inno Setup 会在编译前检查；便携模式不会调用 Inno Setup。
+
 交互菜单：
 
 | 选项 | 作用 |
@@ -96,6 +98,18 @@ flutter build windows --release
 
 # 安装器（Mode 3，需本机已装 Inno Setup 6/7）
 .\build_windows.ps1 -Version 3.0.0 -Mode 3 -NonInteractive
+```
+
+使用已有 Release 产物，只生成便携 ZIP：
+
+```powershell
+.\build_windows.ps1 -Version 3.0.0 -Mode 4 -NonInteractive
+```
+
+如果 PowerShell 禁止运行脚本，可只对当前命令绕过执行策略：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build_windows.ps1 -Version 3.0.0 -Mode 2 -NonInteractive
 ```
 
 `PORTABLE_BUILD` 由脚本按产物类型注入：便携为 `true`（数据在 exe 旁 `data/`），安装版为 `false`（数据在 `%LOCALAPPDATA%\pure_music`）。
