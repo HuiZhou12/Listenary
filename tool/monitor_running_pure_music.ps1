@@ -82,17 +82,17 @@ if ($ProcessId -gt 0) {
     }
 }
 else {
-    $target = Get-CimInstance Win32_Process -Filter "Name='pure_music.exe'" |
+    $target = Get-CimInstance Win32_Process -Filter "Name='Listenary.exe'" |
         Sort-Object CreationDate -Descending |
         Select-Object -First 1
     if ($null -eq $target) {
-        throw "No running pure_music.exe process was found."
+        throw "No running Listenary.exe process was found."
     }
     $ProcessId = [int]$target.ProcessId
 }
 
-if ($target.Name -ne "pure_music.exe") {
-    throw "Process $ProcessId is $($target.Name), not pure_music.exe."
+if ($target.Name -ne "Listenary.exe") {
+    throw "Process $ProcessId is $($target.Name), not Listenary.exe."
 }
 
 $process = Get-Process -Id $ProcessId

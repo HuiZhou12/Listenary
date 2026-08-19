@@ -70,7 +70,7 @@ Listenary 管理和播放本地音乐，也提供可选的在线搜索、在线�
 - [Discussions](https://github.com/HuiZhou12/Listenary/discussions)
 - [用户与开发文档](page/docs/)
 
-Listenary 支持 Windows 10 和 Windows 11，提供安装版与便携版。新安装默认位于 `%LOCALAPPDATA%\Programs\Listenary`；安装版数据保存在 `%LOCALAPPDATA%\pure_music`，便携版数据保存在程序旁的 `data/`。内部数据目录和可执行文件名为兼容既有安装而保留，升级时不要手工改名或迁移数据。
+Listenary 支持 Windows 10 和 Windows 11，提供安装版与便携版。新安装默认位于 `%LOCALAPPDATA%\Programs\Listenary`；安装版数据保存在 `%LOCALAPPDATA%\pure_music`，便携版数据保存在程序旁的 `data/`。新版本可执行文件为 `Listenary.exe`；`pure_music` 仅作为内部数据和兼容标识保留，升级时不要手工迁移数据目录。
 
 ## 在线服务与隐私
 
@@ -92,7 +92,9 @@ flutter test
 
 ## 许可与致谢
 
-Listenary 依据 [GNU General Public License v3.0](LICENSE) 发布。GPL-3.0 允许在遵守许可证条件的前提下使用、修改和再分发，包括商业使用；本项目不附加“禁止商业使用”限制。
+Listenary 基于 Pure Music 改造而来。项目保留并扩展了其部分代码、设计和工程基础，经过大量重写后形成独立产品。感谢原项目及其贡献者提供的开源基础，相关上游版权和许可信息见 Pure Music。
+
+同时，Listenary也依据 [GNU General Public License v3.0](LICENSE) 发布。GPL-3.0 允许在遵守许可证条件的前提下使用、修改和再分发，包括商业使用。
 
 Listenary 始于 [coriander_player](https://github.com/Ferry-200/coriander_player)（GPL-3.0），并保留上游及第三方项目的版权、许可和归属信息。主要依赖与资源包括 BASS、flutter_rust_bridge、lofty、dio、provider、go_router、SQLite、MiSans VF 和 Silicon7921 图标；完整清单见[致谢文档](page/docs/guide/credits.md)。
 

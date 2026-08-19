@@ -51,7 +51,7 @@ Debug 构建：
 flutter build windows --debug
 ```
 
-产物在 `build/windows/x64/runner/Debug/`。运行时要保留整个目录结构，不要只拿 `pure_music.exe`。
+产物在 `build/windows/x64/runner/Debug/`。运行时要保留整个目录结构，不要只拿 `Listenary.exe`。
 
 ## 修改 Rust API
 
@@ -102,7 +102,7 @@ flutter build windows --release
 
 ### 便携产物
 
-- `output/pure_music_{ver}_release_portable/` 与可选 `.zip`
+- `output/Listenary_{ver}_release_portable/` 与可选 `.zip`
 - exe、`data/`、`dll/`、`desktop_lyric/` 直接位于包根目录，无多余说明文件
 - zip 旁可有 SHA-256
 
@@ -110,7 +110,7 @@ flutter build windows --release
 
 ### 安装器产物
 
-- `output/pure_music_{ver}_release_installer.exe` 与 `.sha256`
+- `output/Listenary_{ver}_release_installer.exe` 与 `.sha256`
 - 脚本：`installer/pure_music.iss`；可选从便携版导入数据：`installer/import_portable_data.ps1`
 - 新安装默认到 `%LOCALAPPDATA%\Programs\Listenary`，`PrivilegesRequired=lowest`（当前用户，无需管理员）；旧安装可能继续使用原目录
 

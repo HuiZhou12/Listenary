@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/page/now_playing_page/component/active_lyric_region.dart';
+import 'package:pure_music/page/now_playing_page/component/lyrics_line_widget.dart';
 import 'package:pure_music/page/now_playing_page/page.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/playback_source.dart';
@@ -13,7 +14,9 @@ import 'package:pure_music/play_service/remote_playback_timeline.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 
 void main() {
-  testWidgets('remote lyric region hides the local lyric child', (tester) async {
+  testWidgets('remote lyric region hides the local lyric child', (
+    tester,
+  ) async {
     final session = ActivePlaybackSession();
     const ref = PlatformTrackRef(
       platform: MusicPlatform.netease,
@@ -27,13 +30,14 @@ void main() {
           artists: const ['Artist'],
         ),
       ], currentIndex: 0);
-    final timeline = RemotePlaybackTimelineController(
-      readPosition: () => const Duration(seconds: 1),
-    )..synchronize(
-      revision: 1,
-      state: PlaybackBackendState.paused,
-      duration: const Duration(minutes: 3),
-    );
+    final timeline =
+        RemotePlaybackTimelineController(
+          readPosition: () => const Duration(seconds: 1),
+        )..synchronize(
+          revision: 1,
+          state: PlaybackBackendState.paused,
+          duration: const Duration(minutes: 3),
+        );
     session.switchTo(
       source: ActivePlaybackSessionSource.remote,
       queue: const [
@@ -67,7 +71,10 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.text('Remote lyric line'), findsOneWidget);
+    final renderedLine = tester.widget<LyricsLineWidget>(
+      find.byType(LyricsLineWidget),
+    );
+    expect(remoteLyricLineContent(renderedLine.line), 'Remote lyric line');
     expect(find.text('local lyric must stay hidden'), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());

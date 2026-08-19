@@ -38,6 +38,28 @@ void main() {
     expect(find.textContaining(_apiKey), findsNothing);
   });
 
+  testWidgets('keeps the action aligned with the description in a tall tab', (
+    tester,
+  ) async {
+    final runtime = _runtime(_FakeCredentialProvider());
+    addTearDown(runtime.dispose);
+
+    await tester.pumpWidget(
+      _host(
+        runtime,
+        child: const SizedBox(
+          height: 480,
+          child: ChkszCredentialSettings(active: true),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final description = tester.getTopLeft(find.text('ChKSz API Key'));
+    final action = tester.getTopLeft(find.text('配置'));
+    expect((action.dy - description.dy).abs(), lessThan(48));
+  });
+
   testWidgets('validates, obscures, and saves a new key', (tester) async {
     final provider = _FakeCredentialProvider();
     final runtime = _runtime(provider);
@@ -124,12 +146,13 @@ void main() {
 Widget _host(
   OnlineMusicCredentialController credentials, {
   bool active = true,
+  Widget? child,
 }) {
   return MaterialApp(
     home: Scaffold(
       body: Provider<OnlineMusicCredentialController>.value(
         value: credentials,
-        child: ChkszCredentialSettings(active: active),
+        child: child ?? ChkszCredentialSettings(active: active),
       ),
     ),
   );

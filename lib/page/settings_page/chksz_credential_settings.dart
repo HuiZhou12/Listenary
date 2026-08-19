@@ -183,10 +183,15 @@ class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
 
   @override
   Widget build(BuildContext context) {
-    return SettingsTile(
-      description: '$_providerName $_credentialName',
-      subtitle: '$_statusDescription · $_modeDescription · 仅在发起在线请求时发送',
-      action: _buildAction(),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SettingsTile(
+          description: '$_providerName $_credentialName',
+          subtitle: '$_statusDescription · $_modeDescription · 仅在发起在线请求时发送',
+          action: _buildAction(),
+        ),
+      ],
     );
   }
 }

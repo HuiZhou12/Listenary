@@ -16,17 +16,13 @@ import 'package:flutter/material.dart';
 
 class HorizontalLyricView extends StatelessWidget {
   final bool compact;
-  const HorizontalLyricView({
-    super.key,
-    this.compact = false,
-  });
+  const HorizontalLyricView({super.key, this.compact = false});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final usesRemoteMedia = context.select<ActivePlaybackSession, bool>(
-      (session) =>
-          session.value.source == ActivePlaybackSessionSource.remote,
+      (session) => session.value.source == ActivePlaybackSessionSource.remote,
     );
 
     return DecoratedBox(
@@ -54,9 +50,7 @@ class HorizontalLyricView extends StatelessWidget {
                         alignment: Alignment.centerLeft,
                         child: Text(
                           '快来播放音乐吧~',
-                          style: TextStyle(
-                            color: scheme.onSecondaryContainer,
-                          ),
+                          style: TextStyle(color: scheme.onSecondaryContainer),
                         ),
                       ),
                     );
@@ -70,6 +64,89 @@ class HorizontalLyricView extends StatelessWidget {
   }
 }
 
+Widget _buildTopBarLyricTextTransition({
+  required String currentContent,
+  required String previousContent,
+  required AnimationController? controller,
+  required ColorScheme scheme,
+}) {
+  Widget buildText(String content) => Text(
+    content,
+    maxLines: 1,
+    softWrap: false,
+    style: TextStyle(color: scheme.onSecondaryContainer),
+  );
+
+  if (controller == null || previousContent.isEmpty) {
+    return buildText(currentContent);
+  }
+  final animation = AppSettings.instance.topBarLyricAnimation;
+  return ClipRect(
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final height = constraints.maxHeight;
+        return AnimatedBuilder(
+          animation: controller,
+          builder: (context, _) {
+            final curve = animation == TopBarLyricAnimation.fade
+                ? Curves.easeInOutCubic
+                : Curves.easeOutCubic;
+            final progress = curve.transform(controller.value);
+
+            Widget buildLayer(String content, bool previous) {
+              Widget child = buildText(content);
+              final opacity = previous ? 1.0 - progress : progress;
+              switch (animation) {
+                case TopBarLyricAnimation.slideUp:
+                  child = Transform.translate(
+                    offset: Offset(
+                      0,
+                      previous ? -progress * height : (1 - progress) * height,
+                    ),
+                    child: Opacity(opacity: opacity, child: child),
+                  );
+                case TopBarLyricAnimation.slideDown:
+                  child = Transform.translate(
+                    offset: Offset(
+                      0,
+                      previous ? progress * height : -(1 - progress) * height,
+                    ),
+                    child: Opacity(opacity: opacity, child: child),
+                  );
+                case TopBarLyricAnimation.fade:
+                  child = Opacity(opacity: opacity, child: child);
+                case TopBarLyricAnimation.absorb:
+                  child = Transform.scale(
+                    scale: opacity.clamp(0.01, 1.0),
+                    child: Opacity(opacity: opacity, child: child),
+                  );
+                case TopBarLyricAnimation.slideLeft:
+                  child = FractionalTranslation(
+                    translation: Offset(previous ? -progress : 1 - progress, 0),
+                    child: Opacity(opacity: opacity, child: child),
+                  );
+                case TopBarLyricAnimation.slideRight:
+                  child = FractionalTranslation(
+                    translation: Offset(previous ? progress : progress - 1, 0),
+                    child: Opacity(opacity: opacity, child: child),
+                  );
+              }
+              return child;
+            }
+
+            return Stack(
+              children: [
+                buildLayer(previousContent, true),
+                buildLayer(currentContent, false),
+              ],
+            );
+          },
+        );
+      },
+    ),
+  );
+}
+
 class _RemoteLyricHorizontalScrollArea extends StatefulWidget {
   const _RemoteLyricHorizontalScrollArea();
 
@@ -79,12 +156,15 @@ class _RemoteLyricHorizontalScrollArea extends StatefulWidget {
 }
 
 class _RemoteLyricHorizontalScrollAreaState
-    extends State<_RemoteLyricHorizontalScrollArea> {
+    extends State<_RemoteLyricHorizontalScrollArea>
+    with SingleTickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
   RemoteLyricController? _controller;
   Object? _lastRef;
   int? _lastLineIndex;
   String _content = '暂无歌词';
+  String _previousContent = '';
+  AnimationController? _transitionController;
   int _scrollRevision = 0;
 
   @override
@@ -103,16 +183,35 @@ class _RemoteLyricHorizontalScrollAreaState
     if (!mounted) return;
     final snapshot = _controller!.value;
     final line = snapshot.currentLine;
-    final nextContent = line == null
-        ? '暂无歌词'
-        : _contentForLine(line);
+    final nextContent = line == null ? '暂无歌词' : _contentForLine(line);
     final lineChanged =
-        snapshot.ref != _lastRef ||
-        snapshot.currentLineIndex != _lastLineIndex;
+        snapshot.ref != _lastRef || snapshot.currentLineIndex != _lastLineIndex;
     if (!lineChanged && nextContent == _content) return;
     _lastRef = snapshot.ref;
     _lastLineIndex = snapshot.currentLineIndex;
-    setState(() => _content = nextContent);
+    setState(() {
+      if (_content.isNotEmpty && nextContent.isNotEmpty) {
+        _previousContent = _content;
+        _transitionController?.dispose();
+        _transitionController = AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 500),
+        );
+        _transitionController!.addStatusListener((status) {
+          if (status == AnimationStatus.completed && mounted) {
+            setState(() {
+              _previousContent = '';
+              _transitionController?.dispose();
+              _transitionController = null;
+            });
+          }
+        });
+        _transitionController!.forward();
+      } else {
+        _previousContent = '';
+      }
+      _content = nextContent;
+    });
     if (lineChanged) {
       final revision = ++_scrollRevision;
       WidgetsBinding.instance.addPostFrameCallback(
@@ -128,11 +227,7 @@ class _RemoteLyricHorizontalScrollAreaState
     return '$content\u2503$translation';
   }
 
-  void _startScroll(
-    int revision,
-    LyricLine? line,
-    Duration? position,
-  ) {
+  void _startScroll(int revision, LyricLine? line, Duration? position) {
     if (!mounted || revision != _scrollRevision) return;
     if (!_scrollController.hasClients) return;
     _scrollController.jumpTo(0);
@@ -166,15 +261,11 @@ class _RemoteLyricHorizontalScrollAreaState
           child: SingleChildScrollView(
             controller: _scrollController,
             scrollDirection: Axis.horizontal,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              child: Text(
-                _content,
-                key: ValueKey('$_lastRef:$_lastLineIndex:$_content'),
-                maxLines: 1,
-                softWrap: false,
-                style: TextStyle(color: scheme.onSecondaryContainer),
-              ),
+            child: _buildTopBarLyricTextTransition(
+              currentContent: _content,
+              previousContent: _previousContent,
+              controller: _transitionController,
+              scheme: scheme,
             ),
           ),
         ),
@@ -185,6 +276,7 @@ class _RemoteLyricHorizontalScrollAreaState
   @override
   void dispose() {
     _controller?.removeListener(_onLyricChanged);
+    _transitionController?.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -246,12 +338,14 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
       currContent = '';
     } else {
       final newContent = switch (line) {
-        LrcLine l => l.translation == null
-            ? l.content
-            : '${l.content}\u2503${l.translation}',
-        SyncLyricLine s => s.translation == null
-            ? s.content
-            : '${s.content}\u2503${s.translation}',
+        LrcLine l =>
+          l.translation == null
+              ? l.content
+              : '${l.content}\u2503${l.translation}',
+        SyncLyricLine s =>
+          s.translation == null
+              ? s.content
+              : '${s.content}\u2503${s.translation}',
         _ => '',
       };
       if (newContent == currContent && !_isTransition) return;
@@ -283,82 +377,13 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     }
   }
 
-  Widget _buildText(String content, ColorScheme scheme) {
-    return Text(
-      content,
-      maxLines: 1,
-      softWrap: false,
-      style: TextStyle(color: scheme.onSecondaryContainer),
-    );
-  }
-
   Widget _buildTextArea(ColorScheme scheme) {
-    final controller = _slideController;
-    if (controller != null && _prevContent.isNotEmpty) {
-      final anim = AppSettings.instance.topBarLyricAnimation;
-      return ClipRect(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final h = constraints.maxHeight;
-            return AnimatedBuilder(
-              animation: controller,
-              builder: (context, _) {
-                final curve = anim == TopBarLyricAnimation.fade
-                    ? Curves.easeInOutCubic
-                    : Curves.easeOutCubic;
-                final t = curve.transform(controller.value);
-                return Stack(
-                  children: [
-                    _buildAnimLayer(_prevContent, scheme, t, true, anim, h),
-                    _buildAnimLayer(currContent, scheme, t, false, anim, h),
-                  ],
-                );
-              },
-            );
-          },
-        ),
-      );
-    }
-    return _buildText(currContent, scheme);
-  }
-
-  Widget _buildAnimLayer(String content, ColorScheme scheme, double t,
-      bool isPrev, TopBarLyricAnimation anim, double h) {
-    Widget child = _buildText(content, scheme);
-
-    switch (anim) {
-      case TopBarLyricAnimation.slideUp:
-        final offsetY = isPrev ? -t * h : (1 - t) * h;
-        child = Transform.translate(
-          offset: Offset(0, offsetY),
-          child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
-        );
-      case TopBarLyricAnimation.slideDown:
-        final offsetY = isPrev ? t * h : -(1 - t) * h;
-        child = Transform.translate(
-          offset: Offset(0, offsetY),
-          child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
-        );
-      case TopBarLyricAnimation.fade:
-        child = Opacity(opacity: isPrev ? 1.0 - t : t, child: child);
-      case TopBarLyricAnimation.absorb:
-        final s = (isPrev ? 1.0 - t : t).clamp(0.01, 1.0);
-        child = Transform.scale(
-          scale: s,
-          child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
-        );
-      case TopBarLyricAnimation.slideLeft:
-        child = FractionalTranslation(
-          translation: Offset(isPrev ? -t : 1 - t, 0),
-          child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
-        );
-      case TopBarLyricAnimation.slideRight:
-        child = FractionalTranslation(
-          translation: Offset(isPrev ? t : t - 1, 0),
-          child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
-        );
-    }
-    return child;
+    return _buildTopBarLyricTextTransition(
+      currentContent: currContent,
+      previousContent: _prevContent,
+      controller: _slideController,
+      scheme: scheme,
+    );
   }
 
   bool _isLineHidden(LyricLine line) {
@@ -435,10 +460,7 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     if (nowMs - _lastPositionResyncMs < 200) return;
     _lastPositionResyncMs = nowMs;
-    final update = lyricService.lineUpdateForLyric(
-      widget.lyric,
-      position,
-    );
+    final update = lyricService.lineUpdateForLyric(widget.lyric, position);
     if (update == null) return;
     final nextLine = _nearestRenderableLineIndex(update.primaryIndex);
     if (nextLine == null) return;
@@ -643,8 +665,9 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12.0),
           child: ScrollConfiguration(
-            behavior:
-                ScrollConfiguration.of(context).copyWith(scrollbars: false),
+            behavior: ScrollConfiguration.of(
+              context,
+            ).copyWith(scrollbars: false),
             child: SingleChildScrollView(
               controller: scrollController,
               scrollDirection: Axis.horizontal,
@@ -664,8 +687,9 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     _slideController?.dispose();
     routeVisibilityObserver.unsubscribe(this);
     lyricLineStreamSubscription.cancel();
-    playbackService.positionSyncNotifier
-        .removeListener(_playbackResyncListener);
+    playbackService.positionSyncNotifier.removeListener(
+      _playbackResyncListener,
+    );
     _positionResyncTimer?.cancel();
     _positionResyncStopTimer?.cancel();
     scrollController.dispose();

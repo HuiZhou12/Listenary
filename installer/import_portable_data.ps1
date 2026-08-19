@@ -12,14 +12,16 @@ $ErrorActionPreference = "Stop"
 
 function Test-ProcessFromDirectory([string]$directory) {
     $prefix = [System.IO.Path]::GetFullPath($directory).TrimEnd('\') + '\'
-    foreach ($process in @(Get-Process -Name "pure_music" -ErrorAction SilentlyContinue)) {
-        try {
-            $processPath = [System.IO.Path]::GetFullPath($process.Path)
-            if ($processPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-                return $true
+    foreach ($processName in @("Listenary", "pure_music")) {
+        foreach ($process in @(Get-Process -Name $processName -ErrorAction SilentlyContinue)) {
+            try {
+                $processPath = [System.IO.Path]::GetFullPath($process.Path)
+                if ($processPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    return $true
+                }
             }
+            catch {}
         }
-        catch {}
     }
     return $false
 }

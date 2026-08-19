@@ -274,7 +274,7 @@ function Invoke-Build([string]$version, [bool]$isPortable) {
 
 function New-AppPackage([string]$artifactRoot, [string]$version) {
     $buildDir = Join-Path $PSScriptRoot "build\windows\x64\runner\Release"
-    if (-not (Test-Path -LiteralPath (Join-Path $buildDir "pure_music.exe") -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath (Join-Path $buildDir "Listenary.exe") -PathType Leaf)) {
         throw "Build output is incomplete: $buildDir"
     }
 
@@ -347,7 +347,7 @@ function New-AppPackage([string]$artifactRoot, [string]$version) {
 
 function Test-KeyFiles([string]$appDir) {
     $required = @(
-        "pure_music.exe",
+        "Listenary.exe",
         "flutter_windows.dll",
         "data\app.so",
         "dll\rust_lib_pure_music.dll",
@@ -371,7 +371,7 @@ function Test-KeyFiles([string]$appDir) {
 
 function New-PortablePackage([string]$version, [bool]$buildFirst, [bool]$makeZip) {
     if ($buildFirst) { Invoke-Build $version $true }
-    $artifactName = "pure_music_{0}_release_portable" -f $version
+    $artifactName = "Listenary_{0}_release_portable" -f $version
     $publishedRoot = Join-Path $finalOutputDir $artifactName
     $publishedZip = Join-Path $finalOutputDir "$artifactName.zip"
 
@@ -423,7 +423,7 @@ function New-PortablePackage([string]$version, [bool]$buildFirst, [bool]$makeZip
 
 function New-InstallerPackage([string]$version, [bool]$buildFirst) {
     if ($buildFirst) { Invoke-Build $version $false }
-    $artifactName = "pure_music_{0}_release_installer" -f $version
+    $artifactName = "Listenary_{0}_release_installer" -f $version
     $publishedInstaller = Join-Path $finalOutputDir "$artifactName.exe"
     $publishedChecksum = "$publishedInstaller.sha256"
 

@@ -6,7 +6,8 @@
 #endif
 
 #define AppName "Listenary"
-#define AppExeName "pure_music.exe"
+#define AppExeName "Listenary.exe"
+#define LegacyAppExeName "pure_music.exe"
 
 [Setup]
 AppId={{42C4470A-72BE-49A0-B32F-DF7A941DD48C}
@@ -26,7 +27,7 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=.
-OutputBaseFilename=pure_music_installer
+OutputBaseFilename=Listenary_installer
 SetupIconFile=..\app_icon.ico
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExeName}
@@ -59,7 +60,7 @@ PortableDataSubCaption=此步骤可选。安装程序只会迁移设置、媒体
 PortableDataOption=从原便携版导入个人数据(&I)
 PortableDataPathTitle=选择便携版位置
 PortableDataPathDescription=原便携版位于哪个文件夹？
-PortableDataPathSubCaption=请选择包含 pure_music.exe 的原便携版文件夹。
+PortableDataPathSubCaption=请选择包含 Listenary.exe 的便携版文件夹；旧版便携包可使用 pure_music.exe。
 PortableDataInvalid=所选文件夹不是完整的 Listenary 便携版目录，请重新选择。
 PortableDataImporting=正在导入便携版数据...
 PortableDataImportFailed=Listenary 已安装完成，但便携版数据导入失败。原便携版数据没有被修改，可稍后重新迁移。
@@ -76,6 +77,7 @@ Name: "desktopicon"; Description: "{cm:DesktopIcon}"; GroupDescription: "{cm:Add
 
 [InstallDelete]
 Type: filesandordirs; Name: "{autoprograms}\{#AppName}"
+Type: files; Name: "{app}\{#LegacyAppExeName}"
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"
@@ -124,7 +126,8 @@ var
 begin
   Result := '';
   CandidateRoot := SelectedPath;
-  if FileExists(AddBackslash(CandidateRoot) + '{#AppExeName}') then
+  if FileExists(AddBackslash(CandidateRoot) + '{#AppExeName}') or
+     FileExists(AddBackslash(CandidateRoot) + '{#LegacyAppExeName}') then
   begin
     CandidateData := AddBackslash(CandidateRoot) + 'data';
     if FileExists(AddBackslash(CandidateData) + 'app.so') and
@@ -136,7 +139,8 @@ begin
   end;
 
   CandidateRoot := AddBackslash(SelectedPath) + 'app';
-  if FileExists(AddBackslash(CandidateRoot) + '{#AppExeName}') then
+  if FileExists(AddBackslash(CandidateRoot) + '{#AppExeName}') or
+     FileExists(AddBackslash(CandidateRoot) + '{#LegacyAppExeName}') then
   begin
     CandidateData := AddBackslash(CandidateRoot) + 'data';
     if FileExists(AddBackslash(CandidateData) + 'app.so') and

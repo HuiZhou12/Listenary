@@ -44,7 +44,7 @@ Windows 7 / 8 等更旧系统**不在支持范围**。本软件基于 Flutter �
     <div class="pm-step-num">2</div>
     <div class="pm-step-body">
       <h3>可选：导入便携版数据</h3>
-      <p>若本机<strong>还没有</strong>安装版用户数据，可在向导中勾选导入，并选择包含 <code>pure_music.exe</code> 的原便携目录。只会迁移设置、曲库、歌单与歌词来源记录，不改动原文件。</p>
+      <p>若本机<strong>还没有</strong>安装版用户数据，可在向导中勾选导入，并选择包含 <code>Listenary.exe</code> 的便携目录；旧版便携包可为 <code>pure_music.exe</code>。只会迁移设置、曲库、歌单与歌词来源记录，不改动原文件。</p>
       <p>若 <code>%LOCALAPPDATA%\pure_music</code> 已有内容，导入页会跳过，避免覆盖。导入前请先关闭便携版进程；目标数据目录须为空。</p>
     </div>
   </div>
@@ -71,7 +71,7 @@ Windows 7 / 8 等更旧系统**不在支持范围**。本软件基于 Flutter �
     <div class="pm-step-num">2</div>
     <div class="pm-step-body">
       <h3>运行程序</h3>
-      <p>进入包内 <code>app</code> 目录，运行 <code>pure_music.exe</code>。按欢迎页提示添加音乐文件夹。</p>
+      <p>进入包内 <code>app</code> 目录，运行 <code>Listenary.exe</code>。按欢迎页提示添加音乐文件夹。</p>
     </div>
   </div>
 </div>

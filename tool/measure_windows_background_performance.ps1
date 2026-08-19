@@ -42,7 +42,7 @@ try {
     $deadline = (Get-Date).AddMinutes(5)
     $appProcess = $null
     while ((Get-Date) -lt $deadline -and -not $driveProcess.HasExited) {
-        $appProcess = Get-Process -Name "pure_music" -ErrorAction SilentlyContinue |
+        $appProcess = Get-Process -Name "Listenary" -ErrorAction SilentlyContinue |
             Where-Object { $_.StartTime -ge $startedAt } |
             Sort-Object StartTime -Descending |
             Select-Object -First 1

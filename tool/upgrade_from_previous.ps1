@@ -9,26 +9,27 @@ $ErrorActionPreference = "Stop"
 
 function Resolve-AppDirectory([string]$path) {
     $resolved = (Resolve-Path -LiteralPath $path).Path
-    if (Test-Path -LiteralPath (Join-Path $resolved "pure_music.exe") -PathType Leaf) {
-        return $resolved
+    foreach ($candidate in @($resolved, (Join-Path $resolved "app"))) {
+        if ((Test-Path -LiteralPath (Join-Path $candidate "Listenary.exe") -PathType Leaf) -or
+            (Test-Path -LiteralPath (Join-Path $candidate "pure_music.exe") -PathType Leaf)) {
+            return $candidate
+        }
     }
-    $nested = Join-Path $resolved "app"
-    if (Test-Path -LiteralPath (Join-Path $nested "pure_music.exe") -PathType Leaf) {
-        return $nested
-    }
-    throw "pure_music.exe was not found under: $resolved"
+    throw "Listenary.exe or pure_music.exe was not found under: $resolved"
 }
 
 function Test-ProcessFromDirectory([string]$directory) {
     $prefix = [System.IO.Path]::GetFullPath($directory).TrimEnd('\') + '\'
-    foreach ($process in @(Get-Process -Name "pure_music" -ErrorAction SilentlyContinue)) {
-        try {
-            $processPath = [System.IO.Path]::GetFullPath($process.Path)
-            if ($processPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-                return $true
+    foreach ($processName in @("Listenary", "pure_music")) {
+        foreach ($process in @(Get-Process -Name $processName -ErrorAction SilentlyContinue)) {
+            try {
+                $processPath = [System.IO.Path]::GetFullPath($process.Path)
+                if ($processPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    return $true
+                }
             }
+            catch {}
         }
-        catch {}
     }
     return $false
 }

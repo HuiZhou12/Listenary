@@ -86,9 +86,9 @@ BEGIN
             VALUE "CompanyName", "HuiZhou12" "\0"
             VALUE "FileDescription", "Listenary" "\0"
             VALUE "FileVersion", FILE_VERSION_STR "\0"
-            VALUE "InternalName", "pure_music" "\0"
+            VALUE "InternalName", "Listenary" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 HuiZhou12" "\0"
-            VALUE "OriginalFilename", "pure_music.exe" "\0"
+            VALUE "OriginalFilename", "Listenary.exe" "\0"
             VALUE "ProductName", "Listenary" "\0"
             VALUE "ProductVersion", PRODUCT_VERSION "\0"
         END
