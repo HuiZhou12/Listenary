@@ -1,4 +1,4 @@
-这回绝对能过了：# Listenary
+# Listenary
 
 <p align="center">
   <img src="app_icon.png" width="80" height="80" alt="Listenary Logo">
