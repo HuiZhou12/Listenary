@@ -1,4 +1,4 @@
-# Listenary
+这回绝对能过了：# Listenary
 
 <p align="center">
   <img src="app_icon.png" width="80" height="80" alt="Listenary Logo">
@@ -13,11 +13,7 @@
   <img src="https://img.shields.io/badge/Version-3.0.0-blue?style=flat-square" alt="Version 3.0.0">
   <img src="https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square" alt="License GPL-3.0">
 </p>
-<p align="center">
-  <a href="https://linux.do/">
-    <img src="https://img.shields.io/badge/LINUX%20DO-社区-blue?style=flat-square" alt="LINUX DO">
-  </a>
-</p>
+
 
 Listenary 管理和播放本地音乐，在此基础上提供可选的在线搜索、在线播放、订阅歌单，以及在线历史与远程歌词的能力。
 在线功能依赖第三方平台和用户自行配置的服务凭据，不使用这些功能时，本地曲库与本地播放仍可独立工作。
@@ -64,6 +60,8 @@ Listenary 基于 Pure Music 改造而来。项目保留并扩展了其部分代�
 同时，Listenary也依据 [GNU General Public License v3.0](LICENSE) 发布。GPL-3.0 允许在遵守许可证条件的前提下使用、修改和再分发，包括商业使用。
 
 此外，Listenary 还始于 [coriander_player](https://github.com/Ferry-200/coriander_player)（GPL-3.0），并保留了上游及第三方项目的版权、许可和归属信息。主要依赖与资源包括 BASS、flutter_rust_bridge、lofty、dio、provider、go_router、SQLite、MiSans VF 和 Silicon7921 图标；完整清单见[致谢文档](page/docs/guide/credits.md)。
+
+最后，感谢 [LINUX DO](https://linux.do/) 社区提供的交流与分享平台。
 
 ## 免责声明
 
