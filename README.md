@@ -13,6 +13,11 @@
   <img src="https://img.shields.io/badge/Version-3.0.0-blue?style=flat-square" alt="Version 3.0.0">
   <img src="https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square" alt="License GPL-3.0">
 </p>
+<p align="center">
+  <a href="https://linux.do/">
+    <img src="https://img.shields.io/badge/LINUX%20DO-社区-blue?style=flat-square" alt="LINUX DO">
+  </a>
+</p>
 
 Listenary 管理和播放本地音乐，在此基础上提供可选的在线搜索、在线播放、订阅歌单，以及在线历史与远程歌词的能力。
 在线功能依赖第三方平台和用户自行配置的服务凭据，不使用这些功能时，本地曲库与本地播放仍可独立工作。
