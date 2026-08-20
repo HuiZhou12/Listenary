@@ -48,7 +48,7 @@ void main() {
       expect(
         database
             .select(
-              "SELECT COUNT(*) AS count FROM sqlite_master "
+              'SELECT COUNT(*) AS count FROM sqlite_master '
               "WHERE type = 'table' AND name LIKE 'online_%'",
             )
             .single['count'],
