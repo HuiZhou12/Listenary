@@ -12,7 +12,6 @@ const _listItemEntrySpring = SpringDescription(
   damping: 50,
 );
 const _tabSwitchDistance = 20.0;
-const _tabExitDistance = 12.0;
 final Expando<double> _listItemEntryOffsets = Expando<double>();
 const _maxListItemEnteredIdentities = 96;
 final Expando<LinkedHashSet<Object>> _listItemEnteredIdentities =
@@ -159,8 +158,12 @@ class _DirectionalTabViewState extends State<DirectionalTabView>
     );
 
     if (oldWidget.index < _channels.length) {
+      // 立即隐藏旧页面：无 Opacity 淡出（e5f59cb 为合成性能移除），
+      // 若等待弹簧动画结束，旧页面会以完全不透明状态停留数百毫秒，内容无法实时消失。
       final outgoing = _channels[oldWidget.index];
-      outgoing.animateTo(offset: -_tabExitDistance * direction, opacity: 0);
+      outgoing
+        ..opacity.value = 0
+        ..offset.value = 0;
     }
   }
 

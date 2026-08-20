@@ -134,6 +134,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(incoming), Offset(0, verticalPosition));
   });
+
+  testWidgets('switching tabs hides the outgoing page promptly', (tester) async {
+    final harnessKey = GlobalKey<_TabHarnessState>();
+    await tester.pumpWidget(MaterialApp(home: _TabHarness(key: harnessKey)));
+    await tester.pumpAndSettle();
+
+    harnessKey.currentState!.select(1);
+    await tester.pump();
+
+    // 切换后旧页面应立即离屏，而不是以不透明状态滞留数百毫秒。
+    final oldPage = find.byKey(const ValueKey('item-0'), skipOffstage: false);
+    final offstage = tester.widget<Offstage>(
+      find.ancestor(of: oldPage, matching: find.byType(Offstage)).first,
+    );
+    expect(offstage.offstage, isTrue);
+
+    await tester.pumpAndSettle();
+    final finalOffstage = tester.widget<Offstage>(
+      find.ancestor(of: oldPage, matching: find.byType(Offstage)).first,
+    );
+    expect(finalOffstage.offstage, isTrue);
+  });
 }
 
 class _TabHarness extends StatefulWidget {
