@@ -71,13 +71,22 @@ class LrcTool {
     result = _mergeTranslationText(result, transText);
     result = _mergeRomanizationText(result, romanizationText);
 
-    if (offset != Duration.zero) {
+    // 应用 [offset:] 标签：正 offset 表示时间戳偏晚，行起点整体提前，与本地 lrc.dart 一致。
+    final tagOffsetMs = _parseOffsetTag(tags['offset']);
+    if (tagOffsetMs != null && tagOffsetMs != 0) {
+      result = result.applyOffset(Duration(milliseconds: -tagOffsetMs));
+    } else if (offset != Duration.zero) {
       result = result.applyOffset(offset);
     }
 
     result = _insertBlankLines(result);
 
     return result;
+  }
+
+  static int? _parseOffsetTag(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    return int.tryParse(raw.trim());
   }
 
   static Map<String, String> _extractTags(String text) {

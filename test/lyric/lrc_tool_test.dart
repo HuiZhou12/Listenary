@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/services/online_lyric/api/krc_extract_decode.dart';
+import 'package:pure_music/services/online_lyric/models/lyric_entry.dart';
 import 'package:pure_music/services/online_lyric/parsers/lrc_tool.dart';
 
 void main() {
@@ -138,4 +139,28 @@ void main() {
       expect(third.romanization, 'sa n');
     },
   );
+
+  test('applies the [offset:] tag like the local parser', () {
+    const base = '[00:10.00]line one\n[00:20.00]line two';
+    int lineOneStart(ParsedLyricResult? r) =>
+        r!.lines.firstWhere((e) => e.content == 'line one').start
+            .inMilliseconds;
+
+    final noTag = LrcTool.parse('[ti:test]\n[ar:test]\n$base');
+    expect(lineOneStart(noTag), 10000);
+
+    // 正 offset：行起点整体提前
+    final positive = LrcTool.parse('[offset:1000]\n$base');
+    expect(lineOneStart(positive), 9000);
+
+    // 负 offset：行起点整体延后
+    final negative = LrcTool.parse('[offset:-500]\n$base');
+    expect(lineOneStart(negative), 10500);
+
+    // offset 后 nextTime 与 start 同步偏移，行间长度保持一致
+    final shifted = LrcTool.parse('[offset:1000]\n$base')!;
+    final lineOne = shifted.lines.firstWhere((e) => e.content == 'line one');
+    final lineTwo = shifted.lines.firstWhere((e) => e.content == 'line two');
+    expect(lineTwo.start.inMilliseconds - lineOne.start.inMilliseconds, 10000);
+  });
 }
