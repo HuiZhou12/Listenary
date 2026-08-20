@@ -39,10 +39,12 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/play_service/playback_source.dart';
+import 'package:pure_music/play_service/remote_playback_session_controller.dart';
 import 'package:pure_music/play_service/remote_playback_timeline.dart';
 import 'package:pure_music/play_service/remote_media_artwork.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
+import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:go_router/go_router.dart';
@@ -691,6 +693,63 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       },
     );
     return FocusTraversalGroup(descendantsAreTraversable: false, child: page);
+  }
+}
+
+class _RemoteQualityButton extends StatelessWidget {
+  const _RemoteQualityButton({
+    required this.color,
+    required this.disabledColor,
+  });
+
+  final Color color;
+  final Color disabledColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final session = context.watch<RemotePlaybackSessionController>();
+    final isRemote = context.select<ActivePlaybackSession, bool>(
+      (value) => value.value.source == ActivePlaybackSessionSource.remote,
+    );
+    final currentLevel = session.requestedQuality;
+    MusicQuality? current;
+    for (final quality in MusicQuality.values) {
+      if (quality.level == currentLevel) {
+        current = quality;
+        break;
+      }
+    }
+    return PopupMenuButton<MusicQuality>(
+      tooltip: '音质',
+      enabled: isRemote,
+      onSelected: (quality) async {
+        final ok = await session.switchQuality(quality.level);
+        if (!ok && context.mounted) {
+          showTextOnSnackBar('音质切换失败，请重试', variant: ToastVariant.error);
+        }
+      },
+      itemBuilder: (context) => [
+        for (final quality in MusicQuality.values)
+          PopupMenuItem(
+            value: quality,
+            child: Row(
+              children: [
+                if (quality == current)
+                  const Icon(Symbols.check, size: 18)
+                else
+                  const SizedBox(width: 18),
+                const SizedBox(width: 8),
+                Text(quality.label),
+              ],
+            ),
+          ),
+      ],
+      icon: Icon(
+        Symbols.high_quality,
+        color: isRemote ? color : disabledColor,
+      ),
+      iconSize: 28,
+    );
   }
 }
 

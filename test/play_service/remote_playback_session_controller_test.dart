@@ -155,6 +155,34 @@ void main() {
     expect(gateway.refs.single.trackId, '1');
   });
 
+  test('switches quality for the current remote track', () async {
+    await sessionController.play(0, requestedQuality: 'lossless');
+
+    final ok = await sessionController.switchQuality('exhigh');
+    expect(ok, isTrue);
+    expect(sessionController.requestedQuality, 'exhigh');
+    expect(gateway.qualities, ['lossless', 'exhigh']);
+    expect(gateway.refs.last.trackId, '1');
+  });
+
+  test('switching to the same quality is a no-op', () async {
+    await sessionController.play(0, requestedQuality: 'lossless');
+    gateway.qualities.clear();
+
+    final ok = await sessionController.switchQuality('lossless');
+    expect(ok, isTrue);
+    expect(gateway.qualities, isEmpty);
+  });
+
+  test('switching quality failure keeps the current stream and reverts', () async {
+    await sessionController.play(0, requestedQuality: 'lossless');
+    gateway.error = Exception('unavailable');
+
+    final ok = await sessionController.switchQuality('hires');
+    expect(ok, isFalse);
+    expect(sessionController.requestedQuality, 'lossless');
+  });
+
   test('publishes remote control state and returns to inactive', () async {
     final snapshots = <RemotePlaybackControlSnapshot>[];
     final subscription = sessionController.controlStateStream.listen(

@@ -48,7 +48,7 @@ void main() {
     expect(stream.expiresAt, isNull);
   });
 
-  test('rejects unsupported quality and invalid references locally', () async {
+  test('passes requested quality and rejects a mismatched actual quality', () async {
     final transport = _FakeTransport(
       (_, _) async =>
           ChkszTransportResponse(statusCode: 200, data: _resolveBody()),
@@ -62,7 +62,18 @@ void main() {
         cancelToken: ChkszCancelToken(),
       ),
     );
+    // 请求携带所选音质；响应为 lossless，parse 判定失配 → 不可用
+    expect(transport.requests.single.queryParameters['level'], 'standard');
     expect(qualityError.kind, ChkszErrorKind.businessFailure);
+  });
+
+  test('rejects invalid references locally without a request', () async {
+    final transport = _FakeTransport(
+      (_, _) async =>
+          ChkszTransportResponse(statusCode: 200, data: _resolveBody()),
+    );
+    final resolver = NeteaseStreamResolver(client: _client(transport));
+
     await expectLater(
       resolver.resolve(
         const PlatformTrackRef(platform: MusicPlatform.qq, trackId: '123456'),

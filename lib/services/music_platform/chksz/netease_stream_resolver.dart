@@ -24,14 +24,11 @@ final class NeteaseStreamResolver {
     required ChkszCancelToken cancelToken,
   }) async {
     _throwIfCancelled(cancelToken);
-    if (requestedQuality != NeteaseAdapter.defaultQuality) {
-      throw const ChkszException(
-        kind: ChkszErrorKind.businessFailure,
-        safeMessage: '请求的音质不可用，请重新选择',
-      );
-    }
 
-    final request = _adapter.createResolveRequest(ref);
+    final request = _adapter.createResolveRequest(
+      ref,
+      quality: requestedQuality,
+    );
     final response = await _client.sendJson(
       request,
       isBusinessSuccess: _adapter.isBusinessSuccess,
@@ -42,6 +39,7 @@ final class NeteaseStreamResolver {
       response.body,
       expectedRef: ref,
       resolvedAt: _clock(),
+      requestedQuality: requestedQuality,
     );
   }
 

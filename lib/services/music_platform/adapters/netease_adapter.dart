@@ -47,13 +47,16 @@ final class NeteaseAdapter {
   bool isBusinessSuccess(Map<String, dynamic> body) =>
       body['code'] == 200 && body['msg'] == 'success';
 
-  ChkszRequest createResolveRequest(PlatformTrackRef ref) {
+  ChkszRequest createResolveRequest(
+    PlatformTrackRef ref, {
+    String quality = defaultQuality,
+  }) {
     _validateTrackRef(ref);
     return ChkszRequest(
       path: '/api/163_music',
       queryParameters: {
         'id': ref.trackId,
-        'level': defaultQuality,
+        'level': quality,
         'type': 'json',
       },
     );
@@ -119,6 +122,7 @@ final class NeteaseAdapter {
     Map<String, dynamic> body, {
     required PlatformTrackRef expectedRef,
     required DateTime resolvedAt,
+    String requestedQuality = defaultQuality,
   }) {
     _validateTrackRef(expectedRef);
     if (!isBusinessSuccess(body)) throw _invalidResponse();
@@ -127,7 +131,7 @@ final class NeteaseAdapter {
     final responseId = _requiredPositiveInt(data['id']);
     if ('$responseId' != expectedRef.trackId) throw _invalidResponse();
     final actualQuality = _requiredString(data['level']);
-    if (actualQuality != defaultQuality) {
+    if (actualQuality != requestedQuality) {
       throw const ChkszException(
         kind: ChkszErrorKind.businessFailure,
         safeMessage: '请求的音质不可用，请重新选择',
@@ -136,7 +140,7 @@ final class NeteaseAdapter {
     return ResolvedStream(
       ref: expectedRef,
       uri: _requiredHttpUri(data['url']),
-      requestedQuality: defaultQuality,
+      requestedQuality: requestedQuality,
       coverUri: _optionalHttpsUri(data['picUrl']),
       actualQuality: actualQuality,
       bitrate: _requiredPositiveInt(data['br']),

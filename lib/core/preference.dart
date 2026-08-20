@@ -575,6 +575,7 @@ class PlaybackPreference {
 
 class AppPreference {
   static const defaultUpdateRepoSlug = 'HuiZhou12/Listenary';
+  static const defaultDefaultQuality = 'lossless';
   static const defaultUpdateCheckUrls = [
     'https://raw.githubusercontent.com/HuiZhou12/Listenary/main/update/version.json',
   ];
@@ -652,6 +653,7 @@ class AppPreference {
 
   String customCpFeedbackKey = '';
   String updateRepoSlug = defaultUpdateRepoSlug;
+  String defaultQuality = defaultDefaultQuality;
   bool autoCheckUpdate = true;
   String? lastUpdateCheckTime;
   String? lastSeenUpdateTag;
@@ -726,6 +728,10 @@ class AppPreference {
       prefMap['updateRepoSlug'],
       defaultValue: defaultUpdateRepoSlug,
     );
+    defaultQuality = _normalizedNonEmptyString(
+      prefMap['defaultQuality'],
+      defaultValue: defaultDefaultQuality,
+    );
     autoCheckUpdate = _normalizedBool(
       prefMap['autoCheckUpdate'],
       defaultValue: true,
@@ -775,6 +781,7 @@ class AppPreference {
         'nowPlayingPagePref': nowPlayingPagePref.toMap(),
         'customCpFeedbackKey': customCpFeedbackKey,
         'updateRepoSlug': updateRepoSlug,
+        'defaultQuality': defaultQuality,
         'autoCheckUpdate': autoCheckUpdate,
         'lastUpdateCheckTime': lastUpdateCheckTime,
         'lastSeenUpdateTag': lastSeenUpdateTag,

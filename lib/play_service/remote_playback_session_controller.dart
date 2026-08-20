@@ -239,6 +239,30 @@ final class RemotePlaybackSessionController {
     );
   }
 
+  /// 播放中切换音质：保持当前流播放，解析新音质就绪后由后端在原位置无缝切换
+  /// （BASS 切源会 crossfade 并恢复位置）。失败时保留当前流并回退音质。
+  Future<bool> switchQuality(String newQuality) async {
+    _throwIfDisposed();
+    final snapshot = _queue.value;
+    final currentIndex = snapshot.currentIndex;
+    if (currentIndex == null || currentIndex >= snapshot.items.length) {
+      return false;
+    }
+    if (_requestedQuality == newQuality) return true;
+    final previousQuality = _requestedQuality;
+    _requestedQuality = newQuality;
+    try {
+      await _remoteController.play(
+        currentIndex,
+        requestedQuality: newQuality,
+      );
+      return true;
+    } catch (_) {
+      _requestedQuality = previousQuality;
+      return false;
+    }
+  }
+
   Future<void> _playRemote(
     int index, {
     required String requestedQuality,

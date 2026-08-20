@@ -4,6 +4,22 @@ enum MusicPlatform { netease, qq, kugou }
 
 enum TrackAvailability { playable, paid, unavailable, unknown }
 
+/// 在线歌曲音质档位；`level` 为网易云解析接口的请求参数，`label` 为展示文案。
+enum MusicQuality {
+  standard('standard', '标准'),
+  exhigh('exhigh', '高品'),
+  lossless('lossless', '无损'),
+  hires('hires', 'Hi-Res'),
+  jymaster('jymaster', '母带'),
+  sky('sky', '沉浸声'),
+  jyeffect('jyeffect', '全景声');
+
+  const MusicQuality(this.level, this.label);
+
+  final String level;
+  final String label;
+}
+
 final class PlatformTrackRef {
   const PlatformTrackRef({required this.platform, required this.trackId});
 

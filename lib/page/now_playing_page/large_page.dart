@@ -179,6 +179,11 @@ class _NowPlayingLargePage extends StatelessWidget {
                               disabledColor: disabledColor,
                             ),
                             spacer,
+                            _RemoteQualityButton(
+                              color: controlColor,
+                              disabledColor: disabledColor,
+                            ),
+                            spacer,
                             const _NowPlayingLargeViewSwitch(),
                           ],
                         );

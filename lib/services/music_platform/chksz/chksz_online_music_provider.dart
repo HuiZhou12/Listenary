@@ -1,4 +1,4 @@
-import 'package:pure_music/services/music_platform/adapters/netease_adapter.dart';
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_error.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_request.dart';
@@ -99,7 +99,7 @@ final class ChkszOnlineMusicProvider
   @override
   String defaultQualityFor(MusicPlatform platform) {
     _ensurePlatform(platform, capabilities.resolvablePlatforms);
-    return NeteaseAdapter.defaultQuality;
+    return AppPreference.instance.defaultQuality;
   }
 
   @override
