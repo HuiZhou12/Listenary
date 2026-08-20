@@ -192,7 +192,7 @@ class _AppShell_LargeState extends State<_AppShell_Large> {
             right: 0,
             bottom: 0,
             child: TweenAnimationBuilder<double>(
-              duration: MotionDuration.base,
+              duration: MotionDuration.fast,
               curve: MotionCurve.standard,
               tween: Tween<double>(
                 begin: _sidebarExpanded ? 1.0 : 0.0,

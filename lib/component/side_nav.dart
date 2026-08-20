@@ -260,7 +260,7 @@ class _SmoothLargeSideNav extends StatelessWidget {
   Widget build(BuildContext context) {
     return RepaintBoundary(
       child: TweenAnimationBuilder<double>(
-        duration: MotionDuration.base,
+        duration: MotionDuration.fast,
         curve: MotionCurve.standard,
         tween: Tween(begin: 0.0, end: expanded ? 1.0 : 0.0),
         builder: (context, t, _) => _buildPanel(context, t),
@@ -310,10 +310,10 @@ class _SmoothLargeSideNav extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Expanded(
-                  child: ListView(
+                  child: SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(vertical: 6),
-                    children: [
-                      SizedBox(
+                    child: RepaintBoundary(
+                      child: SizedBox(
                         height: contentHeight,
                         child: Stack(
                           children: [
@@ -387,7 +387,7 @@ class _SmoothLargeSideNav extends StatelessWidget {
                           ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ],
