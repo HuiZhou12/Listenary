@@ -54,7 +54,7 @@ class NetEaseSource implements LyricSource {
       final lyricResult = await net_api.neGetLyric(id: songId);
       if (lyricResult == null || !lyricResult.hasContent) return null;
 
-      return lyricResult.toParsedLyric();
+      return await lyricResult.toParsedLyric();
     } catch (e, st) {
       logger.w(
         'NetEaseSource.getLyrics failed: ${e.runtimeType}',

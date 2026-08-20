@@ -61,7 +61,7 @@ class QQSource implements LyricSource {
       );
       if (lyricResult == null || !lyricResult.hasContent) return null;
 
-      return lyricResult.toParsedLyric();
+      return await lyricResult.toParsedLyric();
     } catch (e, st) {
       logger.w(
         'QQSource.getLyrics failed: ${e.runtimeType}',

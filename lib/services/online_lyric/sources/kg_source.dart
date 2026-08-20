@@ -55,7 +55,7 @@ class KugouSource implements LyricSource {
       final lyricResult = await net_api.kgGetLyric(hash: hash);
       if (lyricResult == null || !lyricResult.hasContent) return null;
 
-      return lyricResult.toParsedLyric();
+      return await lyricResult.toParsedLyric();
     } catch (e, st) {
       logger.w(
         'KugouSource.getLyrics failed: ${e.runtimeType}',
