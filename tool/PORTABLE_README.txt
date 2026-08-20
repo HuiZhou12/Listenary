@@ -3,7 +3,7 @@ Listenary Windows 便携版
 首次使用
 1. 完整解压 ZIP，不要只复制 Listenary.exe。
 2. 进入 app 目录，运行 Listenary.exe。
-3. 曲库、设置和缓存会保存在 app\data 中，移动整个 app 目录即可带走数据。
+3. 曲库、设置和缓存会保存在 app\ListenaryData 中，移动整个 app 目录即可带走数据。
 
 从旧便携版升级
 1. 把新版完整解压到新的空目录，不要覆盖旧目录。

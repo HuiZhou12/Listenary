@@ -39,7 +39,7 @@ outline: deep
 | 用途 | 路径 |
 |------|------|
 | 程序 | `%LOCALAPPDATA%\Programs\Listenary`（旧安装可能仍保留原目录） |
-| 数据 | `%LOCALAPPDATA%\pure_music` |
+| 数据 | `%LOCALAPPDATA%\Listenary` |
 
 ## 便携版
 
@@ -47,7 +47,7 @@ outline: deep
 2. 将程序放在有写入权限的目录
 3. 运行 `app\Listenary.exe`（或包内说明指向的 exe），按欢迎页提示添加音乐文件夹
 
-配置、曲库与缓存默认写在程序旁的 `data/`。备份或迁移时，请保留整个程序目录。
+配置、曲库与缓存默认写在程序旁的 `ListenaryData/`。备份或迁移时，请保留整个程序目录。
 
 ::: info SmartScreen
 首次运行时 Windows 可能弹出 SmartScreen 提示，点击「更多信息」→「仍要运行」即可。

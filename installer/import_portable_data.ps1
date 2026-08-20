@@ -26,16 +26,15 @@ function Test-ProcessFromDirectory([string]$directory) {
     return $false
 }
 
-$source = (Resolve-Path -LiteralPath $SourceData).Path
+$source = [System.IO.Path]::GetFullPath($SourceData)
 $destination = [System.IO.Path]::GetFullPath($DestinationData).TrimEnd('\')
 if ([string]::IsNullOrWhiteSpace($destination) -or
     $destination -eq [System.IO.Path]::GetPathRoot($destination) -or
-    [System.IO.Path]::GetFileName($destination) -ne "pure_music") {
+    [System.IO.Path]::GetFileName($destination) -ne "Listenary") {
     throw "安装版数据目录无效：$destination"
 }
-if (-not (Test-Path -LiteralPath (Join-Path $source "app.so") -PathType Leaf) -or
-    -not (Test-Path -LiteralPath (Join-Path $source "flutter_assets") -PathType Container)) {
-    throw "所选目录不是完整的便携版运行数据目录。"
+if (-not (Test-Path -LiteralPath $source -PathType Container)) {
+    throw "所选目录不是有效的便携版数据目录。"
 }
 if (Test-ProcessFromDirectory (Split-Path $source -Parent)) {
     throw "导入数据前请先关闭正在运行的便携版 Listenary。"
@@ -67,7 +66,7 @@ if ($entries.Count -eq 0) {
 
 $destinationParent = Split-Path $destination -Parent
 New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
-$staging = Join-Path $destinationParent (".pure_music-import-{0}" -f [Guid]::NewGuid().ToString("N"))
+$staging = Join-Path $destinationParent (".listenary-import-{0}" -f [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $staging | Out-Null
 try {
     foreach ($entry in $entries) {

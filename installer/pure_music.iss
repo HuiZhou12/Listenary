@@ -122,18 +122,18 @@ end;
 function ResolvePortableDataPath(const SelectedPath: String): String;
 var
   CandidateRoot: String;
-  CandidateData: String;
+  EngineData: String;
 begin
   Result := '';
   CandidateRoot := SelectedPath;
   if FileExists(AddBackslash(CandidateRoot) + '{#AppExeName}') or
      FileExists(AddBackslash(CandidateRoot) + '{#LegacyAppExeName}') then
   begin
-    CandidateData := AddBackslash(CandidateRoot) + 'data';
-    if FileExists(AddBackslash(CandidateData) + 'app.so') and
-       DirExists(AddBackslash(CandidateData) + 'flutter_assets') then
+    EngineData := AddBackslash(CandidateRoot) + 'data';
+    if FileExists(AddBackslash(EngineData) + 'app.so') and
+       DirExists(AddBackslash(EngineData) + 'flutter_assets') then
     begin
-      Result := CandidateData;
+      Result := AddBackslash(CandidateRoot) + 'ListenaryData';
       Exit;
     end;
   end;
@@ -142,10 +142,10 @@ begin
   if FileExists(AddBackslash(CandidateRoot) + '{#AppExeName}') or
      FileExists(AddBackslash(CandidateRoot) + '{#LegacyAppExeName}') then
   begin
-    CandidateData := AddBackslash(CandidateRoot) + 'data';
-    if FileExists(AddBackslash(CandidateData) + 'app.so') and
-       DirExists(AddBackslash(CandidateData) + 'flutter_assets') then
-      Result := CandidateData;
+    EngineData := AddBackslash(CandidateRoot) + 'data';
+    if FileExists(AddBackslash(EngineData) + 'app.so') and
+       DirExists(AddBackslash(EngineData) + 'flutter_assets') then
+      Result := AddBackslash(CandidateRoot) + 'ListenaryData';
   end;
 end;
 
@@ -176,7 +176,7 @@ var
   HasInstalledData: Boolean;
 begin
   HasInstalledData := DirectoryHasEntries(
-    ExpandConstant('{localappdata}\pure_music'));
+    ExpandConstant('{localappdata}\Listenary'));
   Result := ((PageID = PortableDataChoicePage.ID) or
     (PageID = PortableDataPathPage.ID)) and HasInstalledData;
   if not Result and (PageID = PortableDataPathPage.ID) then
@@ -223,7 +223,7 @@ begin
   ScriptPath := ExpandConstant('{tmp}\import_portable_data.ps1');
   Params := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
     AddQuotes(ScriptPath) + ' -SourceData ' + AddQuotes(PortableSourceData) +
-    ' -DestinationData ' + AddQuotes(ExpandConstant('{localappdata}\pure_music'));
+    ' -DestinationData ' + AddQuotes(ExpandConstant('{localappdata}\Listenary'));
 
   if (not Exec(PowerShellPath, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode)) or
      (ResultCode <> 0) then
@@ -240,7 +240,7 @@ begin
   if CurUninstallStep <> usPostUninstall then
     Exit;
 
-  UserDataPath := ExpandConstant('{localappdata}\pure_music');
+  UserDataPath := ExpandConstant('{localappdata}\Listenary');
   if not DirExists(UserDataPath) then
     Exit;
 

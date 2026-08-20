@@ -19,15 +19,15 @@ Windows 7 / 8 等更旧系统**不在支持范围**。本软件基于 Flutter �
 
 | 形态 | 适合谁 | 程序位置 | 数据位置 |
 |------|--------|----------|----------|
-| 安装版 | 固定本机使用，需要开始菜单 / 可选桌面快捷方式 | 新安装默认 `%LOCALAPPDATA%\Programs\Listenary` | `%LOCALAPPDATA%\pure_music` |
-| 便携版 | U 盘、绿色部署、整目录带走 | 解压目录内 `app\` | 程序旁 `data/` |
+| 安装版 | 固定本机使用，需要开始菜单 / 可选桌面快捷方式 | 新安装默认 `%LOCALAPPDATA%\Programs\Listenary` | `%LOCALAPPDATA%\Listenary` |
+| 便携版 | U 盘、绿色部署、整目录带走 | 解压目录内 `app\` | 程序旁 `ListenaryData/` |
 
 两者功能一致。从 [下载页](/download) 获取对应文件：安装版带 `installer`，便携版带 `portable`。不要下载 Source code 源码归档。
 
 安装包只通过 **GitHub Releases** 发布，当前没有维护其他镜像。
 
 ::: tip 程序目录 ≠ 数据目录
-新安装的可执行文件在 `Programs\Listenary`，设置与曲库仍在 `pure_music`。从旧版本升级时，安装目录可能继续保留原名称。备份用户数据时拷贝数据目录即可，不必备份整个安装目录。
+新安装的可执行文件在 `Programs\Listenary`，设置与曲库仍在 `Listenary`。从旧版本升级时，安装目录可能继续保留原名称。备份用户数据时拷贝数据目录即可，不必备份整个安装目录。
 :::
 
 ## 安装版步骤
@@ -45,7 +45,7 @@ Windows 7 / 8 等更旧系统**不在支持范围**。本软件基于 Flutter �
     <div class="pm-step-body">
       <h3>可选：导入便携版数据</h3>
       <p>若本机<strong>还没有</strong>安装版用户数据，可在向导中勾选导入，并选择包含 <code>Listenary.exe</code> 的便携目录；旧版便携包可为 <code>pure_music.exe</code>。只会迁移设置、曲库、歌单与歌词来源记录，不改动原文件。</p>
-      <p>若 <code>%LOCALAPPDATA%\pure_music</code> 已有内容，导入页会跳过，避免覆盖。导入前请先关闭便携版进程；目标数据目录须为空。</p>
+      <p>若 <code>%LOCALAPPDATA%\Listenary</code> 已有内容，导入页会跳过，避免覆盖。导入前请先关闭便携版进程；目标数据目录须为空。</p>
     </div>
   </div>
   <div class="pm-step">
@@ -85,10 +85,10 @@ Windows 7 / 8 等更旧系统**不在支持范围**。本软件基于 Flutter �
 | 形态 | 路径 |
 |------|------|
 | 安装版 · 程序 | `%LOCALAPPDATA%\Programs\Listenary`（旧安装可能保留原目录） |
-| 安装版 · 数据 | `%LOCALAPPDATA%\pure_music`（通常为 `C:\Users\<用户>\AppData\Local\pure_music`） |
-| 便携版 | 程序旁 `data/`（配置、曲库、歌单与缓存） |
+| 安装版 · 数据 | `%LOCALAPPDATA%\Listenary`（通常为 `C:\Users\<用户>\AppData\Local\Listenary`） |
+| 便携版 | 程序旁 `ListenaryData/`（配置、曲库、歌单与缓存） |
 
-备份或换机时：安装版拷贝数据目录；便携版拷贝整个程序目录（含 `data/`）。
+备份或换机时：安装版拷贝数据目录；便携版拷贝整个程序目录（含 `ListenaryData/`）。
 
 ## 更新版本
 
@@ -96,21 +96,21 @@ Windows 7 / 8 等更旧系统**不在支持范围**。本软件基于 Flutter �
 
 1. 完全退出旧版本
 2. 运行新版安装程序覆盖安装
-3. 用户数据在 `%LOCALAPPDATA%\pure_music`，一般会保留
+3. 用户数据在 `%LOCALAPPDATA%\Listenary`，一般会保留
 
 ### 便携版
 
 1. 完全退出旧版本
-2. 备份旧目录中的 `data/`
+2. 备份旧目录中的 `ListenaryData/`
 3. 将新版本解压到一个新目录
-4. 把旧的 `data/` 复制到新程序目录（或使用源码库 `tool/upgrade_from_previous.ps1` 迁移）
+4. 把旧的 `ListenaryData/` 复制到新程序目录（或使用源码库 `tool/upgrade_from_previous.ps1` 迁移）
 5. 启动确认后再删除旧目录
 
 只迁移用户数据，不要用旧版 `dll/` 或其它运行文件覆盖新版本。
 
 ### 便携 → 安装
 
-用安装版向导的「导入便携版数据」，或手动把便携 `data/` 中的用户文件迁到 `%LOCALAPPDATA%\pure_music`（目标目录应为空，避免覆盖）。
+用安装版向导的「导入便携版数据」，或手动把便携 `ListenaryData/` 中的用户文件迁到 `%LOCALAPPDATA%\Listenary`（目标目录应为空，避免覆盖）。
 
 安装成功但导入失败时：原便携数据不会被修改，可稍后手动迁移或清空目标目录后重装并勾选导入。
 
@@ -122,14 +122,14 @@ Windows 7 / 8 等更旧系统**不在支持范围**。本软件基于 Flutter �
 2. 在 Windows「已安装的应用」或「控制面板 → 程序和功能」中卸载 Listenary
    （也可运行安装目录下的卸载程序）
 3. 卸载结束时会询问是否**同时删除用户数据**（设置、曲库索引、歌单、歌词来源与缓存）  
-   - 选「是」：删除 `%LOCALAPPDATA%\pure_music`  
+   - 选「是」：删除 `%LOCALAPPDATA%\Listenary`
    - 选「否」（默认倾向）：保留数据，便于以后重装恢复
 
-新安装的程序文件在 `%LOCALAPPDATA%\Programs\Listenary`，用户数据在 `%LOCALAPPDATA%\pure_music`，二者分开。
+新安装的程序文件在 `%LOCALAPPDATA%\Programs\Listenary`，用户数据在 `%LOCALAPPDATA%\Listenary`，二者分开。
 
 ### 便携版
 
-退出后删除整个程序目录即可。需要保留配置时先备份 `data/`。
+退出后删除整个程序目录即可。需要保留配置时先备份 `ListenaryData/`。
 
 ## SmartScreen 与杀软
 

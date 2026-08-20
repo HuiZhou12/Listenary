@@ -50,16 +50,13 @@ if ((Test-ProcessFromDirectory $currentAppDir) -or (Test-ProcessFromDirectory $p
     throw "Close Listenary in both package directories before migrating data."
 }
 
-$previousDataDir = Join-Path $previousAppDir "data"
-$currentDataDir = Join-Path $currentAppDir "data"
-foreach ($requiredPath in @(
-    (Join-Path $previousDataDir "app.so"),
-    (Join-Path $currentDataDir "app.so"),
-    (Join-Path $currentDataDir "flutter_assets")
-)) {
-    if (-not (Test-Path -LiteralPath $requiredPath)) {
-        throw "Portable runtime data is incomplete: $requiredPath"
-    }
+$previousDataDir = Join-Path $previousAppDir "ListenaryData"
+$currentDataDir = Join-Path $currentAppDir "ListenaryData"
+if (-not (Test-Path -LiteralPath $previousDataDir -PathType Container)) {
+    throw "Previous portable data directory not found: $previousDataDir"
+}
+if (-not (Test-Path -LiteralPath $currentDataDir -PathType Container)) {
+    New-Item -ItemType Directory -Path $currentDataDir -Force | Out-Null
 }
 
 $runtimeEntries = @("app.so", "flutter_assets", "icudtl.dat")

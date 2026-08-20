@@ -28,22 +28,22 @@ String resolveAppDataPath({
   if (usePortableData &&
       exeBase != 'dart.exe' &&
       exeBase != 'flutter_tester.exe') {
-    return path.join(path.dirname(executablePath), 'data');
+    return path.join(path.dirname(executablePath), 'ListenaryData');
   }
 
   final localAppData = environment['LOCALAPPDATA'];
   if (localAppData != null && localAppData.trim().isNotEmpty) {
-    return path.join(localAppData, 'pure_music');
+    return path.join(localAppData, 'Listenary');
   }
 
   final userProfile = environment['USERPROFILE'];
   if (userProfile != null && userProfile.trim().isNotEmpty) {
-    return path.join(userProfile, 'AppData', 'Local', 'pure_music');
+    return path.join(userProfile, 'AppData', 'Local', 'Listenary');
   }
 
   final appData = environment['APPDATA'];
   if (appData != null && appData.trim().isNotEmpty) {
-    return path.join(appData, 'pure_music');
+    return path.join(appData, 'Listenary');
   }
 
   throw StateError('Unable to determine app data directory');

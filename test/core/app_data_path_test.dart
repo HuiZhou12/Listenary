@@ -5,26 +5,26 @@ void main() {
   test('portable builds keep data next to the executable', () {
     final result = resolveAppDataPath(
       usePortableData: true,
-      executablePath: r'D:\Apps\Pure Music\pure_music.exe',
+      executablePath: r'D:\Apps\Pure Music\listenary.exe',
       environment: const {
         'LOCALAPPDATA': r'C:\Users\listener\AppData\Local',
       },
     );
 
-    expect(result, r'D:\Apps\Pure Music\data');
+    expect(result, r'D:\Apps\Pure Music\ListenaryData');
   });
 
   test('installed builds use the local user profile', () {
     final result = resolveAppDataPath(
       usePortableData: false,
-      executablePath: r'C:\Program Files\Pure Music\pure_music.exe',
+      executablePath: r'C:\Program Files\Listenary\Listenary.exe',
       environment: const {
         'LOCALAPPDATA': r'C:\Users\listener\AppData\Local',
         'APPDATA': r'C:\Users\listener\AppData\Roaming',
       },
     );
 
-    expect(result, r'C:\Users\listener\AppData\Local\pure_music');
+    expect(result, r'C:\Users\listener\AppData\Local\Listenary');
   });
 
   test('development processes do not write into the SDK directory', () {
@@ -36,6 +36,6 @@ void main() {
       },
     );
 
-    expect(result, r'C:\Users\listener\AppData\Local\pure_music');
+    expect(result, r'C:\Users\listener\AppData\Local\Listenary');
   });
 }

@@ -4,7 +4,7 @@ outline: deep
 
 # 简介
 
-打开 Listenary，选一个音乐文件夹，剩下的交给它。索引与设置写在应用数据目录（便携版在程序旁 `data/`，安装版在 `%LOCALAPPDATA%\pure_music`），不碰你的源文件。除本地曲库外，也可以按需使用在线搜索、在线播放、在线歌单和远程歌词。
+打开 Listenary，选一个音乐文件夹，剩下的交给它。索引与设置写在应用数据目录（便携版在程序旁 `ListenaryData/`，安装版在 `%LOCALAPPDATA%\Listenary`），不碰你的源文件。除本地曲库外，也可以按需使用在线搜索、在线播放、在线歌单和远程歌词。
 
 <div class="pm-cards">
   <div class="pm-card">

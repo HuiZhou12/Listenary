@@ -112,7 +112,7 @@ flutter build windows --release
 powershell -ExecutionPolicy Bypass -File .\build_windows.ps1 -Version 3.0.0 -Mode 2 -NonInteractive
 ```
 
-`PORTABLE_BUILD` 由脚本按产物类型注入：便携为 `true`（数据在 exe 旁 `data/`），安装版为 `false`（数据在 `%LOCALAPPDATA%\pure_music`）。
+`PORTABLE_BUILD` 由脚本按产物类型注入：便携为 `true`（数据在 exe 旁 `ListenaryData/`），安装版为 `false`（数据在 `%LOCALAPPDATA%\Listenary`）。
 
 ### 便携产物
 
