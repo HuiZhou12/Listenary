@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:pure_music/component/remote_cover_cache.dart';
 
 @visibleForTesting
 Uri? resolveRemoteMediaCoverUri(Uri? uri) {
@@ -27,7 +28,7 @@ ImageProvider<Object>? remoteMediaCoverImageProvider({
   return ResizeImage.resizeIfNeeded(
     cacheWidth,
     cacheHeight,
-    NetworkImage(uri.toString()),
+    CachedRemoteImageProvider(uri.toString()),
   );
 }
 

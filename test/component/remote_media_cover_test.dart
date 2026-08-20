@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pure_music/component/remote_cover_cache.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
 
 void main() {
@@ -39,7 +40,7 @@ void main() {
     final resized = provider! as ResizeImage;
     expect(resized.width, 192);
     expect(resized.height, 256);
-    expect(resized.imageProvider, isA<NetworkImage>());
+    expect(resized.imageProvider, isA<CachedRemoteImageProvider>());
 
     final memoryProvider = remoteMediaCoverImageProvider(
       coverUri: Uri.parse('https://cover.invalid/artwork.jpg'),
@@ -49,6 +50,37 @@ void main() {
     );
     expect(memoryProvider, isA<ResizeImage>());
     expect((memoryProvider! as ResizeImage).imageProvider, isA<MemoryImage>());
+  });
+
+  test('cover bytes cache fetches each URL once', () async {
+    final cache = RemoteCoverBytesCache();
+    var fetchCount = 0;
+    Future<Uint8List> fetch() async {
+      fetchCount++;
+      return Uint8List.fromList([1, 2, 3]);
+    }
+
+    final first = await cache.load('https://cover.invalid/a.jpg', fetch);
+    final second = await cache.load('https://cover.invalid/a.jpg', fetch);
+    expect(fetchCount, 1);
+    expect(first, second);
+  });
+
+  test('cover bytes cache dedupes concurrent fetches', () async {
+    final cache = RemoteCoverBytesCache();
+    var fetchCount = 0;
+    Future<Uint8List> fetch() async {
+      fetchCount++;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      return Uint8List.fromList([4, 5, 6]);
+    }
+
+    final results = await Future.wait([
+      cache.load('https://cover.invalid/b.jpg', fetch),
+      cache.load('https://cover.invalid/b.jpg', fetch),
+    ]);
+    expect(fetchCount, 1);
+    expect(results[0], results[1]);
   });
 
   testWidgets('missing or invalid cover displays only the placeholder', (
