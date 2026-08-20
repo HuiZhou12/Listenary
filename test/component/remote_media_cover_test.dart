@@ -1,9 +1,83 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/component/remote_cover_cache.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
+
+final Uint8List _transparentPng = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk'
+  'YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+);
+
+class _CoverHttpClient extends Fake implements HttpClient {
+  _CoverHttpClient(this.requests);
+
+  final List<HttpHeaders> requests;
+
+  @override
+  set connectionTimeout(Duration? value) {}
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) async {
+    final request = _CoverHttpRequest();
+    requests.add(request.headers);
+    return request;
+  }
+}
+
+class _CoverHttpRequest extends Fake implements HttpClientRequest {
+  @override
+  final HttpHeaders headers = _RecordingHttpHeaders();
+
+  @override
+  Future<HttpClientResponse> close() async => _CoverHttpResponse();
+}
+
+class _RecordingHttpHeaders extends Fake implements HttpHeaders {
+  final Map<String, String> _values = {};
+
+  @override
+  void set(String name, Object value, {bool preserveHeaderCase = false}) {
+    _values[name.toLowerCase()] = value.toString();
+  }
+
+  @override
+  String? value(String name) => _values[name.toLowerCase()];
+}
+
+class _CoverHttpResponse extends Fake implements HttpClientResponse {
+  @override
+  int get statusCode => HttpStatus.ok;
+
+  @override
+  int get contentLength => _transparentPng.length;
+
+  @override
+  HttpClientResponseCompressionState get compressionState =>
+      HttpClientResponseCompressionState.notCompressed;
+
+  @override
+  StreamSubscription<List<int>> listen(
+    void Function(List<int> event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    return Stream<List<int>>.fromIterable([_transparentPng]).listen(
+      onData,
+      onError: onError,
+      onDone: onDone,
+      cancelOnError: cancelOnError,
+    );
+  }
+}
 
 void main() {
   test('remote cover URI accepts only HTTPS with a host', () {
@@ -127,5 +201,23 @@ void main() {
     expect(find.byType(Image), findsOneWidget);
     final image = tester.widget<Image>(find.byType(Image));
     expect(image.excludeFromSemantics, isTrue);
+  });
+
+  test('cover fetch sends a browser user agent', () async {
+    final requests = <HttpHeaders>[];
+    await HttpOverrides.runZoned(() async {
+      final provider = CachedRemoteImageProvider('https://cover.invalid/a.jpg');
+      final stream = provider.resolve(ImageConfiguration.empty);
+      final listener = ImageStreamListener((image, sync) {});
+      stream.addListener(listener);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      stream.removeListener(listener);
+    }, createHttpClient: (_) => _CoverHttpClient(requests));
+
+    expect(requests, hasLength(1));
+    expect(
+      requests.single.value(HttpHeaders.userAgentHeader),
+      contains('Mozilla'),
+    );
   });
 }

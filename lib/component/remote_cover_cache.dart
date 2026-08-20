@@ -44,6 +44,10 @@ class CachedRemoteImageProvider extends ImageProvider<CachedRemoteImageProvider>
 
   final String url;
 
+  static const String _coverUserAgent =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/120.0 Safari/537.36';
+
   @override
   Future<CachedRemoteImageProvider> obtainKey(ImageConfiguration configuration) =>
       SynchronousFuture(this);
@@ -69,6 +73,7 @@ class CachedRemoteImageProvider extends ImageProvider<CachedRemoteImageProvider>
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
       final request = await client.getUrl(Uri.parse(url));
+      request.headers.set(HttpHeaders.userAgentHeader, _coverUserAgent);
       final response = await request.close();
       if (response.statusCode != HttpStatus.ok) {
         throw HttpException('cover fetch failed (${response.statusCode})', uri: Uri.parse(url));
