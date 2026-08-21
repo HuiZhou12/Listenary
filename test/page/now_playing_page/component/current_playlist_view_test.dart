@@ -66,8 +66,8 @@ void main() {
     expect(find.text('Remote artist 1 - Remote album 1'), findsOneWidget);
     expect(find.text('Remote 2'), findsOneWidget);
     expect(find.byIcon(Symbols.reorder), findsOneWidget);
-    expect(find.byIcon(Symbols.clear_all), findsNothing);
-    expect(find.byIcon(Symbols.remove_circle_outline), findsNothing);
+    expect(find.byIcon(Symbols.clear_all), findsOneWidget);
+    expect(find.byIcon(Symbols.remove_circle_outline), findsNWidgets(2));
     expect(PlayService.instance.existingPlaybackService, isNull);
   });
 

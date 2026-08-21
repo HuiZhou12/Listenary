@@ -366,6 +366,52 @@ void main() {
     expect(localBridge.restored, isEmpty);
   });
 
+  test('removing a non-current item updates the queue without reopening', () async {
+    await sessionController.play(0, requestedQuality: 'lossless');
+
+    await sessionController.removeFromQueue(1);
+
+    expect(queue.value.items.map((e) => e.ref.trackId), ['1']);
+    expect(queue.value.currentIndex, 0);
+    expect(gateway.refs.map((ref) => ref.trackId), ['1']);
+  });
+
+  test('removing the current item plays the next in place', () async {
+    await sessionController.play(0, requestedQuality: 'lossless');
+
+    await sessionController.removeFromQueue(0);
+
+    expect(queue.value.items.map((e) => e.ref.trackId), ['2']);
+    expect(queue.value.currentIndex, 0);
+    expect(gateway.refs.map((ref) => ref.trackId), ['1', '2']);
+  });
+
+  test('removing the last remaining item clears the session and restores local', () async {
+    final resumePoint = _FakeResumePoint();
+    localBridge.resumePoint = resumePoint;
+    queue.replace([_item('1')]);
+    await sessionController.play(0, requestedQuality: 'lossless');
+
+    await sessionController.removeFromQueue(0);
+
+    expect(queue.value.isEmpty, isTrue);
+    expect(sessionController.localResumePoint, isNull);
+    expect(localBridge.restored, [same(resumePoint)]);
+  });
+
+  test('clearing the queue restores the local session once', () async {
+    final resumePoint = _FakeResumePoint();
+    localBridge.resumePoint = resumePoint;
+    await sessionController.play(0, requestedQuality: 'lossless');
+
+    await sessionController.clearQueue();
+
+    expect(queue.value.isEmpty, isTrue);
+    expect(sessionController.localResumePoint, isNull);
+    expect(localBridge.restored, [same(resumePoint)]);
+    expect(failures, isEmpty);
+  });
+
   test('automatic next failure reports a safe session failure', () async {
     await sessionController.play(0, requestedQuality: 'lossless');
     gateway.error = StateError('next failed');

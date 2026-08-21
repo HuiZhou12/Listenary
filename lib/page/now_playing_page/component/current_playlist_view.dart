@@ -112,6 +112,8 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
         onSelect: (index) =>
             _selectRemote(context, controller, remoteQueue, index),
         onReorder: controller.reorder,
+        onRemove: (index) => controller.removeFromQueue(index),
+        onClear: () => _confirmClearRemoteQueue(context, controller),
       );
     }
 
@@ -727,4 +729,18 @@ class _ReorderItem extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<void> _confirmClearRemoteQueue(
+  BuildContext context,
+  RemotePlaybackSessionController controller,
+) async {
+  final confirmed = await showDangerConfirmDialog(
+    context: context,
+    title: '清空在线播放队列？',
+    message: '只会清空当前在线播放队列并回到进入前的本地播放。',
+    confirmLabel: '清空队列',
+  );
+  if (!confirmed || !context.mounted) return;
+  await controller.clearQueue();
 }

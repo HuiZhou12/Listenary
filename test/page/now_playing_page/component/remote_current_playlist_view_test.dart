@@ -67,16 +67,33 @@ void main() {
       expect(selected, [0, 1]);
     });
 
-    testWidgets('exposes reorder but not clear/remove operations', (tester) async {
+    testWidgets('exposes reorder, clear and per-item remove', (tester) async {
       await tester.pumpWidget(_testApp(currentIndex: 0));
 
-      // 排序入口存在，但清空/移除操作不在本期范围。
+      // 排序、清空入口存在；每项有移除按钮（默认队列 2 项）。
       expect(find.byIcon(Symbols.reorder), findsOneWidget);
-      expect(find.byIcon(Symbols.clear_all), findsNothing);
-      expect(find.byIcon(Symbols.remove_circle_outline), findsNothing);
+      expect(find.byIcon(Symbols.clear_all), findsOneWidget);
+      expect(find.byIcon(Symbols.remove_circle_outline), findsNWidgets(2));
       // 非排序模式下不显示拖拽手柄或 ReorderableListView。
       expect(find.byIcon(Symbols.drag_indicator), findsNothing);
       expect(find.byType(ReorderableListView), findsNothing);
+    });
+
+    testWidgets('per-item remove and clear invoke their callbacks', (tester) async {
+      final removed = <int>[];
+      var cleared = 0;
+      await tester.pumpWidget(
+        _testApp(
+          currentIndex: 0,
+          onRemove: removed.add,
+          onClear: () => cleared++,
+        ),
+      );
+
+      await tester.tap(find.byIcon(Symbols.remove_circle_outline).first);
+      expect(removed, [0]);
+      await tester.tap(find.byIcon(Symbols.clear_all));
+      expect(cleared, 1);
     });
 
     testWidgets('enters reorder mode and hides it for shuffle', (tester) async {
@@ -151,6 +168,8 @@ Widget _testApp({
   List<ActivePlaybackSessionItem>? queue,
   int? currentIndex,
   ValueChanged<int>? onSelect,
+  ValueChanged<int>? onRemove,
+  VoidCallback? onClear,
   double height = 400,
 }) {
   return MaterialApp(
@@ -170,6 +189,8 @@ Widget _testApp({
           mode: RemotePlaybackMode.sequential,
           onSelect: onSelect ?? (_) {},
           onReorder: (oldIndex, newIndex) {},
+          onRemove: onRemove ?? (_) {},
+          onClear: onClear ?? () {},
         ),
       ),
     ),

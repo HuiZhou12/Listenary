@@ -14,6 +14,8 @@ class RemoteCurrentPlaylistView extends StatefulWidget {
     required this.mode,
     required this.onSelect,
     required this.onReorder,
+    required this.onRemove,
+    required this.onClear,
   });
 
   final Widget queueSourceSwitcher;
@@ -22,6 +24,8 @@ class RemoteCurrentPlaylistView extends StatefulWidget {
   final RemotePlaybackMode mode;
   final ValueChanged<int> onSelect;
   final void Function(int oldIndex, int newIndex) onReorder;
+  final ValueChanged<int> onRemove;
+  final VoidCallback onClear;
 
   @override
   State<RemoteCurrentPlaylistView> createState() =>
@@ -123,6 +127,16 @@ class _RemoteCurrentPlaylistViewState extends State<RemoteCurrentPlaylistView> {
                         ? () => setState(() => _isReordering = !_isReordering)
                         : null,
                   ),
+                IconButton(
+                  tooltip: _isReordering ? '完成排序后再清空队列' : '清空播放队列',
+                  icon: const Icon(Symbols.clear_all),
+                  style: IconButton.styleFrom(
+                    foregroundColor: scheme.error,
+                    disabledForegroundColor: scheme.onSecondaryContainer
+                        .withValues(alpha: 0.38),
+                  ),
+                  onPressed: _isReordering ? null : widget.onClear,
+                ),
               ],
             ),
           ),
@@ -142,6 +156,7 @@ class _RemoteCurrentPlaylistViewState extends State<RemoteCurrentPlaylistView> {
                         item: item,
                         isCurrent: isCurrent,
                         onTap: isCurrent ? null : () => widget.onSelect(index),
+                        onRemove: () => widget.onRemove(index),
                       );
                     },
                   ),
@@ -319,11 +334,13 @@ class _RemotePlaylistItem extends StatelessWidget {
     required this.item,
     required this.isCurrent,
     required this.onTap,
+    required this.onRemove,
   });
 
   final ActivePlaybackSessionItem item;
   final bool isCurrent;
   final VoidCallback? onTap;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -336,7 +353,7 @@ class _RemotePlaylistItem extends StatelessWidget {
       borderRadius: AppRadius.smCircular,
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+        padding: const EdgeInsets.only(left: 8.0, right: 2.0),
         child: DefaultTextStyle(
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -344,26 +361,41 @@ class _RemotePlaylistItem extends StatelessWidget {
             color: isCurrent ? scheme.primary : scheme.onSecondaryContainer,
             fontSize: AppType.body,
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Text(
-                item.title,
-                style: TextStyle(
-                  fontWeight: isCurrent
-                      ? AppType.weightSemibold
-                      : FontWeight.normal,
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      style: TextStyle(
+                        fontWeight: isCurrent
+                            ? AppType.weightSemibold
+                            : FontWeight.normal,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: AppType.caption,
+                        color: isCurrent
+                            ? scheme.primary.withAlpha(179)
+                            : scheme.onSecondaryContainer.withAlpha(179),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: AppType.caption,
-                  color: isCurrent
-                      ? scheme.primary.withAlpha(179)
-                      : scheme.onSecondaryContainer.withAlpha(179),
+              IconButton(
+                tooltip: '从队列移除',
+                onPressed: onRemove,
+                icon: Icon(
+                  Symbols.remove_circle_outline,
+                  size: 18,
+                  color: scheme.onSecondaryContainer.withAlpha(179),
                 ),
               ),
             ],

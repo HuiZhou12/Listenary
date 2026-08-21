@@ -119,6 +119,45 @@ final class RemotePlaybackQueue
     );
   }
 
+  /// 从队列中移除指定索引项，返回其 ref（供上层判断是否移除了当前曲目）。
+  /// 随机模式下同步从 originalItems 中按 ref 移除；当前项被移除时 currentIndex 落在原位新项。
+  PlatformTrackRef? removeAt(int index) {
+    final snapshot = value;
+    final items = snapshot.items;
+    if (index < 0 || index >= items.length) return null;
+    final removedRef = items[index].ref;
+
+    final nextItems = List<RemotePlaybackQueueItem>.of(items)..removeAt(index);
+    var nextOriginal = snapshot.originalItems;
+    if (snapshot.mode == RemotePlaybackMode.shuffle) {
+      nextOriginal = List<RemotePlaybackQueueItem>.of(nextOriginal);
+      final originalIndex = nextOriginal.indexWhere((e) => e.ref == removedRef);
+      if (originalIndex >= 0) nextOriginal.removeAt(originalIndex);
+    }
+
+    final currentIndex = snapshot.currentIndex;
+    int? nextCurrent = currentIndex;
+    if (currentIndex != null) {
+      if (currentIndex == index) {
+        // 当前项被移除：原位新项成为当前项；若移除的是末项则落在新的末项。
+        if (nextItems.isEmpty) {
+          nextCurrent = null;
+        } else if (index >= nextItems.length) {
+          nextCurrent = nextItems.length - 1;
+        }
+      } else if (index < currentIndex) {
+        nextCurrent = currentIndex - 1;
+      }
+    }
+    value = RemotePlaybackQueueSnapshot(
+      items: nextItems,
+      originalItems: nextOriginal,
+      currentIndex: nextCurrent,
+      mode: snapshot.mode,
+    );
+    return removedRef;
+  }
+
   /// 手动排序：移动 items 并保持当前曲目身份（按 ref 重新定位 currentIndex）。
   /// 随机模式下禁用手动排序，调用方应先退出随机模式。
   void reorder(int oldIndex, int newIndex) {

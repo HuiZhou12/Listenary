@@ -270,6 +270,51 @@ final class RemotePlaybackSessionController {
     }
   }
 
+  /// 从在线队列移除指定索引；移除了当前曲目且队列非空时原位播放下一项，
+  /// 队列为空则结束会话并恢复本地。
+  Future<void> removeFromQueue(int index) async {
+    _throwIfDisposed();
+    final snapshot = _queue.value;
+    final currentIndex = snapshot.currentIndex;
+    if (index < 0 || index >= snapshot.items.length) return;
+    final removedRef = _queue.removeAt(index);
+    if (removedRef == null) return;
+    final wasCurrent =
+        currentIndex != null && snapshot.items[currentIndex].ref == removedRef;
+    if (!_sessionStarted || !wasCurrent) return;
+    if (_queue.value.isEmpty) {
+      await clearQueue();
+      return;
+    }
+    final requestedQuality = _requestedQuality;
+    final targetIndex = _queue.value.currentIndex;
+    if (requestedQuality == null || targetIndex == null) return;
+    await _playRemote(targetIndex, requestedQuality: requestedQuality);
+  }
+
+  /// 清空在线队列并结束远程会话，恢复到进入远程前的本地播放点。
+  Future<void> clearQueue() async {
+    _throwIfDisposed();
+    if (!_sessionStarted) return;
+    ++_revision;
+    _remoteController.cancel();
+    _queue.clear();
+    final resumePoint = _localResumePoint;
+    _endSession();
+    await _stopRemoteSafely();
+    if (resumePoint == null) return;
+    try {
+      _localBridge.restore(resumePoint);
+    } catch (_) {
+      try {
+        _localBridge.pause();
+      } catch (_) {}
+      if (!_disposed) {
+        _onFailure?.call(RemotePlaybackSessionFailure.localRestore);
+      }
+    }
+  }
+
   Future<void> _playRemote(
     int index, {
     required String requestedQuality,
