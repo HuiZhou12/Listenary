@@ -562,7 +562,7 @@ class _LocalCurrentPlaylistViewState extends State<_LocalCurrentPlaylistView> {
   }
 }
 
-class _PlaylistViewItem extends StatelessWidget {
+class _PlaylistViewItem extends StatefulWidget {
   const _PlaylistViewItem({
     required this.index,
     required this.audio,
@@ -578,52 +578,62 @@ class _PlaylistViewItem extends StatelessWidget {
   final int currentIndex;
 
   @override
+  State<_PlaylistViewItem> createState() => _PlaylistViewItemState();
+}
+
+class _PlaylistViewItemState extends State<_PlaylistViewItem> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
     final playbackService = PlayService.instance.playbackService;
     final scheme = Theme.of(context).colorScheme;
     final canActivate = canActivateQueueItem(
-      hasNowPlaying: hasNowPlaying,
-      currentIndex: currentIndex,
-      targetIndex: index,
+      hasNowPlaying: widget.hasNowPlaying,
+      currentIndex: widget.currentIndex,
+      targetIndex: widget.index,
     );
 
-    return InkWell(
-      borderRadius: AppRadius.smCircular,
-      onTap: canActivate
-          ? () => playbackService.playIndexOfPlaylist(index)
-          : null,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8.0),
-        child: Row(
-          children: [
-            Expanded(
-              child: DefaultTextStyle(
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: isNowPlaying
-                      ? scheme.primary
-                      : scheme.onSecondaryContainer,
-                  fontSize: AppType.body,
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      audio.title,
-                      style: TextStyle(
-                        fontWeight: isNowPlaying
-                            ? AppType.weightSemibold
-                            : FontWeight.normal,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: InkWell(
+        borderRadius: AppRadius.smCircular,
+        onTap: canActivate
+            ? () => playbackService.playIndexOfPlaylist(widget.index)
+            : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+          child: Row(
+            children: [
+              Expanded(
+                child: DefaultTextStyle(
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: widget.isNowPlaying
+                        ? scheme.primary
+                        : scheme.onSecondaryContainer,
+                    fontSize: AppType.body,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.audio.title,
+                        style: TextStyle(
+                          fontWeight: widget.isNowPlaying
+                              ? AppType.weightSemibold
+                              : FontWeight.normal,
+                        ),
                       ),
-                    ),
                     const SizedBox(height: 2),
                     Text(
-                      '${audio.artist} - ${audio.album}',
+                      '${widget.audio.artist} - ${widget.audio.album}',
                       style: TextStyle(
                         fontSize: AppType.caption,
-                        color: isNowPlaying
+                        color: widget.isNowPlaying
                             ? scheme.primary.withAlpha(179)
                             : scheme.onSecondaryContainer.withAlpha(179),
                       ),
@@ -633,23 +643,31 @@ class _PlaylistViewItem extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // 移除按钮
-            IconButton(
-              tooltip: '从队列移除',
-              icon: Icon(
-                Symbols.remove_circle_outline,
-                size: 20,
-                color: scheme.onSecondaryContainer.withAlpha(153),
+            // 移除按钮：悬停时显示
+            AnimatedOpacity(
+              opacity: _hovered ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 120),
+              child: IgnorePointer(
+                ignoring: !_hovered,
+                child: IconButton(
+                  tooltip: '从队列移除',
+                  icon: Icon(
+                    Symbols.remove_circle_outline,
+                    size: 20,
+                    color: scheme.onSecondaryContainer.withAlpha(153),
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    playbackService.removeFromQueue(widget.index);
+                  },
+                ),
               ),
-              visualDensity: VisualDensity.compact,
-              onPressed: () {
-                playbackService.removeFromQueue(index);
-              },
             ),
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 }
 

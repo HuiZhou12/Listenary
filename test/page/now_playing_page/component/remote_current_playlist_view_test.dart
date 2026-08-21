@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -90,8 +91,18 @@ void main() {
         ),
       );
 
-      await tester.tap(find.byIcon(Symbols.remove_circle_outline).first);
+      // 移除按钮在悬停 item 时才可点。
+      final removeIcon = find.byIcon(Symbols.remove_circle_outline).first;
+      final gesture = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
+      await gesture.moveTo(tester.getCenter(removeIcon));
+      await tester.pumpAndSettle();
+      await tester.tap(removeIcon);
+      await tester.pumpAndSettle();
+      await gesture.removePointer();
       expect(removed, [0]);
+
       await tester.tap(find.byIcon(Symbols.clear_all));
       expect(cleared, 1);
     });

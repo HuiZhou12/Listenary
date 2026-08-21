@@ -329,7 +329,7 @@ class _EmptyRemotePlaylist extends StatelessWidget {
   }
 }
 
-class _RemotePlaylistItem extends StatelessWidget {
+class _RemotePlaylistItem extends StatefulWidget {
   const _RemotePlaylistItem({
     required this.item,
     required this.isCurrent,
@@ -343,62 +343,84 @@ class _RemotePlaylistItem extends StatelessWidget {
   final VoidCallback onRemove;
 
   @override
+  State<_RemotePlaylistItem> createState() => _RemotePlaylistItemState();
+}
+
+class _RemotePlaylistItemState extends State<_RemotePlaylistItem> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final subtitle = item.album.isEmpty
-        ? item.artist
-        : '${item.artist} - ${item.album}';
+    final subtitle = widget.item.album.isEmpty
+        ? widget.item.artist
+        : '${widget.item.artist} - ${widget.item.album}';
 
-    return InkWell(
-      borderRadius: AppRadius.smCircular,
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.only(left: 8.0, right: 2.0),
-        child: DefaultTextStyle(
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: isCurrent ? scheme.primary : scheme.onSecondaryContainer,
-            fontSize: AppType.body,
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.title,
-                      style: TextStyle(
-                        fontWeight: isCurrent
-                            ? AppType.weightSemibold
-                            : FontWeight.normal,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: InkWell(
+        borderRadius: AppRadius.smCircular,
+        onTap: widget.onTap,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 8.0, right: 2.0),
+          child: DefaultTextStyle(
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: widget.isCurrent
+                  ? scheme.primary
+                  : scheme.onSecondaryContainer,
+              fontSize: AppType.body,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.item.title,
+                        style: TextStyle(
+                          fontWeight: widget.isCurrent
+                              ? AppType.weightSemibold
+                              : FontWeight.normal,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: AppType.caption,
-                        color: isCurrent
-                            ? scheme.primary.withAlpha(179)
-                            : scheme.onSecondaryContainer.withAlpha(179),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: AppType.caption,
+                          color: widget.isCurrent
+                              ? scheme.primary.withAlpha(179)
+                              : scheme.onSecondaryContainer.withAlpha(179),
+                        ),
                       ),
+                    ],
+                  ),
+                ),
+                // 移除按钮：悬停时显示，与本地队列一致。
+                AnimatedOpacity(
+                  opacity: _hovered ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 120),
+                  child: IgnorePointer(
+                    ignoring: !_hovered,
+                    child: IconButton(
+                      tooltip: '从队列移除',
+                      onPressed: widget.onRemove,
+                      icon: Icon(
+                        Symbols.remove_circle_outline,
+                        size: 20,
+                        color: scheme.onSecondaryContainer.withAlpha(153),
+                      ),
+                      visualDensity: VisualDensity.compact,
                     ),
-                  ],
+                  ),
                 ),
-              ),
-              IconButton(
-                tooltip: '从队列移除',
-                onPressed: onRemove,
-                icon: Icon(
-                  Symbols.remove_circle_outline,
-                  size: 18,
-                  color: scheme.onSecondaryContainer.withAlpha(179),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
