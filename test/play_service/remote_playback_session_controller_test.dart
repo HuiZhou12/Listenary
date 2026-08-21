@@ -354,6 +354,18 @@ void main() {
     expect(localBridge.restored, isEmpty);
   });
 
+  test('repeat-one reopens the same track on natural completion', () async {
+    await sessionController.play(0, requestedQuality: 'lossless');
+    queue.cycleMode(); // sequential -> repeatOne
+
+    backend.emit(PlaybackBackendState.completed);
+    await pumpEventQueue();
+
+    expect(gateway.refs.map((ref) => ref.trackId), ['1', '1']);
+    expect(queue.value.currentIndex, 0);
+    expect(localBridge.restored, isEmpty);
+  });
+
   test('automatic next failure reports a safe session failure', () async {
     await sessionController.play(0, requestedQuality: 'lossless');
     gateway.error = StateError('next failed');

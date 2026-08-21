@@ -199,6 +199,78 @@ void main() {
     queue.dispose();
     expect(queue.value.items, isEmpty);
   });
+
+  test('reorder moves items and keeps the current track identity', () {
+    final queue = RemotePlaybackQueue();
+    queue.replace([_item('1'), _item('2'), _item('3')], currentIndex: 1);
+
+    // 把当前曲目 '2' 从 index 1 移到末尾。
+    queue.reorder(1, 2);
+
+    expect(queue.value.items.map((e) => e.ref.trackId), ['1', '3', '2']);
+    expect(queue.value.currentIndex, 2);
+    expect(queue.value.currentItem!.ref.trackId, '2');
+    expect(queue.value.originalItems.map((e) => e.ref.trackId), ['1', '3', '2']);
+  });
+
+  test('reorder is disabled in shuffle mode', () {
+    final queue = RemotePlaybackQueue();
+    queue.replace([_item('1'), _item('2'), _item('3')], currentIndex: 0);
+    queue.setMode(RemotePlaybackMode.shuffle);
+
+    final before = queue.value.items;
+    queue.reorder(0, 1);
+    expect(queue.value.items, before);
+  });
+
+  test('cycle mode rotates sequential -> repeatOne -> shuffle -> sequential', () {
+    final queue = RemotePlaybackQueue();
+    queue.replace([_item('1'), _item('2'), _item('3')], currentIndex: 0);
+
+    expect(queue.value.mode, RemotePlaybackMode.sequential);
+    queue.cycleMode();
+    expect(queue.value.mode, RemotePlaybackMode.repeatOne);
+    queue.cycleMode();
+    expect(queue.value.mode, RemotePlaybackMode.shuffle);
+    queue.cycleMode();
+    expect(queue.value.mode, RemotePlaybackMode.sequential);
+  });
+
+  test('shuffle keeps the current track and restores original order on exit', () {
+    final queue = RemotePlaybackQueue();
+    queue.replace([_item('1'), _item('2'), _item('3')], currentIndex: 1);
+
+    queue.setMode(RemotePlaybackMode.shuffle);
+    // 当前曲目 '2' 保留在首位，其余随机化但数量不变。
+    expect(queue.value.items, hasLength(3));
+    expect(queue.value.items.first.ref.trackId, '2');
+    expect(queue.value.currentItem!.ref.trackId, '2');
+    expect(queue.value.originalItems.map((e) => e.ref.trackId), ['1', '2', '3']);
+
+    queue.setMode(RemotePlaybackMode.sequential);
+    expect(queue.value.items.map((e) => e.ref.trackId), ['1', '2', '3']);
+    expect(queue.value.currentIndex, 1);
+    expect(queue.value.currentItem!.ref.trackId, '2');
+  });
+
+  test('replace keeps the current mode within a session', () {
+    final queue = RemotePlaybackQueue();
+    queue.replace([_item('1'), _item('2')], currentIndex: 0);
+    queue.setMode(RemotePlaybackMode.repeatOne);
+
+    queue.replace([_item('3'), _item('4')], currentIndex: 0);
+    expect(queue.value.mode, RemotePlaybackMode.repeatOne);
+    expect(queue.value.originalItems.map((e) => e.ref.trackId), ['3', '4']);
+  });
+
+  test('replace resets shuffle to sequential for the new queue', () {
+    final queue = RemotePlaybackQueue();
+    queue.replace([_item('1'), _item('2')], currentIndex: 0);
+    queue.setMode(RemotePlaybackMode.shuffle);
+
+    queue.replace([_item('3'), _item('4')], currentIndex: 0);
+    expect(queue.value.mode, RemotePlaybackMode.sequential);
+  });
 }
 
 RemotePlaybackQueueItem _item(String trackId) {

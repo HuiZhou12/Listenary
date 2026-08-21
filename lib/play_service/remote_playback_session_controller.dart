@@ -182,6 +182,13 @@ final class RemotePlaybackSessionController {
   Stream<RemotePlaybackControlSnapshot> get controlStateStream =>
       _controlStateController.stream;
 
+  RemotePlaybackMode get mode => _queue.value.mode;
+
+  void cycleMode() => _queue.cycleMode();
+
+  void reorder(int oldIndex, int newIndex) =>
+      _queue.reorder(oldIndex, newIndex);
+
   bool previous() => _navigate(-1);
 
   bool next() => _navigate(1);
@@ -408,6 +415,21 @@ final class RemotePlaybackSessionController {
     final currentIndex = snapshot.currentIndex;
     final requestedQuality = _requestedQuality;
     if (currentIndex == null || requestedQuality == null) return;
+
+    // 单曲循环：重新解析当前曲目，不复用可能过期的 URL。
+    if (snapshot.mode == RemotePlaybackMode.repeatOne) {
+      final nextRevision = _revision + 1;
+      try {
+        await _playRemote(currentIndex, requestedQuality: requestedQuality);
+      } catch (error) {
+        if (error is! _RemoteTransitionStopException &&
+            !_disposed &&
+            _revision == nextRevision) {
+          _onFailure?.call(RemotePlaybackSessionFailure.nextTrack);
+        }
+      }
+      return;
+    }
 
     if (currentIndex + 1 < snapshot.items.length) {
       final nextRevision = _revision + 1;

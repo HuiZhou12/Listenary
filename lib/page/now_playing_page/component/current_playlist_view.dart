@@ -108,8 +108,10 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
             )
             .toList(growable: false),
         currentIndex: remoteQueue.currentIndex,
+        mode: remoteQueue.mode,
         onSelect: (index) =>
             _selectRemote(context, controller, remoteQueue, index),
+        onReorder: controller.reorder,
       );
     }
 

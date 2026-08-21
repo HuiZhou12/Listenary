@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:pure_music/page/now_playing_page/component/remote_current_playlist_view.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
+import 'package:pure_music/play_service/remote_playback_queue.dart';
 
 void main() {
   group('RemoteCurrentPlaylistView', () {
@@ -66,14 +67,25 @@ void main() {
       expect(selected, [0, 1]);
     });
 
-    testWidgets('does not expose local queue operations', (tester) async {
+    testWidgets('exposes reorder but not clear/remove operations', (tester) async {
       await tester.pumpWidget(_testApp(currentIndex: 0));
 
-      expect(find.byIcon(Symbols.reorder), findsNothing);
+      // 排序入口存在，但清空/移除操作不在本期范围。
+      expect(find.byIcon(Symbols.reorder), findsOneWidget);
       expect(find.byIcon(Symbols.clear_all), findsNothing);
       expect(find.byIcon(Symbols.remove_circle_outline), findsNothing);
+      // 非排序模式下不显示拖拽手柄或 ReorderableListView。
       expect(find.byIcon(Symbols.drag_indicator), findsNothing);
       expect(find.byType(ReorderableListView), findsNothing);
+    });
+
+    testWidgets('enters reorder mode and hides it for shuffle', (tester) async {
+      await tester.pumpWidget(_testApp(currentIndex: 0));
+
+      await tester.tap(find.byIcon(Symbols.reorder));
+      await tester.pumpAndSettle();
+      expect(find.byType(ReorderableListView), findsOneWidget);
+      expect(find.byIcon(Symbols.drag_indicator), findsNWidgets(2));
     });
 
     testWidgets('shows the existing empty queue state', (tester) async {
@@ -155,7 +167,9 @@ Widget _testApp({
                 ActivePlaybackSessionItem(title: 'Title 1', artist: 'Artist 1'),
               ],
           currentIndex: currentIndex,
+          mode: RemotePlaybackMode.sequential,
           onSelect: onSelect ?? (_) {},
+          onReorder: (oldIndex, newIndex) {},
         ),
       ),
     ),

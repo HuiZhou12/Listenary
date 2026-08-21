@@ -39,6 +39,7 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/play_service/playback_source.dart';
+import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/play_service/remote_playback_session_controller.dart';
 import 'package:pure_music/play_service/remote_playback_timeline.dart';
 import 'package:pure_music/play_service/remote_media_artwork.dart';
@@ -971,6 +972,34 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
   }
 }
 
+class _RemotePlaybackModeButton extends StatelessWidget {
+  const _RemotePlaybackModeButton({
+    required this.color,
+    required this.disabledColor,
+  });
+
+  final Color color;
+  final Color disabledColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final session = context.watch<RemotePlaybackSessionController>();
+    final mode = session.mode;
+    final (tooltip, icon) = switch (mode) {
+      RemotePlaybackMode.sequential => ('顺序播放', Symbols.repeat),
+      RemotePlaybackMode.repeatOne => ('单曲循环', Symbols.repeat_one),
+      RemotePlaybackMode.shuffle => ('随机播放', Symbols.shuffle),
+    };
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: session.cycleMode,
+      icon: Icon(icon, fill: 0.0, weight: 400.0),
+      color: color,
+      disabledColor: disabledColor,
+    );
+  }
+}
+
 class _NowPlayingPlaybackModeSwitch extends StatefulWidget {
   const _NowPlayingPlaybackModeSwitch();
 
@@ -1026,13 +1055,7 @@ class _NowPlayingPlaybackModeSwitchState
     );
 
     if (controls.usesRemoteQueueMode) {
-      return IconButton(
-        tooltip: '在线队列（顺序播放）',
-        onPressed: null,
-        icon: const Icon(Symbols.queue_music, fill: 0.0, weight: 400.0),
-        color: color,
-        disabledColor: disabledColor,
-      );
+      return _RemotePlaybackModeButton(color: color, disabledColor: disabledColor);
     }
 
     return ListenableBuilder(

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
+import 'package:pure_music/play_service/remote_playback_queue.dart';
 
 class RemoteCurrentPlaylistView extends StatefulWidget {
   const RemoteCurrentPlaylistView({
@@ -9,13 +11,17 @@ class RemoteCurrentPlaylistView extends StatefulWidget {
     required this.queueSourceSwitcher,
     required this.queue,
     required this.currentIndex,
+    required this.mode,
     required this.onSelect,
+    required this.onReorder,
   });
 
   final Widget queueSourceSwitcher;
   final List<ActivePlaybackSessionItem> queue;
   final int? currentIndex;
+  final RemotePlaybackMode mode;
   final ValueChanged<int> onSelect;
+  final void Function(int oldIndex, int newIndex) onReorder;
 
   @override
   State<RemoteCurrentPlaylistView> createState() =>
@@ -26,6 +32,7 @@ class _RemoteCurrentPlaylistViewState extends State<RemoteCurrentPlaylistView> {
   static const _itemExtent = 64.0;
 
   late final ScrollController _scrollController;
+  bool _isReordering = false;
 
   @override
   void initState() {
@@ -41,6 +48,10 @@ class _RemoteCurrentPlaylistViewState extends State<RemoteCurrentPlaylistView> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.currentIndex != widget.currentIndex) {
       _scheduleCurrentItem();
+    }
+    if (oldWidget.mode == RemotePlaybackMode.shuffle &&
+        widget.mode != RemotePlaybackMode.shuffle) {
+      _isReordering = false;
     }
   }
 
@@ -60,6 +71,9 @@ class _RemoteCurrentPlaylistViewState extends State<RemoteCurrentPlaylistView> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final queue = widget.queue;
+    final canReorder =
+        hasEnoughItemsToReorder(queue.length) &&
+        widget.mode != RemotePlaybackMode.shuffle;
 
     return Material(
       type: MaterialType.transparency,
@@ -85,12 +99,38 @@ class _RemoteCurrentPlaylistViewState extends State<RemoteCurrentPlaylistView> {
                     child: widget.queueSourceSwitcher,
                   ),
                 ),
+                if (queue.length > 1)
+                  IconButton(
+                    tooltip: widget.mode == RemotePlaybackMode.shuffle
+                        ? '先退出随机播放再排序'
+                        : _isReordering
+                        ? '完成排序'
+                        : '排序',
+                    icon: Icon(
+                      _isReordering ? Symbols.check : Symbols.reorder,
+                    ),
+                    style: IconButton.styleFrom(
+                      foregroundColor: _isReordering
+                          ? scheme.onTertiaryContainer
+                          : scheme.onSecondaryContainer,
+                      disabledForegroundColor: scheme.onSecondaryContainer
+                          .withValues(alpha: 0.38),
+                      backgroundColor: _isReordering
+                          ? scheme.tertiaryContainer
+                          : null,
+                    ),
+                    onPressed: canReorder
+                        ? () => setState(() => _isReordering = !_isReordering)
+                        : null,
+                  ),
               ],
             ),
           ),
           Expanded(
             child: queue.isEmpty
                 ? _EmptyRemotePlaylist(colorScheme: scheme)
+                : _isReordering
+                ? _buildReorderList(queue, scheme)
                 : ListView.builder(
                     controller: _scrollController,
                     itemCount: queue.length,
@@ -111,10 +151,118 @@ class _RemoteCurrentPlaylistViewState extends State<RemoteCurrentPlaylistView> {
     );
   }
 
+  Widget _buildReorderList(
+    List<ActivePlaybackSessionItem> queue,
+    ColorScheme scheme,
+  ) {
+    return ReorderableListView.builder(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      buildDefaultDragHandles: false,
+      itemCount: queue.length,
+      onReorderItem: widget.onReorder,
+      proxyDecorator: (child, index, animation) => Material(
+        elevation: 4,
+        borderRadius: AppRadius.smCircular,
+        child: child,
+      ),
+      itemBuilder: (context, index) {
+        final item = queue[index];
+        final isCurrent = widget.currentIndex == index;
+        return _RemoteReorderItem(
+          key: ValueKey('remote_reorder_$index'),
+          item: item,
+          index: index,
+          isCurrent: isCurrent,
+          colorScheme: scheme,
+        );
+      },
+    );
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();
+  }
+}
+
+class _RemoteReorderItem extends StatelessWidget {
+  const _RemoteReorderItem({
+    super.key,
+    required this.item,
+    required this.index,
+    required this.isCurrent,
+    required this.colorScheme,
+  });
+
+  final ActivePlaybackSessionItem item;
+  final int index;
+  final bool isCurrent;
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = colorScheme;
+    return SizedBox(
+      height: 64,
+      child: Material(
+        color: Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+          child: Row(
+            children: [
+              ReorderableDragStartListener(
+                index: index,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Icon(
+                    Symbols.drag_indicator,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4.0),
+              Expanded(
+                child: DefaultTextStyle(
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: isCurrent
+                        ? scheme.primary
+                        : scheme.onSecondaryContainer,
+                    fontSize: AppType.body,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        style: TextStyle(
+                          fontWeight: isCurrent
+                              ? AppType.weightSemibold
+                              : FontWeight.normal,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        item.artist,
+                        style: TextStyle(
+                          fontSize: AppType.caption,
+                          color: isCurrent
+                              ? scheme.primary.withAlpha(179)
+                              : scheme.onSecondaryContainer.withAlpha(179),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
