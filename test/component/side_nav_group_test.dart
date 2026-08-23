@@ -28,10 +28,10 @@ void main() {
           destinationGroups.length * sideNavGroupHeaderHeight,
     );
     expect(sideNavDestinationTop(0, expandedT: 1), 28);
-    expect(sideNavDestinationTop(1, expandedT: 1), 110);
-    expect(sideNavDestinationTop(5, expandedT: 1), 354);
-    expect(sideNavDestinationTop(7, expandedT: 1), 490);
-    expect(sideNavDestinationOffset(0.5, expandedT: 1), 69);
+    expect(sideNavDestinationTop(1, expandedT: 1), 82);
+    expect(sideNavDestinationTop(5, expandedT: 1), 326);
+    expect(sideNavDestinationTop(7, expandedT: 1), 462);
+    expect(sideNavDestinationOffset(0.5, expandedT: 1), 55);
   });
 
   testWidgets('expanded sidebar shows four group headings without tooltips', (

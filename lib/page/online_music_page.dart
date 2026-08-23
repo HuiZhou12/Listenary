@@ -5,12 +5,14 @@ import 'package:provider/provider.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/online_track_row.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
+import 'package:pure_music/component/personal_playlist_picker.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/search_action_state.dart';
 import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/services/music_platform/index.dart';
+import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
 
 typedef OnlineMusicSearch =
     Future<MusicSearchPage> Function({
@@ -48,6 +50,15 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
   OnlineMusicException? _error;
   OnlineMusicCancelToken? _cancelToken;
   int _requestVersion = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<PersonalOnlinePlaylistController>().loadFavorites();
+    });
+  }
 
   @override
   void dispose() {
@@ -269,6 +280,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
 
   Widget _buildResultList() {
     final page = _page!;
+    final favorites = context.watch<PersonalOnlinePlaylistController>();
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 16.0),
       itemCount: page.items.length,
@@ -288,6 +300,11 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
             details: details,
             enabled: canPlay,
             onTap: canPlay ? () => _selectTrack(page, track) : null,
+            onAddToPlaylist: () =>
+                showPersonalPlaylistPicker(context, track: track),
+            showFavorite: true,
+            favorite: favorites.isFavorite(track.ref),
+            onToggleFavorite: () => favorites.toggleFavorite(track),
           ),
         );
       },
@@ -306,5 +323,4 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
       selectedRef: selected.ref,
     );
   }
-
 }

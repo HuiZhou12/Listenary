@@ -1,15 +1,21 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
+import 'package:provider/provider.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_row.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
+import 'package:pure_music/core/database.dart';
 import 'package:pure_music/page/online_music_page.dart';
 import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
+import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 void main() {
   setUpAll(() {
@@ -129,6 +135,61 @@ void main() {
     expect(find.text('Explicit Result'), findsOneWidget);
     expect(find.text('Test Artist · Test Album'), findsOneWidget);
     expect(find.text('2:03'), findsOneWidget);
+  });
+
+  testWidgets('search result row adds a track to a personal playlist', (
+    tester,
+  ) async {
+    final database = sqlite3.openInMemory();
+    initializeAppDatabase(database);
+    final controller = PersonalOnlinePlaylistController(
+      repository: Future.value(OnlineLibraryRepository(database)),
+    );
+    addTearDown(controller.dispose);
+    addTearDown(database.dispose);
+
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<PersonalOnlinePlaylistController>.value(
+        value: controller,
+        child: MaterialApp(
+          home: Scaffold(
+            body: OnlineMusicPage(
+              search:
+                  ({
+                    required keyword,
+                    required limit,
+                    required offset,
+                    required cancelToken,
+                  }) async => _page([_track('1', title: 'Explicit Result')]),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('online-search-field')),
+      '测试',
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.tap(find.byTooltip('在线搜索'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Explicit Result'), findsOneWidget);
+
+    final hover = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await hover.moveTo(tester.getCenter(find.text('Explicit Result')));
+    await tester.pump();
+    await tester.tap(find.byTooltip('添加到歌单'));
+    await tester.pumpAndSettle();
+    await hover.removePointer();
+
+    expect(find.text('收藏到歌单'), findsOneWidget);
   });
 
   testWidgets('renders result cover without a music-note placeholder', (
@@ -426,13 +487,23 @@ Future<void> _pumpPage(
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
+  final database = sqlite3.openInMemory();
+  initializeAppDatabase(database);
+  final favorites = PersonalOnlinePlaylistController(
+    repository: SynchronousFuture(OnlineLibraryRepository(database)),
+  );
+  addTearDown(favorites.dispose);
+  addTearDown(database.dispose);
   await tester.pumpWidget(
-    MaterialApp(
-      home: Scaffold(
-        body: OnlineMusicPage(
-          search: search,
-          onTrackSelected: onTrackSelected,
-          onHistoryRequested: onHistoryRequested,
+    ChangeNotifierProvider<PersonalOnlinePlaylistController>.value(
+      value: favorites,
+      child: MaterialApp(
+        home: Scaffold(
+          body: OnlineMusicPage(
+            search: search,
+            onTrackSelected: onTrackSelected,
+            onHistoryRequested: onHistoryRequested,
+          ),
         ),
       ),
     ),

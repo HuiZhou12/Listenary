@@ -3,6 +3,9 @@ import 'package:sqlite3/sqlite3.dart';
 
 const defaultOnlineHistoryLimit = 1000;
 
+/// 内置「收藏」在线歌单的保留名称；应用内禁止删除/重命名/创建同名歌单。
+const personalFavoritesPlaylistName = '我的收藏';
+
 final class OnlineHistoryEntry {
   const OnlineHistoryEntry({
     required this.track,
@@ -41,6 +44,21 @@ final class OnlinePlaylistSnapshot {
   final int localId;
   final RemotePlaylist playlist;
   final DateTime? lastRefreshedAt;
+}
+
+/// 我的在线歌单快照：混合平台个人歌单，含有序曲目。
+final class PersonalOnlinePlaylistSnapshot {
+  PersonalOnlinePlaylistSnapshot({
+    required this.localId,
+    required this.name,
+    required this.updatedAt,
+    required Iterable<MusicTrack> tracks,
+  }) : tracks = List.unmodifiable(tracks);
+
+  final int localId;
+  final String name;
+  final DateTime? updatedAt;
+  final List<MusicTrack> tracks;
 }
 
 final class OnlineLibraryRepository {
@@ -312,6 +330,318 @@ final class OnlineLibraryRepository {
       deleted = true;
     });
     return deleted;
+  }
+
+  /// 创建我的在线歌单；名称在同类型内大小写不敏感唯一，冲突抛 ArgumentError。
+  int createPersonalPlaylist(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) throw ArgumentError.value(name, 'name');
+    if (trimmed == personalFavoritesPlaylistName) {
+      throw ArgumentError.value(name, 'name', 'reserved favorites name');
+    }
+    final now = DateTime.now().toUtc().toIso8601String();
+    late int localId;
+    _transaction(() {
+      final existing = _db.select(
+        'SELECT id FROM online_playlists '
+        "WHERE kind = 'personal' AND name = ? COLLATE NOCASE",
+        [trimmed],
+      );
+      if (existing.isNotEmpty) {
+        throw ArgumentError.value(
+          name,
+          'name',
+          'duplicate personal playlist name',
+        );
+      }
+      _db.execute(
+        'INSERT INTO online_playlists(kind, name, created_at, updated_at) '
+        "VALUES('personal', ?, ?, ?)",
+        [trimmed, now, now],
+      );
+      localId = _db.lastInsertRowId;
+    });
+    return localId;
+  }
+
+  List<PersonalOnlinePlaylistSnapshot> listPersonalPlaylists() {
+    final rows = _db.select(
+      'SELECT id, name, updated_at FROM online_playlists '
+      "WHERE kind = 'personal' AND name <> ? ORDER BY updated_at DESC, id DESC",
+      [personalFavoritesPlaylistName],
+    );
+    return rows.map(_readPersonalPlaylistFromRow).toList(growable: false);
+  }
+
+  PersonalOnlinePlaylistSnapshot? readPersonalPlaylist(int localId) {
+    if (localId <= 0) throw ArgumentError.value(localId, 'localId');
+    final rows = _db.select(
+      'SELECT id, name, updated_at FROM online_playlists '
+      "WHERE id = ? AND kind = 'personal'",
+      [localId],
+    );
+    if (rows.isEmpty) return null;
+    return _readPersonalPlaylistFromRow(rows.single);
+  }
+
+  /// 重命名；同名冲突或写入失败返回 false 并保持旧名称。
+  bool renamePersonalPlaylist(int localId, String name) {
+    if (localId <= 0) throw ArgumentError.value(localId, 'localId');
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) throw ArgumentError.value(name, 'name');
+    if (trimmed == personalFavoritesPlaylistName) {
+      throw ArgumentError.value(name, 'name', 'reserved favorites name');
+    }
+    var renamed = false;
+    _transaction(() {
+      final playlist = _db.select(
+        "SELECT name FROM online_playlists WHERE id = ? AND kind = 'personal'",
+        [localId],
+      );
+      if (playlist.isEmpty) return;
+      if (playlist.single['name'] == personalFavoritesPlaylistName) {
+        throw ArgumentError.value(localId, 'localId', 'favorites is read-only');
+      }
+      final duplicate = _db.select(
+        'SELECT 1 FROM online_playlists '
+        "WHERE kind = 'personal' AND name = ? COLLATE NOCASE AND id <> ?",
+        [trimmed, localId],
+      );
+      if (duplicate.isNotEmpty) return;
+      _db.execute(
+        "UPDATE online_playlists SET name = ?, updated_at = ? WHERE id = ? AND kind = 'personal'",
+        [trimmed, DateTime.now().toUtc().toIso8601String(), localId],
+      );
+      renamed = true;
+    });
+    return renamed;
+  }
+
+  bool deletePersonalPlaylist(int localId) {
+    if (localId <= 0) throw ArgumentError.value(localId, 'localId');
+    var deleted = false;
+    _transaction(() {
+      final playlist = _db.select(
+        "SELECT name FROM online_playlists WHERE id = ? AND kind = 'personal'",
+        [localId],
+      );
+      if (playlist.isEmpty) return;
+      if (playlist.single['name'] == personalFavoritesPlaylistName) {
+        throw ArgumentError.value(localId, 'localId', 'favorites is read-only');
+      }
+      _db.execute(
+        "DELETE FROM online_playlists WHERE id = ? AND kind = 'personal'",
+        [localId],
+      );
+      _removeUnreferencedTracks();
+      deleted = true;
+    });
+    return deleted;
+  }
+
+  /// 查找或创建内置收藏歌单，返回其 localId。
+  int ensureFavoritesPlaylist() {
+    var localId = -1;
+    _transaction(() {
+      final rows = _db.select(
+        'SELECT id FROM online_playlists '
+        "WHERE kind = 'personal' AND name = ?",
+        [personalFavoritesPlaylistName],
+      );
+      if (rows.isNotEmpty) {
+        localId = rows.single['id'] as int;
+        return;
+      }
+      final now = DateTime.now().toUtc().toIso8601String();
+      _db.execute(
+        'INSERT INTO online_playlists(kind, name, created_at, updated_at) '
+        "VALUES('personal', ?, ?, ?)",
+        [personalFavoritesPlaylistName, now, now],
+      );
+      localId = _db.lastInsertRowId;
+    });
+    return localId;
+  }
+
+  PersonalOnlinePlaylistSnapshot? readFavorites() {
+    final localId = ensureFavoritesPlaylist();
+    return readPersonalPlaylist(localId);
+  }
+
+  /// 曲目是否在收藏歌单中。
+  bool isFavorite(PlatformTrackRef ref) {
+    final rows = _db.select(
+      'SELECT 1 FROM online_playlist_items i '
+      'JOIN online_playlists p ON p.id = i.playlist_id '
+      "WHERE p.kind = 'personal' AND p.name = ? "
+      'AND i.platform = ? AND i.track_id = ?',
+      [
+        personalFavoritesPlaylistName,
+        _platformValue(ref.platform),
+        _requiredTrackId(ref.trackId),
+      ],
+    );
+    return rows.isNotEmpty;
+  }
+
+  /// 切换收藏；返回操作后是否处于收藏状态。
+  bool toggleFavorite(MusicTrack track) {
+    final localId = ensureFavoritesPlaylist();
+    if (isFavorite(track.ref)) {
+      removeTrackFromPersonalPlaylist(localId, track.ref);
+      return false;
+    }
+    addTrackToPersonalPlaylist(localId, track);
+    return true;
+  }
+
+  /// 追加曲目到 personal 歌单末尾；重复添加幂等成功且不改变排序位置。
+  bool addTrackToPersonalPlaylist(int localId, MusicTrack track) {
+    if (localId <= 0) throw ArgumentError.value(localId, 'localId');
+    if (track.title.trim().isEmpty) {
+      throw ArgumentError.value(track.title, 'track.title');
+    }
+    var added = false;
+    _transaction(() {
+      final playlist = _db.select(
+        "SELECT 1 FROM online_playlists WHERE id = ? AND kind = 'personal'",
+        [localId],
+      );
+      if (playlist.isEmpty) return;
+      final platform = _platformValue(track.ref.platform);
+      final trackId = _requiredTrackId(track.ref.trackId);
+      final already = _db.select(
+        'SELECT 1 FROM online_playlist_items '
+        'WHERE playlist_id = ? AND platform = ? AND track_id = ?',
+        [localId, platform, trackId],
+      );
+      if (already.isNotEmpty) {
+        added = true;
+        return;
+      }
+      _upsertTrack(track, lastQuality: null, updatedAt: DateTime.now().toUtc());
+      final order = _db.select(
+        'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next '
+        'FROM online_playlist_items WHERE playlist_id = ?',
+        [localId],
+      );
+      final next = order.single['next'] as int;
+      _db.execute(
+        'INSERT INTO online_playlist_items('
+        'playlist_id, platform, track_id, sort_order, added_at) '
+        'VALUES(?, ?, ?, ?, ?)',
+        [
+          localId,
+          platform,
+          trackId,
+          next,
+          DateTime.now().toUtc().toIso8601String(),
+        ],
+      );
+      _db.execute('UPDATE online_playlists SET updated_at = ? WHERE id = ?', [
+        DateTime.now().toUtc().toIso8601String(),
+        localId,
+      ]);
+      added = true;
+    });
+    return added;
+  }
+
+  bool removeTrackFromPersonalPlaylist(int localId, PlatformTrackRef ref) {
+    if (localId <= 0) throw ArgumentError.value(localId, 'localId');
+    var removed = false;
+    _transaction(() {
+      final item = _db.select(
+        'SELECT 1 FROM online_playlist_items '
+        'WHERE playlist_id = ? AND platform = ? AND track_id = ?',
+        [localId, _platformValue(ref.platform), _requiredTrackId(ref.trackId)],
+      );
+      if (item.isEmpty) return;
+      _db.execute(
+        'DELETE FROM online_playlist_items '
+        'WHERE playlist_id = ? AND platform = ? AND track_id = ?',
+        [localId, _platformValue(ref.platform), _requiredTrackId(ref.trackId)],
+      );
+      _db.execute('UPDATE online_playlists SET updated_at = ? WHERE id = ?', [
+        DateTime.now().toUtc().toIso8601String(),
+        localId,
+      ]);
+      _removeUnreferencedTracks();
+      removed = true;
+    });
+    return removed;
+  }
+
+  /// 重写 personal 歌单排序；ordered 必须与当前曲目集合一致，失败回滚不写入。
+  bool reorderPersonalPlaylist(int localId, List<PlatformTrackRef> ordered) {
+    if (localId <= 0) throw ArgumentError.value(localId, 'localId');
+    var reordered = false;
+    _transaction(() {
+      final items = _db.select(
+        'SELECT platform, track_id FROM online_playlist_items WHERE playlist_id = ?',
+        [localId],
+      );
+      final current = items
+          .map((row) => '${row['platform']}:${row['track_id']}')
+          .toSet();
+      final target = ordered
+          .map(
+            (ref) =>
+                '${_platformValue(ref.platform)}:${_requiredTrackId(ref.trackId)}',
+          )
+          .toSet();
+      if (current.length != ordered.length || !current.containsAll(target)) {
+        return;
+      }
+      // 先整体加条目数偏移，避免逐行写入时撞上 UNIQUE(playlist_id, sort_order)。
+      _db.execute(
+        'UPDATE online_playlist_items SET sort_order = sort_order + ? '
+        'WHERE playlist_id = ?',
+        [current.length, localId],
+      );
+      final statement = _db.prepare(
+        'UPDATE online_playlist_items SET sort_order = ? '
+        'WHERE playlist_id = ? AND platform = ? AND track_id = ?',
+      );
+      try {
+        for (var index = 0; index < ordered.length; index++) {
+          statement.execute([
+            index,
+            localId,
+            _platformValue(ordered[index].platform),
+            _requiredTrackId(ordered[index].trackId),
+          ]);
+        }
+      } finally {
+        statement.dispose();
+      }
+      _db.execute('UPDATE online_playlists SET updated_at = ? WHERE id = ?', [
+        DateTime.now().toUtc().toIso8601String(),
+        localId,
+      ]);
+      reordered = true;
+    });
+    return reordered;
+  }
+
+  PersonalOnlinePlaylistSnapshot _readPersonalPlaylistFromRow(Row row) {
+    final localId = row['id'] as int;
+    final trackRows = _db.select(
+      'SELECT t.platform, t.track_id, t.title, t.album, t.cover_uri, '
+      't.duration_ms, t.availability '
+      'FROM online_playlist_items i JOIN online_tracks t '
+      'ON t.platform = i.platform AND t.track_id = i.track_id '
+      'WHERE i.playlist_id = ? ORDER BY i.sort_order, i.rowid',
+      [localId],
+    );
+    final tracks = trackRows.map(_readTrack).toList(growable: false);
+    final updated = row['updated_at'] as String?;
+    return PersonalOnlinePlaylistSnapshot(
+      localId: localId,
+      name: row['name'] as String,
+      updatedAt: updated == null ? null : DateTime.parse(updated).toUtc(),
+      tracks: tracks,
+    );
   }
 
   void _upsertTrack(

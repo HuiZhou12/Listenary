@@ -1,6 +1,7 @@
 // ignore_for_file: constant_identifier_names
 
 const String ONLINE_MUSIC_PAGE = '/online';
+const String FAVORITES_PAGE = '/favorites';
 
 const String AUDIOS_PAGE = '/audios';
 const String AUDIO_DETAIL_PAGE = '/audios/detail';
@@ -18,6 +19,7 @@ const String PLAYLISTS_PAGE = '/playlists';
 const String PLAYLIST_DETAIL_PAGE = '/playlists/detail';
 const String ONLINE_PLAYLISTS_PAGE = '/playlists/online';
 const String ONLINE_PLAYLIST_DETAIL_PAGE = '/playlists/online/detail';
+const String PERSONAL_PLAYLIST_DETAIL_PAGE = '/playlists/personal/detail';
 
 const String NOW_PLAYING_PAGE = '/nowplaying';
 
@@ -38,5 +40,5 @@ const List<String> START_PAGES = [
   ARTISTS_PAGE,
   ALBUMS_PAGE,
   FOLDERS_PAGE,
-  PLAYLISTS_PAGE
+  PLAYLISTS_PAGE,
 ];

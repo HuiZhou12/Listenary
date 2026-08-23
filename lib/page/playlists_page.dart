@@ -18,6 +18,7 @@ import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:pure_music/services/music_platform/online_library/online_playlist_controller.dart';
+import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
 import 'package:path/path.dart' as p;
@@ -26,16 +27,28 @@ import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 final class _PlaylistEntry {
-  const _PlaylistEntry.local(this.playlist) : subscription = null;
-  const _PlaylistEntry.online(this.subscription) : playlist = null;
+  const _PlaylistEntry.local(this.playlist)
+    : subscription = null,
+      personal = null;
+  const _PlaylistEntry.online(this.subscription)
+    : playlist = null,
+      personal = null;
+  const _PlaylistEntry.personal(this.personal)
+    : playlist = null,
+      subscription = null;
 
   final Playlist? playlist;
   final OnlinePlaylistSnapshot? subscription;
+  final PersonalOnlinePlaylistSnapshot? personal;
 
   bool get isOnline => subscription != null;
-  String get name => playlist?.name ?? subscription!.playlist.name;
+  bool get isPersonal => personal != null;
+  String get name =>
+      playlist?.name ?? subscription?.playlist.name ?? personal!.name;
   int get trackCount =>
-      playlist?.paths.length ?? subscription!.playlist.tracks.length;
+      playlist?.paths.length ??
+      subscription?.playlist.tracks.length ??
+      personal!.tracks.length;
 }
 
 class PlaylistsPage extends StatefulWidget {
@@ -65,12 +78,22 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       if (controller.snapshot.status == OnlinePlaylistLoadStatus.idle) {
         controller.loadSubscriptions();
       }
+      final personalController = context
+          .read<PersonalOnlinePlaylistController>();
+      if (personalController.snapshot.status ==
+          PersonalOnlinePlaylistStatus.idle) {
+        personalController.load();
+      }
     });
   }
 
-  List<_PlaylistEntry> _entries(OnlinePlaylistViewSnapshot onlineSnapshot) {
+  List<_PlaylistEntry> _entries(
+    OnlinePlaylistViewSnapshot onlineSnapshot,
+    PersonalOnlinePlaylistViewSnapshot personalSnapshot,
+  ) {
     return [
       ...playlists.map(_PlaylistEntry.local),
+      ...personalSnapshot.playlists.map(_PlaylistEntry.personal),
       ...onlineSnapshot.subscriptions.map(_PlaylistEntry.online),
     ];
   }
@@ -154,6 +177,60 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
     if (!mounted) return;
     showTextOnSnackBar(
       deleted ? '已移除在线歌单' : '移除在线歌单失败',
+      variant: deleted ? ToastVariant.success : ToastVariant.error,
+    );
+  }
+
+  Future<void> _newPersonalPlaylist() async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => const _PersonalPlaylistNameDialog(),
+    );
+    if (name == null || !mounted) return;
+    final id = await context.read<PersonalOnlinePlaylistController>().create(
+      name,
+    );
+    if (!mounted) return;
+    showTextOnSnackBar(
+      id == null ? '创建失败（名称可能已存在）' : '已创建我的在线歌单',
+      variant: id == null ? ToastVariant.error : ToastVariant.success,
+    );
+  }
+
+  Future<void> _renamePersonalPlaylist(
+    PersonalOnlinePlaylistSnapshot item,
+  ) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => _PersonalPlaylistNameDialog(initialName: item.name),
+    );
+    if (name == null || !mounted) return;
+    final renamed = await context
+        .read<PersonalOnlinePlaylistController>()
+        .rename(item.localId, name);
+    if (!mounted) return;
+    showTextOnSnackBar(
+      renamed ? '已重命名歌单' : '重命名失败（名称可能已存在）',
+      variant: renamed ? ToastVariant.success : ToastVariant.error,
+    );
+  }
+
+  Future<void> _deletePersonalPlaylist(
+    PersonalOnlinePlaylistSnapshot item,
+  ) async {
+    final confirmed = await showDangerConfirmDialog(
+      context: context,
+      title: '删除我的在线歌单？',
+      message: '将删除歌单“${item.name}”及其本地保存的在线曲目引用。',
+      confirmLabel: '删除',
+    );
+    if (!confirmed || !mounted) return;
+    final deleted = await context
+        .read<PersonalOnlinePlaylistController>()
+        .delete(item.localId);
+    if (!mounted) return;
+    showTextOnSnackBar(
+      deleted ? '已删除歌单' : '删除失败',
       variant: deleted ? ToastVariant.success : ToastVariant.error,
     );
   }
@@ -558,13 +635,134 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
     );
   }
 
+  Widget _buildPersonalPlaylistEntry(
+    BuildContext context,
+    PersonalOnlinePlaylistSnapshot item,
+    MultiSelectController<_PlaylistEntry>? _,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final menuStyle = appMenuStyle;
+    final menuItemStyle = appMenuItemStyle;
+    Uri? cover;
+    for (final track in item.tracks) {
+      final uri = track.coverUri;
+      if (uri != null) {
+        cover = uri;
+        break;
+      }
+    }
+    return MenuTheme(
+      data: MenuThemeData(style: menuStyle),
+      child: MenuAnchor(
+        consumeOutsideTap: true,
+        style: menuStyle,
+        menuChildren: [
+          MenuItemButton(
+            style: menuItemStyle,
+            onPressed: () => context.push(
+              app_paths.PERSONAL_PLAYLIST_DETAIL_PAGE,
+              extra: item.localId,
+            ),
+            leadingIcon: const Icon(Symbols.open_in_new),
+            child: const Text('打开'),
+          ),
+          MenuItemButton(
+            style: menuItemStyle,
+            onPressed: () => _renamePersonalPlaylist(item),
+            leadingIcon: const Icon(Symbols.edit),
+            child: const Text('重命名'),
+          ),
+          MenuItemButton(
+            style: menuItemStyle,
+            onPressed: () => _deletePersonalPlaylist(item),
+            leadingIcon: Icon(Symbols.delete, color: scheme.error),
+            child: const Text('删除'),
+          ),
+        ],
+        builder: (context, controller, _) => Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            borderRadius: AppRadius.smCircular,
+            onTap: () => context.push(
+              app_paths.PERSONAL_PLAYLIST_DETAIL_PAGE,
+              extra: item.localId,
+            ),
+            onSecondaryTapDown: (details) {
+              controller.open(
+                position: details.localPosition.translate(0, -160),
+              );
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Row(
+                children: [
+                  _PersonalPlaylistCover(uri: cover),
+                  const SizedBox(width: 16.0),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                item.name,
+                                softWrap: false,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: AppType.subtitle,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Icon(Symbols.edit, size: 16, color: scheme.primary),
+                          ],
+                        ),
+                        const SizedBox(height: 4.0),
+                        Text(
+                          '${item.tracks.length}首乐曲 · 我的在线歌单',
+                          softWrap: false,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: scheme.onSurface.withAlpha(153),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '重命名',
+                    onPressed: () => _renamePersonalPlaylist(item),
+                    icon: const Icon(Symbols.edit),
+                  ),
+                  IconButton(
+                    tooltip: '删除',
+                    onPressed: () => _deletePersonalPlaylist(item),
+                    color: scheme.error,
+                    icon: const Icon(Symbols.delete),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final menuStyle = appMenuStyle;
     final menuItemStyle = appMenuItemStyle;
     final onlineSnapshot = context.watch<OnlinePlaylistController>().snapshot;
-    final contentList = _entries(onlineSnapshot);
+    final personalSnapshot = context
+        .watch<PersonalOnlinePlaylistController>()
+        .snapshot;
+    final contentList = _entries(onlineSnapshot, personalSnapshot);
     final localEntries = _localEntries();
     final canSortPlaylists = hasEnoughItemsToSort(contentList.length);
     final canSwitchContentView = canShowContentViewSwitch(contentList.length);
@@ -579,6 +777,13 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
           return _buildOnlinePlaylistEntry(
             context,
             item.subscription!,
+            multiSelectController,
+          );
+        }
+        if (item.isPersonal) {
+          return _buildPersonalPlaylistEntry(
+            context,
+            item.personal!,
             multiSelectController,
           );
         }
@@ -817,6 +1022,12 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                 onPressed: _addOnlinePlaylist,
                 child: const Text('在线歌单'),
               ),
+              MenuItemButton(
+                style: menuItemStyle,
+                leadingIcon: const Icon(Symbols.edit),
+                onPressed: _newPersonalPlaylist,
+                child: const Text('我的在线歌单'),
+              ),
             ],
             child: const Text('新建歌单'),
           ),
@@ -983,6 +1194,32 @@ class _OnlinePlaylistCover extends StatelessWidget {
   }
 }
 
+class _PersonalPlaylistCover extends StatelessWidget {
+  const _PersonalPlaylistCover({required this.uri});
+
+  final Uri? uri;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ClipRRect(
+      borderRadius: AppRadius.smCircular,
+      child: SizedBox.square(
+        dimension: 48,
+        child: RemoteMediaCover(
+          coverUri: uri,
+          placeholder: ColoredBox(
+            color: scheme.surfaceContainerHighest,
+            child: Icon(Symbols.edit, color: scheme.onSurfaceVariant),
+          ),
+          cacheWidth: 96,
+          cacheHeight: 96,
+        ),
+      ),
+    );
+  }
+}
+
 class _OnlinePlaylistIdDialog extends StatefulWidget {
   const _OnlinePlaylistIdDialog();
 
@@ -1008,26 +1245,161 @@ class _OnlinePlaylistIdDialogState extends State<_OnlinePlaylistIdDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('新建在线歌单'),
-      content: TextField(
-        autofocus: true,
-        controller: _controller,
-        keyboardType: TextInputType.number,
-        textInputAction: TextInputAction.done,
-        decoration: const InputDecoration(
-          labelText: '网易歌单 ID',
-          hintText: '输入数字 ID',
-        ),
-        onSubmitted: (_) => _submit(),
+    final scheme = Theme.of(context).colorScheme;
+    final width = (MediaQuery.sizeOf(context).width - 48.0)
+        .clamp(280.0, 360.0)
+        .toDouble();
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: 24.0,
+        vertical: 24.0,
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
+      child: SizedBox(
+        width: width,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16.0),
+                child: Text(
+                  '新建在线歌单',
+                  style: TextStyle(
+                    color: scheme.onSurface,
+                    fontSize: AppType.sectionTitle,
+                    fontWeight: AppType.weightBold,
+                  ),
+                ),
+              ),
+              Focus(
+                onFocusChange: HotkeysHelper.onFocusChanges,
+                child: TextField(
+                  autofocus: true,
+                  controller: _controller,
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.done,
+                  decoration: const InputDecoration(
+                    labelText: '网易歌单 ID',
+                    border: OutlineInputBorder(),
+                  ),
+                  onSubmitted: (_) => _submit(),
+                ),
+              ),
+              const SizedBox(height: 16.0),
+              OverflowBar(
+                alignment: MainAxisAlignment.end,
+                spacing: 8.0,
+                overflowSpacing: 8.0,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('取消'),
+                  ),
+                  FilledButton(onPressed: _submit, child: const Text('创建')),
+                ],
+              ),
+            ],
+          ),
         ),
-        FilledButton(onPressed: _submit, child: const Text('创建')),
-      ],
+      ),
+    );
+  }
+}
+
+class _PersonalPlaylistNameDialog extends StatefulWidget {
+  const _PersonalPlaylistNameDialog({this.initialName});
+
+  final String? initialName;
+
+  @override
+  State<_PersonalPlaylistNameDialog> createState() =>
+      _PersonalPlaylistNameDialogState();
+}
+
+class _PersonalPlaylistNameDialogState
+    extends State<_PersonalPlaylistNameDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialName ?? '',
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _controller.text.trim();
+    if (name.isEmpty) return;
+    Navigator.of(context).pop(name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final width = (MediaQuery.sizeOf(context).width - 48.0)
+        .clamp(280.0, 360.0)
+        .toDouble();
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: 24.0,
+        vertical: 24.0,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
+      child: SizedBox(
+        width: width,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16.0),
+                child: Text(
+                  widget.initialName == null ? '新建我的在线歌单' : '重命名歌单',
+                  style: TextStyle(
+                    color: scheme.onSurface,
+                    fontSize: AppType.sectionTitle,
+                    fontWeight: AppType.weightBold,
+                  ),
+                ),
+              ),
+              Focus(
+                onFocusChange: HotkeysHelper.onFocusChanges,
+                child: TextField(
+                  autofocus: true,
+                  controller: _controller,
+                  onSubmitted: (_) => _submit(),
+                  decoration: const InputDecoration(
+                    labelText: '歌单名称',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16.0),
+              OverflowBar(
+                alignment: MainAxisAlignment.end,
+                spacing: 8.0,
+                overflowSpacing: 8.0,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('取消'),
+                  ),
+                  FilledButton(
+                    onPressed: _submit,
+                    child: Text(widget.initialName == null ? '创建' : '确认'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

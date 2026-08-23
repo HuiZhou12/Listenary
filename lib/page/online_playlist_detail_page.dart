@@ -5,6 +5,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_row.dart';
+import 'package:pure_music/component/personal_playlist_picker.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/component/motion.dart';
@@ -13,6 +14,7 @@ import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:pure_music/services/music_platform/online_library/online_playlist_controller.dart';
+import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
 
 class OnlinePlaylistDetailPage extends StatefulWidget {
   const OnlinePlaylistDetailPage({super.key, required this.localId});
@@ -34,6 +36,10 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
   void initState() {
     super.initState();
     _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<PersonalOnlinePlaylistController>().loadFavorites();
+    });
   }
 
   Future<void> _load() async {
@@ -176,6 +182,7 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
       if (track.artistDisplay.isNotEmpty) track.artistDisplay,
       if (track.album.isNotEmpty) track.album,
     ].join(' · ');
+    final favorites = context.watch<PersonalOnlinePlaylistController>();
     return DirectionalListItemEntrance(
       identity: track.ref,
       child: OnlineTrackRow(
@@ -183,6 +190,11 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
         details: details,
         enabled: playable,
         onTap: playable ? () => _play(track) : null,
+        onAddToPlaylist: () =>
+            showPersonalPlaylistPicker(context, track: track),
+        showFavorite: true,
+        favorite: favorites.isFavorite(track.ref),
+        onToggleFavorite: () => favorites.toggleFavorite(track),
       ),
     );
   }
@@ -292,7 +304,7 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
                 child: RemoteMediaCover(
                   coverUri: snapshot.playlist.coverUri,
                   placeholder: ColoredBox(
-                    color: scheme.surfaceContainerHighest,
+                    color: scheme.surfaceContainer,
                     child: Icon(
                       Symbols.queue_music,
                       size: 48,

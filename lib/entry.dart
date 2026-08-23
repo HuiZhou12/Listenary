@@ -20,6 +20,8 @@ import 'package:pure_music/page/playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
 import 'package:pure_music/page/online_playlists_page.dart';
 import 'package:pure_music/page/online_playlist_detail_page.dart';
+import 'package:pure_music/page/personal_playlist_detail_page.dart';
+import 'package:pure_music/page/favorites_detail_page.dart';
 import 'package:pure_music/page/settings_page/check_update.dart';
 import 'package:pure_music/page/settings_page/create_issue.dart';
 import 'package:pure_music/page/stats_page/page.dart';
@@ -71,6 +73,7 @@ import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/online_history_controller.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:pure_music/services/music_platform/online_library/online_playlist_controller.dart';
+import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
 
 class SlideTransitionPage<T> extends CustomTransitionPage<T> {
   const SlideTransitionPage({
@@ -137,6 +140,7 @@ class _EntryState extends State<Entry>
   late final RemoteDesktopLyricBinding _remoteDesktopLyricBinding;
   late final OnlineHistoryController _onlineHistoryController;
   late final OnlinePlaylistController _onlinePlaylistController;
+  late final PersonalOnlinePlaylistController _personalOnlinePlaylistController;
   late final OnlineHistoryProjectionBinding _onlineHistoryProjectionBinding;
   late final RemoteMediaArtworkController _remoteMediaArtwork;
   late final RemoteMediaArtworkBinding _remoteMediaArtworkBinding;
@@ -192,6 +196,9 @@ class _EntryState extends State<Entry>
     _onlinePlaylistController = OnlinePlaylistController(
       repository: AppDb.instance.db().then(OnlineLibraryRepository.new),
       service: widget.onlineMusicService,
+    );
+    _personalOnlinePlaylistController = PersonalOnlinePlaylistController(
+      repository: AppDb.instance.db().then(OnlineLibraryRepository.new),
     );
     _onlineHistoryProjectionBinding = OnlineHistoryProjectionBinding(
       queue: _remotePlaybackQueue,
@@ -323,6 +330,7 @@ class _EntryState extends State<Entry>
     unawaited(_onlineHistoryProjectionBinding.dispose());
     _onlineHistoryController.dispose();
     _onlinePlaylistController.dispose();
+    _personalOnlinePlaylistController.dispose();
     unawaited(_remotePlaybackTimelineBinding.dispose());
     _remotePlaybackTimeline.dispose();
     _remotePlaybackSessionController.dispose();
@@ -678,6 +686,9 @@ class _EntryState extends State<Entry>
                 ChangeNotifierProvider<OnlinePlaylistController>.value(
                   value: _onlinePlaylistController,
                 ),
+                ChangeNotifierProvider<PersonalOnlinePlaylistController>.value(
+                  value: _personalOnlinePlaylistController,
+                ),
                 ChangeNotifierProvider<RemoteMediaArtworkController>.value(
                   value: _remoteMediaArtwork,
                 ),
@@ -718,10 +729,7 @@ class _EntryState extends State<Entry>
         : app_paths.UPDATING_DIALOG,
     observers: [routeVisibilityObserver],
     routes: [
-      GoRoute(
-        path: '/',
-        redirect: (_, _) => app_paths.AUDIOS_PAGE,
-      ),
+      GoRoute(path: '/', redirect: (_, _) => app_paths.AUDIOS_PAGE),
       StatefulShellRoute(
         builder: (context, state, navigationShell) =>
             AppShell(navigationShell: navigationShell),
@@ -736,6 +744,14 @@ class _EntryState extends State<Entry>
               GoRoute(
                 path: app_paths.ONLINE_MUSIC_PAGE,
                 builder: (context, state) => const OnlineMusicPage(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: app_paths.FAVORITES_PAGE,
+                builder: (context, state) => const FavoritesDetailPage(),
               ),
             ],
           ),
@@ -838,6 +854,20 @@ class _EntryState extends State<Entry>
                         pageBuilder: (context, state) => SlideTransitionPage(
                           key: state.pageKey,
                           child: OnlinePlaylistDetailPage(
+                            localId: state.extra as int,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  GoRoute(
+                    path: 'personal',
+                    routes: [
+                      GoRoute(
+                        path: 'detail',
+                        pageBuilder: (context, state) => SlideTransitionPage(
+                          key: state.pageKey,
+                          child: PersonalPlaylistDetailPage(
                             localId: state.extra as int,
                           ),
                         ),

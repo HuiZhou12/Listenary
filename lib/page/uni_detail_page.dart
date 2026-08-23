@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
@@ -234,7 +232,6 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
           children: [
             _UniDetailPageHeader(
               pic: widget.primaryPic,
-              backgroundPic: widget.backgroundPic,
               picShape: widget.picShape,
               title: widget.title,
               subtitle: widget.subtitle,
@@ -712,10 +709,8 @@ class _CompactSearchBarState extends State<_CompactSearchBar> {
 }
 
 class _UniDetailPageHeader extends StatelessWidget {
-  static final _blurFilter = ImageFilter.blur(sigmaX: 100, sigmaY: 100);
   const _UniDetailPageHeader({
     required this.pic,
-    required this.backgroundPic,
     required this.picShape,
     required this.title,
     required this.subtitle,
@@ -730,7 +725,6 @@ class _UniDetailPageHeader extends StatelessWidget {
   });
 
   final Future<ImageProvider?> pic;
-  final Future<ImageProvider?> backgroundPic;
   final PicShape picShape;
 
   final String title;
@@ -746,9 +740,7 @@ class _UniDetailPageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final brightness = theme.brightness;
+    final scheme = Theme.of(context).colorScheme;
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact =
@@ -761,31 +753,6 @@ class _UniDetailPageHeader extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              FutureBuilder(
-                future: backgroundPic,
-                builder: (context, snapshot) {
-                  if (snapshot.data == null) return const SizedBox.shrink();
-
-                  return Image(
-                    image: snapshot.data!,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                  );
-                },
-              ),
-              switch (brightness) {
-                Brightness.dark => ColoredBox(
-                  color: scheme.surface.withValues(alpha: 0.38),
-                ),
-                Brightness.light => ColoredBox(
-                  color: scheme.surface.withValues(alpha: 0.70),
-                ),
-              },
-              BackdropFilter(
-                filter: _UniDetailPageHeader._blurFilter,
-                child: const ColoredBox(color: Colors.transparent),
-              ),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [

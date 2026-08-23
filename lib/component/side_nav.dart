@@ -28,6 +28,7 @@ class DestinationDesc {
 
 const destinations = <DestinationDesc>[
   DestinationDesc(Symbols.cloud, '在线音乐', app_paths.ONLINE_MUSIC_PAGE),
+  DestinationDesc(Symbols.favorite, '我的收藏', app_paths.FAVORITES_PAGE),
   DestinationDesc(
     Symbols.library_music,
     '音乐',
@@ -70,10 +71,10 @@ class DestinationGroupDesc {
 }
 
 const destinationGroups = <DestinationGroupDesc>[
-  DestinationGroupDesc('在线音乐', [0]),
-  DestinationGroupDesc('本地曲库', [1, 2, 3, 4]),
-  DestinationGroupDesc('收藏与回顾', [5, 6]),
-  DestinationGroupDesc('系统', [7]),
+  DestinationGroupDesc('在线音乐', [0, 1]),
+  DestinationGroupDesc('本地曲库', [2, 3, 4, 5]),
+  DestinationGroupDesc('收藏与回顾', [6, 7]),
+  DestinationGroupDesc('系统', [8]),
 ];
 
 const double sideNavItemHeight = 54.0;
@@ -310,9 +311,8 @@ class _SmoothLargeSideNav extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: RepaintBoundary(
+                  child: RepaintBoundary(
+                    child: ClipRect(
                       child: SizedBox(
                         height: contentHeight,
                         child: Stack(

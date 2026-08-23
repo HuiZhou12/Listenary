@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -8,10 +9,12 @@ import 'package:pure_music/core/database.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/page/online_playlist_detail_page.dart';
 import 'package:pure_music/page/online_playlists_page.dart';
+import 'package:pure_music/page/personal_playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:pure_music/services/music_platform/online_library/online_playlist_controller.dart';
+import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
 import 'package:pure_music/services/music_platform/online_music_request.dart';
 import 'package:pure_music/services/music_platform/online_music_service.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -20,6 +23,7 @@ void main() {
   late Database database;
   late OnlineLibraryRepository repository;
   late OnlinePlaylistController controller;
+  late PersonalOnlinePlaylistController personalController;
 
   setUp(() {
     database = sqlite3.openInMemory();
@@ -29,15 +33,19 @@ void main() {
       repository: SynchronousFuture(repository),
       service: _FakeOnlineMusicService(),
     );
+    personalController = PersonalOnlinePlaylistController(
+      repository: SynchronousFuture(repository),
+    );
   });
 
   tearDown(() {
     controller.dispose();
+    personalController.dispose();
     database.dispose();
   });
 
   testWidgets('empty subscription view exposes the add action', (tester) async {
-    await _pump(tester, controller, const OnlinePlaylistsPage());
+    await _pump(tester, controller, personalController, const OnlinePlaylistsPage());
 
     await tester.tap(find.byTooltip('添加在线歌单'));
     await tester.pump();
@@ -49,7 +57,7 @@ void main() {
   ) async {
     repository.replaceSubscriptionSnapshot(_playlist());
 
-    await _pump(tester, controller, const OnlinePlaylistsPage());
+    await _pump(tester, controller, personalController, const OnlinePlaylistsPage());
 
     expect(find.byTooltip('添加在线歌单'), findsOneWidget);
     expect(find.byTooltip('编辑'), findsNothing);
@@ -65,6 +73,7 @@ void main() {
       await _pump(
         tester,
         controller,
+        personalController,
         OnlinePlaylistDetailPage(localId: saved.localId),
       );
       await _pumpUntilFound(tester, find.byType(RemoteMediaCover));
@@ -76,6 +85,12 @@ void main() {
       expect(find.text('播放全部'), findsOneWidget);
       expect(find.byTooltip('随机播放'), findsOneWidget);
       expect(find.byTooltip('刷新'), findsOneWidget);
+      // 添加按钮悬浮时显示。
+      final hover = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await hover.moveTo(tester.getCenter(find.text('Remote Track')));
+      await tester.pump();
+      expect(find.byTooltip('添加到歌单'), findsOneWidget);
+      await hover.removePointer();
       expect(find.byTooltip('编辑'), findsNothing);
       final cover = tester
           .widgetList<RemoteMediaCover>(find.byType(RemoteMediaCover))
@@ -110,7 +125,10 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider<OnlinePlaylistController>.value(
         value: controller,
-        child: MaterialApp.router(routerConfig: router),
+        child: ChangeNotifierProvider<PersonalOnlinePlaylistController>.value(
+          value: personalController,
+          child: MaterialApp.router(routerConfig: router),
+        ),
       ),
     );
     await _pumpUntilFound(tester, find.text('Remote Playlist'));
@@ -125,6 +143,71 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('personal playlist appears and opens its editable detail', (
+    tester,
+  ) async {
+    final id = repository.createPersonalPlaylist('私人歌单');
+    repository.addTrackToPersonalPlaylist(id, _track('200'));
+
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final router = GoRouter(
+      initialLocation: app_paths.PLAYLISTS_PAGE,
+      routes: [
+        GoRoute(
+          path: app_paths.PLAYLISTS_PAGE,
+          builder: (context, state) => const PlaylistsPage(),
+        ),
+        GoRoute(
+          path: app_paths.PERSONAL_PLAYLIST_DETAIL_PAGE,
+          builder: (context, state) =>
+              PersonalPlaylistDetailPage(localId: state.extra! as int),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<OnlinePlaylistController>.value(
+        value: controller,
+        child: ChangeNotifierProvider<PersonalOnlinePlaylistController>.value(
+          value: personalController,
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      ),
+    );
+    await _pumpUntilFound(tester, find.text('私人歌单'));
+    expect(tester.takeException(), isNull);
+    expect(find.text('1首乐曲 · 我的在线歌单'), findsOneWidget);
+
+    await tester.tap(find.text('私人歌单'));
+    await _pumpUntilFound(tester, find.text('1 首歌曲 · 我的在线歌单'));
+    expect(find.byType(PersonalPlaylistDetailPage), findsOneWidget);
+    // 详情页只保留一个标题（去掉 PageScaffold 双标题）。
+    expect(
+      find.descendant(
+        of: find.byType(PersonalPlaylistDetailPage),
+        matching: find.text('私人歌单'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(PersonalPlaylistDetailPage),
+        matching: find.byTooltip('排序'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(PersonalPlaylistDetailPage),
+        matching: find.byTooltip('重命名'),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('detail header remains valid at compact width', (tester) async {
     final saved = repository.replaceSubscriptionSnapshot(_playlist());
     await controller.loadSubscriptions();
@@ -134,6 +217,7 @@ void main() {
     await _pump(
       tester,
       controller,
+      personalController,
       OnlinePlaylistDetailPage(localId: saved.localId),
     );
     await _pumpUntilFound(tester, find.byType(RemoteMediaCover));
@@ -147,12 +231,16 @@ void main() {
 Future<void> _pump(
   WidgetTester tester,
   OnlinePlaylistController controller,
+  PersonalOnlinePlaylistController personalController,
   Widget child,
 ) {
   return tester.pumpWidget(
     ChangeNotifierProvider<OnlinePlaylistController>.value(
       value: controller,
-      child: MaterialApp(home: Scaffold(body: child)),
+      child: ChangeNotifierProvider<PersonalOnlinePlaylistController>.value(
+        value: personalController,
+        child: MaterialApp(home: Scaffold(body: child)),
+      ),
     ),
   );
 }
@@ -218,6 +306,12 @@ final class _FakeOnlineMusicService implements OnlineMusicService {
 }
 
 final _playlistCoverUri = Uri.parse('https://cover.invalid/playlist.jpg');
+
+MusicTrack _track(String id) => MusicTrack(
+  ref: PlatformTrackRef(platform: MusicPlatform.netease, trackId: id),
+  title: 'Personal Track',
+  artists: const ['Personal Artist'],
+);
 
 RemotePlaylist _playlist() => RemotePlaylist(
   platform: MusicPlatform.netease,

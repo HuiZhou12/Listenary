@@ -38,9 +38,9 @@ void main() {
     expect(stored.duration, const Duration(minutes: 3));
     expect(stored.availability, TrackAvailability.playable);
     expect(
-      database.select('SELECT last_quality FROM online_tracks').single[
-        'last_quality'
-      ],
+      database
+          .select('SELECT last_quality FROM online_tracks')
+          .single['last_quality'],
       'lossless',
     );
   });
@@ -48,11 +48,7 @@ void main() {
   test('partial metadata does not erase richer stored values', () {
     repository.upsertTrack(_track(id: '100'));
     repository.upsertTrack(
-      MusicTrack(
-        ref: _ref('100'),
-        title: 'Renamed',
-        artists: const [],
-      ),
+      MusicTrack(ref: _ref('100'), title: 'Renamed', artists: const []),
     );
 
     final stored = repository.findTrack(_ref('100'))!;
@@ -65,10 +61,7 @@ void main() {
   });
 
   test('rejects invalid track identity, title, duration and cover URI', () {
-    expect(
-      () => repository.upsertTrack(_track(id: ' ')),
-      throwsArgumentError,
-    );
+    expect(() => repository.upsertTrack(_track(id: ' ')), throwsArgumentError);
     expect(
       () => repository.upsertTrack(_track(id: '1', title: ' ')),
       throwsArgumentError,
@@ -149,10 +142,10 @@ void main() {
     );
 
     expect(defaultOnlineHistoryLimit, 1000);
-    expect(
-      repository.recentHistory().map((entry) => entry.track.ref.trackId),
-      ['300', '200'],
-    );
+    expect(repository.recentHistory().map((entry) => entry.track.ref.trackId), [
+      '300',
+      '200',
+    ]);
     expect(repository.findTrack(_ref('100')), isNull);
   });
 
@@ -206,10 +199,12 @@ void main() {
     ]);
     expect(stored.lastRefreshedAt, refreshedAt.add(const Duration(minutes: 1)));
     expect(
-      repository.findSubscription(
-        platform: MusicPlatform.netease,
-        remotePlaylistId: '500',
-      )!.localId,
+      repository
+          .findSubscription(
+            platform: MusicPlatform.netease,
+            remotePlaylistId: '500',
+          )!
+          .localId,
       first.localId,
     );
   });
@@ -217,9 +212,7 @@ void main() {
   test('rolls back invalid replacement and keeps the previous snapshot', () {
     final original = repository.replaceSubscriptionSnapshot(_playlist());
     expect(
-      () => repository.replaceSubscriptionSnapshot(
-        _playlist(trackCount: 1),
-      ),
+      () => repository.replaceSubscriptionSnapshot(_playlist(trackCount: 1)),
       throwsArgumentError,
     );
 
@@ -248,12 +241,167 @@ void main() {
       isFalse,
     );
   });
+
+  group('personal online playlists', () {
+    test('creates, renames and lists personal playlists with unique names', () {
+      final idA = repository.createPersonalPlaylist('  我的歌单 ');
+      final idB = repository.createPersonalPlaylist('另一个');
+
+      expect(idA, greaterThan(0));
+      expect(repository.listPersonalPlaylists().map((p) => p.name), [
+        '另一个',
+        '我的歌单',
+      ]);
+      expect(repository.listPersonalPlaylists().first.tracks, isEmpty);
+
+      // 大小写不敏感重名冲突。
+      expect(
+        () => repository.createPersonalPlaylist('我的歌单'),
+        throwsArgumentError,
+      );
+      expect(
+        () => repository.createPersonalPlaylist('  我的歌单  '),
+        throwsArgumentError,
+      );
+      expect(
+        () => repository.createPersonalPlaylist('   '),
+        throwsArgumentError,
+      );
+
+      expect(repository.renamePersonalPlaylist(idA, '重命名后'), isTrue);
+      expect(repository.readPersonalPlaylist(idA)!.name, '重命名后');
+      // 与自身冲突视为重名冲突。
+      expect(repository.renamePersonalPlaylist(idB, '重命名后'), isFalse);
+    });
+
+    test('adds tracks idempotently in order and reads them back', () {
+      final id = repository.createPersonalPlaylist('歌单');
+
+      expect(
+        repository.addTrackToPersonalPlaylist(id, _track(id: '1')),
+        isTrue,
+      );
+      expect(
+        repository.addTrackToPersonalPlaylist(id, _track(id: '2')),
+        isTrue,
+      );
+      // 幂等重复添加不重复、不重排。
+      expect(
+        repository.addTrackToPersonalPlaylist(id, _track(id: '1')),
+        isTrue,
+      );
+      // 歌单不存在时添加失败。
+      expect(
+        repository.addTrackToPersonalPlaylist(99999, _track(id: '3')),
+        isFalse,
+      );
+
+      final playlist = repository.readPersonalPlaylist(id)!;
+      expect(playlist.name, '歌单');
+      expect(playlist.tracks.map((t) => t.ref.trackId), ['1', '2']);
+    });
+
+    test('removes tracks and cleans unreferenced metadata', () {
+      final id = repository.createPersonalPlaylist('歌单');
+      repository.addTrackToPersonalPlaylist(id, _track(id: '1'));
+      repository.addTrackToPersonalPlaylist(id, _track(id: '2'));
+
+      expect(repository.removeTrackFromPersonalPlaylist(id, _ref('1')), isTrue);
+      expect(
+        repository.readPersonalPlaylist(id)!.tracks.single.ref.trackId,
+        '2',
+      );
+      // 已移除曲目若无引用则被清理。
+      expect(repository.findTrack(_ref('1')), isNull);
+      expect(
+        repository.removeTrackFromPersonalPlaylist(id, _ref('1')),
+        isFalse,
+      );
+    });
+
+    test('reorders only when the ordered set matches the current items', () {
+      final id = repository.createPersonalPlaylist('歌单');
+      repository.addTrackToPersonalPlaylist(id, _track(id: '1'));
+      repository.addTrackToPersonalPlaylist(id, _track(id: '2'));
+      repository.addTrackToPersonalPlaylist(id, _track(id: '3'));
+
+      expect(
+        repository.reorderPersonalPlaylist(id, [
+          _ref('3'),
+          _ref('1'),
+          _ref('2'),
+        ]),
+        isTrue,
+      );
+      expect(
+        repository.readPersonalPlaylist(id)!.tracks.map((t) => t.ref.trackId),
+        ['3', '1', '2'],
+      );
+      // 集合不匹配时不写入。
+      expect(repository.reorderPersonalPlaylist(id, [_ref('1')]), isFalse);
+      expect(
+        repository.readPersonalPlaylist(id)!.tracks.map((t) => t.ref.trackId),
+        ['3', '1', '2'],
+      );
+    });
+
+    test('deletes personal playlists and keeps unrelated data', () {
+      final id = repository.createPersonalPlaylist('歌单');
+      repository.addTrackToPersonalPlaylist(id, _track(id: '1'));
+
+      expect(repository.deletePersonalPlaylist(id), isTrue);
+      expect(repository.readPersonalPlaylist(id), isNull);
+      expect(repository.deletePersonalPlaylist(id), isFalse);
+      expect(repository.findTrack(_ref('1')), isNull);
+    });
+  });
+
+  group('favorites playlist', () {
+    test(
+      'favorites is created on demand and excluded from the personal list',
+      () {
+        expect(repository.listPersonalPlaylists(), isEmpty);
+
+        final id = repository.ensureFavoritesPlaylist();
+
+        expect(id, greaterThan(0));
+        expect(repository.readFavorites(), isNotNull);
+        expect(repository.readFavorites()!.name, personalFavoritesPlaylistName);
+        expect(repository.listPersonalPlaylists(), isEmpty);
+      },
+    );
+
+    test('cannot create, rename or delete the favorites playlist', () {
+      final id = repository.ensureFavoritesPlaylist();
+
+      expect(
+        () => repository.createPersonalPlaylist('我的收藏'),
+        throwsArgumentError,
+      );
+      expect(
+        () => repository.renamePersonalPlaylist(id, '改名'),
+        throwsArgumentError,
+      );
+      expect(() => repository.deletePersonalPlaylist(id), throwsArgumentError);
+      expect(repository.readFavorites(), isNotNull);
+    });
+
+    test('toggleFavorite adds and removes without appearing in the list', () {
+      repository.toggleFavorite(_track(id: '1'));
+
+      expect(repository.isFavorite(_ref('1')), isTrue);
+      expect(repository.listPersonalPlaylists(), isEmpty);
+
+      repository.toggleFavorite(_track(id: '1'));
+
+      expect(repository.isFavorite(_ref('1')), isFalse);
+      expect(repository.readFavorites()!.tracks, isEmpty);
+    });
+  });
 }
 
-PlatformTrackRef _ref(String id) => PlatformTrackRef(
-  platform: MusicPlatform.netease,
-  trackId: id,
-);
+PlatformTrackRef _ref(String id) =>
+    PlatformTrackRef(platform: MusicPlatform.netease, trackId: id);
 
 MusicTrack _track({
   required String id,
