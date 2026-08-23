@@ -68,23 +68,47 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
       _viewSource = _defaultSource(snapshot.source, remoteQueue);
     }
 
-    final viewSource = _viewSource!;
-    final queueSourceSwitcher = _QueueSourceSwitcher(
-      selected: viewSource,
-      onSelected: _selectView,
-    );
-    return Column(
-      children: [
-        const SizedBox(height: 48.0),
-        Expanded(
-          child: _buildQueue(
-            context,
-            viewSource,
-            remoteQueue,
-            queueSourceSwitcher,
-          ),
-        ),
-      ],
+    final localService = PlayService.instance.existingPlaybackService;
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        if (localService != null) localService.playlistNotifier,
+      ]),
+      builder: (context, _) {
+        final localHasItems =
+            localService?.playlistNotifier.value.isNotEmpty ?? false;
+        final remoteHasItems = !remoteQueue.isEmpty;
+        // 仅当本地与在线队列都有歌曲时才显示来源切换器；否则直接展示有内容的一边。
+        final showSwitcher = localHasItems && remoteHasItems;
+        // 切换器显示时尊重 _viewSource（含手动选择）；隐藏时跟随活跃来源或展示有内容的一边。
+        final viewSource = !showSwitcher
+            ? switch (snapshot.source) {
+                ActivePlaybackSessionSource.local => _QueueViewSource.local,
+                ActivePlaybackSessionSource.remote => _QueueViewSource.remote,
+                ActivePlaybackSessionSource.inactive => localHasItems
+                    ? _QueueViewSource.local
+                    : _QueueViewSource.remote,
+              }
+            : _viewSource!;
+        final queueSourceSwitcher = showSwitcher
+            ? _QueueSourceSwitcher(
+                selected: viewSource,
+                onSelected: _selectView,
+              )
+            : const SizedBox.shrink();
+        return Column(
+          children: [
+            const SizedBox(height: 48.0),
+            Expanded(
+              child: _buildQueue(
+                context,
+                viewSource,
+                remoteQueue,
+                queueSourceSwitcher,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

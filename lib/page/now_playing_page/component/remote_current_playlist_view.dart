@@ -127,16 +127,17 @@ class _RemoteCurrentPlaylistViewState extends State<RemoteCurrentPlaylistView> {
                         ? () => setState(() => _isReordering = !_isReordering)
                         : null,
                   ),
-                IconButton(
-                  tooltip: _isReordering ? '完成排序后再清空队列' : '清空播放队列',
-                  icon: const Icon(Symbols.clear_all),
-                  style: IconButton.styleFrom(
-                    foregroundColor: scheme.error,
-                    disabledForegroundColor: scheme.onSecondaryContainer
-                        .withValues(alpha: 0.38),
+                if (queue.isNotEmpty)
+                  IconButton(
+                    tooltip: _isReordering ? '完成排序后再清空队列' : '清空播放队列',
+                    icon: const Icon(Symbols.clear_all),
+                    style: IconButton.styleFrom(
+                      foregroundColor: scheme.error,
+                      disabledForegroundColor: scheme.onSecondaryContainer
+                          .withValues(alpha: 0.38),
+                    ),
+                    onPressed: _isReordering ? null : widget.onClear,
                   ),
-                  onPressed: _isReordering ? null : widget.onClear,
-                ),
               ],
             ),
           ),

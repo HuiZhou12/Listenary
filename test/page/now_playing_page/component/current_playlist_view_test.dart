@@ -26,25 +26,18 @@ void main() {
     await tester.pumpWidget(harness.app());
 
     expect(find.text('播放队列还是空的'), findsOneWidget);
-    expect(find.text('本地队列'), findsOneWidget);
-    expect(find.text('在线队列'), findsOneWidget);
+    expect(find.byType(SegmentedButton), findsNothing);
     expect(PlayService.instance.existingPlaybackService, isNull);
   });
 
-  testWidgets('queue switcher is compact and below the title bar safety area', (
+  testWidgets('hides the source switcher when only remote has items', (
     tester,
   ) async {
     await tester.pumpWidget(harness.app());
 
-    final switcher = find.byWidgetPredicate(
-      (widget) => widget is SegmentedButton,
-    );
-    final switcherRect = tester.getRect(switcher);
-    final titleRect = tester.getRect(find.text('播放列表'));
-
-    expect(switcherRect.top, greaterThanOrEqualTo(48.0));
-    expect(switcherRect.width, lessThanOrEqualTo(200.0));
-    expect((switcherRect.center.dy - titleRect.center.dy).abs(), lessThan(1.0));
+    // 只有远程队列有内容：不显示本地/在线切换器，直接展示远程队列。
+    expect(find.byType(SegmentedButton), findsNothing);
+    expect(find.text('Remote 1'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -80,36 +73,6 @@ void main() {
     expect(PlayService.instance.existingPlaybackService, isNull);
   });
 
-  testWidgets('manual queue view survives same-source updates', (tester) async {
-    harness.showRemote(currentIndex: 0);
-    await tester.pumpWidget(harness.app());
-
-    await tester.tap(find.text('本地队列'));
-    await tester.pump();
-    expect(find.text('Remote 1'), findsNothing);
-
-    harness.updateRemote(currentIndex: 1);
-    await tester.pump();
-
-    expect(find.text('Remote 1'), findsNothing);
-    expect(find.text('播放队列还是空的'), findsOneWidget);
-    expect(PlayService.instance.existingPlaybackService, isNull);
-  });
-
-  testWidgets('active source transition refocuses its queue', (tester) async {
-    harness.showRemote(currentIndex: 0);
-    await tester.pumpWidget(harness.app());
-    await tester.tap(find.text('本地队列'));
-    await tester.pump();
-    expect(find.text('Remote 1'), findsNothing);
-
-    harness.releaseRemote();
-    await tester.pump();
-
-    expect(find.text('Remote 1'), findsOneWidget);
-    expect(find.text('Remote 2'), findsOneWidget);
-  });
-
   testWidgets('remote selection uses target index and default quality', (
     tester,
   ) async {
@@ -127,25 +90,6 @@ void main() {
     expect(harness.gateway.lastRef, harness.remoteItems[1].ref);
     expect(harness.gateway.lastQuality, 'lossless');
     expect(harness.queue.value.currentIndex, 1);
-  });
-
-  testWidgets('switching viewed queue does not change playback source', (
-    tester,
-  ) async {
-    harness.showRemote(currentIndex: 0);
-    await tester.pumpWidget(harness.app());
-    expect(find.text('Remote 1'), findsOneWidget);
-
-    await tester.tap(find.text('本地队列'));
-    await tester.pump();
-
-    expect(find.text('Remote 1'), findsNothing);
-    expect(find.text('播放队列还是空的'), findsOneWidget);
-    expect(
-      harness.activeSession.value.source,
-      ActivePlaybackSessionSource.remote,
-    );
-    expect(PlayService.instance.existingPlaybackService, isNull);
   });
 }
 
