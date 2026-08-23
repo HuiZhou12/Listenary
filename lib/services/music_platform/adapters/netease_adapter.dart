@@ -131,12 +131,8 @@ final class NeteaseAdapter {
     final responseId = _requiredPositiveInt(data['id']);
     if ('$responseId' != expectedRef.trackId) throw _invalidResponse();
     final actualQuality = _requiredString(data['level']);
-    if (actualQuality != requestedQuality) {
-      throw const ChkszException(
-        kind: ChkszErrorKind.businessFailure,
-        safeMessage: '请求的音质不可用，请重新选择',
-      );
-    }
+    // 实际返回音质可能低于请求：接受可用音质播放（自动降级），
+    // requestedQuality 保留用户所选，供后续重新解析时自动回升。
     return ResolvedStream(
       ref: expectedRef,
       uri: _requiredHttpUri(data['url']),

@@ -419,23 +419,18 @@ void main() {
       }
     });
 
-    test('rejects an unrequested quality instead of degrading silently', () {
+    test('accepts a lower actual quality and preserves the requested one', () {
       final body = _resolveBody(level: 'standard');
 
-      expect(
-        () => adapter.parseResolveResponse(
-          body,
-          expectedRef: ref,
-          resolvedAt: resolvedAt,
-        ),
-        throwsA(
-          isA<ChkszException>().having(
-            (error) => error.kind,
-            'kind',
-            ChkszErrorKind.businessFailure,
-          ),
-        ),
+      final stream = adapter.parseResolveResponse(
+        body,
+        expectedRef: ref,
+        resolvedAt: resolvedAt,
+        requestedQuality: 'lossless',
       );
+
+      expect(stream.requestedQuality, 'lossless');
+      expect(stream.actualQuality, 'standard');
     });
 
     test('rejects mismatched IDs and malformed stream fields safely', () {

@@ -48,23 +48,22 @@ void main() {
     expect(stream.expiresAt, isNull);
   });
 
-  test('passes requested quality and rejects a mismatched actual quality', () async {
+  test('preserves the requested quality while accepting a lower actual quality', () async {
     final transport = _FakeTransport(
       (_, _) async =>
           ChkszTransportResponse(statusCode: 200, data: _resolveBody()),
     );
     final resolver = NeteaseStreamResolver(client: _client(transport));
 
-    final qualityError = await _captureChkszException(
-      resolver.resolve(
-        _ref,
-        requestedQuality: 'standard',
-        cancelToken: ChkszCancelToken(),
-      ),
+    final stream = await resolver.resolve(
+      _ref,
+      requestedQuality: 'standard',
+      cancelToken: ChkszCancelToken(),
     );
-    // 请求携带所选音质；响应为 lossless，parse 判定失配 → 不可用
+    // 请求携带所选音质；响应为 lossless → 自动降级播放，请求音质保留以便回升。
     expect(transport.requests.single.queryParameters['level'], 'standard');
-    expect(qualityError.kind, ChkszErrorKind.businessFailure);
+    expect(stream.requestedQuality, 'standard');
+    expect(stream.actualQuality, 'lossless');
   });
 
   test('rejects invalid references locally without a request', () async {
@@ -158,12 +157,10 @@ void main() {
     const secretUrl =
         'https://media.invalid/test.flac?signature=SECRET_TEST_ONLY';
     final responses = [
-      _resolveBody(level: 'standard', url: secretUrl),
       _resolveBody(id: 654321, url: secretUrl),
       _resolveBody(url: 'not-an-http-url'),
     ];
     final expectedKinds = [
-      ChkszErrorKind.businessFailure,
       ChkszErrorKind.invalidResponse,
       ChkszErrorKind.invalidResponse,
     ];

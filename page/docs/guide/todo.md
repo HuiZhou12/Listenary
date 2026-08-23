@@ -30,6 +30,16 @@ outline: deep
 
 文档站目前只有中文；软件支持更多界面语言后，文档也会一起跟进。
 
+## Linux 与移动端支持
+
+当前项目以 Windows 为主，Linux、Android、iOS 暂不进入实施阶段，作为后续跨平台规划：
+
+- 先抽象播放后端边界，保留现有 `PlaybackBackend` 契约；Linux、Android、iOS 分别接入适配实现，不直接复用 BASS/WASAPI。
+- Linux 需要重新实现音频播放、EQ、系统媒体控制、凭据存储和桌面歌词/窗口能力，优先评估 PipeWire/PulseAudio、DBus 与系统凭据方案。
+- Android/iOS 需要重新实现音频播放、后台播放、媒体控制、音频焦点/路由、通知或锁屏控制，并适配触控布局；桌面歌词和 Windows 窗口能力不直接迁移。
+- Rust 曲库、标签读取、SQLite、在线服务、歌词解析等非平台层尽量复用，但需分别验证文件权限、路径、网络和生命周期。
+- 跨平台启动前先编写平台边界 Spec，完成播放后端抽象和最小真机/真实设备验证矩阵；在此之前不修改现有 Windows 播放链路。
+
 ---
 
 有建议或遇到问题，请优先前往 [GitHub Issues](https://github.com/HuiZhou12/Listenary/issues)；使用问题也可以在 [Discussions](https://github.com/HuiZhou12/Listenary/discussions) 交流。
