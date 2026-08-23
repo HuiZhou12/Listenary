@@ -1758,13 +1758,17 @@ class BassPlayer {
     if (_bass.BASS_ChannelPause(_fstream!) == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_HANDLE:
-          throw const FormatException('handle is not a valid channel.');
+          // 频道已被释放（自然结束或重建），清理本地句柄，视为已停止。
+          _fstream = null;
+          _source = null;
+          return;
         case bass.BASS_ERROR_DECODE:
           throw const FormatException(
             'handle is a decoding channel, so cannot be played or paused.',
           );
         case bass.BASS_ERROR_NOPLAY:
-          throw const FormatException('The channel is not playing.');
+          // 频道未在播放（已停止），pause 视为无操作。
+          return;
       }
     }
 
