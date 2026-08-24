@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Windows-blue?style=flat-square" alt="Platform">
-  <img src="https://img.shields.io/badge/Version-3.0.0-blue?style=flat-square" alt="Version 3.0.0">
+  <img src="https://img.shields.io/badge/Version-3.1.0-blue?style=flat-square" alt="Version 3.1.0">
   <img src="https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square" alt="License GPL-3.0">
 </p>
 
@@ -21,13 +21,13 @@ Listenary 管理和播放本地音乐，在此基础上提供可选的在线搜�
 ## 功能
 
 - 本地曲库：歌曲、艺术家、专辑、文件夹、歌单、全局搜索与播放统计
-- 在线音乐：搜索、在线播放、订阅歌单、在线历史，以及独立的远程播放队列
+- 在线音乐：搜索、在线播放、订阅歌单、个人在线歌单、在线历史，以及独立的远程播放队列
 - 歌词：YRC、QRC、KRC、TTML、LRC，本地、内嵌与多个在线来源，支持原文、翻译和罗马音
 - 音频：BASS 播放、10 段 EQ、音调与速度、ReplayGain、WASAPI 独占
 - 界面：Material 3、封面取色、流动渐变与流光背景、竖屏/横屏/沉浸布局
 - 系统集成：SMTC、全局快捷键、单实例、窗口状态记忆和桌面歌词
 
-注意：当前版本暂不支持远程 seek、个人在线歌单，以及在线队列排序/播放模式和音质选择等尚未完成的能力，后续会逐步完善。
+在线能力支持远程 seek、个人在线歌单、在线队列排序与播放模式、音质选择等功能；具体可用性取决于第三方平台和网络状态。
 
 ## 下载与支持
 

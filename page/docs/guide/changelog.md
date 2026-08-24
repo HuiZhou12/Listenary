@@ -4,14 +4,26 @@ outline: false
 
 # 更新日志
 
-从 **2.0.0** 起。每个版本默认折叠，点版本号展开。当前版本：**3.0.0**。
+从 **2.0.0** 起。每个版本默认折叠，点版本号展开。当前版本：**3.1.0**。
 
-Listenary 独立发行版本见 [GitHub Releases](https://github.com/HuiZhou12/Listenary/releases)。3.0.0 的完整发布说明将在正式 Release 发布时补充；下方 2.x 内容作为迁移前历史记录保留。
+Listenary 独立发行版本见 [GitHub Releases](https://github.com/HuiZhou12/Listenary/releases)。下方 2.x 内容作为迁移前历史记录保留。
 
 <details>
-<summary><strong>3.0.0</strong></summary>
+<summary><strong>3.1.0</strong></summary>
 
-Listenary 首次独立发行。完整说明待 GitHub Release 发布。
+**在线能力**
+
+- 新增在线音质选择，并在音质不可用时自动降级
+- 新增独立的远程播放队列，支持排序、顺序/单曲循环/随机播放模式、单项移除和清空
+- 新增在线歌单订阅、个人在线歌单、收藏与统一歌单操作
+- 在线歌单详情支持排序，播放队列与页面当前顺序保持一致
+- 支持远程播放 seek、在线封面缓存和请求兼容性修复
+
+**稳定性与体验**
+
+- 优化播放页在线/本地队列切换和空队列显示
+- 修复歌词切换、在线封面和远程播放状态同步问题
+- 优化页面切换性能与播放队列资源释放
 
 </details>
 
