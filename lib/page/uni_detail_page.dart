@@ -176,6 +176,9 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
     if (widget.enableShufflePlay) {
       actions.add(ShufflePlay<S>(contentList: widget.secondaryContent));
     }
+    if (widget.extraActions != null) {
+      actions.addAll(widget.extraActions!);
+    }
     if (widget.enableSortMethod) {
       actions.add(
         SortMethodComboBox<S>(
@@ -201,9 +204,6 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
           setContentView: setContentView,
         ),
       );
-    }
-    if (widget.extraActions != null) {
-      actions.addAll(widget.extraActions!);
     }
 
     return widget.multiSelectController == null
@@ -748,71 +748,61 @@ class _UniDetailPageHeader extends StatelessWidget {
         final coverSize = compact ? 156.0 : 200.0;
         final gap = compact ? 12.0 : 16.0;
 
-        return SizedBox(
-          height: coverSize,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            _HoverableCover(
+              futurePic: pic,
+              picShape: picShape,
+              scheme: scheme,
+              size: coverSize,
+              onTap: onPicTap,
+              busy: picBusy,
+              placeholder: Icon(
+                Symbols.queue_music,
+                size: coverSize,
+                color: scheme.onSurface,
+              ),
+            ),
+            SizedBox(width: gap),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _HoverableCover(
-                    futurePic: pic,
-                    picShape: picShape,
-                    scheme: scheme,
-                    size: coverSize,
-                    onTap: onPicTap,
-                    busy: picBusy,
-                    placeholder: Icon(
-                      Symbols.queue_music,
-                      size: coverSize,
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: compact ? AppType.pageTitle : AppType.hero,
+                      color: scheme.onSurface,
+                      fontWeight: AppType.weightBold,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: AppType.body,
                       color: scheme.onSurface,
                     ),
                   ),
-                  SizedBox(width: gap),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            title,
-                            style: TextStyle(
-                              fontSize: compact
-                                  ? AppType.pageTitle
-                                  : AppType.hero,
-                              color: scheme.onSurface,
-                              fontWeight: AppType.weightBold,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          subtitle,
-                          style: TextStyle(
-                            fontSize: AppType.body,
-                            color: scheme.onSurface,
-                          ),
-                        ),
-                        const SizedBox(height: 8.0),
-                        _ActionsRow(
-                          actions: multiSelectController == null
-                              ? actions
-                              : multiSelectController!.enableMultiSelectView
-                              ? multiSelectViewActions!
-                              : actions,
-                          searchController: searchController,
-                          searchQuery: searchQuery,
-                          onSearchChanged: onSearchChanged,
-                          scheme: scheme,
-                        ),
-                      ],
-                    ),
+                  const SizedBox(height: 8.0),
+                  _ActionsRow(
+                    actions: multiSelectController == null
+                        ? actions
+                        : multiSelectController!.enableMultiSelectView
+                        ? multiSelectViewActions!
+                        : actions,
+                    searchController: searchController,
+                    searchQuery: searchQuery,
+                    onSearchChanged: onSearchChanged,
+                    scheme: scheme,
                   ),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         );
       },
     );

@@ -670,7 +670,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
             style: menuItemStyle,
             onPressed: () => _renamePersonalPlaylist(item),
             leadingIcon: const Icon(Symbols.edit),
-            child: const Text('重命名'),
+            child: const Text('编辑'),
           ),
           MenuItemButton(
             style: menuItemStyle,
@@ -734,7 +734,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                     ),
                   ),
                   IconButton(
-                    tooltip: '重命名',
+                    tooltip: '编辑',
                     onPressed: () => _renamePersonalPlaylist(item),
                     icon: const Icon(Symbols.edit),
                   ),

@@ -122,7 +122,13 @@ final class PersonalOnlinePlaylistController extends ChangeNotifier {
       final repository = await _resolveRepository();
       final added = repository.addTrackToPersonalPlaylist(localId, track);
       if (_disposed || operation != _operation) return false;
-      if (added) _setReady(repository.listPersonalPlaylists());
+      if (added) {
+        _setReady(repository.listPersonalPlaylists());
+        if (repository.isFavoritesPlaylist(localId)) {
+          _favoriteRefs.add(track.ref);
+          notifyListeners();
+        }
+      }
       return added;
     } catch (_) {
       if (_disposed || operation != _operation) return false;
@@ -138,7 +144,13 @@ final class PersonalOnlinePlaylistController extends ChangeNotifier {
       final repository = await _resolveRepository();
       final removed = repository.removeTrackFromPersonalPlaylist(localId, ref);
       if (_disposed || operation != _operation) return false;
-      if (removed) _setReady(repository.listPersonalPlaylists());
+      if (removed) {
+        _setReady(repository.listPersonalPlaylists());
+        if (repository.isFavoritesPlaylist(localId)) {
+          _favoriteRefs.remove(ref);
+          notifyListeners();
+        }
+      }
       return removed;
     } catch (_) {
       if (_disposed || operation != _operation) return false;

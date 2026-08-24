@@ -468,6 +468,16 @@ final class OnlineLibraryRepository {
     return readPersonalPlaylist(localId);
   }
 
+  /// 指定歌单是否为内置收藏歌单。
+  bool isFavoritesPlaylist(int localId) {
+    final rows = _db.select(
+      'SELECT 1 FROM online_playlists '
+      "WHERE id = ? AND kind = 'personal' AND name = ?",
+      [localId, personalFavoritesPlaylistName],
+    );
+    return rows.isNotEmpty;
+  }
+
   /// 曲目是否在收藏歌单中。
   bool isFavorite(PlatformTrackRef ref) {
     final rows = _db.select(

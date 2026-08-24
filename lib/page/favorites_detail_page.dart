@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -8,9 +7,13 @@ import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_row.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
-import 'package:pure_music/component/remote_media_cover.dart';
-import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/component/remote_cover_cache.dart';
+import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/page_scaffold.dart';
+import 'package:pure_music/page/uni_detail_page.dart';
+import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
@@ -26,6 +29,8 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
   PersonalOnlinePlaylistSnapshot? _snapshot;
   bool _loading = true;
   int _loadRequest = 0;
+  String _searchQuery = '';
+  Future<ImageProvider?> _primaryPicFuture = Future.value(null);
 
   @override
   void initState() {
@@ -59,6 +64,7 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
       setState(() {
         _snapshot = snapshot;
         _loading = false;
+        _primaryPicFuture = _firstCoverProvider(snapshot);
       });
     } catch (_) {
       if (!mounted || request != _loadRequest) return;
@@ -72,7 +78,24 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
         .read<PersonalOnlinePlaylistController>()
         .readFavorites();
     if (!mounted || request != _loadRequest) return;
-    setState(() => _snapshot = snapshot);
+    setState(() {
+      _snapshot = snapshot;
+      _primaryPicFuture = _firstCoverProvider(snapshot);
+    });
+  }
+
+  Future<ImageProvider?> _firstCoverProvider(
+    PersonalOnlinePlaylistSnapshot? snapshot,
+  ) async {
+    final snapshotLocal = snapshot;
+    if (snapshotLocal == null) return null;
+    for (final track in snapshotLocal.tracks) {
+      final uri = track.coverUri;
+      if (uri != null && uri.scheme == 'https' && uri.host.isNotEmpty) {
+        return CachedRemoteImageProvider(uri.toString());
+      }
+    }
+    return null;
   }
 
   Future<void> _play(MusicTrack track) async {
@@ -93,95 +116,12 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
     );
   }
 
-  Future<void> _playRandom(Iterable<MusicTrack> tracks) async {
-    final playable = tracks
-        .where(
-          (t) =>
-              t.availability != TrackAvailability.unavailable &&
-              t.availability != TrackAvailability.paid,
-        )
-        .toList(growable: false);
-    if (playable.isEmpty) return;
-    await _play(playable[math.Random().nextInt(playable.length)]);
-  }
-
-  Future<void> _remove(PlatformTrackRef ref) async {
+  Future<void> _unfavorite(PlatformTrackRef ref) async {
     final snapshot = _snapshot;
     if (snapshot == null) return;
     await context.read<PersonalOnlinePlaylistController>().removeTrack(
       snapshot.localId,
       ref,
-    );
-    await _refresh();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final snapshot = _snapshot;
-    if (snapshot != null && !_loading) {
-      return _buildLoadedPage(snapshot);
-    }
-    return PageScaffold(
-      title: '我的收藏',
-      actions: [
-        IconButton.filledTonal(
-          tooltip: '刷新',
-          onPressed: _loading ? null : _load,
-          icon: const Icon(Symbols.refresh),
-        ),
-      ],
-      body: _buildStatusBody(),
-    );
-  }
-
-  Widget _buildStatusBody() {
-    if (_loading) {
-      return const Center(
-        child: SizedBox.square(
-          dimension: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    }
-    return const QuietEmptyState(
-      icon: Symbols.favorite_border,
-      title: '收藏读取失败',
-      message: '请稍后重试。',
-    );
-  }
-
-  Widget _buildLoadedPage(PersonalOnlinePlaylistSnapshot snapshot) {
-    final scheme = Theme.of(context).colorScheme;
-    final tracks = snapshot.tracks;
-    return ColoredBox(
-      color: scheme.surfaceContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            _buildHeader(snapshot),
-            const SizedBox(height: 16),
-            Expanded(
-              child: tracks.isEmpty
-                  ? const QuietEmptyState(
-                      icon: Symbols.favorite_border,
-                      title: '还没有收藏',
-                      message: '在线歌曲上点爱心即可收藏。',
-                    )
-                  : Material(
-                      type: MaterialType.transparency,
-                      borderRadius: AppRadius.smCircular,
-                      child: ListView.builder(
-                        padding: const EdgeInsets.only(bottom: 96),
-                        itemCount: tracks.length,
-                        itemBuilder: (context, index) =>
-                            _buildTrackRow(tracks[index]),
-                      ),
-                    ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -202,114 +142,157 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
         onTap: playable ? () => _play(track) : null,
         showFavorite: true,
         favorite: true,
-        onToggleFavorite: () => _remove(track.ref),
+        onToggleFavorite: () => _unfavorite(track.ref),
       ),
     );
   }
 
-  Widget _buildHeader(PersonalOnlinePlaylistSnapshot snapshot) {
-    final scheme = Theme.of(context).colorScheme;
-    final playable = snapshot.tracks.where(
-      (t) =>
-          t.availability != TrackAvailability.unavailable &&
-          t.availability != TrackAvailability.paid,
-    );
-    final hasPlayableTracks = playable.isNotEmpty;
-    Uri? cover;
-    for (final track in snapshot.tracks) {
-      final uri = track.coverUri;
-      if (uri != null) {
-        cover = uri;
-        break;
-      }
-    }
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact =
-            constraints.maxWidth.isFinite && constraints.maxWidth < 560;
-        final coverSize = compact ? 156.0 : 200.0;
-        final gap = compact ? 12.0 : 16.0;
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            ClipRRect(
-              borderRadius: AppRadius.smCircular,
-              child: SizedBox.square(
-                dimension: coverSize,
-                child: RemoteMediaCover(
-                  coverUri: cover,
-                  placeholder: ColoredBox(
-                    color: scheme.surfaceContainer,
-                    child: Icon(
-                      Symbols.favorite,
-                      size: 56,
-                      color: scheme.primary,
-                    ),
-                  ),
-                  cacheWidth: (coverSize * 2).round(),
-                  cacheHeight: (coverSize * 2).round(),
-                ),
-              ),
+  @override
+  Widget build(BuildContext context) {
+    final snapshot = _snapshot;
+    if (snapshot != null && !_loading) {
+      if (snapshot.tracks.isEmpty) {
+        return const Scaffold(
+          body: PageScaffold(
+            title: '我的收藏',
+            actions: [],
+            body: QuietEmptyState(
+              icon: Symbols.favorite_border,
+              title: '还没有收藏',
+              message: '在线歌曲上点爱心即可收藏。',
             ),
-            SizedBox(width: gap),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          '我的收藏',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: compact
-                                ? AppType.pageTitle
-                                : AppType.hero,
-                            fontWeight: AppType.weightBold,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Icon(Symbols.favorite, size: 18, color: scheme.primary),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${snapshot.tracks.length} 首在线歌曲 · 自动收藏',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: scheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      FilledButton.icon(
-                        onPressed: hasPlayableTracks
-                            ? () => _play(playable.first)
-                            : null,
-                        icon: const Icon(Symbols.play_arrow),
-                        label: const Text('播放全部'),
-                      ),
-                      IconButton.filledTonal(
-                        tooltip: '随机播放',
-                        onPressed: hasPlayableTracks
-                            ? () => _playRandom(snapshot.tracks)
-                            : null,
-                        icon: const Icon(Symbols.shuffle),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         );
-      },
+      }
+      return Scaffold(body: _buildLoadedPage(snapshot));
+    }
+    return Scaffold(
+      body: PageScaffold(
+        title: '我的收藏',
+        actions: const [],
+        body: _buildStatusBody(),
+      ),
     );
+  }
+
+  Widget _buildStatusBody() {
+    if (_loading) {
+      return const Center(
+        child: SizedBox.square(
+          dimension: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    return const QuietEmptyState(
+      icon: Symbols.favorite_border,
+      title: '收藏读取失败',
+      message: '请稍后重试。',
+    );
+  }
+
+  Widget _buildLoadedPage(PersonalOnlinePlaylistSnapshot snapshot) {
+    final allTracks = snapshot.tracks;
+    final query = _searchQuery.toLowerCase();
+    final tracks = _searchQuery.isEmpty
+        ? List<MusicTrack>.from(allTracks)
+        : allTracks
+              .where(
+                (t) =>
+                    t.title.toLowerCase().contains(query) ||
+                    t.artistDisplay.toLowerCase().contains(query) ||
+                    t.album.toLowerCase().contains(query),
+              )
+              .toList(growable: false);
+    final playable = allTracks
+        .where(
+          (t) =>
+              t.availability != TrackAvailability.unavailable &&
+              t.availability != TrackAvailability.paid,
+        )
+        .toList(growable: false);
+    const primaryActionStyle = ButtonStyle(
+      fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+      padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
+    );
+    return UniDetailPage<PersonalOnlinePlaylistSnapshot, MusicTrack, Object>(
+      pref: AppPreference.instance.playlistDetailPagePref,
+      primaryContent: snapshot,
+      primaryPic: _primaryPicFuture,
+      backgroundPic: Future.value(null),
+      picShape: PicShape.rrect,
+      title: '我的收藏',
+      subtitle: '${snapshot.tracks.length} 首在线歌曲 · 自动收藏',
+      secondaryContent: tracks,
+      secondaryContentBuilder: (context, track, index, msc, view) =>
+          _buildTrackRow(track),
+      enableShufflePlay: false,
+      enableSortMethod: true,
+      enableSortOrder: true,
+      sortMethods: _sortMethods(),
+      enableSecondaryContentViewSwitch: false,
+      enableSearch: true,
+      searchQuery: _searchQuery,
+      onSearchChanged: (v) => setState(() => _searchQuery = v),
+      extraActions: [
+        FilledButton.icon(
+          onPressed: playable.isEmpty ? null : () => _play(playable.first),
+          icon: const Icon(Symbols.play_arrow, size: 20),
+          label: const Text('播放全部'),
+          style: primaryActionStyle,
+        ),
+      ],
+    );
+  }
+
+  List<SortMethodDesc<MusicTrack>> _sortMethods() {
+    return [
+      SortMethodDesc<MusicTrack>(
+        icon: Symbols.title,
+        name: '标题',
+        method: (list, order) {
+          switch (order) {
+            case SortOrder.ascending:
+              list.sort((a, b) => a.title.naturalCompareTo(b.title));
+              break;
+            case SortOrder.decending:
+              list.sort((a, b) => b.title.naturalCompareTo(a.title));
+              break;
+          }
+        },
+      ),
+      SortMethodDesc<MusicTrack>(
+        icon: Symbols.artist,
+        name: '歌手',
+        method: (list, order) {
+          switch (order) {
+            case SortOrder.ascending:
+              list.sort(
+                (a, b) => a.artistDisplay.naturalCompareTo(b.artistDisplay),
+              );
+              break;
+            case SortOrder.decending:
+              list.sort(
+                (a, b) => b.artistDisplay.naturalCompareTo(a.artistDisplay),
+              );
+              break;
+          }
+        },
+      ),
+      SortMethodDesc<MusicTrack>(
+        icon: Symbols.album,
+        name: '专辑',
+        method: (list, order) {
+          switch (order) {
+            case SortOrder.ascending:
+              list.sort((a, b) => a.album.naturalCompareTo(b.album));
+              break;
+            case SortOrder.decending:
+              list.sort((a, b) => b.album.naturalCompareTo(a.album));
+              break;
+          }
+        },
+      ),
+    ];
   }
 }

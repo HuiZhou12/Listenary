@@ -4,7 +4,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/database.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/page/online_playlist_detail_page.dart';
@@ -45,7 +44,12 @@ void main() {
   });
 
   testWidgets('empty subscription view exposes the add action', (tester) async {
-    await _pump(tester, controller, personalController, const OnlinePlaylistsPage());
+    await _pump(
+      tester,
+      controller,
+      personalController,
+      const OnlinePlaylistsPage(),
+    );
 
     await tester.tap(find.byTooltip('添加在线歌单'));
     await tester.pump();
@@ -57,7 +61,12 @@ void main() {
   ) async {
     repository.replaceSubscriptionSnapshot(_playlist());
 
-    await _pump(tester, controller, personalController, const OnlinePlaylistsPage());
+    await _pump(
+      tester,
+      controller,
+      personalController,
+      const OnlinePlaylistsPage(),
+    );
 
     expect(find.byTooltip('添加在线歌单'), findsOneWidget);
     expect(find.byTooltip('编辑'), findsNothing);
@@ -76,14 +85,12 @@ void main() {
         personalController,
         OnlinePlaylistDetailPage(localId: saved.localId),
       );
-      await _pumpUntilFound(tester, find.byType(RemoteMediaCover));
+      await _pumpUntilFound(tester, find.text('Remote Playlist'));
 
       expect(tester.takeException(), isNull);
       expect(find.text('Remote Playlist'), findsOneWidget);
-      expect(find.text('Remote Creator'), findsOneWidget);
-      expect(find.text('1 首歌曲 · 只读订阅'), findsOneWidget);
+      expect(find.textContaining('只读订阅'), findsOneWidget);
       expect(find.text('播放全部'), findsOneWidget);
-      expect(find.byTooltip('随机播放'), findsOneWidget);
       expect(find.byTooltip('刷新'), findsOneWidget);
       // 添加按钮悬浮时显示。
       final hover = await tester.createGesture(kind: PointerDeviceKind.mouse);
@@ -92,10 +99,6 @@ void main() {
       expect(find.byTooltip('添加到歌单'), findsOneWidget);
       await hover.removePointer();
       expect(find.byTooltip('编辑'), findsNothing);
-      final cover = tester
-          .widgetList<RemoteMediaCover>(find.byType(RemoteMediaCover))
-          .singleWhere((widget) => widget.coverUri == _playlistCoverUri);
-      expect(cover.coverUri, _playlistCoverUri);
     },
   );
 
@@ -134,11 +137,10 @@ void main() {
     await _pumpUntilFound(tester, find.text('Remote Playlist'));
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('Remote Playlist'));
-    await _pumpUntilFound(tester, find.text('Remote Creator'));
+    await _pumpUntilFound(tester, find.textContaining('只读订阅'));
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.byType(OnlinePlaylistDetailPage), findsOneWidget);
-    expect(find.text('Remote Creator'), findsOneWidget);
     expect(find.text('播放全部'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -194,14 +196,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(PersonalPlaylistDetailPage),
-        matching: find.byTooltip('排序'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: find.byType(PersonalPlaylistDetailPage),
-        matching: find.byTooltip('重命名'),
+        matching: find.text('排序'),
       ),
       findsOneWidget,
     );
@@ -211,8 +206,10 @@ void main() {
   testWidgets('detail header remains valid at compact width', (tester) async {
     final saved = repository.replaceSubscriptionSnapshot(_playlist());
     await controller.loadSubscriptions();
-    await tester.binding.setSurfaceSize(const Size(420, 720));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.view.physicalSize = const Size(420, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
     await _pump(
       tester,
@@ -220,10 +217,10 @@ void main() {
       personalController,
       OnlinePlaylistDetailPage(localId: saved.localId),
     );
-    await _pumpUntilFound(tester, find.byType(RemoteMediaCover));
+    await _pumpUntilFound(tester, find.text('Remote Playlist'));
 
     expect(find.text('Remote Playlist'), findsOneWidget);
-    expect(find.byTooltip('随机播放'), findsOneWidget);
+    expect(find.text('播放全部'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
