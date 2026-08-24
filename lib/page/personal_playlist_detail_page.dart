@@ -100,16 +100,15 @@ class _PersonalPlaylistDetailPageState
     });
   }
 
-  Future<void> _play(MusicTrack track) async {
-    final selection = await context
-        .read<PersonalOnlinePlaylistController>()
-        .playbackSelection(localId: widget.localId, selectedRef: track.ref);
-    if (!mounted || selection == null) return;
+  Future<void> _play(
+    Iterable<MusicTrack> tracks,
+    MusicTrack track,
+  ) async {
     await playOnlineTrackSelection(
       context,
-      OnlineTrackSelection(
-        tracks: selection.tracks,
-        selectedIndex: selection.selectedIndex,
+      OnlineTrackSelection.fromResultPage(
+        tracks: tracks,
+        selectedRef: track.ref,
       ),
     );
   }
@@ -123,7 +122,7 @@ class _PersonalPlaylistDetailPageState
         )
         .toList(growable: false);
     if (playable.isEmpty) return;
-    await _play(playable[math.Random().nextInt(playable.length)]);
+    await _play(tracks, playable[math.Random().nextInt(playable.length)]);
   }
 
   Future<void> _removeTrack(PlatformTrackRef ref) async {
@@ -155,7 +154,11 @@ class _PersonalPlaylistDetailPageState
     }
   }
 
-  Widget _buildTrackRow(MusicTrack track, {bool animated = true}) {
+  Widget _buildTrackRow(
+    MusicTrack track,
+    Iterable<MusicTrack> playbackTracks, {
+    bool animated = true,
+  }) {
     final playable =
         track.availability != TrackAvailability.unavailable &&
         track.availability != TrackAvailability.paid;
@@ -168,7 +171,7 @@ class _PersonalPlaylistDetailPageState
       track: track,
       details: details,
       enabled: playable,
-      onTap: playable ? () => _play(track) : null,
+      onTap: playable ? () => _play(playbackTracks, track) : null,
       onRemove: () => _removeTrack(track.ref),
       showFavorite: true,
       favorite: favorites.isFavorite(track.ref),
@@ -240,7 +243,7 @@ class _PersonalPlaylistDetailPageState
                     t.album.toLowerCase().contains(query),
               )
               .toList(growable: false);
-    final playable = allTracks
+    final playable = tracks
         .where(
           (track) =>
               track.availability != TrackAvailability.unavailable &&
@@ -270,7 +273,7 @@ class _PersonalPlaylistDetailPageState
       subtitle: '${snapshot.tracks.length} 首歌曲 · 我的在线歌单',
       secondaryContent: tracks,
       secondaryContentBuilder: (context, track, index, msc, view) =>
-          _buildTrackRow(track),
+          _buildTrackRow(track, tracks),
       enableShufflePlay: false,
       enableSortMethod: canSortTracks,
       enableSortOrder: canSortTracks,
@@ -381,7 +384,7 @@ class _PersonalPlaylistDetailPageState
           key: ValueKey(
             'personal-${track.ref.platform.name}-${track.ref.trackId}',
           ),
-          child: _buildTrackRow(track, animated: false),
+          child: _buildTrackRow(track, tracks, animated: false),
         );
       },
     );

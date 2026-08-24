@@ -98,21 +98,16 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
     return null;
   }
 
-  Future<void> _play(MusicTrack track) async {
-    final snapshot = _snapshot;
-    if (snapshot == null) return;
-    final tracks = snapshot.tracks
-        .where(
-          (t) =>
-              t.availability != TrackAvailability.unavailable &&
-              t.availability != TrackAvailability.paid,
-        )
-        .toList(growable: false);
-    final selectedIndex = tracks.indexWhere((t) => t.ref == track.ref);
-    if (selectedIndex < 0) return;
+  Future<void> _play(
+    Iterable<MusicTrack> tracks,
+    MusicTrack track,
+  ) async {
     await playOnlineTrackSelection(
       context,
-      OnlineTrackSelection(tracks: tracks, selectedIndex: selectedIndex),
+      OnlineTrackSelection.fromResultPage(
+        tracks: tracks,
+        selectedRef: track.ref,
+      ),
     );
   }
 
@@ -125,7 +120,10 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
     );
   }
 
-  Widget _buildTrackRow(MusicTrack track) {
+  Widget _buildTrackRow(
+    MusicTrack track,
+    Iterable<MusicTrack> playbackTracks,
+  ) {
     final playable =
         track.availability != TrackAvailability.unavailable &&
         track.availability != TrackAvailability.paid;
@@ -139,7 +137,7 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
         track: track,
         details: details,
         enabled: playable,
-        onTap: playable ? () => _play(track) : null,
+        onTap: playable ? () => _play(playbackTracks, track) : null,
         showFavorite: true,
         favorite: true,
         onToggleFavorite: () => _unfavorite(track.ref),
@@ -204,7 +202,7 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
                     t.album.toLowerCase().contains(query),
               )
               .toList(growable: false);
-    final playable = allTracks
+    final playable = tracks
         .where(
           (t) =>
               t.availability != TrackAvailability.unavailable &&
@@ -225,7 +223,7 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
       subtitle: '${snapshot.tracks.length} 首在线歌曲 · 自动收藏',
       secondaryContent: tracks,
       secondaryContentBuilder: (context, track, index, msc, view) =>
-          _buildTrackRow(track),
+          _buildTrackRow(track, tracks),
       enableShufflePlay: false,
       enableSortMethod: true,
       enableSortOrder: true,
@@ -236,7 +234,7 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
       onSearchChanged: (v) => setState(() => _searchQuery = v),
       extraActions: [
         FilledButton.icon(
-          onPressed: playable.isEmpty ? null : () => _play(playable.first),
+          onPressed: playable.isEmpty ? null : () => _play(tracks, playable.first),
           icon: const Icon(Symbols.play_arrow, size: 20),
           label: const Text('播放全部'),
           style: primaryActionStyle,
