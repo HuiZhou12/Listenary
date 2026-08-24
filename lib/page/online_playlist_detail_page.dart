@@ -78,21 +78,23 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
     return CachedRemoteImageProvider(uri.toString());
   }
 
-  Future<void> _play(MusicTrack track) async {
-    final selection = await context
-        .read<OnlinePlaylistController>()
-        .playbackSelection(localId: widget.localId, selectedRef: track.ref);
-    if (!mounted || selection == null) return;
+  Future<void> _play(
+    Iterable<MusicTrack> tracks,
+    MusicTrack track,
+  ) async {
     await playOnlineTrackSelection(
       context,
-      OnlineTrackSelection(
-        tracks: selection.tracks,
-        selectedIndex: selection.selectedIndex,
+      OnlineTrackSelection.fromResultPage(
+        tracks: tracks,
+        selectedRef: track.ref,
       ),
     );
   }
 
-  Widget _buildTrackRow(MusicTrack track) {
+  Widget _buildTrackRow(
+    MusicTrack track,
+    Iterable<MusicTrack> playbackTracks,
+  ) {
     final playable =
         track.availability != TrackAvailability.unavailable &&
         track.availability != TrackAvailability.paid;
@@ -107,7 +109,7 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
         track: track,
         details: details,
         enabled: playable,
-        onTap: playable ? () => _play(track) : null,
+        onTap: playable ? () => _play(playbackTracks, track) : null,
         onAddToPlaylist: () =>
             showPersonalPlaylistPicker(context, track: track),
         showFavorite: true,
@@ -191,7 +193,7 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
                     t.album.toLowerCase().contains(query),
               )
               .toList(growable: false);
-    final playable = allTracks
+    final playable = tracks
         .where(
           (track) =>
               track.availability != TrackAvailability.unavailable &&
@@ -216,7 +218,7 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
       ].join(' · '),
       secondaryContent: tracks,
       secondaryContentBuilder: (context, track, index, msc, view) =>
-          _buildTrackRow(track),
+          _buildTrackRow(track, tracks),
       enableShufflePlay: false,
       enableSortMethod: true,
       enableSortOrder: true,
@@ -227,7 +229,9 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
       onSearchChanged: (v) => setState(() => _searchQuery = v),
       extraActions: [
         FilledButton.icon(
-          onPressed: playable.isEmpty ? null : () => _play(playable.first),
+          onPressed: playable.isEmpty
+              ? null
+              : () => _play(tracks, playable.first),
           icon: const Icon(Symbols.play_arrow, size: 20),
           label: const Text('播放全部'),
           style: primaryActionStyle,
