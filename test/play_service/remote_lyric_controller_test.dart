@@ -96,6 +96,34 @@ void main() {
     );
   });
 
+  test('uses local word timing rules for remote line selection', () {
+    final lyric = Lyric([
+      SyncLyricLine(const Duration(seconds: 1), const Duration(seconds: 2), [
+        SyncLyricWord(
+          const Duration(seconds: 1),
+          const Duration(seconds: 1),
+          'First',
+        ),
+      ]),
+      SyncLyricLine(const Duration(seconds: 4), const Duration(seconds: 2), [
+        SyncLyricWord(
+          const Duration(seconds: 4),
+          const Duration(milliseconds: 500),
+          'Second',
+        ),
+      ]),
+    ]);
+
+    expect(
+      remoteLyricLineIndexAt(lyric, const Duration(milliseconds: 3679)),
+      0,
+    );
+    expect(
+      remoteLyricLineIndexAt(lyric, const Duration(milliseconds: 3680)),
+      1,
+    );
+  });
+
   test('cancels a stale request and rejects its late result', () async {
     final firstToken = service.tokens.single;
     queue.select(1);

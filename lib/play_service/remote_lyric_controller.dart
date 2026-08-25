@@ -4,6 +4,8 @@ import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/play_service/remote_playback_timeline.dart';
+import 'package:pure_music/lyric/lyric_timing.dart'
+    show lyricLineIsFilteredBlank, lyricLineSwitchStartsFor;
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_request.dart';
 import 'package:pure_music/services/music_platform/online_music_service.dart';
@@ -203,14 +205,19 @@ final class RemoteLyricController extends ValueNotifier<RemoteLyricSnapshot> {
 int remoteLyricLineIndexAt(Lyric lyric, Duration position) {
   if (lyric.lines.isEmpty) return 0;
   final positionMs = position.inMilliseconds;
+  final switchStarts = lyricLineSwitchStartsFor(lyric);
   var result = 0;
-  for (var index = 0; index < lyric.lines.length; index++) {
-    final line = lyric.lines[index];
-    final startMs = line is SyncLyricLine && line.words.isNotEmpty
-        ? line.words.first.start.inMilliseconds
-        : line.start.inMilliseconds;
-    if (startMs > positionMs) break;
+  for (var index = 0; index < switchStarts.length; index++) {
+    if (switchStarts[index] > positionMs) break;
     result = index;
+  }
+
+  if (!lyricLineIsFilteredBlank(lyric.lines[result])) return result;
+  for (var index = result - 1; index >= 0; index--) {
+    if (!lyricLineIsFilteredBlank(lyric.lines[index])) return index;
+  }
+  for (var index = result + 1; index < lyric.lines.length; index++) {
+    if (!lyricLineIsFilteredBlank(lyric.lines[index])) return index;
   }
   return result;
 }

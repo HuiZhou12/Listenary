@@ -94,22 +94,22 @@ flutter build windows --release
 
 ```powershell
 # 便携 zip（Mode 2）
-.\build_windows.ps1 -Version 3.0.0 -Mode 2 -NonInteractive
+.\build_windows.ps1 -Version 3.2.0 -Mode 2 -NonInteractive
 
 # 安装器（Mode 3，需本机已装 Inno Setup 6/7）
-.\build_windows.ps1 -Version 3.0.0 -Mode 3 -NonInteractive
+.\build_windows.ps1 -Version 3.2.0 -Mode 3 -NonInteractive
 ```
 
 使用已有 Release 产物，只生成便携 ZIP：
 
 ```powershell
-.\build_windows.ps1 -Version 3.0.0 -Mode 4 -NonInteractive
+.\build_windows.ps1 -Version 3.2.0 -Mode 4 -NonInteractive
 ```
 
 如果 PowerShell 禁止运行脚本，可只对当前命令绕过执行策略：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build_windows.ps1 -Version 3.0.0 -Mode 2 -NonInteractive
+powershell -ExecutionPolicy Bypass -File .\build_windows.ps1 -Version 3.2.0 -Mode 2 -NonInteractive
 ```
 
 `PORTABLE_BUILD` 由脚本按产物类型注入：便携为 `true`（数据在 exe 旁 `ListenaryData/`），安装版为 `false`（数据在 `%LOCALAPPDATA%\Listenary`）。

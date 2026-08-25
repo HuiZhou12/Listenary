@@ -12,6 +12,7 @@ import 'package:pure_music/lyric/ttml.dart' show Ttml;
 import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/lyric/lyric_stripper.dart';
 import 'package:pure_music/lyric/lyric_loader.dart';
+import 'package:pure_music/lyric/lyric_timing.dart' as lyric_timing;
 import 'package:pure_music/core/matcher.dart' hide logger;
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
@@ -126,16 +127,12 @@ int lyricLineSwitchStartMs({
   required int previousLineEndMs,
   required int nextLineStartMs,
   required bool preserveSingleWordTiming,
-}) {
-  var switchStart = max(
-    previousSwitchStartMs,
-    nextLineStartMs - lyricWordPreSwitchMs,
-  );
-  if (preserveSingleWordTiming) {
-    switchStart = max(switchStart, min(previousLineEndMs, nextLineStartMs));
-  }
-  return switchStart;
-}
+}) => lyric_timing.lyricLineSwitchStartMs(
+  previousSwitchStartMs: previousSwitchStartMs,
+  previousLineEndMs: previousLineEndMs,
+  nextLineStartMs: nextLineStartMs,
+  preserveSingleWordTiming: preserveSingleWordTiming,
+);
 
 int? lyricHighlightDeadlineMsForLine(Lyric lyric, int lineIndex) {
   final lines = lyric.lines;
@@ -189,6 +186,18 @@ int? lyricHighlightDeadlineMsForLine(Lyric lyric, int lineIndex) {
   }
   return null;
 }
+
+List<int> lyricLineRenderStartsFor(Lyric lyric) =>
+    lyric_timing.lyricLineRenderStartsFor(lyric);
+
+List<int> lyricLineRenderEndsFor(Lyric lyric) =>
+    lyric_timing.lyricLineRenderEndsFor(lyric);
+
+List<int> lyricLineSwitchStartsFor(Lyric lyric) =>
+    lyric_timing.lyricLineSwitchStartsFor(lyric);
+
+bool lyricLineIsFilteredBlank(LyricLine line) =>
+    lyric_timing.lyricLineIsFilteredBlank(line);
 
 class LyricCache {
   final LinkedHashMap<String, Lyric> _cache = LinkedHashMap();
@@ -1065,54 +1074,15 @@ class LyricService extends ChangeNotifier {
     return lo >= arr.length ? -1 : lo;
   }
 
-  List<int> _buildLineStarts(Lyric lyric) {
-    return lyric.lines.map(_lyricLineRenderStartMs).toList();
-  }
+  List<int> _buildLineStarts(Lyric lyric) => lyricLineRenderStartsFor(lyric);
 
-  List<int> _buildLineEnds(Lyric lyric) {
-    return lyric.lines
-        .map((line) => _lyricLineRenderEndMs(lyric, line))
-        .toList();
-  }
+  List<int> _buildLineEnds(Lyric lyric) => lyricLineRenderEndsFor(lyric);
 
   List<int> _buildLineSwitchStarts(
     Lyric lyric,
     List<int> renderStartMs,
     List<int> lineEndMs,
-  ) {
-    final switchStarts = List<int>.of(renderStartMs);
-    final groupByLine = <int, _ParallelLyricGroup>{};
-    for (final group in _buildParallelLyricGroups(
-      lyric: lyric,
-      lineStartMs: renderStartMs,
-      lineEndMs: lineEndMs,
-    )) {
-      for (final member in group.members) {
-        groupByLine[member] = group;
-      }
-    }
-    for (int i = 1; i < lyric.lines.length; i++) {
-      final line = lyric.lines[i];
-      final start = renderStartMs[i];
-      final previousGroup = groupByLine[i - 1];
-      if (previousGroup != null && identical(previousGroup, groupByLine[i])) {
-        continue;
-      }
-      if (line is SyncLyricLine && line.words.isNotEmpty) {
-        final previousLine = lyric.lines[i - 1];
-        switchStarts[i] = lyricLineSwitchStartMs(
-          previousSwitchStartMs: previousGroup?.endMs ?? switchStarts[i - 1],
-          previousLineEndMs: lineEndMs[i - 1],
-          nextLineStartMs: start,
-          preserveSingleWordTiming:
-              lyric is! Ttml &&
-              previousLine is SyncLyricLine &&
-              previousLine.words.length == 1,
-        );
-      }
-    }
-    return switchStarts;
-  }
+  ) => lyricLineSwitchStartsFor(lyric);
 
   void _setCurrLyric(Lyric lyric) {
     // 先还原歌词中被 * 屏蔽的脏话词，避免星号/连字符干扰元数据检测

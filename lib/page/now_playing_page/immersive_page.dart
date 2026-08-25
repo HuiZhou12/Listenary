@@ -72,6 +72,10 @@ class _ImmersivePortraitLayout extends StatelessWidget {
                   },
                   blendMode: BlendMode.dstIn,
                   child: const ActiveNowPlayingLyricRegion(
+                    showControls: false,
+                    centerVertically: false,
+                    currentLineAlignment: 0.10,
+                    enableEdgeSpacer: true,
                     localChild: VerticalLyricView(
                       showControls: false,
                       enableSeekOnTap: true,
@@ -514,6 +518,10 @@ class _ImmersiveLandscapeLayout extends StatelessWidget {
                           Padding(
                             padding: EdgeInsets.only(right: 8.0),
                             child: ActiveNowPlayingLyricRegion(
+                              showControls: false,
+                              centerVertically: true,
+                              currentLineAlignment: 0.45,
+                              enableEdgeSpacer: true,
                               localChild: VerticalLyricView(
                                 showControls: false,
                                 enableSeekOnTap: false,

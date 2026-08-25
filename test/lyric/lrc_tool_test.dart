@@ -6,6 +6,24 @@ import 'package:pure_music/services/online_lyric/models/lyric_entry.dart';
 import 'package:pure_music/services/online_lyric/parsers/lrc_tool.dart';
 
 void main() {
+  test('recognizes a short enhanced LRC response', () {
+    final lyric = LrcTool.parse('[00:01.000] <00:01.000>Hi<00:01.300>')!;
+
+    expect(lyric.hasWordByWord, isTrue);
+    expect(lyric.lines.single.words, isNotNull);
+    expect(lyric.lines.single.words!.single.content, 'Hi');
+  });
+
+  test('clamps offset timestamps crossing zero', () {
+    final lyric = LrcTool.parse(
+      '[00:00.100]early\n[00:01.000]later',
+      offset: const Duration(milliseconds: -500),
+    )!;
+
+    expect(lyric.lines.first.start, Duration.zero);
+    expect(lyric.lines[1].start, const Duration(milliseconds: 500));
+  });
+
   test('removes standalone QRC timing markers from romanization', () {
     final lyric = LrcTool.parse(
       '[52000,3000]もっと釣られて踊れるように(52000,3000)',
@@ -87,8 +105,9 @@ void main() {
     expect(remain.romanization, 're ma in');
   });
 
-  test('keeps embedded KRC translations and romanization on their source line',
-      () {
+  test(
+    'keeps embedded KRC translations and romanization on their source line',
+    () {
       final language = base64Encode(
         utf8.encode(
           jsonEncode({
@@ -142,9 +161,10 @@ void main() {
 
   test('applies the [offset:] tag like the local parser', () {
     const base = '[00:10.00]line one\n[00:20.00]line two';
-    int lineOneStart(ParsedLyricResult? r) =>
-        r!.lines.firstWhere((e) => e.content == 'line one').start
-            .inMilliseconds;
+    int lineOneStart(ParsedLyricResult? r) => r!.lines
+        .firstWhere((e) => e.content == 'line one')
+        .start
+        .inMilliseconds;
 
     final noTag = LrcTool.parse('[ti:test]\n[ar:test]\n$base');
     expect(lineOneStart(noTag), 10000);

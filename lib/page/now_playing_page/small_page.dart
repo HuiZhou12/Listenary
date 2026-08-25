@@ -25,10 +25,10 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
   ];
   late var views =
       switch (AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode) {
-    NowPlayingViewMode.onlyMain => viewOnlyMain,
-    NowPlayingViewMode.withLyric => viewWithLyric,
-    NowPlayingViewMode.withPlaylist => viewWithPlaylist,
-  };
+        NowPlayingViewMode.onlyMain => viewOnlyMain,
+        NowPlayingViewMode.withLyric => viewWithLyric,
+        NowPlayingViewMode.withPlaylist => viewWithPlaylist,
+      };
   NowPlayingViewMode? _savingViewMode;
 
   IconData viewSwitchIcon(NowPlayingViewMode viewMode) {
@@ -92,12 +92,14 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                     switchOutCurve: MotionCurve.standard,
                     child: switch (views[1]) {
                       NowPlayingViewMode.onlyMain => const Center(
-                          child: _NowPlayingInfo(
-                            usePortraitCoverSize: true,
-                          ),
-                        ),
+                        child: _NowPlayingInfo(usePortraitCoverSize: true),
+                      ),
                       NowPlayingViewMode.withLyric =>
                         ActiveNowPlayingLyricRegion(
+                          showControls: true,
+                          centerVertically: false,
+                          currentLineAlignment: 0.3,
+                          enableEdgeSpacer: true,
                           localChild: Padding(
                             // 负 padding 抵消歌词行内部 12px 水平 padding，让歌词贴近切换按钮
                             padding: const EdgeInsets.symmetric(
@@ -322,8 +324,9 @@ class _NowPlayingSmallViewSwitchState
               child: InkWell(
                 borderRadius: AppRadius.mdCircular,
                 hoverColor: scheme.onSecondaryContainer.withValues(alpha: 0.02),
-                highlightColor:
-                    scheme.onSecondaryContainer.withValues(alpha: 0.04),
+                highlightColor: scheme.onSecondaryContainer.withValues(
+                  alpha: 0.04,
+                ),
                 splashColor: Colors.transparent,
                 onTap: widget.enabled ? widget.onTap : null,
                 onHover: (hasEntered) {
@@ -347,7 +350,7 @@ class _NowPlayingSmallViewSwitchState
                           color: widget.enabled
                               ? (useMonet ? scheme.primary : scheme.onSurface)
                               : (useMonet ? scheme.primary : scheme.onSurface)
-                                  .withValues(alpha: 0.38),
+                                    .withValues(alpha: 0.38),
                         ),
                 ),
               ),

@@ -80,7 +80,7 @@ void main() {
 
     tearDown(() => controller.dispose());
 
-    test('playing samples immediately and keeps one one-second ticker', () {
+    test('playing samples immediately and keeps one 50ms ticker', () {
       positions.addAll([
         const Duration(seconds: 2),
         const Duration(seconds: 3),
@@ -99,7 +99,10 @@ void main() {
 
       expect(controller.value.position, const Duration(seconds: 2));
       expect(tickerFactory.activeCount, 1);
-      expect(tickerFactory.created.single.interval, const Duration(seconds: 1));
+      expect(
+        tickerFactory.created.single.interval,
+        const Duration(milliseconds: 50),
+      );
 
       tickerFactory.tickActive();
       expect(controller.value.position, const Duration(seconds: 3));
@@ -130,52 +133,61 @@ void main() {
       expect(tickerFactory.created, hasLength(1));
     });
 
-    test('projected position clamps to duration and keeps unknown explicit', () {
-      positions.add(const Duration(milliseconds: 9500));
-      controller.synchronize(
-        revision: 1,
-        state: PlaybackBackendState.playing,
-        duration: const Duration(seconds: 10),
-      );
-      now = const Duration(seconds: 2);
+    test(
+      'projected position clamps to duration and keeps unknown explicit',
+      () {
+        positions.add(const Duration(milliseconds: 9500));
+        controller.synchronize(
+          revision: 1,
+          state: PlaybackBackendState.playing,
+          duration: const Duration(seconds: 10),
+        );
+        now = const Duration(seconds: 2);
 
-      expect(
-        controller.projectedSnapshot.position,
-        const Duration(seconds: 10),
-      );
+        expect(
+          controller.projectedSnapshot.position,
+          const Duration(seconds: 10),
+        );
 
-      controller.synchronize(
-        revision: 2,
-        state: PlaybackBackendState.opening,
-        duration: Duration.zero,
-      );
-      expect(controller.projectedSnapshot.duration, isNull);
-      expect(controller.projectedSnapshot.progress, isNull);
-    });
+        controller.synchronize(
+          revision: 2,
+          state: PlaybackBackendState.opening,
+          duration: Duration.zero,
+        );
+        expect(controller.projectedSnapshot.duration, isNull);
+        expect(controller.projectedSnapshot.progress, isNull);
+      },
+    );
 
-    test('metadata-only duration update preserves the interpolation anchor', () {
-      positions.add(const Duration(seconds: 2));
-      controller.synchronize(
-        revision: 1,
-        state: PlaybackBackendState.playing,
-        duration: const Duration(seconds: 10),
-      );
-      now = const Duration(milliseconds: 500);
+    test(
+      'metadata-only duration update preserves the interpolation anchor',
+      () {
+        positions.add(const Duration(seconds: 2));
+        controller.synchronize(
+          revision: 1,
+          state: PlaybackBackendState.playing,
+          duration: const Duration(seconds: 10),
+        );
+        now = const Duration(milliseconds: 500);
 
-      controller.synchronize(
-        revision: 1,
-        state: PlaybackBackendState.playing,
-        duration: const Duration(seconds: 20),
-      );
-      now = const Duration(seconds: 1);
+        controller.synchronize(
+          revision: 1,
+          state: PlaybackBackendState.playing,
+          duration: const Duration(seconds: 20),
+        );
+        now = const Duration(seconds: 1);
 
-      expect(controller.projectedSnapshot.position, const Duration(seconds: 3));
-      expect(
-        controller.projectedSnapshot.duration,
-        const Duration(seconds: 20),
-      );
-      expect(positions, isEmpty);
-    });
+        expect(
+          controller.projectedSnapshot.position,
+          const Duration(seconds: 3),
+        );
+        expect(
+          controller.projectedSnapshot.duration,
+          const Duration(seconds: 20),
+        );
+        expect(positions, isEmpty);
+      },
+    );
 
     test('paused stalled and completed sample once then freeze', () {
       positions.addAll([
