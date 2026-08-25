@@ -966,7 +966,6 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                                 : () => editPlaylist(context, playlist),
                             icon: const Icon(Symbols.edit),
                           ),
-                          const SizedBox(width: 8.0),
                           IconButton(
                             tooltip: '删除',
                             onPressed: isBusy

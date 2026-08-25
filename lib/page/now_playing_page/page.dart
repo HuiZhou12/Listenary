@@ -712,6 +712,8 @@ class _RemoteQualityButton extends StatelessWidget {
     final isRemote = context.select<ActivePlaybackSession, bool>(
       (value) => value.value.source == ActivePlaybackSessionSource.remote,
     );
+    // 音质切换仅对在线会话有意义，本地播放时直接隐藏该按钮。
+    if (!isRemote) return const SizedBox.shrink();
     final currentLevel = session.requestedQuality;
     MusicQuality? current;
     for (final quality in MusicQuality.values) {
