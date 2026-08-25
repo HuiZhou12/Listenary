@@ -5,6 +5,7 @@ import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/page/now_playing_page/component/active_lyric_region.dart';
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_widget.dart';
+import 'package:pure_music/page/now_playing_page/component/remote_vertical_lyric_view.dart';
 import 'package:pure_music/page/now_playing_page/page.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/playback_source.dart';
@@ -63,13 +64,25 @@ void main() {
         ],
         child: const MaterialApp(
           home: ActiveNowPlayingLyricRegion(
+            showControls: true,
+            centerVertically: false,
+            currentLineAlignment: 0.2,
+            enableEdgeSpacer: true,
             localChild: Text('local lyric must stay hidden'),
           ),
         ),
       ),
     );
-    await tester.pump();
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final remoteView = tester.widget<RemoteVerticalLyricView>(
+      find.byType(RemoteVerticalLyricView),
+    );
+    expect(remoteView.showControls, isTrue);
+    expect(remoteView.centerVertically, isFalse);
+    expect(remoteView.currentLineAlignment, 0.2);
+    expect(remoteView.enableEdgeSpacer, isTrue);
 
     final renderedLine = tester.widget<LyricsLineWidget>(
       find.byType(LyricsLineWidget),

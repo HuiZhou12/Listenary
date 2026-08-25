@@ -73,7 +73,7 @@ final class RemotePlaybackTimelineController
     extends ValueNotifier<RemotePlaybackTimelineSnapshot> {
   RemotePlaybackTimelineController({
     required Duration? Function() readPosition,
-    this.sampleInterval = const Duration(seconds: 1),
+    this.sampleInterval = const Duration(milliseconds: 50),
     RemotePlaybackTimelineTickerFactory tickerFactory =
         _createRemotePlaybackTimelineTicker,
     RemotePlaybackTimelineClock? clock,
@@ -200,10 +200,7 @@ final class RemotePlaybackTimelineController
     _publish(position: position, updateSampleTime: true);
   }
 
-  void _publish({
-    required Duration? position,
-    required bool updateSampleTime,
-  }) {
+  void _publish({required Duration? position, required bool updateSampleTime}) {
     if (updateSampleTime) _positionSampleTime = _clock();
     _setValue(
       RemotePlaybackTimelineSnapshot.normalized(

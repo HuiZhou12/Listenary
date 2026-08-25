@@ -26,6 +26,7 @@ class LyricsLineWidget extends StatefulWidget {
     required this.opacity,
     this.distance,
     this.positionMs,
+    this.usesExternalPosition = false,
     this.isHighlightActive = false,
     this.accelerateTailHighlight = false,
     this.lineOffsetY = 0.0,
@@ -45,6 +46,7 @@ class LyricsLineWidget extends StatefulWidget {
   final double opacity;
   final int? distance;
   final double? positionMs;
+  final bool usesExternalPosition;
   final bool isHighlightActive;
   final bool accelerateTailHighlight;
   final double lineOffsetY;
@@ -242,6 +244,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   }
 
   bool get _needsProgressTicker =>
+      !widget.usesExternalPosition &&
       (widget.distance == 0 || widget.isHighlightActive) &&
       widget.line is SyncLyricLine &&
       (widget.line as SyncLyricLine).words.isNotEmpty &&

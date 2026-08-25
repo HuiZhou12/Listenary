@@ -1,14 +1,7 @@
+import 'dart:math' show max;
+
 /// 歌词格式类型
-enum LyricFormat {
-  lrc,
-  enhanced,
-  wordByWord,
-  yrc,
-  qrc,
-  krc,
-  ttml,
-  unknown,
-}
+enum LyricFormat { lrc, enhanced, wordByWord, yrc, qrc, krc, ttml, unknown }
 
 /// 逐字条目
 class WordEntry {
@@ -98,37 +91,39 @@ class ParsedLyricResult {
       lines: lines.map((line) {
         return LyricEntry(
           start: Duration(
-            milliseconds: (line.start.inMilliseconds + offset.inMilliseconds)
-                .clamp(0, line.start.inMilliseconds + offset.inMilliseconds),
+            milliseconds: max(
+              0,
+              line.start.inMilliseconds + offset.inMilliseconds,
+            ),
           ),
           nextTime: Duration(
-            milliseconds: (line.nextTime.inMilliseconds +
-                    offset.inMilliseconds)
-                .clamp(0, line.nextTime.inMilliseconds + offset.inMilliseconds),
+            milliseconds: max(
+              0,
+              line.nextTime.inMilliseconds + offset.inMilliseconds,
+            ),
           ),
           content: line.content,
           translation: line.translation,
           romanization: line.romanization,
           words: line.words
-              ?.map((w) => WordEntry(
-                    start: Duration(
-                      milliseconds: (w.start.inMilliseconds +
-                              offset.inMilliseconds)
-                          .clamp(
-                              0,
-                              w.start.inMilliseconds + offset.inMilliseconds),
+              ?.map(
+                (w) => WordEntry(
+                  start: Duration(
+                    milliseconds: max(
+                      0,
+                      w.start.inMilliseconds + offset.inMilliseconds,
                     ),
-                    length: w.length,
-                    content: w.content,
-                    nextTime: Duration(
-                      milliseconds: (w.nextTime.inMilliseconds +
-                              offset.inMilliseconds)
-                          .clamp(
-                              0,
-                              w.nextTime.inMilliseconds +
-                                  offset.inMilliseconds),
+                  ),
+                  length: w.length,
+                  content: w.content,
+                  nextTime: Duration(
+                    milliseconds: max(
+                      0,
+                      w.nextTime.inMilliseconds + offset.inMilliseconds,
                     ),
-                  ))
+                  ),
+                ),
+              )
               .toList(),
         );
       }).toList(),

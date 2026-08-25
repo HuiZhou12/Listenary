@@ -6,20 +6,26 @@ import 'package:pure_music/lyric/metadata_detector.dart';
 /// 统一歌词解析工具
 /// 综合 lrc/yrc/qrc/krc 解析器
 class LrcTool {
-  static final _lrcLineRegex =
-      RegExp(r'\[(\d{1,3}):(\d{2}\.\d{2,3})](.*?)(\r?\n|$)');
+  static final _lrcLineRegex = RegExp(
+    r'\[(\d{1,3}):(\d{2}\.\d{2,3})](.*?)(\r?\n|$)',
+  );
   static final _karaOkLineRegex = RegExp(r'\[(\d+),(\d+)](.*?)(\r?\n|$)');
-  static final _yrcWordRegex =
-      RegExp(r'\((\d+),(\d+),\d+\)[^(]*?((?:.(?!\(\d+,))*.)');
-  static final _qrcWordRegex =
-      RegExp(r'[^(]*?((?:.(?!\(\d+,))*.)\((\d+),(\d+)\)');
+  static final _yrcWordRegex = RegExp(
+    r'\((\d+),(\d+),\d+\)[^(]*?((?:.(?!\(\d+,))*.)',
+  );
+  static final _qrcWordRegex = RegExp(
+    r'[^(]*?((?:.(?!\(\d+,))*.)\((\d+),(\d+)\)',
+  );
   static final _qrcTimingMarkerRegex = RegExp(r'\(\d+,\d+\)');
-  static final _krcWordRegex =
-      RegExp(r'<(\d+),(\d+),\d+>[^<]*?((?:.(?!<\d+,))*.)');
-  static final _enhancedLrcWordRegex =
-      RegExp(r'<(\d{1,3}):(\d{2}\.\d{2,3})>([^<]*)');
-  static final _wordByWordLrcWordRegex =
-      RegExp(r'\[(\d{1,3}):(\d{2}\.\d{2,3})]([^\[]*)');
+  static final _krcWordRegex = RegExp(
+    r'<(\d+),(\d+),\d+>[^<]*?((?:.(?!<\d+,))*.)',
+  );
+  static final _enhancedLrcWordRegex = RegExp(
+    r'<(\d{1,3}):(\d{2}\.\d{2,3})>([^<]*)',
+  );
+  static final _wordByWordLrcWordRegex = RegExp(
+    r'\[(\d{1,3}):(\d{2}\.\d{2,3})]([^\[]*)',
+  );
 
   static double _parseTime(String m, String s) {
     final minutes = int.tryParse(m) ?? 0;
@@ -109,13 +115,13 @@ class LrcTool {
 
   static LyricFormat _detectFormat(String lrcContent) {
     final lines = lrcContent.trim();
-    // enhanced 检测：统计 <> 时间戳数量，>=5 个即视为逐字（enhanced）格式
-    // 避免用 {3} 贪婪回溯——简单计数比复杂正则可靠
-    if (_hasEnhancedTags.allMatches(lines).length >= 5) {
+    // 单个合法逐字时间标签即可确定增强歌词格式。
+    if (_hasEnhancedTags.hasMatch(lines)) {
       return LyricFormat.enhanced;
     }
-    if (RegExp(r'\[\d{2}:\d{2}\.\d{2,3}\].*\[\d{2}:\d{2}\.\d{2,3}\]')
-        .hasMatch(lines)) {
+    if (RegExp(
+      r'\[\d{2}:\d{2}\.\d{2,3}\].*\[\d{2}:\d{2}\.\d{2,3}\]',
+    ).hasMatch(lines)) {
       return LyricFormat.wordByWord;
     }
 
@@ -166,13 +172,18 @@ class LrcTool {
     final entries = <LyricEntry>[];
     for (final match in _lrcLineRegex.allMatches(text)) {
       final startSec = _parseTime(match.group(1)!, match.group(2)!);
-      final lyric =
-          match.group(3)!.replaceAll(reg1, '').replaceAll(reg2, '').trim();
+      final lyric = match
+          .group(3)!
+          .replaceAll(reg1, '')
+          .replaceAll(reg2, '')
+          .trim();
       if (lyric.isEmpty || lyric == '//') continue;
-      entries.add(LyricEntry(
-        start: Duration(milliseconds: (startSec * 1000).round()),
-        content: lyric,
-      ));
+      entries.add(
+        LyricEntry(
+          start: Duration(milliseconds: (startSec * 1000).round()),
+          content: lyric,
+        ),
+      );
     }
     return entries;
   }
@@ -182,8 +193,9 @@ class LrcTool {
     for (final m in _lrcLineRegex.allMatches(text)) {
       final start = _parseTime(m.group(1)!, m.group(2)!);
       final lyric = m.group(3)!.trim();
-      final words =
-          _parseWordEntries(lyric, _enhancedLrcWordRegex, (wordMatch) {
+      final words = _parseWordEntries(lyric, _enhancedLrcWordRegex, (
+        wordMatch,
+      ) {
         final startSec = _parseTime(wordMatch.group(1)!, wordMatch.group(2)!);
         return WordEntry(
           start: Duration(milliseconds: (startSec * 1000).round()),
@@ -193,11 +205,13 @@ class LrcTool {
       });
       final content = words.map((w) => w.content).join();
       if (content.isEmpty) continue;
-      segments.add(LyricEntry(
-        start: Duration(milliseconds: (start * 1000).round()),
-        content: content,
-        words: words,
-      ));
+      segments.add(
+        LyricEntry(
+          start: Duration(milliseconds: (start * 1000).round()),
+          content: content,
+          words: words,
+        ),
+      );
     }
     return segments;
   }
@@ -207,8 +221,9 @@ class LrcTool {
     for (final m in _lrcLineRegex.allMatches(text)) {
       final start = _parseTime(m.group(1)!, m.group(2)!);
       final lyric = m.group(3)!.trim();
-      final words =
-          _parseWordEntries(lyric, _wordByWordLrcWordRegex, (wordMatch) {
+      final words = _parseWordEntries(lyric, _wordByWordLrcWordRegex, (
+        wordMatch,
+      ) {
         final startSec = _parseTime(wordMatch.group(1)!, wordMatch.group(2)!);
         return WordEntry(
           start: Duration(milliseconds: (startSec * 1000).round()),
@@ -218,11 +233,13 @@ class LrcTool {
       });
       final content = words.map((w) => w.content).join();
       if (content.isEmpty) continue;
-      segments.add(LyricEntry(
-        start: Duration(milliseconds: (start * 1000).round()),
-        content: content,
-        words: words,
-      ));
+      segments.add(
+        LyricEntry(
+          start: Duration(milliseconds: (start * 1000).round()),
+          content: content,
+          words: words,
+        ),
+      );
     }
     return segments;
   }
@@ -236,18 +253,27 @@ class LrcTool {
       final (regex, startIdx, durIdx, textIdx) = _getKaraOkConfig(format);
       if (regex == null) continue;
 
-      final words = _parseKaraOkWords(content, regex, startIdx, durIdx, textIdx,
-          format: format,
-          lineStartMs:
-              format == LyricFormat.krc ? (int.tryParse(m.group(1)!) ?? 0) : 0);
+      final words = _parseKaraOkWords(
+        content,
+        regex,
+        startIdx,
+        durIdx,
+        textIdx,
+        format: format,
+        lineStartMs: format == LyricFormat.krc
+            ? (int.tryParse(m.group(1)!) ?? 0)
+            : 0,
+      );
       final lineContent = words.map((w) => w.content).join();
       if (lineContent.isEmpty) continue;
 
-      segments.add(LyricEntry(
-        start: Duration(milliseconds: startMs),
-        content: lineContent,
-        words: words,
-      ));
+      segments.add(
+        LyricEntry(
+          start: Duration(milliseconds: startMs),
+          content: lineContent,
+          words: words,
+        ),
+      );
     }
     return segments;
   }
@@ -265,8 +291,9 @@ class LrcTool {
     for (final m in wordRegex.allMatches(content)) {
       final rawContent = m.group(textIdx)?.replaceAll('\n', '') ?? '';
       final curr = WordEntry(
-        start:
-            Duration(milliseconds: int.parse(m.group(startIdx)!) + lineStartMs),
+        start: Duration(
+          milliseconds: int.parse(m.group(startIdx)!) + lineStartMs,
+        ),
         length: Duration(milliseconds: int.parse(m.group(durIdx)!)),
         content: format == LyricFormat.qrc
             ? rawContent.replaceAll(_qrcTimingMarkerRegex, '')
@@ -310,6 +337,7 @@ class LrcTool {
     for (final m in regex.allMatches(content)) {
       words.add(builder(m));
     }
+    words.removeWhere((word) => word.content.isEmpty);
     if (words.length > 1) {
       for (var i = 0; i < words.length - 1; i++) {
         words[i].length = Duration(
@@ -334,7 +362,9 @@ class LrcTool {
 
   /// 时间窗口对齐：翻译行 → 原文行（标准 LRC 格式；KRC/QRC/YRC 走 _mergeTimedSubtitle）。
   static ParsedLyricResult _mergeTranslationText(
-      ParsedLyricResult main, String? transText) {
+    ParsedLyricResult main,
+    String? transText,
+  ) {
     if (transText == null || transText.isEmpty) return main;
     final transLines = _parseLrc(transText);
     if (transLines.isEmpty) {
@@ -361,7 +391,9 @@ class LrcTool {
 
   /// 时间窗口对齐：罗马音行 → 原文行（标准 LRC 格式；KRC/QRC/YRC 走 _mergeTimedSubtitle）。
   static ParsedLyricResult _mergeRomanizationText(
-      ParsedLyricResult main, String? romaText) {
+    ParsedLyricResult main,
+    String? romaText,
+  ) {
     if (romaText == null || romaText.isEmpty) return main;
     final romaLines = _parseLrc(romaText);
     if (romaLines.isEmpty) {
@@ -388,14 +420,19 @@ class LrcTool {
 
   /// 按最近时间戳匹配翻译或罗马音，同时间戳的主行共享匹配结果。
   static ParsedLyricResult _mergeTimedSubtitle(
-      ParsedLyricResult main, List<LyricEntry> subLines,
-      {required bool isRomanization}) {
+    ParsedLyricResult main,
+    List<LyricEntry> subLines, {
+    required bool isRomanization,
+  }) {
     if (main.lines.isEmpty || subLines.isEmpty) return main;
 
-    final sorted = subLines
-        .where((e) => e.content.trim().isNotEmpty && e.content.trim() != '//')
-        .toList()
-      ..sort((a, b) => a.start.compareTo(b.start));
+    final sorted =
+        subLines
+            .where(
+              (e) => e.content.trim().isNotEmpty && e.content.trim() != '//',
+            )
+            .toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
     if (sorted.isEmpty) return main;
 
     final mainGroups = <int, List<LyricEntry>>{};
@@ -453,8 +490,10 @@ class LrcTool {
 
   /// 纯文本回退：两边各自过滤（主行去元数据，翻译去空行），然后按索引匹配。
   static ParsedLyricResult _mergePlainText(
-      ParsedLyricResult main, String plainText,
-      {required bool isRomanization}) {
+    ParsedLyricResult main,
+    String plainText, {
+    required bool isRomanization,
+  }) {
     final plainLines = plainText.split('\n').map((l) => l.trim()).toList();
     if (plainLines.isEmpty) return main;
     // 翻译侧过滤空行/元数据
@@ -493,11 +532,13 @@ class LrcTool {
 
     // ── 前奏空白行（第一句歌词开始前有时长）──
     if (result.lines.first.start > const Duration(seconds: 3)) {
-      newLines.add(LyricEntry(
-        start: Duration.zero,
-        nextTime: result.lines.first.start,
-        content: '',
-      ));
+      newLines.add(
+        LyricEntry(
+          start: Duration.zero,
+          nextTime: result.lines.first.start,
+          content: '',
+        ),
+      );
     }
     newLines.add(result.lines.first);
 
@@ -512,11 +553,13 @@ class LrcTool {
       if (gap > 5000) {
         final blankStart = Duration(milliseconds: prevEndMs);
         final blankDuration = Duration(milliseconds: gap);
-        newLines.add(LyricEntry(
-          start: blankStart,
-          nextTime: blankStart + blankDuration,
-          content: '',
-        ));
+        newLines.add(
+          LyricEntry(
+            start: blankStart,
+            nextTime: blankStart + blankDuration,
+            content: '',
+          ),
+        );
       }
       newLines.add(curr);
     }
