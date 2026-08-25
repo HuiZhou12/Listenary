@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Windows-blue?style=flat-square" alt="Platform">
-  <img src="https://img.shields.io/badge/Version-3.2.0-blue?style=flat-square" alt="Version 3.2.0">
+  <img src="https://img.shields.io/badge/Version-3.1.4-blue?style=flat-square" alt="Version 3.2.0">
   <img src="https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square" alt="License GPL-3.0">
 </p>
 
