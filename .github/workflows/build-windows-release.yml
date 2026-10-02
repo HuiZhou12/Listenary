@@ -110,13 +110,16 @@ jobs:
           flutter --version
           dart --version
 
-      - name: Build portable package (compile + zip)
+      - name: Build portable package (compile with PORTABLE_BUILD=true + zip)
         shell: pwsh
         run: .\build_windows.ps1 -Version "${{ steps.version.outputs.version }}" -Mode 2 -NonInteractive
 
-      - name: Build installer (reuse the release build)
+      # 必须用 Mode 3 重新编译，不能用 Mode 4/5 复用便携版产物：
+      # PORTABLE_BUILD 是编译期的 --dart-define，复用会让安装版按便携版读写数据
+      # （数据落到安装目录下的 ListenaryData，而不是 %LOCALAPPDATA%\Listenary）。
+      - name: Build installer (recompile with PORTABLE_BUILD=false)
         shell: pwsh
-        run: .\build_windows.ps1 -Version "${{ steps.version.outputs.version }}" -Mode 5 -NonInteractive
+        run: .\build_windows.ps1 -Version "${{ steps.version.outputs.version }}" -Mode 3 -NonInteractive
 
       - name: Upload build artifacts
         # 即使后面的步骤失败，也把已经打出来的产物传上来（例如安装器失败但便携包是好的）

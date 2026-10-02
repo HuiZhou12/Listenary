@@ -90,6 +90,11 @@ flutter build windows --release
 | 4 | 跳过编译，打包已有产物为便携 zip |
 | 5 | 跳过编译，用已有产物制作安装器 |
 
+> **Mode 4/5 的坑**：这两个模式**不重新编译**，直接复用 `build\windows\x64\runner\Release` 里的产物。
+> `PORTABLE_BUILD` 是编译期的 `--dart-define`（便携版为 `true`、安装版为 `false`），因此复用产物**只在该产物类型与目标一致时才正确**：
+> 拿便携版产物去出安装器，装好的程序会按便携版规则读写数据 —— 数据落到安装目录下的 `ListenaryData`，而不是 `%LOCALAPPDATA%\Listenary`，
+> 表现为"新版本读不到老用户数据"。要同时出两种产物时，便携 zip 用 `-Mode 2`、安装器用 `-Mode 3`，让它们各自编译。
+
 非交互示例：
 
 ```powershell
