@@ -90,14 +90,23 @@ todo/
 *.zip
 
 # Local docs
-docs/
 !page/docs/
 output/
 output/data/
 release/
 
+# AI 协作层：本机规则与本机进度，不进入版本控制。
+# 这些文件描述的是"这台机器此刻的状态"，他人 clone 后读到的是过期或错误的事实，
+# 会让对方的 AI 误判工作区、优先任务和阻塞项；因此按作用域排除，而不是出于保密。
+skills/
+docs/AI_PROGRESS.md
+docs/AI_PROGRESS_HISTORY.md
+docs/specs/
+docs/dev/
+docs/history/
+
 # Generated / Local only
-AGENTS.md
+CLAUDE.md
 skills-lock.json
 .agents/*
 !.agents/skills/
