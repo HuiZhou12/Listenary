@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Windows-blue?style=flat-square" alt="Platform">
-  <img src="https://img.shields.io/badge/Version-3.1.4-blue?style=flat-square" alt="Version 3.2.0">
+  <img src="https://img.shields.io/badge/Version-3.1.5-blue?style=flat-square" alt="Version 3.1.5">
   <img src="https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square" alt="License GPL-3.0">
 </p>
 
@@ -20,11 +20,12 @@ Listenary 管理和播放本地音乐，在此基础上提供可选的在线搜�
 
 ## 功能
 
-- 本地曲库：歌曲、艺术家、专辑、文件夹、歌单、全局搜索与播放统计
-- 在线音乐：搜索、在线播放、订阅歌单、个人在线歌单、在线历史，以及独立的远程播放队列；在线歌词与本地歌词共用播放页样式和动画
-- 歌词：YRC、QRC、KRC、TTML、LRC，本地、内嵌与多个在线来源，支持原文、翻译和罗马音
-- 音频：BASS 播放、10 段 EQ、音调与速度、ReplayGain、WASAPI 独占
-- 界面：Material 3、封面取色、流动渐变与流光背景、竖屏/横屏/沉浸布局
+- 本地曲库：歌曲、艺术家、专辑、文件夹、歌单与播放统计，支持全局搜索和多种排序方式
+- 在线音乐：在线搜索、在线播放、订阅歌单、个人在线歌单与在线历史，使用独立的在线播放队列
+- 播放控制：顺序、单曲循环、列表循环与随机四种播放模式，可选默认音质
+- 歌词：支持 YRC、QRC、KRC、TTML、LRC 等格式，本地、内嵌与多个在线来源，包含原文、翻译和罗马音
+- 外观：Material 3 与封面取色，流动渐变、流光背景，竖屏、横屏与沉浸布局，顶栏歌词可调对齐与换行动画
+- 音频：BASS 播放、10 段均衡器、音调与速度调节、ReplayGain、WASAPI 独占
 - 系统集成：SMTC、全局快捷键、单实例、窗口状态记忆和桌面歌词
 
 
