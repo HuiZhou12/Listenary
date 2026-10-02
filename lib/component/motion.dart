@@ -5,8 +5,13 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
-const _listItemEntryDistance = 12.0;
-const _listItemEntrySpring = SpringDescription(
+/// 在线播放时「迷你播放条封面 → 播放页封面」的 Hero tag。
+///
+/// 本地播放用曲目 `path` 作 tag；在线曲目没有本地路径，用这个固定 tag 配对，
+/// 让在线播放也能有和本地一样的封面飞入/飞出动画。
+const remoteCoverHeroTag = 'listenary.remote-cover';
+
+const _listItemEntryDistance = 12.0;const _listItemEntrySpring = SpringDescription(
   mass: 1,
   stiffness: 625,
   damping: 50,

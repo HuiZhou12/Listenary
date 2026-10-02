@@ -9,6 +9,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/route_visibility.dart';
+import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/lyric_timing.dart';
 import 'package:pure_music/page/now_playing_page/component/collapsible_lyric_controls.dart';
@@ -73,6 +74,13 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
   int _jumpTriggerId = 0;
   double _jumpDeltaY = 0;
   int _staggerVisibleStartIndex = 0;
+  /// 首次进入 / 回到播放页（以及切歌后歌词刚就绪）时的定位标志。
+  /// 对照本地视图 `vertical_lyric_view.dart` 的 `_needsInitialScroll`：
+  /// 这段时间内的定位一律零时长跳变，不能播滚动动画，
+  /// 否则会先动画到一个估算位置、再动画矫正一次，肉眼可见地「重新对准」。
+  bool _needsInitialScroll = false;
+  Lyric? _renderLineLyric;
+  final Map<int, LyricLine> _renderLines = {};
   late final ValueTransition<double> _scrollTransition;
   Ticker? _scrollTicker;
   bool _scrollTickerActive = false;
@@ -134,6 +142,9 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
     _resumeFollowTimer?.cancel();
     _resumeFollowTimer = null;
     _userScrollTracker.end();
+    // 回页定位一律零时长跳变（对照本地 `_syncWhenRouteVisible()` →
+    // `_syncToPlaybackPosition(duration: Duration.zero)`）。
+    _needsInitialScroll = true;
     setState(() {
       _jumpDeltaY = 0;
       _jumpTriggerId++;
@@ -160,9 +171,15 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
     _lastLineIndex = displayIndex;
     if (lyricChanged) {
       _lineKeys.clear();
+      // 换歌词/切歌：渲染行缓存随歌词一起失效（`_renderLineFor` 另有同源兜底判断）。
+      _renderLineLyric = snapshot.lyric;
+      _renderLines.clear();
       _jumpTriggerId = 0;
       _jumpDeltaY = 0;
       _staggerVisibleStartIndex = 0;
+      // 切歌后歌词刚就绪时列表是从头/旧位置重建的，直接跳到当前行
+      // （对照本地：换歌词走 `_syncToPlaybackPosition(duration: Duration.zero)`）。
+      _needsInitialScroll = true;
     } else if (lineChanged && previousLineIndex != null) {
       _jumpTriggerId++;
       _jumpDeltaY = ((displayIndex - previousLineIndex) * _estimatedItemExtent)
@@ -183,6 +200,8 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
         notification.dragDetails != null) {
       _resumeFollowTimer?.cancel();
       _resumeFollowTimer = null;
+      // 用户接手滚动后，后续跟随恢复走正常动画，不再用首次定位的跳变。
+      _needsInitialScroll = false;
       _setScrollState(
         _userScrollTracker.start() == LyricUserScrollPhase.started
             ? _RemoteLyricScrollState.userDragging
@@ -298,6 +317,9 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
   /// 回页/首次定位时当前行的行 widget 往往还没构建，`_lineKeys[index]` 取不到
   /// 精确滚动目标，只能退回到行高估算；而估算一旦与真实行高不符就会停在错误位置。
   /// 因此这里在后续帧里持续尝试，直到当前行已构建、能拿到精确 reveal 目标为止。
+  ///
+  /// 首次定位（[_needsInitialScroll]）期间 **一律零时长跳变**，不播滚动动画：
+  /// 对照本地 `_syncWhenRouteVisible()` → `_syncToPlaybackPosition(duration: Duration.zero)`。
   void _requestScrollToCurrent() {
     if (!mounted) return;
     _pendingScrollRetries = 0;
@@ -318,33 +340,50 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
         return;
       }
       final index = _displayIndex(snapshot);
-      // 该行本身不渲染（空白行没有行 widget），估算一次即可，不进入重试。
       final lines = lyric.lines;
       if (index < 0 ||
           index >= lines.length ||
           lyricLineIsFilteredBlank(lines[index])) {
+        // 该行本身不渲染（空白行没有行 widget），估算一次即可，不进入重试。
         _pendingScrollRetries = 0;
-        if (_scrollController.hasClients &&
-            _scrollState != _RemoteLyricScrollState.programScrolling) {
-          _scrollToCurrent();
+        if (!_scrollController.hasClients) {
+          _scheduleScrollRetry();
+          return;
         }
+        if (_needsInitialScroll ||
+            _scrollState != _RemoteLyricScrollState.programScrolling) {
+          _scrollToCurrent(immediate: _needsInitialScroll);
+        }
+        // 空白行永远不会构建出行 widget，精确目标不可得，首次定位到此为止。
+        _needsInitialScroll = false;
         return;
       }
       if (_revealOffsetForLine(index) != null) {
         // 当前行已构建：精确 reveal（已对齐时不会产生位移，幂等）。
+        // 首次定位用零时长直接跳到精确偏移，之后恢复播放中的平滑跟随。
         _pendingScrollRetries = 0;
-        _scrollToCurrent();
+        if (!_scrollController.hasClients) {
+          // 视图还没挂到滚动控制器上，下一帧再对齐，保持首次定位的跳变模式。
+          _scheduleScrollRetry();
+          return;
+        }
+        _scrollToCurrent(immediate: _needsInitialScroll);
+        _needsInitialScroll = false;
         return;
       }
-      // 当前行还没构建：先按已构建行实测出的目标滚过去，
-      // 等这次滚动结束、当前行进入构建范围后再精确对齐。
-      // （滚动动画进行中不重复发起，避免每帧重启动画；估算已到位也不重复发起。）
+      // 当前行还没构建：先按已构建行实测出的目标「引导」到大致位置，
+      // 让当前行进入 ListView 的构建范围，下一帧再对齐到精确偏移。
+      // 首次定位时这一步是零时长跳变，不会呈现为可见的滚动动画；
+      // 其余情况保持原有的动画滚动。
+      // （非首次定位时，滚动动画进行中不重复发起，避免每帧重启动画；
+      // 估算已到位也不重复发起。）
       if (_scrollController.hasClients &&
-          _scrollState != _RemoteLyricScrollState.programScrolling &&
+          (_needsInitialScroll ||
+              _scrollState != _RemoteLyricScrollState.programScrolling) &&
           (_estimatedScrollOffsetForLine(index) - _scrollController.offset)
                   .abs() >
               1.0) {
-        _scrollToCurrent();
+        _scrollToCurrent(immediate: _needsInitialScroll);
       }
       _scheduleScrollRetry();
     });
@@ -353,6 +392,8 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
   void _scheduleScrollRetry() {
     if (_pendingScrollRetries >= _maxPendingScrollRetries) {
       _pendingScrollRetries = 0;
+      // 重试用尽仍未拿到精确目标：放弃首次定位的跳变模式，交回正常跟随。
+      _needsInitialScroll = false;
       return;
     }
     _pendingScrollRetries++;
@@ -430,7 +471,13 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
     return target.clamp(position.minScrollExtent, position.maxScrollExtent);
   }
 
-  void _scrollToCurrent() {
+  /// 把视口对齐到当前行。
+  ///
+  /// [immediate] 为 true 时用零时长跳变（`_animateTo` 会在时长 ≤16ms 时直接 jump），
+  /// 用于首次进入 / 回到播放页 / 切歌后的定位；其余情况保持原有的 440~600ms 平滑跟随。
+  /// 目标行已构建时用 `getOffsetToReveal` 的精确偏移；未构建时退回行高估算
+  /// （估算只用于把当前行「引导」进构建范围，调用方会用 [immediate] 保证它不表现为动画）。
+  void _scrollToCurrent({bool immediate = false}) {
     if (!mounted || !_scrollController.hasClients) return;
     final snapshot = _controller?.value;
     if (snapshot == null) return;
@@ -439,9 +486,11 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
     if (lyric == null || lyric.lines.isEmpty) return;
 
     final distance = (index - (_lastLineIndex ?? index)).abs();
-    final duration = _scrollDurationForDistance(
-      (distance * _estimatedItemExtent).toDouble(),
-    );
+    final duration = immediate
+        ? Duration.zero
+        : _scrollDurationForDistance(
+            (distance * _estimatedItemExtent).toDouble(),
+          );
     _setScrollState(_RemoteLyricScrollState.programScrolling);
     final revealOffset = _revealOffsetForLine(index);
     if (revealOffset != null) {
@@ -463,6 +512,63 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
   void _seekToLine(LyricLine line) {
     if (!PlayService.instance.canSeekFromUi) return;
     PlayService.instance.seekFromUi(line.start.inMilliseconds / 1000.0);
+  }
+
+  /// 取某一行交给 [LyricsLineWidget] 的渲染对象。
+  ///
+  /// 在线歌词源只给行级时间戳时（普通 LRC → [LrcLine]），行内没有逐词时间，
+  /// painter 的 LRC 分支只会「整行直接点亮」，没有扫词推进；
+  /// 而本地对同类数据的做法是给整行合成了一个覆盖全行的单词
+  /// （见 `lyric_format.dart` 的 `_parseBasicLrc` 与 `matcher.dart` 的酷狗同步歌词分支），
+  /// 于是当前行会按行内进度逐字扫过高亮。
+  /// 这里对在线歌词做同样的事，让在线普通 LRC 与本地观感一致。
+  ///
+  /// 只替换交给行组件的**渲染对象**，不改动 `lyric.lines`：
+  /// 行号、原文/翻译/罗马音分组语义、逐行 seek 与行切换时间轴都不变。
+  /// 转换结果按行缓存，避免每帧新建对象导致行高缓存与 painter 反复失效。
+  LyricLine _renderLineFor(Lyric lyric, int index) {
+    if (!identical(_renderLineLyric, lyric)) {
+      _renderLineLyric = lyric;
+      _renderLines.clear();
+    }
+    final cached = _renderLines[index];
+    if (cached != null) return cached;
+    final converted =
+        _convertLrcLineForLineProgress(lyric, index) ?? lyric.lines[index];
+    _renderLines[index] = converted;
+    return converted;
+  }
+
+  /// 无逐词时间的普通 LRC 行 → 只有一个「整行单词」的同步行；不能安全转换时返回 null。
+  SyncLyricLine? _convertLrcLineForLineProgress(Lyric lyric, int index) {
+    final line = lyric.lines[index];
+    if (line is! LrcLine) return null;
+    // 元数据行有独立样式（painter 的 `isMetadata` 分支），保持原样。
+    if (line.isMetadata) return null;
+    final content = line.content;
+    if (content.isEmpty) return null;
+    // 多翻译用 ┃ 嵌在正文里，只有 LRC 绘制分支会拆开它，保持原样。
+    if (content.contains('\u2503')) return null;
+    var length = line.length;
+    if (length <= Duration.zero) {
+      // 行时长缺失时用后面的行起点兜底（与 LRC 解析器的行时长规则一致）。
+      for (var next = index + 1; next < lyric.lines.length; next++) {
+        final gap = lyric.lines[next].start - line.start;
+        if (gap > Duration.zero) {
+          length = gap;
+          break;
+        }
+      }
+    }
+    // 仍然拿不到正的行时长就不转换：单词时长为 0 时扫词进度会瞬间到 1，
+    // 观感和现在的整行点亮没有区别。
+    if (length <= Duration.zero) return null;
+    return SyncLyricLine(
+      line.start,
+      length,
+      [SyncLyricWord(line.start, length, content)],
+      line.translation,
+    )..romanLyric = line.romanLyric;
   }
 
   @override
@@ -639,11 +745,16 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
                                     key: ValueKey(
                                       'remote_lyric_line_${identityHashCode(lyric)}_$index',
                                     ),
-                                    line: line,
+                                    // 在线普通 LRC（无逐词时间）用「整行单词」渲染，
+                                    // 让当前行也有行内扫词推进，与本地观感一致。
+                                    line: _renderLineFor(lyric, index),
                                     opacity: opacity,
                                     distance: distance,
                                     positionMs: position.inMilliseconds
                                         .toDouble(),
+                                    // 在线播放位置来自远程时间线，不能用本地 BASS 位置，
+                                    // 因此保持外部位置（内部进度 ticker 关闭），
+                                    // 扫词由上层每 50ms 推进的快照位置驱动。
                                     usesExternalPosition: true,
                                     isHighlightActive: isGroupLine,
                                     accelerateTailHighlight: false,

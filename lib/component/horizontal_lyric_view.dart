@@ -64,89 +64,6 @@ class HorizontalLyricView extends StatelessWidget {
   }
 }
 
-Widget _buildTopBarLyricTextTransition({
-  required String currentContent,
-  required String previousContent,
-  required AnimationController? controller,
-  required ColorScheme scheme,
-}) {
-  Widget buildText(String content) => Text(
-    content,
-    maxLines: 1,
-    softWrap: false,
-    style: TextStyle(color: scheme.onSecondaryContainer),
-  );
-
-  if (controller == null || previousContent.isEmpty) {
-    return buildText(currentContent);
-  }
-  final animation = AppSettings.instance.topBarLyricAnimation;
-  return ClipRect(
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final height = constraints.maxHeight;
-        return AnimatedBuilder(
-          animation: controller,
-          builder: (context, _) {
-            final curve = animation == TopBarLyricAnimation.fade
-                ? Curves.easeInOutCubic
-                : Curves.easeOutCubic;
-            final progress = curve.transform(controller.value);
-
-            Widget buildLayer(String content, bool previous) {
-              Widget child = buildText(content);
-              final opacity = previous ? 1.0 - progress : progress;
-              switch (animation) {
-                case TopBarLyricAnimation.slideUp:
-                  child = Transform.translate(
-                    offset: Offset(
-                      0,
-                      previous ? -progress * height : (1 - progress) * height,
-                    ),
-                    child: Opacity(opacity: opacity, child: child),
-                  );
-                case TopBarLyricAnimation.slideDown:
-                  child = Transform.translate(
-                    offset: Offset(
-                      0,
-                      previous ? progress * height : -(1 - progress) * height,
-                    ),
-                    child: Opacity(opacity: opacity, child: child),
-                  );
-                case TopBarLyricAnimation.fade:
-                  child = Opacity(opacity: opacity, child: child);
-                case TopBarLyricAnimation.absorb:
-                  child = Transform.scale(
-                    scale: opacity.clamp(0.01, 1.0),
-                    child: Opacity(opacity: opacity, child: child),
-                  );
-                case TopBarLyricAnimation.slideLeft:
-                  child = FractionalTranslation(
-                    translation: Offset(previous ? -progress : 1 - progress, 0),
-                    child: Opacity(opacity: opacity, child: child),
-                  );
-                case TopBarLyricAnimation.slideRight:
-                  child = FractionalTranslation(
-                    translation: Offset(previous ? progress : progress - 1, 0),
-                    child: Opacity(opacity: opacity, child: child),
-                  );
-              }
-              return child;
-            }
-
-            return Stack(
-              children: [
-                buildLayer(previousContent, true),
-                buildLayer(currentContent, false),
-              ],
-            );
-          },
-        );
-      },
-    ),
-  );
-}
-
 /// 顶栏歌词的水平对齐（设置 → 歌词 → 顶栏歌词）。
 Alignment topBarLyricAlignment() => switch (
   AppSettings.instance.topBarLyricTextAlign
@@ -358,7 +275,7 @@ class _LyricHorizontalScrollArea extends StatefulWidget {
 }
 
 class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
-    with SingleTickerProviderStateMixin, RouteAware {
+    with RouteAware {
   /// 停留300ms后启动，提前300ms滚动到底
   final waitFor = const Duration(milliseconds: 300);
   final scrollController = ScrollController();
@@ -376,8 +293,6 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
   static const int _maxPositionResyncExtensions = 5;
 
   var currContent = 'Enjoy Music';
-  String _prevContent = '';
-  AnimationController? _slideController;
   bool _isTransition = false;
   LrcLine? _transitionLrcLine;
   SyncLyricLine? _transitionSyncLine;
@@ -416,37 +331,31 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
       _isTransition = false;
       _transitionLrcLine = null;
       _transitionSyncLine = null;
-      if (currContent.isNotEmpty && newContent.isNotEmpty) {
-        _prevContent = currContent;
-        currContent = newContent;
-        _slideController?.dispose();
-        _slideController = AnimationController(
-          vsync: this,
-          duration: const Duration(milliseconds: 500),
-        );
-        _slideController!.addStatusListener((status) {
-          if (status == AnimationStatus.completed && mounted) {
-            setState(() {
-              _prevContent = '';
-              _slideController?.dispose();
-              _slideController = null;
-            });
-          }
-        });
-        _slideController!.forward();
-      } else {
-        _prevContent = '';
-        currContent = newContent;
-      }
+      currContent = newContent;
     }
   }
 
+  /// 本地顶栏文本区：与在线顶栏（[_RemoteLyricHorizontalScrollAreaState]）共用
+  /// 同一套 `AnimatedSwitcher` + [topBarLyricSwitcherTransition] 过场实现。
+  ///
+  /// key 里带内容与行号：同一行文本没有变化时 key 不变，`AnimatedSwitcher`
+  /// 不会重建也就不会反复播放动画；换行时 key 变化，由框架托管的 animation
+  /// 驱动过场，ticker 不会因为窗口缩放/路由切换被 mute 而停在 0。
   Widget _buildTextArea(ColorScheme scheme) {
-    return _buildTopBarLyricTextTransition(
-      currentContent: currContent,
-      previousContent: _prevContent,
-      controller: _slideController,
-      scheme: scheme,
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      transitionBuilder: (child, animation) => topBarLyricSwitcherTransition(
+        child: child,
+        animation: animation,
+        mode: AppSettings.instance.topBarLyricAnimation,
+      ),
+      child: Text(
+        currContent,
+        key: ValueKey('$_currentLineIndex:$currContent'),
+        maxLines: 1,
+        softWrap: false,
+        style: TextStyle(color: scheme.onSecondaryContainer),
+      ),
     );
   }
 
@@ -675,9 +584,6 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.lyric != widget.lyric) {
       _scrollToken = 0;
-      _slideController?.dispose();
-      _slideController = null;
-      _prevContent = '';
       _startPositionResyncWindow();
       if (widget.lyric.lines.isNotEmpty) {
         setState(() {
@@ -748,7 +654,6 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
 
   @override
   void dispose() {
-    _slideController?.dispose();
     routeVisibilityObserver.unsubscribe(this);
     lyricLineStreamSubscription.cancel();
     playbackService.positionSyncNotifier.removeListener(

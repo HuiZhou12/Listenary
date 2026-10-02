@@ -149,6 +149,7 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
         showFavorite: true,
         favorite: favorites.isFavorite(track.ref),
         onToggleFavorite: () => favorites.toggleFavorite(track),
+        isNowPlaying: isOnlineTrackNowPlaying(context, track.ref),
       ),
     );
   }

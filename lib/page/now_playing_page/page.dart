@@ -2783,6 +2783,11 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
             );
         final usesRemoteMedia =
             activeSnapshot.source == ActivePlaybackSessionSource.remote;
+        // 在线播放没有本地 path，用固定 tag 与迷你播放条的封面配对，
+        // 这样在线播放也有和本地一样的封面飞入/飞出动画（原来被 !usesRemoteMedia 排除）。
+        final coverHeroTag = usesRemoteMedia
+            ? remoteCoverHeroTag
+            : (heroEnabled ? nowPlayingPath : null);
         final coverWidget = usesRemoteMedia
             ? Container(
                 decoration: BoxDecoration(
@@ -2848,9 +2853,8 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                 SizedBox(
                   width: coverSize,
                   height: coverSize,
-                  child:
-                      !usesRemoteMedia && heroEnabled && nowPlayingPath != null
-                      ? Hero(tag: nowPlayingPath, child: coverWidget)
+                  child: coverHeroTag != null
+                      ? Hero(tag: coverHeroTag, child: coverWidget)
                       : RepaintBoundary(child: coverWidget),
                 ),
                 const SizedBox(height: 24.0),

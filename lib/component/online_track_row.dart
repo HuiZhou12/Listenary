@@ -1,11 +1,44 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:provider/provider.dart';
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/play_service/active_playback_session.dart';
+import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 
 /// 已收藏爱心的强调色，与主题 primary 区分更明显。
 const Color _favoriteColor = Color(0xFFE0245E);
+
+/// 在线曲目的「正在播放」判定：当前播放来源为在线，且在线队列的当前曲目
+/// 与本行曲目是同一个 [PlatformTrackRef]（按值相等，不比对象身份）。
+/// 与本地 `audio_tile.dart` 的 `resolveAudioTileFocus` 保持一致：
+/// 只比对曲目身份，不区分播放/暂停，暂停时同样保持高亮。
+bool resolveOnlineTrackFocus({
+  required ActivePlaybackSessionSource? activeSource,
+  required PlatformTrackRef? remoteNowPlayingRef,
+  required PlatformTrackRef trackRef,
+}) =>
+    activeSource == ActivePlaybackSessionSource.remote &&
+    remoteNowPlayingRef == trackRef;
+
+/// 供在线列表页调用：判断 [trackRef] 是否为当前正在播放的在线曲目。
+///
+/// 这里集中读取播放状态，调用方（各在线列表页）只把结果作为
+/// [OnlineTrackRow.isNowPlaying] 传入，组件本身不依赖 provider。
+/// 用可空类型查找，页面未注册播放 provider（例如组件级测试）时返回 false 而不抛异常。
+bool isOnlineTrackNowPlaying(BuildContext context, PlatformTrackRef trackRef) {
+  final activeSource = context.watch<ActivePlaybackSession?>()?.value.source;
+  final remoteNowPlayingRef = activeSource == ActivePlaybackSessionSource.remote
+      ? context.watch<RemotePlaybackQueue?>()?.value.currentItem?.ref
+      : null;
+  return resolveOnlineTrackFocus(
+    activeSource: activeSource,
+    remoteNowPlayingRef: remoteNowPlayingRef,
+    trackRef: trackRef,
+  );
+}
 
 class OnlineTrackRow extends StatefulWidget {
   const OnlineTrackRow({
@@ -19,6 +52,7 @@ class OnlineTrackRow extends StatefulWidget {
     this.showFavorite = false,
     this.favorite = false,
     this.onToggleFavorite,
+    this.isNowPlaying = false,
   });
 
   final MusicTrack track;
@@ -30,6 +64,9 @@ class OnlineTrackRow extends StatefulWidget {
   final bool showFavorite;
   final bool favorite;
   final VoidCallback? onToggleFavorite;
+
+  /// 本行是否为当前在线播放曲目；由调用方判定（见 [isOnlineTrackNowPlaying]）。
+  final bool isNowPlaying;
 
   @override
   State<OnlineTrackRow> createState() => _OnlineTrackRowState();
@@ -43,17 +80,37 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
     final scheme = Theme.of(context).colorScheme;
     final track = widget.track;
     final enabled = widget.enabled;
-    final titleColor = enabled ? scheme.onSurface : scheme.onSurfaceVariant;
-    final metadataColor = enabled
+    final isNowPlaying = widget.isNowPlaying;
+    // 与本地 AudioTile 的「正在播放」配色一致（primary 底色 + primary 文字）。
+    final titleColor = isNowPlaying
+        ? scheme.primary
+        : enabled
+        ? scheme.onSurface
+        : scheme.onSurfaceVariant;
+    final metadataColor = isNowPlaying
+        ? scheme.primary.withValues(alpha: 0.78)
+        : enabled
         ? scheme.onSurfaceVariant
         : scheme.onSurfaceVariant.withValues(alpha: 0.55);
+    final backgroundColor = isNowPlaying
+        ? scheme.primary.withAlpha(20)
+        : Colors.transparent;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: 2),
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
-        child: SizedBox(
+        child: AnimatedContainer(
+          duration: MotionDuration.base,
+          curve: MotionCurve.standard,
           height: 64,
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: AppRadius.smCircular,
+            border: isNowPlaying
+                ? Border.all(color: scheme.primary.withAlpha(89))
+                : null,
+          ),
           child: Material(
             type: MaterialType.transparency,
             borderRadius: AppRadius.smCircular,

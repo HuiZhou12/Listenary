@@ -388,23 +388,33 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                           return Row(
                             children: [
                               !metadata.usesLocalMedia
-                                  ? ClipRRect(
-                                      borderRadius: AppRadius.smCircular,
-                                      child: SizedBox(
-                                        width: 48.0,
-                                        height: 48.0,
-                                        child: RemoteMediaCover(
-                                          coverUri: remoteArtwork.hasArtwork
-                                              ? metadata.coverUri
-                                              : null,
-                                          imageBytes: remoteArtwork.bytes,
-                                          cacheWidth: 96,
-                                          cacheHeight: 96,
-                                          placeholder: Center(
-                                            child: placeholder,
+                                  ? Builder(
+                                      builder: (context) {
+                                        final cover = ClipRRect(
+                                          borderRadius: AppRadius.smCircular,
+                                          child: SizedBox(
+                                            width: 48.0,
+                                            height: 48.0,
+                                            child: RemoteMediaCover(
+                                              coverUri: remoteArtwork.hasArtwork
+                                                  ? metadata.coverUri
+                                                  : null,
+                                              imageBytes: remoteArtwork.bytes,
+                                              cacheWidth: 96,
+                                              cacheHeight: 96,
+                                              placeholder: Center(
+                                                child: placeholder,
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                      ),
+                                        );
+                                        // 在线播放同样参与封面 Hero，和本地一致。
+                                        if (!heroEnabled) return cover;
+                                        return Hero(
+                                          tag: remoteCoverHeroTag,
+                                          child: cover,
+                                        );
+                                      },
                                     )
                                   : nowPlaying != null
                                   ? Builder(

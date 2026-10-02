@@ -176,6 +176,7 @@ class _PersonalPlaylistDetailPageState
       showFavorite: true,
       favorite: favorites.isFavorite(track.ref),
       onToggleFavorite: () => favorites.toggleFavorite(track),
+      isNowPlaying: isOnlineTrackNowPlaying(context, track.ref),
     );
     if (!animated) return row;
     return DirectionalListItemEntrance(identity: track.ref, child: row);
