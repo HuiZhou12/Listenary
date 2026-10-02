@@ -123,21 +123,9 @@ jobs:
         run: |
           $tag = "${{ steps.version.outputs.tag }}"
           $version = "${{ steps.version.outputs.version }}"
+          $repo = "${{ github.repository }}"
           if ([string]::IsNullOrWhiteSpace($tag)) {
             Write-Host 'tag 为空：跳过附加，产物请从本次 run 的 Artifacts 下载。'
-            exit 0
-          }
-          # 先按 tag 查 Release：REST 接口对 contents:write 的令牌会一并返回 draft，
-          # 因此刚建的 draft release 也能匹配上；查不到时再退回 gh release view。
-          $repo = "${{ github.repository }}"
-          gh api "repos/$repo/releases/tags/$tag" *> $null
-          $found = $LASTEXITCODE -eq 0
-          if (-not $found) {
-            gh release view $tag *> $null
-            $found = $LASTEXITCODE -eq 0
-          }
-          if (-not $found) {
-            Write-Host "::warning::Release $tag 不存在或不可见（draft 需要 contents:write 权限）。已跳过附加；产物请从本次 run 的 Artifacts 下载。本 workflow 不会自动创建 Release。"
             exit 0
           }
           $candidates = @(
@@ -147,6 +135,31 @@ jobs:
           )
           $files = $candidates | Where-Object { Test-Path -LiteralPath $_ }
           if ($files.Count -eq 0) { throw 'No build outputs found to upload.' }
-          gh release upload $tag @files --clobber
-          Write-Host "Uploaded to release $tag :"
-          $files | ForEach-Object { Write-Host "  $_" }
+
+          # 按 tag 在 Release 列表里找：列表接口对 contents:write 的令牌会包含 draft，
+          # 因此"刚建好、tag 还没真正落到 git 上"的 draft 也能匹配。查不到就只留 artifacts。
+          $json = gh api "repos/$repo/releases?per_page=100"
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to list releases.' }
+          $releases = ($json | Out-String) | ConvertFrom-Json
+          $release = $releases | Where-Object { $_.tag_name -eq $tag } | Select-Object -First 1
+          if ($null -eq $release) {
+            Write-Host "::warning::没有找到 tag=$tag 的 Release（含 draft）。已跳过附加；本 workflow 不会自动创建 Release。产物请从本次 run 的 Artifacts 下载。"
+            exit 0
+          }
+          Write-Host ("Release: tag={0} draft={1} id={2}" -f $release.tag_name, $release.draft, $release.id)
+
+          # 同名资产先删掉，实现 --clobber 效果（重复跑不会堆积）
+          $names = $files | ForEach-Object { Split-Path -Leaf $_ }
+          foreach ($asset in $release.assets) {
+            if ($names -contains $asset.name) {
+              gh api --method DELETE "repos/$repo/releases/assets/$($asset.id)" | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw "Failed to delete existing asset $($asset.name)" }
+              Write-Host "removed old asset: $($asset.name)"
+            }
+          }
+          foreach ($file in $files) {
+            $name = Split-Path -Leaf $file
+            gh api --method POST -H "Content-Type: application/octet-stream" --input $file "https://uploads.github.com/repos/$repo/releases/$($release.id)/assets?name=$name" | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Failed to upload $name" }
+            Write-Host "uploaded: $name"
+          }
