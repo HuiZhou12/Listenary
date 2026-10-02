@@ -1,0 +1,138 @@
+name: Build Windows release
+
+# 手动触发：Actions 页面 → Build Windows release → Run workflow。
+#   version：要打包的版本号（留空 = 读 pubspec.yaml 里的版本）
+#   tag    ：要附加产物的 Release tag（留空 = v<version>；该 Release 不存在时只上传 artifacts）
+#
+# 产物：便携 zip + Inno Setup 安装器（+ sha256），始终上传为 workflow artifacts；
+# 并且**只**在对应 tag 的 Release 已存在时把产物附加上去 —— 不会自动创建 Release。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（例如 3.1.5；留空则用 pubspec.yaml 中的版本）'
+        required: false
+        default: ''
+      tag:
+        description: '要附加产物的 Release tag（例如 v3.1.5；留空 = v<version>）'
+        required: false
+        default: ''
+
+permissions:
+  contents: write # 仅用于把产物附加到已存在的 Release
+
+concurrency:
+  group: build-windows-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version and tag
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}".Trim()
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $match = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\S+)' | Select-Object -First 1
+            if (-not $match) { throw 'Cannot read version from pubspec.yaml' }
+            $version = $match.Matches[0].Groups[1].Value.Split('+')[0].Trim()
+          }
+          $tag = "${{ inputs.tag }}".Trim()
+          if ([string]::IsNullOrWhiteSpace($tag)) { $tag = "v$version" }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Resolved version=$version tag=$tag"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            $alt = 'C:\Program Files\Inno Setup 6\ISCC.exe'
+            if (Test-Path -LiteralPath $alt) { Write-Host "ISCC: $alt" }
+            else { throw 'ISCC.exe not found after choco install.' }
+          } else {
+            Write-Host "ISCC: $iscc"
+          }
+
+      # 本机曾遇到 cc-rs 归档 ring 时 lib.exe 报 LNK1104；把 AR 指向 llvm-ar 可绕过。
+      # 这一步装不到 LLVM 也不影响构建（后续步骤会退化为默认归档器）。
+      - name: Install LLVM (archiver workaround)
+        continue-on-error: true
+        shell: pwsh
+        run: choco install llvm --no-progress -y
+
+      - name: Point AR at llvm-ar when available
+        shell: pwsh
+        run: |
+          $llvmAr = 'C:\Program Files\LLVM\bin\llvm-ar.exe'
+          if (Test-Path -LiteralPath $llvmAr) {
+            "AR=$llvmAr" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            Write-Host "AR=$llvmAr"
+          } else {
+            Write-Host 'llvm-ar not found; keeping the default archiver.'
+          }
+
+      - name: Flutter / Dart versions
+        shell: pwsh
+        run: |
+          flutter --version
+          dart --version
+
+      - name: Build portable package (compile + zip)
+        shell: pwsh
+        run: .\build_windows.ps1 -Version "${{ steps.version.outputs.version }}" -Mode 2 -NonInteractive
+
+      - name: Build installer (reuse the release build)
+        shell: pwsh
+        run: .\build_windows.ps1 -Version "${{ steps.version.outputs.version }}" -Mode 5 -NonInteractive
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Listenary_${{ steps.version.outputs.version }}_windows
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            output/Listenary_${{ steps.version.outputs.version }}_release_portable.zip
+            output/Listenary_${{ steps.version.outputs.version }}_release_installer.exe
+            output/Listenary_${{ steps.version.outputs.version }}_release_installer.exe.sha256
+
+      - name: Attach assets to the existing Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ steps.version.outputs.tag }}"
+          $version = "${{ steps.version.outputs.version }}"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::Release $tag 不存在，已跳过附加（本 workflow 不会自动创建 Release）。产物请从本次 run 的 Artifacts 下载。"
+            exit 0
+          }
+          $candidates = @(
+            "output/Listenary_${version}_release_portable.zip",
+            "output/Listenary_${version}_release_installer.exe",
+            "output/Listenary_${version}_release_installer.exe.sha256"
+          )
+          $files = $candidates | Where-Object { Test-Path -LiteralPath $_ }
+          if ($files.Count -eq 0) { throw 'No build outputs found to upload.' }
+          gh release upload $tag @files --clobber
+          Write-Host "Uploaded to release $tag :"
+          $files | ForEach-Object { Write-Host "  $_" }
