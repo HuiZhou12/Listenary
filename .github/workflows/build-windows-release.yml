@@ -2,10 +2,10 @@ name: Build Windows release
 
 # 手动触发：Actions 页面 → Build Windows release → Run workflow。
 #   version：要打包的版本号（留空 = 读 pubspec.yaml 里的版本）
-#   tag    ：要附加产物的 Release tag（留空 = v<version>；该 Release 不存在时只上传 artifacts）
+#   tag    ：要附加产物的 Release tag（例如 v3.1.5，draft 也可以）；**留空则只上传 artifacts，不附加**
 #
 # 产物：便携 zip + Inno Setup 安装器（+ sha256），始终上传为 workflow artifacts；
-# 并且**只**在对应 tag 的 Release 已存在时把产物附加上去 —— 不会自动创建 Release。
+# 并且**只**在填了 tag 且该 Release 已存在时把产物附加上去 —— 不会自动创建 Release。
 on:
   workflow_dispatch:
     inputs:
@@ -14,7 +14,7 @@ on:
         required: false
         default: ''
       tag:
-        description: '要附加产物的 Release tag（例如 v3.1.5；留空 = v<version>）'
+        description: '要附加产物的 Release tag，如 v3.1.5（draft 亦可）；留空 = 只上传 artifacts'
         required: false
         default: ''
 
@@ -44,7 +44,9 @@ jobs:
             $version = $match.Matches[0].Groups[1].Value.Split('+')[0].Trim()
           }
           $tag = "${{ inputs.tag }}".Trim()
-          if ([string]::IsNullOrWhiteSpace($tag)) { $tag = "v$version" }
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            Write-Host 'tag 未填写：本次只上传 artifacts，不附加到 Release。'
+          }
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "Resolved version=$version tag=$tag"
@@ -121,9 +123,21 @@ jobs:
         run: |
           $tag = "${{ steps.version.outputs.tag }}"
           $version = "${{ steps.version.outputs.version }}"
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "::warning::Release $tag 不存在，已跳过附加（本 workflow 不会自动创建 Release）。产物请从本次 run 的 Artifacts 下载。"
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            Write-Host 'tag 为空：跳过附加，产物请从本次 run 的 Artifacts 下载。'
+            exit 0
+          }
+          # 先按 tag 查 Release：REST 接口对 contents:write 的令牌会一并返回 draft，
+          # 因此刚建的 draft release 也能匹配上；查不到时再退回 gh release view。
+          $repo = "${{ github.repository }}"
+          gh api "repos/$repo/releases/tags/$tag" *> $null
+          $found = $LASTEXITCODE -eq 0
+          if (-not $found) {
+            gh release view $tag *> $null
+            $found = $LASTEXITCODE -eq 0
+          }
+          if (-not $found) {
+            Write-Host "::warning::Release $tag 不存在或不可见（draft 需要 contents:write 权限）。已跳过附加；产物请从本次 run 的 Artifacts 下载。本 workflow 不会自动创建 Release。"
             exit 0
           }
           $candidates = @(
