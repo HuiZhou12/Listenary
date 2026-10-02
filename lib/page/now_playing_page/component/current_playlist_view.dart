@@ -206,11 +206,13 @@ void _selectRemote(
   unawaited(() async {
     try {
       final service = context.read<OnlineMusicService>();
+      // 会话已存在时沿用用户当前所选档位（否则手动切到高音质后，
+      // 从在线队列点下一首会被悄悄重置回设置里的默认档位，且因为没有「降权」而不提示）。
       await controller.play(
         index,
-        requestedQuality: service.defaultQualityFor(
-          queue.items[index].ref.platform,
-        ),
+        requestedQuality:
+            controller.requestedQuality ??
+            service.defaultQualityFor(queue.items[index].ref.platform),
       );
     } on RemoteStreamPlaybackException catch (error) {
       if (error.kind != RemoteStreamPlaybackErrorKind.cancelled) {

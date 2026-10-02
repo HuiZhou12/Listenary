@@ -181,6 +181,15 @@ class _EntryState extends State<Entry>
         };
         showTextOnSnackBar(message, variant: ToastVariant.error);
       },
+      onQualityDowngraded: (quality) {
+        final label = MusicQuality.values
+            .firstWhere(
+              (entry) => entry.level == quality,
+              orElse: () => MusicQuality.standard,
+            )
+            .label;
+        showTextOnSnackBar('当前音源不支持所选音质，已降至$label');
+      },
     );
     _remotePlaybackTimeline = RemotePlaybackTimelineController(
       readPosition: _remotePlaybackBackend.readPosition,
@@ -862,6 +871,9 @@ class _EntryState extends State<Entry>
                   ),
                   GoRoute(
                     path: 'personal',
+                    // 纯分组节点：实际页面走子路由 detail。
+                    // go_router 要求每个 GoRoute 至少提供 builder/pageBuilder/redirect 之一。
+                    builder: (context, state) => const SizedBox.shrink(),
                     routes: [
                       GoRoute(
                         path: 'detail',

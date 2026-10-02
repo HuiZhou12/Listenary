@@ -6,6 +6,7 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/play_service/remote_playback_queue_controller.dart';
+import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/remote_stream_coordinator.dart';
 
 abstract interface class LocalPlaybackResumePoint {}
@@ -147,11 +148,13 @@ final class RemotePlaybackSessionController {
     required LocalPlaybackSessionBridge localBridge,
     required ControllablePlaybackBackend backend,
     void Function(RemotePlaybackSessionFailure failure)? onFailure,
+    void Function(String quality)? onQualityDowngraded,
   }) : _queue = queue,
        _remoteController = remoteController,
        _localBridge = localBridge,
        _backend = backend,
-       _onFailure = onFailure {
+       _onFailure = onFailure,
+       _onQualityDowngraded = onQualityDowngraded {
     _backendStateSubscription = backend.stateStream.listen(_onBackendState);
     _localBridge.addLocalPlaybackRequestListener(_onLocalPlaybackRequested);
   }
@@ -161,6 +164,7 @@ final class RemotePlaybackSessionController {
   final LocalPlaybackSessionBridge _localBridge;
   final ControllablePlaybackBackend _backend;
   final void Function(RemotePlaybackSessionFailure failure)? _onFailure;
+  final void Function(String quality)? _onQualityDowngraded;
   final _controlStateController =
       StreamController<RemotePlaybackControlSnapshot>.broadcast(sync: true);
   late final StreamSubscription<PlaybackBackendState> _backendStateSubscription;
@@ -168,6 +172,9 @@ final class RemotePlaybackSessionController {
       RemotePlaybackControlSnapshot.inactive;
   LocalPlaybackResumePoint? _localResumePoint;
   String? _requestedQuality;
+
+  /// 平台实际返回的档位（`MusicQuality.level`），用于降权提示与切歌时保持可用档位。
+  String? _currentQuality;
   int _revision = 0;
   int _controlRevision = 0;
   int? _activeRemoteRevision;
@@ -183,6 +190,25 @@ final class RemotePlaybackSessionController {
       _controlStateController.stream;
 
   RemotePlaybackMode get mode => _queue.value.mode;
+
+  /// 当前实际播放档位（平台返回的 `level`）；无远程会话时为 null。
+  String? get currentQuality => _currentQuality;
+
+  static int _qualityIndex(String quality) =>
+      MusicQuality.values.indexWhere((entry) => entry.level == quality);
+
+  /// 记录本次解析的真实档位；仅在**实际降权**时提示一次，回升不提示、不重复提示。
+  void _applyResolvedQuality(String requested, String? actual) {
+    final previous = _currentQuality;
+    final resolved = actual ?? requested;
+    _currentQuality = resolved;
+    if (resolved == requested) return;
+    final resolvedIndex = _qualityIndex(resolved);
+    if (resolvedIndex < 0) return;
+    final previousIndex = previous == null ? -1 : _qualityIndex(previous);
+    if (previousIndex >= 0 && resolvedIndex >= previousIndex) return;
+    _onQualityDowngraded?.call(resolved);
+  }
 
   void cycleMode() => _queue.cycleMode();
 
@@ -257,15 +283,19 @@ final class RemotePlaybackSessionController {
     }
     if (_requestedQuality == newQuality) return true;
     final previousQuality = _requestedQuality;
+    final previousActualQuality = _currentQuality;
     _requestedQuality = newQuality;
     try {
-      await _remoteController.play(
+      final actual = await _remoteController.play(
         currentIndex,
         requestedQuality: newQuality,
+        fallbackQuality: previousActualQuality,
       );
+      _applyResolvedQuality(newQuality, actual);
       return true;
     } catch (_) {
       _requestedQuality = previousQuality;
+      _currentQuality = previousActualQuality;
       return false;
     }
   }
@@ -359,7 +389,12 @@ final class RemotePlaybackSessionController {
           ),
         );
       }
-      await _remoteController.play(index, requestedQuality: requestedQuality);
+      final actual = await _remoteController.play(
+        index,
+        requestedQuality: requestedQuality,
+        fallbackQuality: stopCurrent ? _currentQuality : null,
+      );
+      _applyResolvedQuality(requestedQuality, actual);
     } catch (_) {
       if (!_disposed && revision == _revision) {
         _setControlState(
@@ -490,6 +525,21 @@ final class RemotePlaybackSessionController {
       return;
     }
 
+    // 列表循环：播完最后一首回到实际播放顺序的第一首，不结束远程会话、不恢复本地。
+    if (snapshot.mode == RemotePlaybackMode.loop) {
+      final nextRevision = _revision + 1;
+      try {
+        await _playRemote(0, requestedQuality: requestedQuality);
+      } catch (error) {
+        if (error is! _RemoteTransitionStopException &&
+            !_disposed &&
+            _revision == nextRevision) {
+          _onFailure?.call(RemotePlaybackSessionFailure.nextTrack);
+        }
+      }
+      return;
+    }
+
     ++_revision;
     final resumePoint = _localResumePoint;
     _endSession();
@@ -511,6 +561,7 @@ final class RemotePlaybackSessionController {
     _sessionStarted = false;
     _localResumePoint = null;
     _requestedQuality = null;
+    _currentQuality = null;
     _activeRemoteRevision = null;
     _stopTransitionRevision = null;
     _setControlState(RemotePlaybackControlSnapshot.inactive);

@@ -161,14 +161,17 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         method: (list, order) {
           switch (order) {
             case SortOrder.ascending:
-              list.sort((a, b) => widget.playlist
-                  .addedAt(a.path)
-                  .compareTo(widget.playlist.addedAt(b.path)));
+              list.sort((a, b) => widget.playlist.compareByAddedAt(
+                    a.path,
+                    b.path,
+                  ));
               break;
             case SortOrder.decending:
-              list.sort((a, b) => widget.playlist
-                  .addedAt(b.path)
-                  .compareTo(widget.playlist.addedAt(a.path)));
+              list.sort((a, b) => widget.playlist.compareByAddedAt(
+                    a.path,
+                    b.path,
+                    descending: true,
+                  ));
               break;
           }
         },

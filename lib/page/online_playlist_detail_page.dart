@@ -9,6 +9,7 @@ import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_cover_cache.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/page_scaffold.dart';
@@ -73,6 +74,39 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
     }
   }
 
+  /// 从第三方平台重新拉取歌单并覆盖本地快照（真正的「同步」）。
+  /// 失败时保留当前已显示的快照，只提示，不清空页面。
+  Future<void> _refresh() async {
+    final request = ++_loadRequest;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final controller = context.read<OnlinePlaylistController>();
+      final refreshed = await controller.refresh(widget.localId);
+      if (!mounted || request != _loadRequest) return;
+      final snapshot =
+          refreshed ?? await controller.readSnapshot(widget.localId);
+      if (!mounted || request != _loadRequest) return;
+      if (refreshed == null) {
+        setState(() => _loading = false);
+        showTextOnSnackBar('同步在线歌单失败，请稍后重试', variant: ToastVariant.error);
+        return;
+      }
+      setState(() {
+        _snapshot = snapshot;
+        _loading = false;
+        _error = snapshot == null ? '在线歌单不存在或已被删除' : null;
+        _primaryPicFuture = _coverProvider(snapshot?.playlist.coverUri);
+      });
+    } catch (_) {
+      if (!mounted || request != _loadRequest) return;
+      setState(() => _loading = false);
+      showTextOnSnackBar('同步在线歌单失败，请稍后重试', variant: ToastVariant.error);
+    }
+  }
+
   Future<ImageProvider?> _coverProvider(Uri? uri) async {
     if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) return null;
     return CachedRemoteImageProvider(uri.toString());
@@ -130,7 +164,7 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
             actions: [
               IconButton.filledTonal(
                 tooltip: '刷新',
-                onPressed: _loading ? null : _load,
+                onPressed: _loading ? null : _refresh,
                 icon: const Icon(Symbols.refresh),
               ),
             ],
@@ -206,7 +240,7 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
     );
     final creator = snapshot.playlist.creator?.trim();
     return UniDetailPage<OnlinePlaylistSnapshot, MusicTrack, Object>(
-      pref: AppPreference.instance.playlistDetailPagePref,
+      pref: AppPreference.instance.onlinePlaylistDetailPagePref,
       primaryContent: snapshot,
       primaryPic: _primaryPicFuture,
       backgroundPic: Future.value(null),
@@ -220,8 +254,8 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
       secondaryContentBuilder: (context, track, index, msc, view) =>
           _buildTrackRow(track, tracks),
       enableShufflePlay: false,
-      enableSortMethod: true,
-      enableSortOrder: true,
+      enableSortMethod: hasEnoughItemsToSort(allTracks.length),
+      enableSortOrder: hasEnoughItemsToSort(allTracks.length),
       sortMethods: _sortMethods(),
       enableSecondaryContentViewSwitch: true,
       enableSearch: true,
@@ -261,6 +295,12 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
 
   List<SortMethodDesc<MusicTrack>> _sortMethods() {
     return [
+      // 默认：保持第三方平台返回的顺序（即服务器默认顺序），不做任何排序。
+      SortMethodDesc<MusicTrack>(
+        icon: Symbols.reorder,
+        name: '默认',
+        method: (list, order) {},
+      ),
       SortMethodDesc<MusicTrack>(
         icon: Symbols.title,
         name: '标题',

@@ -115,10 +115,11 @@ Future<void> playOnlineTrackSelection(
     await controller.play(
       selection.selectedIndex,
       requestedQuality:
+          controller.requestedQuality ??
           selection.requestedQuality ??
-              context
-                  .read<OnlineMusicService>()
-                  .defaultQualityFor(selection.selectedTrack.ref.platform),
+          context
+              .read<OnlineMusicService>()
+              .defaultQualityFor(selection.selectedTrack.ref.platform),
     );
   } on RemoteStreamPlaybackException catch (error) {
     if (error.kind != RemoteStreamPlaybackErrorKind.cancelled) {

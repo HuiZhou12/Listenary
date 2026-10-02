@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 
-/// 在线队列播放模式：顺序、单曲循环、随机。
-enum RemotePlaybackMode { sequential, repeatOne, shuffle }
+/// 在线队列播放模式：顺序、单曲循环、列表循环、随机。
+enum RemotePlaybackMode { sequential, repeatOne, loop, shuffle }
 
 @immutable
 final class RemotePlaybackQueueItem {
@@ -183,11 +183,12 @@ final class RemotePlaybackQueue
     );
   }
 
-  /// 循环切换模式：顺序 → 单曲循环 → 随机 → 顺序。
+  /// 循环切换模式：顺序 → 单曲循环 → 列表循环 → 随机 → 顺序。
   void cycleMode() {
     final next = switch (value.mode) {
       RemotePlaybackMode.sequential => RemotePlaybackMode.repeatOne,
-      RemotePlaybackMode.repeatOne => RemotePlaybackMode.shuffle,
+      RemotePlaybackMode.repeatOne => RemotePlaybackMode.loop,
+      RemotePlaybackMode.loop => RemotePlaybackMode.shuffle,
       RemotePlaybackMode.shuffle => RemotePlaybackMode.sequential,
     };
     setMode(next);
@@ -203,6 +204,8 @@ final class RemotePlaybackQueue
         nextItems = List.of(snapshot.originalItems);
       case RemotePlaybackMode.repeatOne:
         nextItems = List.of(snapshot.items);
+      case RemotePlaybackMode.loop:
+        nextItems = List.of(snapshot.originalItems);
       case RemotePlaybackMode.shuffle:
         // 保留当前曲目，随机化其余项目。
         nextItems = List.of(snapshot.originalItems);

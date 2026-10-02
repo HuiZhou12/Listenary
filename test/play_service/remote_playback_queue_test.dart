@@ -223,18 +223,24 @@ void main() {
     expect(queue.value.items, before);
   });
 
-  test('cycle mode rotates sequential -> repeatOne -> shuffle -> sequential', () {
-    final queue = RemotePlaybackQueue();
-    queue.replace([_item('1'), _item('2'), _item('3')], currentIndex: 0);
+  test(
+    'cycle mode rotates sequential -> repeatOne -> loop -> shuffle -> sequential',
+    () {
+      final queue = RemotePlaybackQueue();
+      queue.replace([_item('1'), _item('2'), _item('3')], currentIndex: 0);
 
-    expect(queue.value.mode, RemotePlaybackMode.sequential);
-    queue.cycleMode();
-    expect(queue.value.mode, RemotePlaybackMode.repeatOne);
-    queue.cycleMode();
-    expect(queue.value.mode, RemotePlaybackMode.shuffle);
-    queue.cycleMode();
-    expect(queue.value.mode, RemotePlaybackMode.sequential);
-  });
+      expect(queue.value.mode, RemotePlaybackMode.sequential);
+      queue.cycleMode();
+      expect(queue.value.mode, RemotePlaybackMode.repeatOne);
+      queue.cycleMode();
+      expect(queue.value.mode, RemotePlaybackMode.loop);
+      queue.cycleMode();
+      expect(queue.value.mode, RemotePlaybackMode.shuffle);
+      queue.cycleMode();
+      expect(queue.value.mode, RemotePlaybackMode.sequential);
+      queue.dispose();
+    },
+  );
 
   test('shuffle keeps the current track and restores original order on exit', () {
     final queue = RemotePlaybackQueue();

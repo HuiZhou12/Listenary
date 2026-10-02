@@ -336,8 +336,26 @@ class Playlist {
   }
 
   DateTime addedAt(String path) {
+    return addedAtOrNull(path) ?? DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  DateTime? addedAtOrNull(String path) {
+    return _addedAt[_playlistPathKey(path)];
+  }
+
+  int sortOrderOf(String path) {
     final key = _playlistPathKey(path);
-    return _addedAt[key] ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final index = paths.indexWhere((item) => _playlistPathKey(item) == key);
+    return index < 0 ? paths.length : index;
+  }
+
+  int compareByAddedAt(String leftPath, String rightPath, {bool descending = false}) {
+    final leftAddedAt = addedAtOrNull(leftPath);
+    final rightAddedAt = addedAtOrNull(rightPath);
+    final comparison = leftAddedAt != null && rightAddedAt != null
+        ? leftAddedAt.compareTo(rightAddedAt)
+        : sortOrderOf(leftPath).compareTo(sortOrderOf(rightPath));
+    return descending ? -comparison : comparison;
   }
 
   Set<String> get _pathKeySet {

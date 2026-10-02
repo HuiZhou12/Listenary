@@ -559,23 +559,34 @@ class _ActionsRow extends StatelessWidget {
       scheme: scheme,
     );
 
-    if (compact) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Wrap(spacing: 8.0, runSpacing: 8.0, children: actions),
-          const SizedBox(height: 8.0),
-          searchField,
-        ],
-      );
-    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Keep the search field on its own row while actions would otherwise
+        // wrap beside it and extend into the content below the header.
+        final stackSearch =
+            compact ||
+            (constraints.maxWidth.isFinite && constraints.maxWidth < 760);
+        if (stackSearch) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(spacing: 8.0, runSpacing: 8.0, children: actions),
+              const SizedBox(height: 8.0),
+              searchField,
+            ],
+          );
+        }
 
-    return Row(
-      children: [
-        Expanded(child: Wrap(spacing: 8.0, runSpacing: 8.0, children: actions)),
-        const SizedBox(width: 12.0),
-        SizedBox(width: 220, child: searchField),
-      ],
+        return Row(
+          children: [
+            Expanded(
+              child: Wrap(spacing: 8.0, runSpacing: 8.0, children: actions),
+            ),
+            const SizedBox(width: 12.0),
+            SizedBox(width: 220, child: searchField),
+          ],
+        );
+      },
     );
   }
 }

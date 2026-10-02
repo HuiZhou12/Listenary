@@ -974,6 +974,25 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
   }
 }
 
+/// 播放模式图标与文案映射：本地播放与在线队列**共用同一套**，避免两边不一致。
+/// 本地只有「顺序/单曲/随机」三档，列表循环沿用顺序的图标（框架既有行为）。
+({String tooltip, IconData icon}) playbackModeVisuals({
+  required bool shuffle,
+  required bool singleLoop,
+}) {
+  final tooltip = switch (true) {
+    _ when shuffle => '随机播放',
+    _ when singleLoop => '单曲循环',
+    _ => '顺序播放',
+  };
+  final icon = switch (true) {
+    _ when shuffle => Symbols.shuffle,
+    _ when singleLoop => Symbols.repeat_one,
+    _ => Symbols.repeat,
+  };
+  return (tooltip: tooltip, icon: icon);
+}
+
 class _RemotePlaybackModeButton extends StatelessWidget {
   const _RemotePlaybackModeButton({
     required this.color,
@@ -985,17 +1004,21 @@ class _RemotePlaybackModeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final session = context.watch<RemotePlaybackSessionController>();
-    final mode = session.mode;
-    final (tooltip, icon) = switch (mode) {
-      RemotePlaybackMode.sequential => ('顺序播放', Symbols.repeat),
-      RemotePlaybackMode.repeatOne => ('单曲循环', Symbols.repeat_one),
-      RemotePlaybackMode.shuffle => ('随机播放', Symbols.shuffle),
-    };
+    // RemotePlaybackQueue 是 ChangeNotifier：必须监听队列本身，
+    // 否则切换播放模式后按钮图标不会刷新，表现为「点了没反应」。
+    final mode = context.watch<RemotePlaybackQueue>().value.mode;
+    final session = context.read<RemotePlaybackSessionController>();
+    final visuals = playbackModeVisuals(
+      shuffle: mode == RemotePlaybackMode.shuffle,
+      singleLoop: mode == RemotePlaybackMode.repeatOne,
+    );
+    final tooltip = mode == RemotePlaybackMode.loop
+        ? '列表循环'
+        : visuals.tooltip;
     return IconButton(
       tooltip: tooltip,
       onPressed: session.cycleMode,
-      icon: Icon(icon, fill: 0.0, weight: 400.0),
+      icon: Icon(visuals.icon, fill: 0.0, weight: 400.0),
       color: color,
       disabledColor: disabledColor,
     );
@@ -1069,20 +1092,13 @@ class _NowPlayingPlaybackModeSwitchState
         final shuffle = playbackService.shuffle.value;
         final playMode = playbackService.playMode.value;
 
-        final modeText = switch (true) {
-          _ when shuffle => '随机播放',
-          _ when playMode == PlayMode.singleLoop => '单曲循环',
-          _ => '顺序播放',
-        };
-
-        final icon = switch (true) {
-          _ when shuffle => Symbols.shuffle,
-          _ when playMode == PlayMode.singleLoop => Symbols.repeat_one,
-          _ => Symbols.repeat,
-        };
+        final visuals = playbackModeVisuals(
+          shuffle: shuffle,
+          singleLoop: playMode == PlayMode.singleLoop,
+        );
 
         return IconButton(
-          tooltip: _isSaving ? '保存中' : modeText,
+          tooltip: _isSaving ? '保存中' : visuals.tooltip,
           onPressed: _isSaving || !controls.canChangePlaybackMode
               ? null
               : () => _changeMode(shuffle: shuffle, playMode: playMode),
@@ -1095,7 +1111,7 @@ class _NowPlayingPlaybackModeSwitchState
                     color: color,
                   ),
                 )
-              : Icon(icon, fill: 0.0, weight: 400.0),
+              : Icon(visuals.icon, fill: 0.0, weight: 400.0),
           color: color,
           disabledColor: disabledColor,
         );

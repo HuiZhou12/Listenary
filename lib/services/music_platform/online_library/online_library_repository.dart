@@ -53,12 +53,37 @@ final class PersonalOnlinePlaylistSnapshot {
     required this.name,
     required this.updatedAt,
     required Iterable<MusicTrack> tracks,
-  }) : tracks = List.unmodifiable(tracks);
+    Map<PlatformTrackRef, DateTime> addedAt = const {},
+  }) : tracks = List.unmodifiable(tracks),
+       _addedAt = Map.unmodifiable(addedAt);
 
   final int localId;
   final String name;
   final DateTime? updatedAt;
   final List<MusicTrack> tracks;
+  final Map<PlatformTrackRef, DateTime> _addedAt;
+
+  /// 曲目加入时间（online_playlist_items.added_at）；缺失时为 null。
+  DateTime? addedAtOrNull(PlatformTrackRef ref) => _addedAt[ref];
+
+  /// 快照既有顺序（仓储按 sort_order 读出），用于时间缺失时的稳定回退。
+  int sortOrderOf(PlatformTrackRef ref) {
+    final index = tracks.indexWhere((track) => track.ref == ref);
+    return index < 0 ? tracks.length : index;
+  }
+
+  int compareByAddedAt(
+    PlatformTrackRef leftRef,
+    PlatformTrackRef rightRef, {
+    bool descending = false,
+  }) {
+    final leftAddedAt = addedAtOrNull(leftRef);
+    final rightAddedAt = addedAtOrNull(rightRef);
+    final comparison = leftAddedAt != null && rightAddedAt != null
+        ? leftAddedAt.compareTo(rightAddedAt)
+        : sortOrderOf(leftRef).compareTo(sortOrderOf(rightRef));
+    return descending ? -comparison : comparison;
+  }
 }
 
 final class OnlineLibraryRepository {
@@ -638,19 +663,29 @@ final class OnlineLibraryRepository {
     final localId = row['id'] as int;
     final trackRows = _db.select(
       'SELECT t.platform, t.track_id, t.title, t.album, t.cover_uri, '
-      't.duration_ms, t.availability '
+      't.duration_ms, t.availability, i.added_at '
       'FROM online_playlist_items i JOIN online_tracks t '
       'ON t.platform = i.platform AND t.track_id = i.track_id '
       'WHERE i.playlist_id = ? ORDER BY i.sort_order, i.rowid',
       [localId],
     );
     final tracks = trackRows.map(_readTrack).toList(growable: false);
+    final addedAt = <PlatformTrackRef, DateTime>{};
+    for (final trackRow in trackRows) {
+      final parsed = DateTime.tryParse(trackRow['added_at'] as String? ?? '');
+      if (parsed == null) continue;
+      addedAt[PlatformTrackRef(
+        platform: _parsePlatform(trackRow['platform'] as String),
+        trackId: trackRow['track_id'] as String,
+      )] = parsed;
+    }
     final updated = row['updated_at'] as String?;
     return PersonalOnlinePlaylistSnapshot(
       localId: localId,
       name: row['name'] as String,
       updatedAt: updated == null ? null : DateTime.parse(updated).toUtc(),
       tracks: tracks,
+      addedAt: addedAt,
     );
   }
 

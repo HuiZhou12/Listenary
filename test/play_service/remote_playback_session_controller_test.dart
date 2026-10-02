@@ -17,6 +17,7 @@ void main() {
   late RemotePlaybackSessionController sessionController;
   late _RecordingBackend backend;
   late List<RemotePlaybackSessionFailure> failures;
+  late List<String> qualityDowngrades;
 
   setUp(() {
     queue = RemotePlaybackQueue();
@@ -29,12 +30,14 @@ void main() {
     localBridge = _RecordingLocalBridge();
     backend = _RecordingBackend();
     failures = [];
+    qualityDowngrades = [];
     sessionController = RemotePlaybackSessionController(
       queue: queue,
       remoteController: remoteController,
       localBridge: localBridge,
       backend: backend,
       onFailure: failures.add,
+      onQualityDowngraded: qualityDowngrades.add,
     );
   });
 
@@ -126,7 +129,9 @@ void main() {
     gateway.error = null;
     await sessionController.play(0, requestedQuality: 'lossless');
 
-    expect(gateway.refs.map((ref) => ref.trackId), ['1', '1']);
+    // 失败时会按档位链重试（lossless → exhigh → standard），再重试成功的这次。
+    expect(gateway.refs.map((ref) => ref.trackId).toSet(), {'1'});
+    expect(gateway.refs.length, greaterThan(1));
     expect(backend.stopCount, 1);
   });
 
@@ -181,6 +186,46 @@ void main() {
     final ok = await sessionController.switchQuality('hires');
     expect(ok, isFalse);
     expect(sessionController.requestedQuality, 'lossless');
+  });
+
+  test('notifies one downgrade when the platform returns a lower level',
+      () async {
+    gateway.results.add(
+      const RemoteQueuePlaybackResult(actualQuality: 'standard'),
+    );
+
+    await sessionController.play(0, requestedQuality: 'hires');
+
+    expect(sessionController.requestedQuality, 'hires');
+    expect(sessionController.currentQuality, 'standard');
+    expect(qualityDowngrades, ['standard']);
+
+    // 档位没有进一步下降时不重复提示。
+    gateway.results.add(
+      const RemoteQueuePlaybackResult(actualQuality: 'standard'),
+    );
+    await sessionController.play(1, requestedQuality: 'hires');
+
+    expect(qualityDowngrades, ['standard']);
+  });
+
+  test('retries the user quality on song change and stays playable', () async {
+    gateway.results.add(
+      const RemoteQueuePlaybackResult(actualQuality: 'standard'),
+    );
+    await sessionController.play(0, requestedQuality: 'hires');
+    expect(sessionController.currentQuality, 'standard');
+
+    gateway.qualities.clear();
+    gateway.results.add(
+      const RemoteQueuePlaybackResult(actualQuality: 'lossless'),
+    );
+    await sessionController.play(1, requestedQuality: 'hires');
+
+    // 切歌时先尝试用户所选档位；拿到更高档位属于回升，不提示。
+    expect(gateway.qualities.first, 'hires');
+    expect(sessionController.currentQuality, 'lossless');
+    expect(qualityDowngrades, ['standard']);
   });
 
   test('publishes remote control state and returns to inactive', () async {
@@ -444,6 +489,21 @@ void main() {
   );
 
   test(
+    'loop reopens the first item after natural completion of the last',
+    () async {
+      await sessionController.play(1, requestedQuality: 'lossless');
+      queue.setMode(RemotePlaybackMode.loop);
+
+      backend.emit(PlaybackBackendState.completed);
+      await pumpEventQueue();
+
+      expect(gateway.refs.map((ref) => ref.trackId), ['2', '1']);
+      expect(queue.value.currentIndex, 0);
+      expect(localBridge.restored, isEmpty);
+    },
+  );
+
+  test(
     'last item completion restores the captured local session once',
     () async {
       final resumePoint = _FakeResumePoint();
@@ -689,13 +749,30 @@ final class _RecordingLocalBridge implements LocalPlaybackSessionBridge {
   }
 }
 
-final class _RecordingGateway implements RemoteQueuePlaybackGateway {
+final class _RecordingGateway implements RemoteQueuePlaybackMetadataGateway {
   final refs = <PlatformTrackRef>[];
   final qualities = <String>[];
   final events = <String>[];
   final pending = <Future<void>>[];
   final tokens = <ChkszCancelToken>[];
+  final results = <RemoteQueuePlaybackResult>[];
   Object? error;
+
+  @override
+  Future<RemoteQueuePlaybackResult> openWithMetadata(
+    PlatformTrackRef ref, {
+    required String requestedQuality,
+    required ChkszCancelToken cancelToken,
+  }) async {
+    await open(
+      ref,
+      requestedQuality: requestedQuality,
+      cancelToken: cancelToken,
+    );
+    return results.isEmpty
+        ? const RemoteQueuePlaybackResult()
+        : results.removeAt(0);
+  }
 
   @override
   Future<void> open(

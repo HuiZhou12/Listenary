@@ -1,3 +1,5 @@
+// ignore_for_file: invalid_use_of_visible_for_testing_member
+
 import 'dart:async';
 import 'dart:math' show max, pow, sin;
 
@@ -6,6 +8,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/route_visibility.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/lyric_timing.dart';
 import 'package:pure_music/page/now_playing_page/component/collapsible_lyric_controls.dart';
@@ -15,7 +18,7 @@ import 'package:pure_music/page/now_playing_page/component/lyric_viewport_strate
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_widget.dart';
 import 'package:pure_music/page/now_playing_page/component/value_transition.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart'
-    show alwaysShowLyricViewControls;
+    show alwaysShowLyricViewControls, lyricDisplayPrimaryIndex;
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/remote_lyric_controller.dart';
 
@@ -50,17 +53,23 @@ class RemoteVerticalLyricView extends StatefulWidget {
 }
 
 class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
-    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin, RouteAware {
   static const _estimatedItemExtent = 82.0;
 
   final ScrollController _scrollController = ScrollController();
   final LyricUserScrollTracker _userScrollTracker = LyricUserScrollTracker();
   final Map<int, GlobalKey> _lineKeys = {};
   RemoteLyricController? _controller;
+  PageRoute<dynamic>? _route;
   Timer? _resumeFollowTimer;
   _RemoteLyricScrollState _scrollState = _RemoteLyricScrollState.idle;
   int? _lastLineIndex;
   Lyric? _lastLyric;
+  /// 回到播放页/首次定位时当前行往往还没构建（也还没有可用的精确滚动目标），
+  /// 需要跨帧重试直到能精确命中当前行。
+  /// 对照本地视图 `vertical_lyric_view.dart` 的 `_pendingScrollRetries` 机制。
+  int _pendingScrollRetries = 0;
+  static const int _maxPendingScrollRetries = 90;
   int _jumpTriggerId = 0;
   double _jumpDeltaY = 0;
   int _staggerVisibleStartIndex = 0;
@@ -87,6 +96,14 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (_route != route) {
+      final oldRoute = _route;
+      if (oldRoute != null) routeVisibilityObserver.unsubscribe(this);
+      _route = route is PageRoute<dynamic> ? route : null;
+      final pageRoute = _route;
+      if (pageRoute != null) routeVisibilityObserver.subscribe(this, pageRoute);
+    }
     final controller = context.read<RemoteLyricController>();
     if (identical(controller, _controller)) return;
     _controller?.removeListener(_onLyricChanged);
@@ -94,39 +111,69 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
     _onLyricChanged();
   }
 
+  int _displayIndex(RemoteLyricSnapshot snapshot) {
+    final lyric = snapshot.lyric;
+    if (lyric == null || lyric.lines.isEmpty) return 0;
+    final update = lyricLineUpdateAt(lyric, snapshot.position ?? Duration.zero);
+    return lyricDisplayPrimaryIndex(
+      fallbackPrimaryIndex: snapshot.currentLineIndex ?? update.primaryIndex,
+      lineCount: lyric.lines.length,
+      groupedLines: update.layoutIndices.toSet(),
+    );
+  }
+
+  void _syncWhenRouteVisible() {
+    // 用户正在手动拖动歌词时不抢滚动（保留既有保护）。
+    if (!mounted || _scrollState == _RemoteLyricScrollState.userDragging) {
+      return;
+    }
+    // 回到播放页时播放页整棵子树会被重建（路由 `maintainState: false`），
+    // 歌词 ListView 从偏移 0 重新开始，必须强制把视口重新拉回当前行。
+    // 对照本地视图 `_syncWhenRouteVisible()`：重置跟随/拖动状态、清掉行跳变动画，
+    // 再按「强制定位 + 跨帧重试」的方式重新定位。
+    _resumeFollowTimer?.cancel();
+    _resumeFollowTimer = null;
+    _userScrollTracker.end();
+    setState(() {
+      _jumpDeltaY = 0;
+      _jumpTriggerId++;
+    });
+    _requestScrollToCurrent();
+  }
+
+  @override
+  void didPush() => _syncWhenRouteVisible();
+
+  @override
+  void didPopNext() => _syncWhenRouteVisible();
+
   void _onLyricChanged() {
     if (!mounted || _controller == null) return;
     final snapshot = _controller!.value;
+    final displayIndex = _displayIndex(snapshot);
     final lyricChanged = !identical(snapshot.lyric, _lastLyric);
-    final lineChanged = snapshot.currentLineIndex != _lastLineIndex;
+    final lineChanged = displayIndex != _lastLineIndex;
     if (!lyricChanged && !lineChanged) return;
 
     final previousLineIndex = _lastLineIndex;
     _lastLyric = snapshot.lyric;
-    _lastLineIndex = snapshot.currentLineIndex;
+    _lastLineIndex = displayIndex;
     if (lyricChanged) {
       _lineKeys.clear();
       _jumpTriggerId = 0;
       _jumpDeltaY = 0;
       _staggerVisibleStartIndex = 0;
-    } else if (lineChanged &&
-        previousLineIndex != null &&
-        snapshot.currentLineIndex != null) {
+    } else if (lineChanged && previousLineIndex != null) {
       _jumpTriggerId++;
-      _jumpDeltaY =
-          ((snapshot.currentLineIndex! - previousLineIndex) *
-                  _estimatedItemExtent)
-              .clamp(-_estimatedItemExtent * 3, _estimatedItemExtent * 3);
-      _staggerVisibleStartIndex = max(0, snapshot.currentLineIndex! - 3);
+      _jumpDeltaY = ((displayIndex - previousLineIndex) * _estimatedItemExtent)
+          .clamp(-_estimatedItemExtent * 3, _estimatedItemExtent * 3);
+      _staggerVisibleStartIndex = max(0, displayIndex - 3);
     }
 
     if (lyricChanged || lineChanged) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _scrollState == _RemoteLyricScrollState.userDragging) {
-          return;
-        }
-        _scrollToCurrent();
-      });
+      // 换成 `_requestScrollToCurrent()`：行刚变化/歌词刚就绪时目标行可能还没构建，
+      // 需要跨帧重试到能精确命中（与回页定位同一套机制）。
+      _requestScrollToCurrent();
     }
     setState(() {});
   }
@@ -153,7 +200,7 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
           () {
             if (!mounted) return;
             _setScrollState(_RemoteLyricScrollState.idle);
-            _scrollToCurrent();
+            _requestScrollToCurrent();
           },
         );
       }
@@ -246,41 +293,162 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
     _startScrollTicker();
   }
 
+  /// 请求把视口重新定位到当前行。
+  ///
+  /// 回页/首次定位时当前行的行 widget 往往还没构建，`_lineKeys[index]` 取不到
+  /// 精确滚动目标，只能退回到行高估算；而估算一旦与真实行高不符就会停在错误位置。
+  /// 因此这里在后续帧里持续尝试，直到当前行已构建、能拿到精确 reveal 目标为止。
+  void _requestScrollToCurrent() {
+    if (!mounted) return;
+    _pendingScrollRetries = 0;
+    _scheduleScrollStep();
+  }
+
+  void _scheduleScrollStep() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_scrollState == _RemoteLyricScrollState.userDragging) {
+        _pendingScrollRetries = 0;
+        return;
+      }
+      final snapshot = _controller?.value;
+      final lyric = snapshot?.lyric;
+      if (snapshot == null || lyric == null || lyric.lines.isEmpty) {
+        _scheduleScrollRetry();
+        return;
+      }
+      final index = _displayIndex(snapshot);
+      // 该行本身不渲染（空白行没有行 widget），估算一次即可，不进入重试。
+      final lines = lyric.lines;
+      if (index < 0 ||
+          index >= lines.length ||
+          lyricLineIsFilteredBlank(lines[index])) {
+        _pendingScrollRetries = 0;
+        if (_scrollController.hasClients &&
+            _scrollState != _RemoteLyricScrollState.programScrolling) {
+          _scrollToCurrent();
+        }
+        return;
+      }
+      if (_revealOffsetForLine(index) != null) {
+        // 当前行已构建：精确 reveal（已对齐时不会产生位移，幂等）。
+        _pendingScrollRetries = 0;
+        _scrollToCurrent();
+        return;
+      }
+      // 当前行还没构建：先按已构建行实测出的目标滚过去，
+      // 等这次滚动结束、当前行进入构建范围后再精确对齐。
+      // （滚动动画进行中不重复发起，避免每帧重启动画；估算已到位也不重复发起。）
+      if (_scrollController.hasClients &&
+          _scrollState != _RemoteLyricScrollState.programScrolling &&
+          (_estimatedScrollOffsetForLine(index) - _scrollController.offset)
+                  .abs() >
+              1.0) {
+        _scrollToCurrent();
+      }
+      _scheduleScrollRetry();
+    });
+  }
+
+  void _scheduleScrollRetry() {
+    if (_pendingScrollRetries >= _maxPendingScrollRetries) {
+      _pendingScrollRetries = 0;
+      return;
+    }
+    _pendingScrollRetries++;
+    _scheduleScrollStep();
+  }
+
+  /// 当前行已构建时，返回把它对齐到 [RemoteVerticalLyricView.currentLineAlignment]
+  /// 所需的滚动偏移；未构建时返回 null。
+  double? _revealOffsetForLine(int index) {
+    final lineContext = _lineKeys[index]?.currentContext;
+    if (lineContext == null) return null;
+    final renderObject = lineContext.findRenderObject();
+    if (renderObject == null || !renderObject.attached) return null;
+    return RenderAbstractViewport.of(
+      renderObject,
+    ).getOffsetToReveal(renderObject, widget.currentLineAlignment).offset;
+  }
+
+  /// 当前行还没构建时的估算滚动目标。
+  ///
+  /// 固定 [_estimatedItemExtent] 与实际行高（翻译/罗马音并列时差异很大）并不相符，
+  /// 所以优先用已构建行之间的**实测**像素间距外推：两行的 `getOffsetToReveal` 之差
+  /// 即真实行高；再取离目标行最近的已构建行作锚点，锚点自带列表 padding 与对齐信息。
+  double _estimatedScrollOffsetForLine(int index) {
+    final position = _scrollController.position;
+    final viewport = position.viewportDimension;
+    final alignment = widget.currentLineAlignment;
+
+    final builtIndices = <int>[];
+    for (final entry in _lineKeys.entries) {
+      if (_revealOffsetForLine(entry.key) != null) builtIndices.add(entry.key);
+    }
+    builtIndices.sort();
+
+    var extent = _estimatedItemExtent;
+    if (builtIndices.isNotEmpty) {
+      final firstIndex = builtIndices.first;
+      final lastIndex = builtIndices.last;
+      if (lastIndex > firstIndex) {
+        final measured =
+            (_revealOffsetForLine(lastIndex)! -
+                _revealOffsetForLine(firstIndex)!) /
+            (lastIndex - firstIndex);
+        if (measured.isFinite && measured > 1.0) extent = measured;
+      }
+
+      // 取离目标行最近的已构建行作锚点：锚点自带列表 padding 与对齐信息，
+      // 只需再按实测行高外推差值，比固定行高估算准确得多。
+      var anchorIndex = firstIndex;
+      var bestDistance = (anchorIndex - index).abs();
+      for (final built in builtIndices) {
+        final distance = (built - index).abs();
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          anchorIndex = built;
+        }
+      }
+      final anchorOffset = _revealOffsetForLine(anchorIndex);
+      if (anchorOffset != null) {
+        return (anchorOffset + (index - anchorIndex) * extent).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        );
+      }
+    }
+
+    // 一行都没构建时退回固定行高估算（与 ListView 的 padding 保持一致）。
+    final topPadding = widget.centerVertically
+        ? viewport / 2.0
+        : widget.enableEdgeSpacer
+        ? viewport
+        : viewport * alignment;
+    final target =
+        topPadding + index * extent + extent / 2.0 - viewport * alignment;
+    return target.clamp(position.minScrollExtent, position.maxScrollExtent);
+  }
+
   void _scrollToCurrent() {
     if (!mounted || !_scrollController.hasClients) return;
-    final index = _controller?.value.currentLineIndex;
-    final lyric = _controller?.value.lyric;
-    if (index == null || lyric == null || lyric.lines.isEmpty) return;
+    final snapshot = _controller?.value;
+    if (snapshot == null) return;
+    final index = _displayIndex(snapshot);
+    final lyric = snapshot.lyric;
+    if (lyric == null || lyric.lines.isEmpty) return;
 
-    final lineContext = _lineKeys[index]?.currentContext;
     final distance = (index - (_lastLineIndex ?? index)).abs();
     final duration = _scrollDurationForDistance(
       (distance * _estimatedItemExtent).toDouble(),
     );
     _setScrollState(_RemoteLyricScrollState.programScrolling);
-    if (lineContext != null) {
-      final target = RenderAbstractViewport.of(lineContext.findRenderObject()!)
-          .getOffsetToReveal(
-            lineContext.findRenderObject()!,
-            widget.currentLineAlignment,
-          );
-      _animateTo(target.offset, duration: duration);
+    final revealOffset = _revealOffsetForLine(index);
+    if (revealOffset != null) {
+      _animateTo(revealOffset, duration: duration);
       return;
     }
-
-    final viewport = _scrollController.position.viewportDimension;
-    final topPadding = widget.centerVertically
-        ? viewport / 2.0
-        : widget.enableEdgeSpacer
-        ? viewport
-        : viewport * widget.currentLineAlignment;
-    final target =
-        (topPadding +
-                index * _estimatedItemExtent +
-                _estimatedItemExtent / 2.0 -
-                viewport * widget.currentLineAlignment)
-            .clamp(0.0, _scrollController.position.maxScrollExtent);
-    _animateTo(target, duration: duration);
+    _animateTo(_estimatedScrollOffsetForLine(index), duration: duration);
   }
 
   bool _hasBackgroundVocal(LyricLine line) {
@@ -312,9 +480,11 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
       },
       child: Material(
         type: MaterialType.transparency,
-        child: ChangeNotifierProvider<LyricViewController>.value(
-          value: LyricViewController.instance,
-          child: Stack(
+        child: ScrollConfiguration(
+          behavior: const ScrollBehavior().copyWith(scrollbars: false),
+          child: ChangeNotifierProvider<LyricViewController>.value(
+            value: LyricViewController.instance,
+            child: Stack(
             children: [
               ListenableBuilder(
                 listenable: Listenable.merge([
@@ -340,8 +510,7 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
 
                   final position = snapshot.position ?? Duration.zero;
                   final update = lyricLineUpdateAt(lyric, position);
-                  final currentLineIndex =
-                      snapshot.currentLineIndex ?? update.primaryIndex;
+                  final currentLineIndex = _displayIndex(snapshot);
                   final groupIndices = update.layoutIndices.toSet();
                   final freezeParallelGroup = groupIndices.length > 1;
 
@@ -521,13 +690,15 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 
   @override
   void dispose() {
     _resumeFollowTimer?.cancel();
     _stopScrollTicker();
+    if (_route != null) routeVisibilityObserver.unsubscribe(this);
     _controller?.removeListener(_onLyricChanged);
     _scrollController.dispose();
     super.dispose();

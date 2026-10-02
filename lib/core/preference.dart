@@ -625,7 +625,25 @@ class AppPreference {
   );
 
   var playlistDetailPagePref = PagePreference(
+    3,
+    SortOrder.ascending,
+    ContentView.list,
+  );
+
+  /// 只读订阅在线歌单详情页：排序项只有 3 个（标题/歌手/专辑），
+  /// 与歌单详情页共用同一个偏好对象会因索引 clamp 而被改写，因此单独一份。
+  var onlinePlaylistDetailPagePref = PagePreference(
     0,
+    SortOrder.ascending,
+    ContentView.list,
+  );
+
+  /// 个人在线歌单详情页：排序项 5 个（标题/艺术家/专辑/添加时间/自定义）。
+  /// 收藏页只有 4 个排序项（无「自定义」），与它共用歌单详情页的偏好时会由
+  /// resolveSortMethod 把 clamp 后的索引写回，使「自定义」（索引 4）在收藏页
+  /// 重建时被改成「添加时间」（索引 3），因此这里同样单独一份。
+  var personalPlaylistDetailPagePref = PagePreference(
+    3,
     SortOrder.ascending,
     ContentView.list,
   );
@@ -700,9 +718,27 @@ class AppPreference {
       prefMap['folderDetailPagePref'],
     );
     playlistsPagePref = PagePreference.fromMap(prefMap['playlistsPagePref']);
-    playlistDetailPagePref = PagePreference.fromMap(
-      prefMap['playlistDetailPagePref'],
+    // 歌单详情默认排序为「添加时间」（索引 3）。PagePreference.fromMap 在缺少
+    // sortMethod 时会回退成 0，因此这里只在用户确实存过 sortMethod 时才覆盖，
+    // 既让新用户拿到新默认值，又不动老用户已存偏好（用户已确认不做迁移）。
+    final storedPlaylistDetailPref = prefMap['playlistDetailPagePref'];
+    if (storedPlaylistDetailPref is Map &&
+        storedPlaylistDetailPref.containsKey('sortMethod')) {
+      playlistDetailPagePref = PagePreference.fromMap(storedPlaylistDetailPref);
+    }
+    onlinePlaylistDetailPagePref = PagePreference.fromMap(
+      prefMap['onlinePlaylistDetailPagePref'],
     );
+    // 与歌单详情页同理：默认「添加时间」（索引 3），缺少 sortMethod 时不覆盖，
+    // 免得 PagePreference.fromMap 的 0 回退把默认值改回「标题」。
+    final storedPersonalPlaylistDetailPref =
+        prefMap['personalPlaylistDetailPagePref'];
+    if (storedPersonalPlaylistDetailPref is Map &&
+        storedPersonalPlaylistDetailPref.containsKey('sortMethod')) {
+      personalPlaylistDetailPagePref = PagePreference.fromMap(
+        storedPersonalPlaylistDetailPref,
+      );
+    }
     startPage = _normalizedBoundedInt(
       prefMap['startPage'],
       defaultValue: 0,
@@ -775,6 +811,9 @@ class AppPreference {
         'folderDetailPagePref': folderDetailPagePref.toMap(),
         'playlistsPagePref': playlistsPagePref.toMap(),
         'playlistDetailPagePref': playlistDetailPagePref.toMap(),
+        'onlinePlaylistDetailPagePref': onlinePlaylistDetailPagePref.toMap(),
+        'personalPlaylistDetailPagePref': personalPlaylistDetailPagePref
+            .toMap(),
         'startPage': startPage,
         'sidebarExpanded': sidebarExpanded,
         'playbackPref': playbackPref.toMap(),

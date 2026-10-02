@@ -274,6 +274,7 @@ class AppSettings {
   bool keepPitch = true;
   Set<NowPlayingMode> wavyBarEnabledModes = defaultWavyBarEnabledModes();
   TopBarLyricAnimation topBarLyricAnimation = TopBarLyricAnimation.slideUp;
+  LyricTextAlign topBarLyricTextAlign = LyricTextAlign.left;
   bool enableCoverColorExtraction = true;
   int? customCoverColor;
   Size windowSize = const Size(1280, 756);
@@ -533,6 +534,12 @@ class AppSettings {
       );
     }
 
+    final tblta = settingsMap['TopBarLyricTextAlign'];
+    if (tblta != null) {
+      _instance.topBarLyricTextAlign =
+          LyricTextAlign.fromString('$tblta') ?? LyricTextAlign.left;
+    }
+
     final tbla = settingsMap['TopBarLyricAnimation'];
     if (tbla != null) {
       final storedName = normalizedSettingEnumName(tbla);
@@ -759,6 +766,7 @@ class AppSettings {
         'KeepPitch': keepPitch,
         'WavyBarEnabledModes': NowPlayingMode.toList(wavyBarEnabledModes),
         'TopBarLyricAnimation': topBarLyricAnimation.name,
+        'TopBarLyricTextAlign': topBarLyricTextAlign.name,
         'EnableCoverColorExtraction': enableCoverColorExtraction,
         'CustomCoverColor': customCoverColor,
         'IsWindowMaximized': isMaximized,

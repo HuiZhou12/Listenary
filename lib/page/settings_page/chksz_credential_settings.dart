@@ -3,7 +3,10 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/component/settings_tile.dart';
+import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 
 class ChkszCredentialSettings extends StatefulWidget {
@@ -183,15 +186,98 @@ class _ChkszCredentialSettingsState extends State<ChkszCredentialSettings> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    // 与其他设置页签一致用 ListView：本页现在有两个设置项，窗口较矮时需要可滚动。
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
       children: [
+        const _SettingsSectionTitle('服务凭据'),
         SettingsTile(
           description: '$_providerName $_credentialName',
           subtitle: '$_statusDescription · $_modeDescription · 仅在发起在线请求时发送',
           action: _buildAction(),
         ),
+        const SizedBox(height: 24),
+        const _SettingsSectionTitle('播放音质'),
+        const _DefaultQualityTile(),
       ],
+    );
+  }
+}
+
+/// 设置分块标题：本页有两个设置项，用标题把它们分开。
+class _SettingsSectionTitle extends StatelessWidget {
+  const _SettingsSectionTitle(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: scheme.onSurfaceVariant,
+          fontSize: AppType.caption,
+          fontWeight: AppType.weightSemibold,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+}
+
+/// 在线播放的默认音质：新建远程会话时使用（会话内手动切换的档位优先）。
+class _DefaultQualityTile extends StatefulWidget {
+  const _DefaultQualityTile();
+
+  @override
+  State<_DefaultQualityTile> createState() => _DefaultQualityTileState();
+}
+
+class _DefaultQualityTileState extends State<_DefaultQualityTile> {
+  MusicQuality get _current {
+    final level = AppPreference.instance.defaultQuality;
+    for (final quality in MusicQuality.values) {
+      if (quality.level == level) return quality;
+    }
+    return MusicQuality.lossless;
+  }
+
+  Future<void> _select(MusicQuality quality) async {
+    if (quality.level == AppPreference.instance.defaultQuality) return;
+    setState(() => AppPreference.instance.defaultQuality = quality.level);
+    final saved = await AppPreference.instance.save();
+    if (!saved && mounted) {
+      showTextOnSnackBar('保存默认音质失败', variant: ToastVariant.error);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final current = _current;
+    return SettingsTile(
+      description: '默认音质',
+      subtitle: '在线播放未手动切换时使用；播放中手动选择的档位优先',
+      // 与其他多选设置项保持一致（同「顶部歌词切换动画」的 SegmentedButton 写法）。
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SegmentedButton<MusicQuality>(
+              showSelectedIcon: false,
+              segments: [
+                for (final quality in MusicQuality.values)
+                  ButtonSegment(value: quality, label: Text(quality.label)),
+              ],
+              selected: {current},
+              onSelectionChanged: (selection) => _select(selection.first),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

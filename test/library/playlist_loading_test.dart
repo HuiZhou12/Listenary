@@ -46,6 +46,49 @@ void main() {
     }
   });
 
+  test('falls back to persisted playlist order when added time is missing', () {
+    final database = sqlite3.openInMemory();
+    try {
+      database.execute('''
+        CREATE TABLE playlists (
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL UNIQUE,
+          cover_source TEXT
+        );
+        CREATE TABLE playlist_items (
+          playlist_id INTEGER NOT NULL,
+          path TEXT NOT NULL,
+          sort_order INTEGER NOT NULL,
+          added_at TEXT
+        );
+        INSERT INTO playlists(id, name, cover_source)
+        VALUES (1, 'Legacy', NULL);
+        INSERT INTO playlist_items(playlist_id, path, sort_order, added_at)
+        VALUES
+          (1, 'third.mp3', 2, NULL),
+          (1, 'first.mp3', 0, NULL),
+          (1, 'second.mp3', 1, NULL);
+      ''');
+
+      final playlist = readPlaylistsFromDatabase(database).single;
+      final paths = [...playlist.paths]..sort(
+          (left, right) => playlist.compareByAddedAt(left, right),
+        );
+      final descending = [...playlist.paths]..sort(
+          (left, right) => playlist.compareByAddedAt(
+            left,
+            right,
+            descending: true,
+          ),
+        );
+
+      expect(paths, ['first.mp3', 'second.mp3', 'third.mp3']);
+      expect(descending, ['third.mp3', 'second.mp3', 'first.mp3']);
+    } finally {
+      database.dispose();
+    }
+  });
+
   test('creates one persisted playlist and rejects a duplicate name', () {
     final database = sqlite3.openInMemory();
     try {

@@ -142,8 +142,6 @@ class _AppearanceTabContent extends StatelessWidget {
         _MonetControlsSwitch(),
         SizedBox(height: 16.0),
         _WavyProgressBarSwitch(),
-        SizedBox(height: 16.0),
-        _TopBarLyricAnimationSelector(),
       ],
     );
   }
@@ -271,6 +269,65 @@ class _WavyProgressBarSwitchState extends State<_WavyProgressBarSwitch> {
             fontWeight: AppType.weightMedium,
           ),
           children: const [Text('竖屏'), Text('横屏'), Text('横屏沉浸')],
+        ),
+      ),
+    );
+  }
+}
+
+class _TopBarLyricAlignSelector extends StatefulWidget {
+  const _TopBarLyricAlignSelector();
+
+  @override
+  State<_TopBarLyricAlignSelector> createState() =>
+      _TopBarLyricAlignSelectorState();
+}
+
+class _TopBarLyricAlignSelectorState extends State<_TopBarLyricAlignSelector> {
+  final settings = AppSettings.instance;
+
+  Future<void> _setAlign(LyricTextAlign align) async {
+    if (align == settings.topBarLyricTextAlign) return;
+    setState(() => settings.topBarLyricTextAlign = align);
+    await settings.saveSettings();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsTile(
+      description: '文字对齐',
+      action: SegmentedButton<LyricTextAlign>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment(value: LyricTextAlign.left, label: Text('左')),
+          ButtonSegment(value: LyricTextAlign.center, label: Text('中')),
+          ButtonSegment(value: LyricTextAlign.right, label: Text('右')),
+        ],
+        selected: {settings.topBarLyricTextAlign},
+        onSelectionChanged: (selection) => _setAlign(selection.first),
+      ),
+    );
+  }
+}
+
+/// 设置分块标题：与「关于」页签的 `_AboutSectionHeader` 同一视觉语言。
+class _LyricsSectionTitle extends StatelessWidget {
+  const _LyricsSectionTitle(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: scheme.onSurfaceVariant,
+          fontSize: AppType.caption,
+          fontWeight: AppType.weightSemibold,
+          letterSpacing: 0.5,
         ),
       ),
     );
@@ -1109,6 +1166,16 @@ class _LyricsTabContentState extends State<_LyricsTabContent> {
     return ListView(
       padding: const EdgeInsets.only(bottom: 96.0, right: 20),
       children: [
+        // ── 顶栏歌词 ──
+        const _LyricsSectionTitle('顶栏歌词'),
+        const SizedBox(height: 8.0),
+        const _TopBarLyricAlignSelector(),
+        const SizedBox(height: 16.0),
+        const _TopBarLyricAnimationSelector(),
+        const SizedBox(height: 24.0),
+        // ── 歌词显示与写入 ──
+        const _LyricsSectionTitle('歌词显示与写入'),
+        const SizedBox(height: 8.0),
         const DefaultLyricSourceControl(),
         const SizedBox(height: 16.0),
         // 注释：这两个设置暂时隐藏，因为第三方歌词 API 总是返回全部数据（主歌词+翻译+注音），

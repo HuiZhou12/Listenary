@@ -9,6 +9,7 @@ import 'package:pure_music/component/online_track_row.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_cover_cache.dart';
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/page_scaffold.dart';
@@ -225,9 +226,9 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
       secondaryContentBuilder: (context, track, index, msc, view) =>
           _buildTrackRow(track, tracks),
       enableShufflePlay: false,
-      enableSortMethod: true,
-      enableSortOrder: true,
-      sortMethods: _sortMethods(),
+      enableSortMethod: hasEnoughItemsToSort(tracks.length),
+      enableSortOrder: hasEnoughItemsToSort(tracks.length),
+      sortMethods: _sortMethods(snapshot),
       enableSecondaryContentViewSwitch: false,
       enableSearch: true,
       searchQuery: _searchQuery,
@@ -243,7 +244,9 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
     );
   }
 
-  List<SortMethodDesc<MusicTrack>> _sortMethods() {
+  List<SortMethodDesc<MusicTrack>> _sortMethods(
+    PersonalOnlinePlaylistSnapshot snapshot,
+  ) {
     return [
       SortMethodDesc<MusicTrack>(
         icon: Symbols.title,
@@ -287,6 +290,26 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
               break;
             case SortOrder.decending:
               list.sort((a, b) => b.album.naturalCompareTo(a.album));
+              break;
+          }
+        },
+      ),
+      SortMethodDesc<MusicTrack>(
+        icon: Symbols.add_circle,
+        name: '添加时间',
+        method: (list, order) {
+          switch (order) {
+            case SortOrder.ascending:
+              list.sort((a, b) => snapshot.compareByAddedAt(a.ref, b.ref));
+              break;
+            case SortOrder.decending:
+              list.sort(
+                (a, b) => snapshot.compareByAddedAt(
+                  a.ref,
+                  b.ref,
+                  descending: true,
+                ),
+              );
               break;
           }
         },

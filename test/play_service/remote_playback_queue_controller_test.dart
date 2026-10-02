@@ -202,6 +202,64 @@ void main() {
       throwsStateError,
     );
   });
+
+  test('falls back to the next lower quality when the request fails', () async {
+    gateway.errors.addAll([
+      const RemoteStreamPlaybackException(
+        kind: RemoteStreamPlaybackErrorKind.openFailed,
+      ),
+      null,
+    ]);
+
+    final actual = await controller.play(0, requestedQuality: 'lossless');
+
+    expect(gateway.qualities, ['lossless', 'exhigh']);
+    expect(actual, 'exhigh');
+  });
+
+  test('accepts the platform level when it is below the request', () async {
+    gateway.results.add(
+      const RemoteQueuePlaybackResult(actualQuality: 'exhigh'),
+    );
+
+    final actual = await controller.play(0, requestedQuality: 'lossless');
+
+    // 平台已给出可播放流，只请求一次，不再制造请求风暴。
+    expect(gateway.qualities, ['lossless']);
+    expect(actual, 'exhigh');
+  });
+
+  test('descends to the lowest quality before failing', () async {
+    gateway.error = const RemoteStreamPlaybackException(
+      kind: RemoteStreamPlaybackErrorKind.openFailed,
+    );
+
+    await expectLater(
+      controller.play(0, requestedQuality: 'exhigh'),
+      throwsA(isA<RemoteStreamPlaybackException>()),
+    );
+
+    expect(gateway.qualities, ['exhigh', 'standard']);
+  });
+
+  test('honors the fallback floor so a song change keeps a playable level',
+      () async {
+    gateway.errors.addAll([
+      const RemoteStreamPlaybackException(
+        kind: RemoteStreamPlaybackErrorKind.openFailed,
+      ),
+      null,
+    ]);
+
+    final actual = await controller.play(
+      0,
+      requestedQuality: 'hires',
+      fallbackQuality: 'exhigh',
+    );
+
+    expect(gateway.qualities, ['hires', 'lossless']);
+    expect(actual, 'lossless');
+  });
 }
 
 RemotePlaybackQueueItem _item(
@@ -225,6 +283,7 @@ final class _FakeRemoteQueuePlaybackGateway
   final tokens = <ChkszCancelToken>[];
   final pending = <Future<void>>[];
   final results = <RemoteQueuePlaybackResult>[];
+  final errors = <Object?>[];
   Object? error;
 
   @override
@@ -253,7 +312,7 @@ final class _FakeRemoteQueuePlaybackGateway
         ? const RemoteQueuePlaybackResult()
         : results.removeAt(0);
     if (pending.isNotEmpty) await pending.removeAt(0);
-    final nextError = error;
+    final nextError = errors.isNotEmpty ? errors.removeAt(0) : error;
     if (nextError != null) throw nextError;
     return result;
   }

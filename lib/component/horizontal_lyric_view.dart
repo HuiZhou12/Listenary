@@ -47,7 +47,7 @@ class HorizontalLyricView extends StatelessWidget {
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0),
                       child: Align(
-                        alignment: Alignment.centerLeft,
+                        alignment: topBarLyricAlignment(),
                         child: Text(
                           '快来播放音乐吧~',
                           style: TextStyle(color: scheme.onSecondaryContainer),
@@ -147,6 +147,68 @@ Widget _buildTopBarLyricTextTransition({
   );
 }
 
+/// 顶栏歌词的水平对齐（设置 → 歌词 → 顶栏歌词）。
+Alignment topBarLyricAlignment() => switch (
+  AppSettings.instance.topBarLyricTextAlign
+) {
+  LyricTextAlign.left => Alignment.centerLeft,
+  LyricTextAlign.center => Alignment.center,
+  LyricTextAlign.right => Alignment.centerRight,
+};
+
+/// `AnimatedSwitcher` 的过场构造：按「设置 → 歌词 → 顶栏歌词」选择的动画执行。
+///
+/// 选项与本地顶栏、桌面歌词完全同名同义（上划/下划/左划/右划/淡入淡出/吸收）。
+/// 由 AnimatedSwitcher 自带的 animation 驱动，不再手写 AnimationController ——
+/// 手写版本一旦 ticker 不推进（窗口缩放期 `TickerMode(enabled: false)`）进度会停在 0，
+/// 旧文本永远盖在上面，表现为「卡在旧歌词、不随播放推进」。
+Widget topBarLyricSwitcherTransition({
+  required Widget child,
+  required Animation<double> animation,
+  required TopBarLyricAnimation mode,
+}) {
+  final curved = animation.drive(
+    CurveTween(
+      curve: mode == TopBarLyricAnimation.fade
+          ? Curves.easeInOutCubic
+          : Curves.easeOutCubic,
+    ),
+  );
+  switch (mode) {
+    case TopBarLyricAnimation.fade:
+      return FadeTransition(opacity: curved, child: child);
+    case TopBarLyricAnimation.absorb:
+      return ScaleTransition(
+        scale: Tween<double>(begin: 0.88, end: 1).animate(curved),
+        child: FadeTransition(opacity: curved, child: child),
+      );
+    case TopBarLyricAnimation.slideUp:
+      return _topBarLyricSlide(child, curved, const Offset(0, 0.5));
+    case TopBarLyricAnimation.slideDown:
+      return _topBarLyricSlide(child, curved, const Offset(0, -0.5));
+    case TopBarLyricAnimation.slideLeft:
+      return _topBarLyricSlide(child, curved, const Offset(0.3, 0));
+    case TopBarLyricAnimation.slideRight:
+      return _topBarLyricSlide(child, curved, const Offset(-0.3, 0));
+  }
+}
+
+Widget _topBarLyricSlide(
+  Widget child,
+  Animation<double> animation,
+  Offset begin,
+) {
+  return ClipRect(
+    child: SlideTransition(
+      position: Tween<Offset>(
+        begin: begin,
+        end: Offset.zero,
+      ).animate(animation),
+      child: FadeTransition(opacity: animation, child: child),
+    ),
+  );
+}
+
 class _RemoteLyricHorizontalScrollArea extends StatefulWidget {
   const _RemoteLyricHorizontalScrollArea();
 
@@ -156,15 +218,12 @@ class _RemoteLyricHorizontalScrollArea extends StatefulWidget {
 }
 
 class _RemoteLyricHorizontalScrollAreaState
-    extends State<_RemoteLyricHorizontalScrollArea>
-    with SingleTickerProviderStateMixin {
+    extends State<_RemoteLyricHorizontalScrollArea> {
   final ScrollController _scrollController = ScrollController();
   RemoteLyricController? _controller;
   Object? _lastRef;
   int? _lastLineIndex;
   String _content = '暂无歌词';
-  String _previousContent = '';
-  AnimationController? _transitionController;
   int _scrollRevision = 0;
 
   @override
@@ -179,39 +238,33 @@ class _RemoteLyricHorizontalScrollAreaState
     _onLyricChanged();
   }
 
+  /// 无行可显示时的占位文案。
+  ///
+  /// 加载中 / 无歌词 / 失败是三种不同状态，不能都塌成「暂无歌词」，
+  /// 否则用户会把「正在加载」误读成「这首歌没有歌词」。
+  String _placeholderFor(RemoteLyricStatus status) => switch (status) {
+    RemoteLyricStatus.loading => '歌词加载中…',
+    RemoteLyricStatus.failed => '歌词加载失败',
+    RemoteLyricStatus.ready ||
+    RemoteLyricStatus.empty ||
+    RemoteLyricStatus.inactive => '暂无歌词',
+  };
+
   void _onLyricChanged() {
     if (!mounted) return;
-    final snapshot = _controller!.value;
+    final controller = _controller;
+    if (controller == null) return;
+    final snapshot = controller.value;
     final line = snapshot.currentLine;
-    final nextContent = line == null ? '暂无歌词' : _contentForLine(line);
+    final nextContent = line == null
+        ? _placeholderFor(snapshot.status)
+        : _contentForLine(line);
     final lineChanged =
         snapshot.ref != _lastRef || snapshot.currentLineIndex != _lastLineIndex;
     if (!lineChanged && nextContent == _content) return;
     _lastRef = snapshot.ref;
     _lastLineIndex = snapshot.currentLineIndex;
-    setState(() {
-      if (_content.isNotEmpty && nextContent.isNotEmpty) {
-        _previousContent = _content;
-        _transitionController?.dispose();
-        _transitionController = AnimationController(
-          vsync: this,
-          duration: const Duration(milliseconds: 500),
-        );
-        _transitionController!.addStatusListener((status) {
-          if (status == AnimationStatus.completed && mounted) {
-            setState(() {
-              _previousContent = '';
-              _transitionController?.dispose();
-              _transitionController = null;
-            });
-          }
-        });
-        _transitionController!.forward();
-      } else {
-        _previousContent = '';
-      }
-      _content = nextContent;
-    });
+    setState(() => _content = nextContent);
     if (lineChanged) {
       final revision = ++_scrollRevision;
       WidgetsBinding.instance.addPostFrameCallback(
@@ -255,17 +308,29 @@ class _RemoteLyricHorizontalScrollAreaState
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Align(
-        alignment: Alignment.centerLeft,
+        alignment: topBarLyricAlignment(),
         child: ScrollConfiguration(
           behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
           child: SingleChildScrollView(
             controller: _scrollController,
             scrollDirection: Axis.horizontal,
-            child: _buildTopBarLyricTextTransition(
-              currentContent: _content,
-              previousContent: _previousContent,
-              controller: _transitionController,
-              scheme: scheme,
+            child: AnimatedSwitcher(
+              // 恢复 c692872 之前的 AnimatedSwitcher 结构（框架托管 ticker），
+              // 过场效果按用户设置执行，选项与桌面歌词一致。
+              duration: const Duration(milliseconds: 300),
+              transitionBuilder: (child, animation) =>
+                  topBarLyricSwitcherTransition(
+                    child: child,
+                    animation: animation,
+                    mode: AppSettings.instance.topBarLyricAnimation,
+                  ),
+              child: Text(
+                _content,
+                key: ValueKey('$_lastRef:$_lastLineIndex:$_content'),
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(color: scheme.onSecondaryContainer),
+              ),
             ),
           ),
         ),
@@ -276,7 +341,6 @@ class _RemoteLyricHorizontalScrollAreaState
   @override
   void dispose() {
     _controller?.removeListener(_onLyricChanged);
-    _transitionController?.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -649,7 +713,7 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
             child: Align(
-              alignment: Alignment.centerLeft,
+              alignment: topBarLyricAlignment(),
               child: LyricTransitionTile(
                 lrcLine: _transitionLrcLine,
                 syncLine: _transitionSyncLine,
@@ -664,15 +728,15 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
 
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12.0),
-          child: ScrollConfiguration(
-            behavior: ScrollConfiguration.of(
-              context,
-            ).copyWith(scrollbars: false),
-            child: SingleChildScrollView(
-              controller: scrollController,
-              scrollDirection: Axis.horizontal,
-              child: Align(
-                alignment: Alignment.centerLeft,
+          child: Align(
+            alignment: topBarLyricAlignment(),
+            child: ScrollConfiguration(
+              behavior: ScrollConfiguration.of(
+                context,
+              ).copyWith(scrollbars: false),
+              child: SingleChildScrollView(
+                controller: scrollController,
+                scrollDirection: Axis.horizontal,
                 child: _buildTextArea(scheme),
               ),
             ),

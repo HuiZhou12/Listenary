@@ -91,7 +91,8 @@ void main() {
       expect(find.text('Remote Playlist'), findsOneWidget);
       expect(find.textContaining('只读订阅'), findsOneWidget);
       expect(find.text('播放全部'), findsOneWidget);
-      expect(find.byTooltip('刷新'), findsOneWidget);
+      // 加载态之后头部刷新是带文字的按钮（不是 tooltip）。
+      expect(find.text('刷新'), findsOneWidget);
       // 添加按钮悬浮时显示。
       final hover = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await hover.moveTo(tester.getCenter(find.text('Remote Track')));
@@ -149,7 +150,9 @@ void main() {
     tester,
   ) async {
     final id = repository.createPersonalPlaylist('私人歌单');
+    // 两首：排序控件按 hasEnoughItemsToSort（>1）显示，单曲歌单本就不显示排序。
     repository.addTrackToPersonalPlaylist(id, _track('200'));
+    repository.addTrackToPersonalPlaylist(id, _track('201'));
 
     await tester.binding.setSurfaceSize(const Size(1280, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -180,10 +183,10 @@ void main() {
     );
     await _pumpUntilFound(tester, find.text('私人歌单'));
     expect(tester.takeException(), isNull);
-    expect(find.text('1首乐曲 · 我的在线歌单'), findsOneWidget);
+    expect(find.text('2首乐曲 · 我的在线歌单'), findsOneWidget);
 
     await tester.tap(find.text('私人歌单'));
-    await _pumpUntilFound(tester, find.text('1 首歌曲 · 我的在线歌单'));
+    await _pumpUntilFound(tester, find.text('2 首歌曲 · 我的在线歌单'));
     expect(find.byType(PersonalPlaylistDetailPage), findsOneWidget);
     // 详情页只保留一个标题（去掉 PageScaffold 双标题）。
     expect(
@@ -193,10 +196,11 @@ void main() {
       ),
       findsOneWidget,
     );
+    // 默认排序为「添加时间」（BUG-5）；排序控件按既有规则（>1 首）显示。
     expect(
       find.descendant(
         of: find.byType(PersonalPlaylistDetailPage),
-        matching: find.text('排序'),
+        matching: find.text('添加时间'),
       ),
       findsOneWidget,
     );

@@ -56,7 +56,9 @@ SortMethodDesc<T>? resolveSortMethod<T>(
     return null;
   }
   final index = pref.sortMethod.clamp(0, sortMethods.length - 1).toInt();
-  if (pref.sortMethod != index) pref.sortMethod = index;
+  // 不要把 clamp 后的索引写回 pref：多个详情页共用同一个 PagePreference，
+  // 排序项更少的页面（如只有 3-4 项的在线/收藏页）会把别的页面选的「自定义」
+  // 等较大索引悄悄改写掉，表现为切换页面后排序方式自己变了。
   return sortMethods[index];
 }
 

@@ -251,8 +251,10 @@ class _PersonalPlaylistDetailPageState
         )
         .toList(growable: false);
     final scheme = Theme.of(context).colorScheme;
-    final pref = AppPreference.instance.playlistDetailPagePref;
-    final sortMethods = _sortMethods();
+    // 使用本页专属偏好：与歌单详情页/收藏页共用时，别的页面会按各自的排序项数量
+    // clamp 并把索引写回，「自定义」（索引 4）会被改成「添加时间」（索引 3）。
+    final pref = AppPreference.instance.personalPlaylistDetailPagePref;
+    final sortMethods = _sortMethods(snapshot);
     final currMethodIndex = pref.sortMethod
         .clamp(0, sortMethods.length - 1)
         .toInt();
@@ -264,7 +266,7 @@ class _PersonalPlaylistDetailPageState
       padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
     );
     return UniDetailPage<PersonalOnlinePlaylistSnapshot, MusicTrack, Object>(
-      pref: AppPreference.instance.playlistDetailPagePref,
+      pref: pref,
       primaryContent: snapshot,
       primaryPic: _primaryPicFuture,
       backgroundPic: Future.value(null),
@@ -317,7 +319,9 @@ class _PersonalPlaylistDetailPageState
     );
   }
 
-  List<SortMethodDesc<MusicTrack>> _sortMethods() {
+  List<SortMethodDesc<MusicTrack>> _sortMethods(
+    PersonalOnlinePlaylistSnapshot snapshot,
+  ) {
     return [
       SortMethodDesc<MusicTrack>(
         icon: Symbols.title,
@@ -366,6 +370,26 @@ class _PersonalPlaylistDetailPageState
         },
       ),
       SortMethodDesc<MusicTrack>(
+        icon: Symbols.add_circle,
+        name: '添加时间',
+        method: (list, order) {
+          switch (order) {
+            case SortOrder.ascending:
+              list.sort((a, b) => snapshot.compareByAddedAt(a.ref, b.ref));
+              break;
+            case SortOrder.decending:
+              list.sort(
+                (a, b) => snapshot.compareByAddedAt(
+                  a.ref,
+                  b.ref,
+                  descending: true,
+                ),
+              );
+              break;
+          }
+        },
+      ),
+      SortMethodDesc<MusicTrack>(
         icon: Symbols.drag_indicator,
         name: '自定义',
         method: (list, order) {},
@@ -374,8 +398,14 @@ class _PersonalPlaylistDetailPageState
   }
 
   Widget _buildReorderBody(List<MusicTrack> tracks) {
+    final scheme = Theme.of(context).colorScheme;
     return ReorderableListView.builder(
       padding: const EdgeInsets.only(bottom: 96),
+      // 关闭框架默认的桌面拖拽手柄：它是 Stack 里 Positioned(end: 8) 覆盖在行尾
+      // 的 Icons.drag_handle，不参与布局，会直接压住行尾的时长文本与悬浮操作按钮。
+      // 这里与歌单详情页（playlist_detail_page.dart 的 _ReorderItem）一致，
+      // 改为行进内的显式把手，让把手参与布局、不再争用行尾位置。
+      buildDefaultDragHandles: false,
       itemCount: tracks.length,
       onReorderItem: _commitReorder,
       itemBuilder: (context, index) {
@@ -384,7 +414,23 @@ class _PersonalPlaylistDetailPageState
           key: ValueKey(
             'personal-${track.ref.platform.name}-${track.ref.trackId}',
           ),
-          child: _buildTrackRow(track, tracks, animated: false),
+          child: Row(
+            children: [
+              ReorderableDragStartListener(
+                index: index,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Icon(
+                    Symbols.drag_indicator,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: _buildTrackRow(track, tracks, animated: false),
+              ),
+            ],
+          ),
         );
       },
     );
