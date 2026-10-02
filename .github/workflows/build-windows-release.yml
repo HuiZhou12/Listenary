@@ -60,18 +60,31 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Inno Setup
+      - name: Install Inno Setup and the Chinese translation
         shell: pwsh
         run: |
           choco install innosetup --no-progress -y
-          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
-          if (-not (Test-Path -LiteralPath $iscc)) {
-            $alt = 'C:\Program Files\Inno Setup 6\ISCC.exe'
-            if (Test-Path -LiteralPath $alt) { Write-Host "ISCC: $alt" }
-            else { throw 'ISCC.exe not found after choco install.' }
-          } else {
-            Write-Host "ISCC: $iscc"
+          $candidates = @(
+            'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
+            'C:\Program Files\Inno Setup 6\ISCC.exe',
+            'C:\Program Files\Inno Setup 7\ISCC.exe',
+            'C:\Program Files (x86)\Inno Setup 7\ISCC.exe'
+          )
+          $iscc = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $iscc) { throw 'ISCC.exe not found after install.' }
+          Write-Host "ISCC: $iscc ($((Get-Item -LiteralPath $iscc).VersionInfo.ProductVersion))"
+
+          # 官方 Inno Setup 不含中文：.iss 用 compiler:Languages\ChineseSimplified.isl，
+          # 这里把仓库里自带的那份拷进编译器的 Languages 目录（本机与 CI 用同一份翻译）。
+          $islSource = Join-Path $PWD 'installer\languages\ChineseSimplified.isl'
+          if (-not (Test-Path -LiteralPath $islSource)) { throw "Missing vendored translation: $islSource" }
+          $languagesDir = Join-Path (Split-Path -Parent $iscc) 'Languages'
+          New-Item -ItemType Directory -Force -Path $languagesDir | Out-Null
+          Copy-Item -LiteralPath $islSource -Destination (Join-Path $languagesDir 'ChineseSimplified.isl') -Force
+          if (-not (Test-Path -LiteralPath (Join-Path $languagesDir 'ChineseSimplified.isl'))) {
+            throw 'Failed to install ChineseSimplified.isl into the Inno Setup Languages directory.'
           }
+          Write-Host "Installed ChineseSimplified.isl into: $languagesDir"
 
       # 本机曾遇到 cc-rs 归档 ring 时 lib.exe 报 LNK1104；把 AR 指向 llvm-ar 可绕过。
       # 这一步装不到 LLVM 也不影响构建（后续步骤会退化为默认归档器）。
@@ -106,10 +119,12 @@ jobs:
         run: .\build_windows.ps1 -Version "${{ steps.version.outputs.version }}" -Mode 5 -NonInteractive
 
       - name: Upload build artifacts
+        # 即使后面的步骤失败，也把已经打出来的产物传上来（例如安装器失败但便携包是好的）
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Listenary_${{ steps.version.outputs.version }}_windows
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
           path: |
             output/Listenary_${{ steps.version.outputs.version }}_release_portable.zip
