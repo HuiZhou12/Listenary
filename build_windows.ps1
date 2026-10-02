@@ -109,6 +109,39 @@ function Write-Utf8NoBom([string]$path, [string]$content) {
     [System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($false))
 }
 
+# 产物类型标记：PORTABLE_BUILD 是编译期的 --dart-define，只能在编译时确定。
+# 这里把本次编译的类型记下来，供 Mode 4/5 复用已有产物时校验，
+# 避免出现"用便携版产物打安装器"（装好后按便携版读写数据，读不到 %LOCALAPPDATA% 里的老数据）。
+$script:buildTypeMarkerPath = Join-Path $PSScriptRoot "build\.listenary_build_type"
+
+function Set-BuildTypeMarker([string]$buildType) {
+    $markerDir = Split-Path -Parent $script:buildTypeMarkerPath
+    New-Item -ItemType Directory -Force -Path $markerDir | Out-Null
+    Write-Utf8NoBom $script:buildTypeMarkerPath $buildType
+}
+
+function Get-BuildTypeMarker() {
+    if (-not (Test-Path -LiteralPath $script:buildTypeMarkerPath -PathType Leaf)) { return $null }
+    try {
+        $value = (Get-Content -LiteralPath $script:buildTypeMarkerPath -Raw).Trim().ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace($value)) { return $null }
+        return $value
+    }
+    catch { return $null }
+}
+
+function Assert-ReusableBuildType([string]$expectedType) {
+    $actualType = Get-BuildTypeMarker
+    if ($null -eq $actualType) {
+        Write-Warning "无法确认已有产物的类型（缺少 build\.listenary_build_type 标记，可能是旧版本脚本编译的）。继续按 $expectedType 打包；若类型不符，装好的程序会读写错误的用户数据目录（便携版在程序目录的 ListenaryData，安装版在 %LOCALAPPDATA%\Listenary）。"
+        return
+    }
+    if ($actualType -ne $expectedType) {
+        throw "已有产物的类型是 '$actualType'，但本次要打包的是 '$expectedType'。PORTABLE_BUILD 是编译期常量，两者不能混用：请改用 -Mode 2（便携 zip）或 -Mode 3（安装器）重新编译，或先删除 build\ 目录。"
+    }
+    Write-Host "Build type verified: $actualType" -ForegroundColor Green
+}
+
 function Get-InnoSetupCompilerPath() {
     foreach ($candidate in @(
         "D:\App\Inno Setup 7\ISCC.exe",
@@ -399,6 +432,8 @@ function Invoke-Build([string]$version, [bool]$isPortable) {
         }
         finally { Pop-Location }
     }
+
+    if ($isPortable) { Set-BuildTypeMarker "portable" } else { Set-BuildTypeMarker "installer" }
 }
 
 function New-AppPackage([string]$artifactRoot, [string]$version) {
@@ -499,7 +534,7 @@ function Test-KeyFiles([string]$appDir) {
 }
 
 function New-PortablePackage([string]$version, [bool]$buildFirst, [bool]$makeZip) {
-    if ($buildFirst) { Invoke-Build $version $true }
+    if ($buildFirst) { Invoke-Build $version $true } else { Assert-ReusableBuildType "portable" }
     $artifactName = "Listenary_{0}_release_portable" -f $version
     $publishedRoot = Join-Path $finalOutputDir $artifactName
     $publishedZip = Join-Path $finalOutputDir "$artifactName.zip"
@@ -551,7 +586,7 @@ function New-PortablePackage([string]$version, [bool]$buildFirst, [bool]$makeZip
 }
 
 function New-InstallerPackage([string]$version, [bool]$buildFirst) {
-    if ($buildFirst) { Invoke-Build $version $false }
+    if ($buildFirst) { Invoke-Build $version $false } else { Assert-ReusableBuildType "installer" }
     $artifactName = "Listenary_{0}_release_installer" -f $version
     $publishedInstaller = Join-Path $finalOutputDir "$artifactName.exe"
     $publishedChecksum = "$publishedInstaller.sha256"
