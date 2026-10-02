@@ -475,6 +475,281 @@ void main() {
     );
     expect(field.controller?.text, 'persistent query');
   });
+
+  testWidgets('pagination appends the next page with offset = loaded count', (
+    tester,
+  ) async {
+    final calls = <_SearchCall>[];
+    Future<MusicSearchPage> search({
+      required String keyword,
+      required int limit,
+      required int offset,
+      required OnlineMusicCancelToken cancelToken,
+    }) async {
+      calls.add(_SearchCall(keyword, limit, offset, cancelToken));
+      if (offset == 0) {
+        return _page(_tracks(0, 30), offset: 0, limit: 30, total: 60);
+      }
+      return _page(_tracks(30, 30), offset: 30, limit: 30, total: 60);
+    }
+
+    await _pumpPage(
+      tester,
+      size: const Size(1200, 5000),
+      search: search,
+    );
+    await _submit(tester, 'page');
+
+    // 首请求参数不变：limit 30 / offset 0
+    expect(calls, hasLength(1));
+    expect(calls.single.keyword, 'page');
+    expect(calls.single.limit, 30);
+    expect(calls.single.offset, 0);
+    expect(find.text('Track p0'), findsOneWidget);
+    expect(find.text('Track p30'), findsNothing);
+    expect(_loadMoreButton, findsOneWidget);
+    expect(find.text('没有更多了'), findsNothing);
+
+    await tester.tap(_loadMoreButton);
+    await tester.pumpAndSettle();
+
+    expect(calls, hasLength(2));
+    expect(calls[1].keyword, 'page');
+    expect(calls[1].limit, 30);
+    expect(calls[1].offset, 30);
+    // 追加而不是替换，原有顺序保留
+    expect(find.text('Track p0'), findsOneWidget);
+    expect(find.text('Track p30'), findsOneWidget);
+    expect(find.text('Track p59'), findsOneWidget);
+    expect(find.byType(OnlineTrackRow), findsNWidgets(60));
+    // 已加载 60 == total 60，已到底
+    expect(_loadMoreButton, findsNothing);
+    expect(find.text('没有更多了'), findsOneWidget);
+  });
+
+  testWidgets('pagination dedupes by ref and queues every loaded result', (
+    tester,
+  ) async {
+    MusicSearchPage? queuedPage;
+    MusicTrack? selectedTrack;
+    Future<MusicSearchPage> search({
+      required String keyword,
+      required int limit,
+      required int offset,
+      required OnlineMusicCancelToken cancelToken,
+    }) async {
+      if (offset == 0) {
+        return _page(_tracks(0, 30), offset: 0, limit: 30, total: 60);
+      }
+      // 第二页重复最后 3 条，再补 27 条新的
+      return _page([
+        ..._tracks(27, 3),
+        ..._tracks(30, 27),
+      ], offset: 30, limit: 30, total: 60);
+    }
+
+    await _pumpPage(
+      tester,
+      size: const Size(1200, 5000),
+      search: search,
+      onTrackSelected: (page, track) async {
+        queuedPage = page;
+        selectedTrack = track;
+      },
+    );
+    await _submit(tester, 'dedupe');
+    await tester.tap(_loadMoreButton);
+    await tester.pumpAndSettle();
+
+    // 重复的 p27/p28/p29 不追加；60 条去重后为 57 条
+    expect(find.byType(OnlineTrackRow), findsNWidgets(57));
+    expect(
+      find.byKey(const ValueKey('online-track-cover-p27')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Track p0'));
+    await tester.pump();
+
+    expect(selectedTrack?.ref.trackId, 'p0');
+    // 队列 = 已加载的全部结果（顺序不变，无重复）
+    expect(queuedPage?.items.map((track) => track.ref.trackId).toList(), [
+      for (var i = 0; i < 57; i++) 'p$i',
+    ]);
+  });
+
+  testWidgets('pagination hides the entry when a page is short of the limit', (
+    tester,
+  ) async {
+    // total 远大于已加载数量，但首请求只返回 10 条：双重判定必须拦住入口
+    await _pumpPage(
+      tester,
+      size: const Size(1200, 1600),
+      search:
+          ({
+            required keyword,
+            required limit,
+            required offset,
+            required cancelToken,
+          }) async => _page(_tracks(0, 10), offset: 0, limit: 30, total: 500),
+    );
+    await _submit(tester, 'short-first');
+
+    expect(find.text('Track p0'), findsOneWidget);
+    expect(_loadMoreButton, findsNothing);
+    expect(find.text('没有更多了'), findsOneWidget);
+  });
+
+  testWidgets('pagination stops when the last page is shorter than the limit', (
+    tester,
+  ) async {
+    final calls = <_SearchCall>[];
+    Future<MusicSearchPage> search({
+      required String keyword,
+      required int limit,
+      required int offset,
+      required OnlineMusicCancelToken cancelToken,
+    }) async {
+      calls.add(_SearchCall(keyword, limit, offset, cancelToken));
+      if (offset == 0) {
+        return _page(_tracks(0, 30), offset: 0, limit: 30, total: 60);
+      }
+      return _page(_tracks(30, 5), offset: 30, limit: 30, total: 60);
+    }
+
+    await _pumpPage(tester, size: const Size(1200, 3000), search: search);
+    await _submit(tester, 'short-last');
+    await tester.tap(_loadMoreButton);
+    await tester.pumpAndSettle();
+
+    expect(calls, hasLength(2));
+    expect(find.text('Track p34'), findsOneWidget);
+    expect(_loadMoreButton, findsNothing);
+    expect(find.text('没有更多了'), findsOneWidget);
+  });
+
+  testWidgets('pagination failure keeps results and stays retryable', (
+    tester,
+  ) async {
+    var moreAttempts = 0;
+    Future<MusicSearchPage> search({
+      required String keyword,
+      required int limit,
+      required int offset,
+      required OnlineMusicCancelToken cancelToken,
+    }) async {
+      if (offset == 0) {
+        return _page(_tracks(0, 30), offset: 0, limit: 30, total: 60);
+      }
+      moreAttempts++;
+      if (moreAttempts == 1) {
+        throw const OnlineMusicException(
+          kind: OnlineMusicErrorKind.network,
+          safeMessage: '网络请求失败，请稍后重试',
+        );
+      }
+      return _page(_tracks(30, 5), offset: 30, limit: 30, total: 60);
+    }
+
+    await _pumpPage(tester, size: const Size(1200, 3000), search: search);
+    await _submit(tester, 'retry-more');
+    await tester.tap(_loadMoreButton);
+    await tester.pumpAndSettle();
+
+    // 失败：保留已加载结果，只给安全提示（不含签名 URL），入口可重试
+    expect(find.text('Track p0'), findsOneWidget);
+    expect(find.text('网络请求失败，请稍后重试'), findsOneWidget);
+    expect(find.textContaining('http'), findsNothing);
+    expect(_loadMoreRetryButton, findsOneWidget);
+    expect(_loadMoreButton, findsNothing);
+
+    await tester.tap(_loadMoreRetryButton);
+    await tester.pumpAndSettle();
+
+    expect(moreAttempts, 2);
+    expect(find.text('Track p30'), findsOneWidget);
+    expect(_loadMoreRetryButton, findsNothing);
+    expect(find.text('没有更多了'), findsOneWidget);
+  });
+
+  testWidgets('a stale pagination response never pollutes a new search', (
+    tester,
+  ) async {
+    final staleMore = Completer<MusicSearchPage>();
+    final calls = <_SearchCall>[];
+    Future<MusicSearchPage> search({
+      required String keyword,
+      required int limit,
+      required int offset,
+      required OnlineMusicCancelToken cancelToken,
+    }) {
+      calls.add(_SearchCall(keyword, limit, offset, cancelToken));
+      if (keyword == 'second') {
+        return Future.value(_page([_track('s1', title: 'Second Result')]));
+      }
+      if (offset == 0) {
+        return Future.value(
+          _page(_tracks(0, 30), offset: 0, limit: 30, total: 60),
+        );
+      }
+      return staleMore.future;
+    }
+
+    await _pumpPage(tester, size: const Size(1200, 3000), search: search);
+    await _submit(tester, 'first');
+    await tester.tap(_loadMoreButton);
+    await tester.pump();
+
+    expect(calls, hasLength(2));
+    expect(calls[1].offset, 30);
+    expect(calls[1].cancelToken.isCancelled, isFalse);
+    // 入队后不可重复触发：入口退化为加载态
+    expect(_loadMoreButton, findsNothing);
+
+    // 改词重新搜索：在途分页请求被取消并作废
+    await _submit(tester, 'second');
+
+    expect(calls.last.keyword, 'second');
+    expect(calls[1].cancelToken.isCancelled, isTrue);
+
+    staleMore.complete(_page([_track('stale', title: 'Stale More Result')]));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Second Result'), findsOneWidget);
+    expect(find.text('Stale More Result'), findsNothing);
+    expect(find.text('Track p0'), findsNothing);
+  });
+
+  testWidgets('editing the query resets accumulated pages', (tester) async {
+    Future<MusicSearchPage> search({
+      required String keyword,
+      required int limit,
+      required int offset,
+      required OnlineMusicCancelToken cancelToken,
+    }) async {
+      if (offset == 0) {
+        return _page(_tracks(0, 30), offset: 0, limit: 30, total: 60);
+      }
+      return _page(_tracks(30, 5), offset: 30, limit: 30, total: 60);
+    }
+
+    await _pumpPage(tester, size: const Size(1200, 3000), search: search);
+    await _submit(tester, 'reset');
+    await tester.tap(_loadMoreButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Track p30'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('online-search-field')),
+      'reset2',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OnlineTrackRow), findsNothing);
+    expect(find.text('Track p0'), findsNothing);
+    expect(find.text('没有更多了'), findsNothing);
+    expect(find.text('在线搜索'), findsOneWidget);
+  });
 }
 
 Future<void> _pumpPage(
@@ -482,8 +757,9 @@ Future<void> _pumpPage(
   required OnlineMusicSearch search,
   OnlineTrackSelected? onTrackSelected,
   VoidCallback? onHistoryRequested,
+  Size size = const Size(1200, 900),
 }) async {
-  tester.view.physicalSize = const Size(1200, 900);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -511,13 +787,41 @@ Future<void> _pumpPage(
   await tester.pump();
 }
 
-MusicSearchPage _page(List<MusicTrack> tracks) => MusicSearchPage(
+MusicSearchPage _page(
+  List<MusicTrack> tracks, {
+  int offset = 0,
+  int limit = 30,
+  int? total,
+}) => MusicSearchPage(
   platform: MusicPlatform.netease,
   items: tracks,
-  offset: 0,
-  limit: 30,
-  total: tracks.length,
+  offset: offset,
+  limit: limit,
+  total: total ?? tracks.length,
 );
+
+/// 生成 `id` 为 `p$start … p${start + count - 1}` 的连续曲目。
+List<MusicTrack> _tracks(int start, int count) => [
+  for (var i = start; i < start + count; i++)
+    _track('p$i', title: 'Track p$i'),
+];
+
+/// 输入关键词并点击搜索按钮，等待首请求完成。
+Future<void> _submit(WidgetTester tester, String query) async {
+  await tester.enterText(
+    find.byKey(const ValueKey('online-search-field')),
+    query,
+  );
+  await tester.pump();
+  await tester.tap(find.byTooltip('在线搜索'));
+  await tester.pumpAndSettle();
+}
+
+Finder get _loadMoreButton =>
+    find.byKey(const ValueKey('online-search-load-more'));
+
+Finder get _loadMoreRetryButton =>
+    find.byKey(const ValueKey('online-search-load-more-retry'));
 
 MusicTrack _track(
   String id, {
