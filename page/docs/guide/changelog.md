@@ -4,12 +4,12 @@ outline: false
 
 # 更新日志
 
-从 **2.0.0** 起。每个版本默认折叠，点版本号展开。当前版本：**3.2.0**。
+从 **2.0.0** 起。每个版本默认折叠，点版本号展开。当前版本：**3.1.4**。
 
 Listenary 独立发行版本见 [GitHub Releases](https://github.com/HuiZhou12/Listenary/releases)。下方 2.x 内容作为迁移前历史记录保留。
 
 <details>
-<summary><strong>3.2.0</strong></summary>
+<summary><strong>3.1.4</strong></summary>
 
 **歌词时间轴**
 
@@ -37,7 +37,7 @@ Listenary 独立发行版本见 [GitHub Releases](https://github.com/HuiZhou12/L
 **验证与文档**
 
 - 新增歌词时间轴、短增强 LRC、offset 边界、TTML 并行行和远程行切换回归测试
-- 更新 3.2.0 README、使用指南、歌词说明和构建文档
+- 更新 3.1.4 README、使用指南、歌词说明和构建文档
 
 </details>
 

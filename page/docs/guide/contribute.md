@@ -25,13 +25,15 @@ outline: deep
 
 ## 代码约定
 
-项目遵循仓库根目录 `AGENTS.md` 与 `CLAUDE.md` 中的规范，主要原则：
+主要原则：
 
 - 不改播放页语言分组与音调等高稳定功能前先问
 - 不引入不在依赖列表中的状态管理库
 - 新增封面取色路径使用 Rust k-means，不再扩展 `PaletteGenerator` 的使用范围
 - 颜色用 `Color.withValues(alpha:)`，不用 `withOpacity`
 - 不手动修改 `lib/native/rust/` 与 `rust/src/frb_generated.rs` 中的生成代码
+- 注释只写做了什么、为什么做；不写无关的产品或品牌名称
+- 匹配现有 Dart / Rust / C++ 代码风格，不引入不必要的抽象或依赖
 
 ## 非代码贡献
 
