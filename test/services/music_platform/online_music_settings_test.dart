@@ -302,6 +302,16 @@ void main() {
       );
       addTearDown(composition.service.dispose);
 
+      final registry =
+          (composition.service as CompositeOnlineMusicService).registry;
+      expect(registry.providerIdFor(OnlineMusicCapability.search), 'selfData');
+      expect(registry.providerIdFor(OnlineMusicCapability.playlist), 'selfData');
+      expect(registry.providerIdFor(OnlineMusicCapability.lyric), 'selfData');
+      expect(
+        registry.providerIdFor(OnlineMusicCapability.stream),
+        'playback',
+      );
+
       expect(composition.service.capabilities.searchablePlatforms, {
         MusicPlatform.netease,
       });
