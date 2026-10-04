@@ -159,6 +159,9 @@ final class OnlineMusicSettings {
 
     final auth = value['auth'];
     final authMap = auth is Map ? auth : const <Object?, Object?>{};
+    // 只识别 `none` 与 `apiKey`；缺失或无法识别的 kind 一律按默认的 `apiKey`
+    // 处理（与「未知 protocol 忽略整个条目」不同：认证缺失必须落到安全的默认要求，
+    // 不能让一个条目因为拼错 kind 而变成无凭据可用的 Provider）。
     final kind = _nonEmptyString(authMap['kind']) ?? 'apiKey';
     final reference = kind == 'none'
         ? null

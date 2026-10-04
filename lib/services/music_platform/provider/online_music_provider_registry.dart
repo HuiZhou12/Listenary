@@ -41,8 +41,6 @@ final class OnlineMusicProviderRegistry {
 
   OnlineMusicProvider get defaultProvider => _defaultProvider;
 
-  bool isRegistered(String providerId) => _providers.containsKey(providerId);
-
   OnlineMusicProvider providerFor(OnlineMusicCapability capability) =>
       _selectedProviders[capability]!;
 

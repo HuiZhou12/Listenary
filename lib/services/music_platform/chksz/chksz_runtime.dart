@@ -54,6 +54,9 @@ final class ChkszRuntime {
 
   ChkszQuotaSnapshot? get quota => _quota;
 
+  /// 该 Provider 是否绑定了凭据槽位；`false` 表示它不需要 API Key。
+  bool get hasCredentialSource => _credentialProvider != null;
+
   OnlineMusicProviderAuth authFor(OnlineMusicCapability capability) =>
       _authResolver(capability);
 

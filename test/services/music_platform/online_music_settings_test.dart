@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
@@ -387,11 +391,197 @@ void main() {
       preference.applyStoredMap(const <String, Object?>{
         'onlineMusic': 'not-a-map',
       });
-
       expect(
         preference.onlineMusicSettings.providers.single.id,
         defaultOnlineMusicProviderId,
       );
     });
   });
+
+  group('composition reaches the configured provider', () {
+    const ref = PlatformTrackRef(
+      platform: MusicPlatform.netease,
+      trackId: '123456',
+    );
+
+    test('maps an entry to its own connection config', () {
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'mirror',
+            'baseUrl': 'http://127.0.0.1:9123',
+            'connectTimeoutMs': 1500,
+            'sendTimeoutMs': 2500,
+            'receiveTimeoutMs': 3500,
+          },
+        ],
+      });
+
+      final config = chkszProviderConfigFor(settings.providers.single);
+      final dio = createChkszDio(config: config);
+      addTearDown(() => dio.close(force: true));
+
+      expect(dio.options.baseUrl, 'http://127.0.0.1:9123');
+      expect(dio.options.connectTimeout, const Duration(milliseconds: 1500));
+      expect(dio.options.sendTimeout, const Duration(milliseconds: 2500));
+      expect(dio.options.receiveTimeout, const Duration(milliseconds: 3500));
+    });
+
+    test('resolve goes to the playback entry and search does not', () async {
+      final dataDio = _recordingDio();
+      final playbackDio = _recordingDio();
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'data',
+            'auth': {'kind': 'apiKey', 'reference': 'PureMusic/Data/APIKey'},
+          },
+          {
+            'id': 'playback',
+            'auth': {'kind': 'none'},
+          },
+        ],
+        'capabilities': {
+          'search': 'data',
+          'playlist': 'data',
+          'lyric': 'data',
+          'stream': 'playback',
+        },
+      });
+      final composition = createOnlineMusicComposition(
+        settings: settings,
+        portableBuild: true,
+        dioFactory: (definition) =>
+            definition.id == 'data' ? dataDio.dio : playbackDio.dio,
+      );
+      addTearDown(composition.service.dispose);
+
+      final stream = await composition.service.resolve(
+        ref,
+        requestedQuality: 'lossless',
+        cancelToken: OnlineMusicCancelToken(),
+      );
+
+      expect(stream.ref, ref);
+      expect(playbackDio.adapter.requests, hasLength(1));
+      expect(playbackDio.adapter.requests.single.path, '/api/163_music');
+      expect(
+        playbackDio.adapter.requests.single.queryParameters.containsKey(
+          'apikey',
+        ),
+        isFalse,
+        reason: '播放条目声明 auth.kind = none，不应注入凭据',
+      );
+
+      // 搜索被配置到 data 条目，它需要 Key；portable 内存凭据为空，
+      // 因此必须在发出请求前就报「未配置」，而不是偷偷落到 playback 条目。
+      await expectLater(
+        composition.service.search(
+          platform: MusicPlatform.netease,
+          keyword: 'test',
+          cancelToken: OnlineMusicCancelToken(),
+        ),
+        throwsA(
+          isA<OnlineMusicException>().having(
+            (error) => error.kind,
+            'kind',
+            OnlineMusicErrorKind.notConfigured,
+          ),
+        ),
+      );
+      expect(dataDio.adapter.requests, isEmpty);
+      expect(playbackDio.adapter.requests, hasLength(1));
+    });
+
+    test('a credential-free owner reports why saving is impossible', () async {
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {'id': 'selfData', 'auth': {'kind': 'none'}},
+        ],
+      });
+      final composition = createOnlineMusicComposition(
+        settings: settings,
+        portableBuild: true,
+      );
+      addTearDown(composition.service.dispose);
+
+      expect(await composition.credentials.isConfigured(), isFalse);
+      await expectLater(
+        composition.credentials.saveCredential('chksz_TEST_ONLY'),
+        throwsA(
+          isA<OnlineMusicCredentialException>()
+              .having(
+                (error) => error.operation,
+                'operation',
+                OnlineMusicCredentialOperation.save,
+              )
+              .having(
+                (error) => error.safeMessage,
+                'safeMessage',
+                contains('不需要 API Key'),
+              ),
+        ),
+      );
+      // 不需要凭据的 Provider 仍然可以正常发请求。
+      await composition.credentials.clearCredential();
+    });
+  });
+}
+
+final class _RecordingDio {
+  _RecordingDio()
+    : adapter = _FakeDioAdapter(
+        (options, _) async => ResponseBody.fromString(
+          jsonEncode({
+            'code': 200,
+            'msg': 'success',
+            'data': {
+              'id': 123456,
+              'url': 'https://media.invalid/test.flac',
+              'br': 1000000,
+              'level': 'lossless',
+              'songs': <Object?>[],
+              'total': 0,
+            },
+          }),
+          200,
+          headers: {
+            Headers.contentTypeHeader: [Headers.jsonContentType],
+          },
+        ),
+      ) {
+    dio = Dio(BaseOptions(baseUrl: 'https://api.chksz.com'))
+      ..httpClientAdapter = adapter;
+  }
+
+  final _FakeDioAdapter adapter;
+  late final Dio dio;
+}
+
+_RecordingDio _recordingDio() => _RecordingDio();
+
+typedef _AdapterHandler =
+    Future<ResponseBody> Function(
+      RequestOptions options,
+      Future<void>? cancelFuture,
+    );
+
+final class _FakeDioAdapter implements HttpClientAdapter {
+  _FakeDioAdapter(this._handler);
+
+  final _AdapterHandler _handler;
+  final List<RequestOptions> requests = [];
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) {
+    requests.add(options);
+    return _handler(options, cancelFuture);
+  }
+
+  @override
+  void close({bool force = false}) {}
 }

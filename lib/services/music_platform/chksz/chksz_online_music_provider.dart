@@ -10,8 +10,7 @@ import 'package:pure_music/services/music_platform/online_music_request.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
-
-const defaultChkszProviderId = 'chksz';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 
 /// ChkSz 作为「一个 Provider」的实现。
 ///
@@ -21,7 +20,7 @@ final class ChkszOnlineMusicProvider
     implements OnlineMusicProvider, OnlineMusicCredentialController {
   ChkszOnlineMusicProvider({
     required ChkszRuntime runtime,
-    this.providerId = defaultChkszProviderId,
+    this.providerId = defaultOnlineMusicProviderId,
     Map<OnlineMusicCapability, Set<MusicPlatform>>? platforms,
   }) : _runtime = runtime,
        _platforms = platforms ?? _defaultPlatforms;
@@ -146,6 +145,14 @@ final class ChkszOnlineMusicProvider
 
   @override
   Future<void> saveCredential(String value) async {
+    // 该 Provider 声明了 auth.kind = none：没有凭据槽位可写，
+    // 直接给出可读原因，而不是让底层存储报一个误导性的写入失败。
+    if (!_runtime.hasCredentialSource) {
+      throw const OnlineMusicCredentialException(
+        operation: OnlineMusicCredentialOperation.save,
+        safeMessage: '当前在线音乐服务不需要 API Key',
+      );
+    }
     try {
       await _runtime.writeApiKey(value);
     } catch (error) {
