@@ -14,11 +14,7 @@ import 'package:pure_music/native/rust/api/logger.dart';
 import 'package:pure_music/native/rust/frb_generated.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
-import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider_factory.dart';
-import 'package:pure_music/services/music_platform/chksz/chksz_runtime_factory.dart';
-import 'package:pure_music/services/music_platform/chksz/chksz_online_music_provider.dart';
-import 'package:pure_music/services/music_platform/provider/composite_online_music_service.dart';
-import 'package:pure_music/services/music_platform/provider/online_music_provider_registry.dart';
+import 'package:pure_music/services/music_platform/online_music_composition.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
@@ -126,23 +122,15 @@ Future<void> main() async {
 
   MemoryMonitorService.instance.start();
 
-  final credentialProvider = createChkszCredentialProvider(
+  final onlineMusic = createOnlineMusicComposition(
+    settings: AppPreference.instance.onlineMusicSettings,
     portableBuild: portableBuild,
-  );
-  final chkszRuntime = createChkszRuntime(
-    credentialProvider: credentialProvider,
-  );
-  final onlineMusicProvider = ChkszOnlineMusicProvider(runtime: chkszRuntime);
-  final onlineMusicRegistry = OnlineMusicProviderRegistry(
-    providers: [onlineMusicProvider],
   );
   runApp(
     Entry(
       welcome: welcome,
-      onlineMusicService: CompositeOnlineMusicService(
-        registry: onlineMusicRegistry,
-      ),
-      onlineMusicCredentials: onlineMusicProvider,
+      onlineMusicService: onlineMusic.service,
+      onlineMusicCredentials: onlineMusic.credentials,
     ),
   );
 }

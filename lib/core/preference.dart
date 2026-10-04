@@ -10,6 +10,7 @@ import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 import 'package:path/path.dart' as path;
 
 class PagePreference {
@@ -677,6 +678,11 @@ class AppPreference {
   String? lastSeenUpdateTag;
   List<String> updateCheckUrls = List.of(defaultUpdateCheckUrls);
 
+  /// 在线音乐 Provider 与能力映射配置；缺失或非法时回落默认 Provider。
+  ///
+  /// 该键不被 `save()` 重写，用户手写的原文通过 `_rawPrefMap` 原样保留。
+  OnlineMusicSettings onlineMusicSettings = OnlineMusicSettings.defaults;
+
   /// 用户手动添加的文件夹路径列表（不包括自动发现的子文件夹）
   List<String> userFolders = [];
 
@@ -787,6 +793,7 @@ class AppPreference {
       prefMap['excludedFolderPaths'],
     );
     folderAliases = _folderAliasesFromStoredValue(prefMap['folderAliases']);
+    onlineMusicSettings = OnlineMusicSettings.fromJson(prefMap['onlineMusic']);
   }
 
   Future<bool> save() async {

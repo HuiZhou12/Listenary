@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 
 const _fakeApiKey = 'chksz_TEST_ONLY';
 
@@ -36,42 +37,69 @@ void main() {
   });
 
   test('normalizes an unusable base URL back to the default', () {
-    expect(normalizeChkszBaseUrl(null), defaultChkszBaseUrl);
-    expect(normalizeChkszBaseUrl(''), defaultChkszBaseUrl);
-    expect(normalizeChkszBaseUrl('   '), defaultChkszBaseUrl);
-    expect(normalizeChkszBaseUrl('ftp://api.invalid'), defaultChkszBaseUrl);
-    expect(normalizeChkszBaseUrl('/relative/path'), defaultChkszBaseUrl);
-    expect(normalizeChkszBaseUrl('https://'), defaultChkszBaseUrl);
-    expect(normalizeChkszBaseUrl(' https://api.invalid '), 'https://api.invalid');
+    expect(normalizeOnlineMusicBaseUrl(null), defaultOnlineMusicBaseUrl);
+    expect(normalizeOnlineMusicBaseUrl(''), defaultOnlineMusicBaseUrl);
+    expect(normalizeOnlineMusicBaseUrl('   '), defaultOnlineMusicBaseUrl);
     expect(
-      normalizeChkszBaseUrl('http://127.0.0.1:8080'),
+      normalizeOnlineMusicBaseUrl('ftp://api.invalid'),
+      defaultOnlineMusicBaseUrl,
+    );
+    expect(
+      normalizeOnlineMusicBaseUrl('/relative/path'),
+      defaultOnlineMusicBaseUrl,
+    );
+    expect(normalizeOnlineMusicBaseUrl('https://'), defaultOnlineMusicBaseUrl);
+    expect(
+      normalizeOnlineMusicBaseUrl(' https://api.invalid '),
+      'https://api.invalid',
+    );
+    expect(
+      normalizeOnlineMusicBaseUrl('http://127.0.0.1:8080'),
       'http://127.0.0.1:8080',
     );
   });
 
   test('normalizes unusable timeouts back to the defaults', () {
     expect(
-      normalizeChkszTimeout(null, defaultValue: defaultChkszConnectTimeout),
-      defaultChkszConnectTimeout,
+      normalizeOnlineMusicTimeout(
+        null,
+        defaultValue: defaultOnlineMusicConnectTimeout,
+      ),
+      defaultOnlineMusicConnectTimeout,
     );
     expect(
-      normalizeChkszTimeout(0, defaultValue: defaultChkszSendTimeout),
-      defaultChkszSendTimeout,
+      normalizeOnlineMusicTimeout(
+        0,
+        defaultValue: defaultOnlineMusicSendTimeout,
+      ),
+      defaultOnlineMusicSendTimeout,
     );
     expect(
-      normalizeChkszTimeout(-5, defaultValue: defaultChkszReceiveTimeout),
-      defaultChkszReceiveTimeout,
+      normalizeOnlineMusicTimeout(
+        -5,
+        defaultValue: defaultOnlineMusicReceiveTimeout,
+      ),
+      defaultOnlineMusicReceiveTimeout,
     );
     expect(
-      normalizeChkszTimeout('abc', defaultValue: defaultChkszSendTimeout),
-      defaultChkszSendTimeout,
+      normalizeOnlineMusicTimeout(
+        'abc',
+        defaultValue: defaultOnlineMusicSendTimeout,
+      ),
+      defaultOnlineMusicSendTimeout,
     );
     expect(
-      normalizeChkszTimeout('2500', defaultValue: defaultChkszSendTimeout),
+      normalizeOnlineMusicTimeout(
+        '2500',
+        defaultValue: defaultOnlineMusicSendTimeout,
+      ),
       const Duration(milliseconds: 2500),
     );
     expect(
-      normalizeChkszTimeout(1500, defaultValue: defaultChkszSendTimeout),
+      normalizeOnlineMusicTimeout(
+        1500,
+        defaultValue: defaultOnlineMusicSendTimeout,
+      ),
       const Duration(milliseconds: 1500),
     );
   });
