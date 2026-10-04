@@ -23,4 +23,4 @@ export 'chksz_runtime_factory.dart';
 export 'chksz_windows_credential_store.dart';
 export 'netease_stream_resolver.dart';
 export 'chksz_online_music_provider.dart';
-export '../adapters/netease_adapter.dart';
+export 'chksz_netease_codec.dart';

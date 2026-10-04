@@ -1,4 +1,4 @@
-import 'package:pure_music/services/music_platform/adapters/netease_adapter.dart';
+import 'package:pure_music/services/music_platform/chksz/chksz_netease_codec.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_client.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_error.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_request.dart';
@@ -10,7 +10,7 @@ import 'package:pure_music/services/music_platform/provider/online_music_provide
 final class NeteaseStreamResolver {
   NeteaseStreamResolver({
     required ChkszClient client,
-    NeteaseAdapter adapter = const NeteaseAdapter(),
+    ChkszNeteaseCodec adapter = const ChkszNeteaseCodec(),
     OnlineMusicAuthResolver authResolver = defaultOnlineMusicAuthResolver,
     RemoteStreamClock? clock,
   }) : _client = client,
@@ -19,7 +19,7 @@ final class NeteaseStreamResolver {
        _clock = clock ?? DateTime.now;
 
   final ChkszClient _client;
-  final NeteaseAdapter _adapter;
+  final ChkszNeteaseCodec _adapter;
   final OnlineMusicAuthResolver _authResolver;
   final RemoteStreamClock _clock;
 

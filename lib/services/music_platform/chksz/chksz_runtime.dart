@@ -1,4 +1,4 @@
-import 'package:pure_music/services/music_platform/adapters/netease_adapter.dart';
+import 'package:pure_music/services/music_platform/chksz/chksz_netease_codec.dart';
 import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_client.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider.dart';
@@ -18,7 +18,7 @@ final class ChkszRuntime {
     ChkszCredentialProvider? credentialProvider,
     required ChkszTransport transport,
     ChkszTransportDispose? disposeTransport,
-    NeteaseAdapter neteaseAdapter = const NeteaseAdapter(),
+    ChkszNeteaseCodec neteaseAdapter = const ChkszNeteaseCodec(),
     OnlineMusicAuthResolver authResolver = defaultOnlineMusicAuthResolver,
     RemoteStreamClock? clock,
   }) : _credentialProvider = credentialProvider,

@@ -1,4 +1,4 @@
-import 'package:pure_music/services/music_platform/adapters/netease_adapter.dart';
+import 'package:pure_music/services/music_platform/chksz/chksz_netease_codec.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_client.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_error.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_request.dart';
@@ -9,14 +9,14 @@ import 'package:pure_music/services/music_platform/provider/online_music_provide
 final class MusicCatalogService {
   MusicCatalogService({
     required ChkszClient client,
-    NeteaseAdapter neteaseAdapter = const NeteaseAdapter(),
+    ChkszNeteaseCodec neteaseAdapter = const ChkszNeteaseCodec(),
     OnlineMusicAuthResolver authResolver = defaultOnlineMusicAuthResolver,
   }) : _client = client,
        _neteaseAdapter = neteaseAdapter,
        _authResolver = authResolver;
 
   final ChkszClient _client;
-  final NeteaseAdapter _neteaseAdapter;
+  final ChkszNeteaseCodec _neteaseAdapter;
   final OnlineMusicAuthResolver _authResolver;
 
   Future<MusicSearchPage> search({

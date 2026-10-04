@@ -11,10 +11,10 @@ void main() {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
         final source = entity.readAsStringSync();
         if (source.contains('services/music_platform/chksz/') ||
-            source.contains('services/music_platform/adapters/') ||
             source.contains('services/music_platform/provider/') ||
             RegExp(
-              r'\b(?:ChkszRuntime|ChkszException|ChkszCancelToken|NeteaseAdapter'
+              r'\b(?:ChkszRuntime|ChkszException|ChkszCancelToken'
+              r'|ChkszNeteaseCodec'
               r'|OnlineMusicProvider|OnlineMusicProviderRegistry'
               r'|CompositeOnlineMusicService|OnlineMusicCapability'
               r'|OnlineMusicProviderAuth)\b',

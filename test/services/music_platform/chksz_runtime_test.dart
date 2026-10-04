@@ -48,7 +48,7 @@ void main() {
 
     final stream = await runtime.resolve(
       _trackRef,
-      requestedQuality: NeteaseAdapter.defaultQuality,
+      requestedQuality: ChkszNeteaseCodec.defaultQuality,
       cancelToken: ChkszCancelToken(),
     );
     expect(stream.ref, _trackRef);
@@ -77,7 +77,7 @@ void main() {
 
       final stream = await runtime.resolveAndOpen(
         _trackRef,
-        requestedQuality: NeteaseAdapter.defaultQuality,
+        requestedQuality: ChkszNeteaseCodec.defaultQuality,
         backend: backend,
         cancelToken: ChkszCancelToken(),
       );
@@ -124,7 +124,7 @@ void main() {
       );
       final resolve = runtime.resolve(
         _trackRef,
-        requestedQuality: NeteaseAdapter.defaultQuality,
+        requestedQuality: ChkszNeteaseCodec.defaultQuality,
         cancelToken: resolveToken,
       );
       await Future<void>.delayed(Duration.zero);
