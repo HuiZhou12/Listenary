@@ -10,6 +10,7 @@ export 'chksz_credential_provider.dart';
 export 'chksz_credential_provider_factory.dart';
 export 'chksz_dio_transport.dart';
 export 'chksz_error.dart';
+export 'chksz_provider_config.dart';
 export 'chksz_quota.dart';
 export 'chksz_request.dart';
 export 'chksz_runtime.dart';

@@ -11,12 +11,69 @@ void main() {
     final dio = createChkszDio();
     addTearDown(() => dio.close(force: true));
 
-    expect(dio.options.baseUrl, chkszBaseUrl);
+    expect(dio.options.baseUrl, ChkszProviderConfig.defaults.baseUrl);
     expect(dio.options.baseUrl, 'https://api.chksz.com');
     expect(dio.options.connectTimeout, const Duration(seconds: 8));
     expect(dio.options.sendTimeout, const Duration(seconds: 8));
     expect(dio.options.receiveTimeout, const Duration(seconds: 10));
     expect(dio.interceptors.whereType<LogInterceptor>(), isEmpty);
+  });
+
+  test('applies an independently configured connection', () {
+    const config = ChkszProviderConfig(
+      baseUrl: 'https://mirror.invalid:8443',
+      connectTimeout: Duration(seconds: 2),
+      sendTimeout: Duration(seconds: 3),
+      receiveTimeout: Duration(seconds: 4),
+    );
+    final dio = createChkszDio(config: config);
+    addTearDown(() => dio.close(force: true));
+
+    expect(dio.options.baseUrl, 'https://mirror.invalid:8443');
+    expect(dio.options.connectTimeout, const Duration(seconds: 2));
+    expect(dio.options.sendTimeout, const Duration(seconds: 3));
+    expect(dio.options.receiveTimeout, const Duration(seconds: 4));
+  });
+
+  test('normalizes an unusable base URL back to the default', () {
+    expect(normalizeChkszBaseUrl(null), defaultChkszBaseUrl);
+    expect(normalizeChkszBaseUrl(''), defaultChkszBaseUrl);
+    expect(normalizeChkszBaseUrl('   '), defaultChkszBaseUrl);
+    expect(normalizeChkszBaseUrl('ftp://api.invalid'), defaultChkszBaseUrl);
+    expect(normalizeChkszBaseUrl('/relative/path'), defaultChkszBaseUrl);
+    expect(normalizeChkszBaseUrl('https://'), defaultChkszBaseUrl);
+    expect(normalizeChkszBaseUrl(' https://api.invalid '), 'https://api.invalid');
+    expect(
+      normalizeChkszBaseUrl('http://127.0.0.1:8080'),
+      'http://127.0.0.1:8080',
+    );
+  });
+
+  test('normalizes unusable timeouts back to the defaults', () {
+    expect(
+      normalizeChkszTimeout(null, defaultValue: defaultChkszConnectTimeout),
+      defaultChkszConnectTimeout,
+    );
+    expect(
+      normalizeChkszTimeout(0, defaultValue: defaultChkszSendTimeout),
+      defaultChkszSendTimeout,
+    );
+    expect(
+      normalizeChkszTimeout(-5, defaultValue: defaultChkszReceiveTimeout),
+      defaultChkszReceiveTimeout,
+    );
+    expect(
+      normalizeChkszTimeout('abc', defaultValue: defaultChkszSendTimeout),
+      defaultChkszSendTimeout,
+    );
+    expect(
+      normalizeChkszTimeout('2500', defaultValue: defaultChkszSendTimeout),
+      const Duration(milliseconds: 2500),
+    );
+    expect(
+      normalizeChkszTimeout(1500, defaultValue: defaultChkszSendTimeout),
+      const Duration(milliseconds: 1500),
+    );
   });
 
   test(
