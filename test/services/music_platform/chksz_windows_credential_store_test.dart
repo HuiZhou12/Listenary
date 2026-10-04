@@ -27,6 +27,26 @@ void main() {
       expect(api.writtenBytes.single, utf8.encode(unicodeApiKey));
     });
 
+    test('uses an independently configured credential slot name', () async {
+      const reference = 'PureMusic/Test/APIKey';
+      final api = _FakeCredentialManagerApi(
+        readResult: const ChkszCredentialManagerReadResult.failure(
+          _notFoundError,
+        ),
+      );
+      final store = WindowsChkszCredentialStore(
+        api: api,
+        targetName: reference,
+      );
+
+      await store.write(_fakeApiKey);
+      expect(await store.read(), isNull);
+      await store.clear();
+
+      expect(api.targetNames, [reference, reference, reference]);
+      expect(api.userNames, [chkszWindowsCredentialUserName]);
+    });
+
     test('decodes a successful read as strict UTF-8', () async {
       final api = _FakeCredentialManagerApi(
         readResult: ChkszCredentialManagerReadResult.success(

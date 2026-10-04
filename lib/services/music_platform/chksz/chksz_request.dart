@@ -1,4 +1,5 @@
 import 'package:pure_music/services/music_platform/online_music_request.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
 
 enum ChkszHttpMethod { get, post }
 
@@ -11,8 +12,12 @@ final class ChkszRequest {
     if (!path.startsWith('/api/') || path.contains('?') || path.contains('#')) {
       throw ArgumentError.value(path, 'path', 'Must be a clean /api/ path');
     }
-    if (queryParameters.keys.any((key) => key.toLowerCase() == 'apikey')) {
-      throw ArgumentError('apikey is injected by ChkszClient');
+    if (queryParameters.keys.any(
+      (key) => key.toLowerCase() == defaultOnlineMusicCredentialParameter,
+    )) {
+      throw ArgumentError(
+        '$defaultOnlineMusicCredentialParameter is injected by ChkszClient',
+      );
     }
   }
 
@@ -20,16 +25,30 @@ final class ChkszRequest {
   final ChkszHttpMethod method;
   final Map<String, String> queryParameters;
 
-  ChkszAuthorizedRequest authorize(String apiKey) {
+  /// 注入凭据；参数名由调用方的认证要求决定，默认沿用 ChkSz 的 `apikey`。
+  ChkszAuthorizedRequest authorize(
+    String apiKey, {
+    String parameterName = defaultOnlineMusicCredentialParameter,
+  }) {
     if (!isValidChkszApiKeyFormat(apiKey)) {
       throw const FormatException('Invalid ChKSz API Key format');
+    }
+    if (queryParameters.containsKey(parameterName)) {
+      throw ArgumentError('$parameterName is injected by ChkszClient');
     }
     return ChkszAuthorizedRequest._(
       path: path,
       method: method,
-      queryParameters: {...queryParameters, 'apikey': apiKey},
+      queryParameters: {...queryParameters, parameterName: apiKey},
     );
   }
+
+  /// 不携带任何凭据的请求；Provider 声明 `auth.kind = none` 时使用。
+  ChkszAuthorizedRequest withoutCredentials() => ChkszAuthorizedRequest._(
+    path: path,
+    method: method,
+    queryParameters: queryParameters,
+  );
 }
 
 final class ChkszAuthorizedRequest {

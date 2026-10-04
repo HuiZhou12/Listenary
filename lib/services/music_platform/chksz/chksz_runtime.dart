@@ -13,7 +13,7 @@ typedef ChkszTransportDispose = void Function();
 
 final class ChkszRuntime {
   ChkszRuntime({
-    required ChkszCredentialProvider credentialProvider,
+    ChkszCredentialProvider? credentialProvider,
     required ChkszTransport transport,
     ChkszTransportDispose? disposeTransport,
     NeteaseAdapter neteaseAdapter = const NeteaseAdapter(),
@@ -36,7 +36,7 @@ final class ChkszRuntime {
     );
   }
 
-  final ChkszCredentialProvider _credentialProvider;
+  final ChkszCredentialProvider? _credentialProvider;
   final ChkszTransportDispose? _disposeTransport;
   final Set<ChkszCancelToken> _activeTokens = {};
   late final MusicCatalogService _catalogService;
@@ -47,18 +47,31 @@ final class ChkszRuntime {
 
   ChkszQuotaSnapshot? get quota => _quota;
 
+  /// Provider 声明 `auth.kind = none` 时没有凭据来源，读取结果为「未配置」。
   Future<String?> readApiKey() {
     _throwIfDisposed();
-    return _credentialProvider.readApiKey();
+    return _credentialProvider?.readApiKey() ?? Future<String?>.value();
   }
 
   Future<void> writeApiKey(String apiKey) => _serializeCredentialOperation(
-    () => _replaceCredential(() => _credentialProvider.writeApiKey(apiKey)),
+    () => _replaceCredential(() => _requireCredentialProvider().writeApiKey(apiKey)),
   );
 
   Future<void> clearApiKey() => _serializeCredentialOperation(
-    () => _replaceCredential(_credentialProvider.clearApiKey),
+    () => _replaceCredential(
+      () => _credentialProvider?.clearApiKey() ?? Future<void>.value(),
+    ),
   );
+
+  ChkszCredentialProvider _requireCredentialProvider() {
+    final provider = _credentialProvider;
+    if (provider == null) {
+      throw const ChkszCredentialStorageException(
+        operation: ChkszCredentialStorageOperation.write,
+      );
+    }
+    return provider;
+  }
 
   Future<MusicSearchPage> searchNetease({
     required String keyword,

@@ -30,15 +30,20 @@ abstract interface class ChkszCredentialManagerApi {
 }
 
 final class WindowsChkszCredentialStore implements ChkszCredentialStore {
-  WindowsChkszCredentialStore({ChkszCredentialManagerApi? api})
-    : _api = api ?? const _Win32CredentialManagerApi();
+  WindowsChkszCredentialStore({
+    ChkszCredentialManagerApi? api,
+    this.targetName = chkszWindowsCredentialTargetName,
+  }) : _api = api ?? const _Win32CredentialManagerApi();
 
   final ChkszCredentialManagerApi _api;
+
+  /// 凭据槽位名；不同 Provider 可以用不同的槽位得到各自的 Key。
+  final String targetName;
 
   @override
   Future<String?> read() async {
     try {
-      final result = _api.read(chkszWindowsCredentialTargetName);
+      final result = _api.read(targetName);
       final errorCode = result.errorCode;
       if (errorCode == ERROR_NOT_FOUND) return null;
       if (errorCode != null) {
@@ -61,7 +66,7 @@ final class WindowsChkszCredentialStore implements ChkszCredentialStore {
   Future<void> write(String apiKey) async {
     try {
       final errorCode = _api.write(
-        targetName: chkszWindowsCredentialTargetName,
+        targetName: targetName,
         userName: chkszWindowsCredentialUserName,
         bytes: utf8.encode(apiKey),
       );
@@ -83,7 +88,7 @@ final class WindowsChkszCredentialStore implements ChkszCredentialStore {
   @override
   Future<void> clear() async {
     try {
-      final errorCode = _api.clear(chkszWindowsCredentialTargetName);
+      final errorCode = _api.clear(targetName);
       if (errorCode == null || errorCode == ERROR_NOT_FOUND) return;
       throw ChkszCredentialStorageException(
         operation: ChkszCredentialStorageOperation.clear,

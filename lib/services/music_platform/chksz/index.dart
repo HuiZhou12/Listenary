@@ -3,6 +3,7 @@ export '../online_music_credentials.dart';
 export '../online_music_error.dart';
 export '../online_music_request.dart';
 export '../online_music_service.dart';
+export '../provider/online_music_provider_auth.dart';
 export '../remote_stream_coordinator.dart';
 export 'music_catalog_service.dart';
 export 'chksz_client.dart';
