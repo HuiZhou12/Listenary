@@ -7,22 +7,46 @@ import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_credentials.dart';
 import 'package:pure_music/services/music_platform/online_music_error.dart';
 import 'package:pure_music/services/music_platform/online_music_request.dart';
-import 'package:pure_music/services/music_platform/online_music_service.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
 
+const defaultChkszProviderId = 'chksz';
+
+/// ChkSz 作为「一个 Provider」的实现。
+///
+/// 它只声明自己服务的能力、平台与认证要求；能力选择由注册与选择层决定，
+/// 因此同一份实现可以按不同连接/认证配置注册成多个条目。
 final class ChkszOnlineMusicProvider
-    implements OnlineMusicService, OnlineMusicCredentialController {
-  ChkszOnlineMusicProvider({required ChkszRuntime runtime})
-    : _runtime = runtime;
+    implements OnlineMusicProvider, OnlineMusicCredentialController {
+  ChkszOnlineMusicProvider({
+    required ChkszRuntime runtime,
+    this.providerId = defaultChkszProviderId,
+    Map<OnlineMusicCapability, Set<MusicPlatform>>? platforms,
+  }) : _runtime = runtime,
+       _platforms = platforms ?? _defaultPlatforms;
+
+  static const Map<OnlineMusicCapability, Set<MusicPlatform>>
+  _defaultPlatforms = {
+    OnlineMusicCapability.search: {MusicPlatform.netease},
+    OnlineMusicCapability.playlist: {MusicPlatform.netease},
+    OnlineMusicCapability.lyric: {MusicPlatform.netease},
+    OnlineMusicCapability.stream: {MusicPlatform.netease},
+  };
 
   final ChkszRuntime _runtime;
+  final Map<OnlineMusicCapability, Set<MusicPlatform>> _platforms;
 
   @override
-  final OnlineMusicCapabilities capabilities = OnlineMusicCapabilities(
-    searchablePlatforms: [MusicPlatform.netease],
-    resolvablePlatforms: [MusicPlatform.netease],
-    playlistPlatforms: [MusicPlatform.netease],
-    lyricPlatforms: [MusicPlatform.netease],
-  );
+  final String providerId;
+
+  @override
+  Set<MusicPlatform> platformsFor(OnlineMusicCapability capability) =>
+      _platforms[capability] ?? const {};
+
+  @override
+  OnlineMusicProviderAuth authFor(OnlineMusicCapability capability) =>
+      _runtime.authFor(capability);
 
   @override
   Future<MusicSearchPage> search({
@@ -32,9 +56,9 @@ final class ChkszOnlineMusicProvider
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
   }) async {
-    _ensurePlatform(platform, capabilities.searchablePlatforms);
+    _ensurePlatform(platform, OnlineMusicCapability.search);
     try {
-      return await _runtime.searchNetease(
+      return await _runtime.search(
         keyword: keyword,
         limit: limit,
         offset: offset,
@@ -51,9 +75,9 @@ final class ChkszOnlineMusicProvider
     required String requestedQuality,
     required OnlineMusicCancelToken cancelToken,
   }) async {
-    _ensurePlatform(ref.platform, capabilities.resolvablePlatforms);
+    _ensurePlatform(ref.platform, OnlineMusicCapability.stream);
     try {
-      return await _runtime.resolveNetease(
+      return await _runtime.resolve(
         ref,
         requestedQuality: requestedQuality,
         cancelToken: cancelToken,
@@ -69,9 +93,9 @@ final class ChkszOnlineMusicProvider
     required String playlistId,
     required OnlineMusicCancelToken cancelToken,
   }) async {
-    _ensurePlatform(platform, capabilities.playlistPlatforms);
+    _ensurePlatform(platform, OnlineMusicCapability.playlist);
     try {
-      return await _runtime.fetchNeteasePlaylist(
+      return await _runtime.fetchPlaylist(
         playlistId: playlistId,
         cancelToken: cancelToken,
       );
@@ -85,12 +109,9 @@ final class ChkszOnlineMusicProvider
     PlatformTrackRef ref, {
     required OnlineMusicCancelToken cancelToken,
   }) async {
-    _ensurePlatform(ref.platform, capabilities.lyricPlatforms);
+    _ensurePlatform(ref.platform, OnlineMusicCapability.lyric);
     try {
-      return await _runtime.fetchNeteaseLyrics(
-        ref: ref,
-        cancelToken: cancelToken,
-      );
+      return await _runtime.fetchLyrics(ref: ref, cancelToken: cancelToken);
     } catch (error) {
       throw _mapError(error);
     }
@@ -98,7 +119,7 @@ final class ChkszOnlineMusicProvider
 
   @override
   String defaultQualityFor(MusicPlatform platform) {
-    _ensurePlatform(platform, capabilities.resolvablePlatforms);
+    _ensurePlatform(platform, OnlineMusicCapability.stream);
     return AppPreference.instance.defaultQuality;
   }
 
@@ -144,8 +165,8 @@ final class ChkszOnlineMusicProvider
   @override
   void dispose() => _runtime.dispose();
 
-  void _ensurePlatform(MusicPlatform platform, Set<MusicPlatform> supported) {
-    if (!supported.contains(platform)) {
+  void _ensurePlatform(MusicPlatform platform, OnlineMusicCapability capability) {
+    if (!platformsFor(capability).contains(platform)) {
       throw const OnlineMusicException(
         kind: OnlineMusicErrorKind.unavailable,
         safeMessage: '当前在线服务不支持该音乐来源',

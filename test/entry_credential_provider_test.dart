@@ -3,21 +3,24 @@ import 'package:pure_music/entry.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
 
 void main() {
-  test('Entry keeps the explicitly injected ChKSz runtime', () {
+  test('Entry keeps the explicitly injected service and credential owner', () {
     final runtime = ChkszRuntime(
       credentialProvider: InMemoryChkszCredentialProvider(),
       transport: _UnexpectedTransport(),
     );
     final provider = ChkszOnlineMusicProvider(runtime: runtime);
+    final service = CompositeOnlineMusicService(
+      registry: OnlineMusicProviderRegistry(providers: [provider]),
+    );
     final entry = Entry(
       welcome: true,
-      onlineMusicService: provider,
+      onlineMusicService: service,
       onlineMusicCredentials: provider,
     );
 
-    expect(entry.onlineMusicService, same(provider));
+    expect(entry.onlineMusicService, same(service));
     expect(entry.onlineMusicCredentials, same(provider));
-    provider.dispose();
+    service.dispose();
   });
 }
 

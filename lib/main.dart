@@ -17,6 +17,8 @@ import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider_factory.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_runtime_factory.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_online_music_provider.dart';
+import 'package:pure_music/services/music_platform/provider/composite_online_music_service.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_registry.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
@@ -131,10 +133,15 @@ Future<void> main() async {
     credentialProvider: credentialProvider,
   );
   final onlineMusicProvider = ChkszOnlineMusicProvider(runtime: chkszRuntime);
+  final onlineMusicRegistry = OnlineMusicProviderRegistry(
+    providers: [onlineMusicProvider],
+  );
   runApp(
     Entry(
       welcome: welcome,
-      onlineMusicService: onlineMusicProvider,
+      onlineMusicService: CompositeOnlineMusicService(
+        registry: onlineMusicRegistry,
+      ),
       onlineMusicCredentials: onlineMusicProvider,
     ),
   );

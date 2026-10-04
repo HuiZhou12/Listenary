@@ -1,3 +1,5 @@
+import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
+
 /// 一个能力的认证要求。
 ///
 /// Provider 对每个能力声明自己的认证要求；能力选择与认证配置彼此正交：
@@ -21,3 +23,12 @@ final class OnlineMusicApiKeyAuth extends OnlineMusicProviderAuth {
 }
 
 const defaultOnlineMusicCredentialParameter = 'apikey';
+
+/// 按能力解析认证要求。
+typedef OnlineMusicAuthResolver =
+    OnlineMusicProviderAuth Function(OnlineMusicCapability capability);
+
+/// 默认每个能力都使用 Provider 自己绑定的 API Key。
+OnlineMusicProviderAuth defaultOnlineMusicAuthResolver(
+  OnlineMusicCapability capability,
+) => const OnlineMusicApiKeyAuth();

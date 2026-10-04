@@ -12,8 +12,12 @@ void main() {
         final source = entity.readAsStringSync();
         if (source.contains('services/music_platform/chksz/') ||
             source.contains('services/music_platform/adapters/') ||
+            source.contains('services/music_platform/provider/') ||
             RegExp(
-              r'\b(?:ChkszRuntime|ChkszException|ChkszCancelToken|NeteaseAdapter)\b',
+              r'\b(?:ChkszRuntime|ChkszException|ChkszCancelToken|NeteaseAdapter'
+              r'|OnlineMusicProvider|OnlineMusicProviderRegistry'
+              r'|CompositeOnlineMusicService|OnlineMusicCapability'
+              r'|OnlineMusicProviderAuth)\b',
             ).hasMatch(source)) {
           violations.add(entity.path);
         }

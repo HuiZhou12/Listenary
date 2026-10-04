@@ -39,14 +39,14 @@ void main() {
       clock: () => DateTime.utc(2026, 8, 14),
     );
 
-    final page = await runtime.searchNetease(
+    final page = await runtime.search(
       keyword: 'Test Track',
       cancelToken: ChkszCancelToken(),
     );
     expect(page.items.single.ref, _trackRef);
     expect(runtime.quota?.freeRemaining, 9);
 
-    final stream = await runtime.resolveNetease(
+    final stream = await runtime.resolve(
       _trackRef,
       requestedQuality: NeteaseAdapter.defaultQuality,
       cancelToken: ChkszCancelToken(),
@@ -75,7 +75,7 @@ void main() {
         runtime.dispose();
       });
 
-      final stream = await runtime.resolveAndOpenNetease(
+      final stream = await runtime.resolveAndOpen(
         _trackRef,
         requestedQuality: NeteaseAdapter.defaultQuality,
         backend: backend,
@@ -118,11 +118,11 @@ void main() {
 
       final searchToken = ChkszCancelToken();
       final resolveToken = ChkszCancelToken();
-      final search = runtime.searchNetease(
+      final search = runtime.search(
         keyword: 'Test Track',
         cancelToken: searchToken,
       );
-      final resolve = runtime.resolveNetease(
+      final resolve = runtime.resolve(
         _trackRef,
         requestedQuality: NeteaseAdapter.defaultQuality,
         cancelToken: resolveToken,
@@ -179,7 +179,7 @@ void main() {
     );
     await _setQuota(runtime, transport);
     final token = ChkszCancelToken();
-    final search = runtime.searchNetease(
+    final search = runtime.search(
       keyword: 'Test Track',
       cancelToken: token,
     );
@@ -221,7 +221,7 @@ void main() {
         transport: transport,
       );
       final completedToken = ChkszCancelToken();
-      await runtime.searchNetease(
+      await runtime.search(
         keyword: 'Test Track',
         cancelToken: completedToken,
       );
@@ -229,7 +229,7 @@ void main() {
       final failedToken = ChkszCancelToken();
       expect(
         (await _captureChkszException(
-          runtime.searchNetease(
+          runtime.search(
             keyword: 'Test Track',
             cancelToken: failedToken,
           ),
@@ -258,7 +258,7 @@ void main() {
         disposeTransport: () => transportDisposed = true,
       );
       final token = ChkszCancelToken();
-      final search = runtime.searchNetease(
+      final search = runtime.search(
         keyword: 'Test Track',
         cancelToken: token,
       );
@@ -271,7 +271,7 @@ void main() {
       expect(credentials.clearCount, 0);
       expect(await credentials.readApiKey(), _fakeApiKey);
       expect(
-        () => runtime.searchNetease(
+        () => runtime.search(
           keyword: 'Test Track',
           cancelToken: ChkszCancelToken(),
         ),
@@ -298,7 +298,7 @@ Future<void> _setQuota(ChkszRuntime runtime, _FakeTransport transport) async {
       'X-Quota-Free-Remaining': ['7'],
     },
   );
-  await runtime.searchNetease(
+  await runtime.search(
     keyword: 'Test Track',
     cancelToken: ChkszCancelToken(),
   );

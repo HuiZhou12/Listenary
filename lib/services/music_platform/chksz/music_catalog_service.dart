@@ -3,18 +3,23 @@ import 'package:pure_music/services/music_platform/chksz/chksz_client.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_error.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_request.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
 
 final class MusicCatalogService {
   MusicCatalogService({
     required ChkszClient client,
     NeteaseAdapter neteaseAdapter = const NeteaseAdapter(),
+    OnlineMusicAuthResolver authResolver = defaultOnlineMusicAuthResolver,
   }) : _client = client,
-       _neteaseAdapter = neteaseAdapter;
+       _neteaseAdapter = neteaseAdapter,
+       _authResolver = authResolver;
 
   final ChkszClient _client;
   final NeteaseAdapter _neteaseAdapter;
+  final OnlineMusicAuthResolver _authResolver;
 
-  Future<MusicSearchPage> searchNetease({
+  Future<MusicSearchPage> search({
     required String keyword,
     int limit = 30,
     int offset = 0,
@@ -29,6 +34,7 @@ final class MusicCatalogService {
     final response = await _client.sendJson(
       request,
       isBusinessSuccess: _neteaseAdapter.isBusinessSuccess,
+      auth: _authResolver(OnlineMusicCapability.search),
       cancelToken: cancelToken,
     );
     _throwIfCancelled(cancelToken);
@@ -39,7 +45,7 @@ final class MusicCatalogService {
     );
   }
 
-  Future<RemotePlaylist> fetchNeteasePlaylist({
+  Future<RemotePlaylist> fetchPlaylist({
     required String playlistId,
     required ChkszCancelToken cancelToken,
   }) async {
@@ -48,6 +54,7 @@ final class MusicCatalogService {
     final response = await _client.sendJson(
       request,
       isBusinessSuccess: _neteaseAdapter.isBusinessSuccess,
+      auth: _authResolver(OnlineMusicCapability.playlist),
       cancelToken: cancelToken,
     );
     _throwIfCancelled(cancelToken);
@@ -57,7 +64,7 @@ final class MusicCatalogService {
     );
   }
 
-  Future<MusicLyrics> fetchNeteaseLyrics({
+  Future<MusicLyrics> fetchLyrics({
     required PlatformTrackRef ref,
     required ChkszCancelToken cancelToken,
   }) async {
@@ -66,6 +73,7 @@ final class MusicCatalogService {
     final response = await _client.sendJson(
       request,
       isBusinessSuccess: _neteaseAdapter.isBusinessSuccess,
+      auth: _authResolver(OnlineMusicCapability.lyric),
       cancelToken: cancelToken,
     );
     _throwIfCancelled(cancelToken);

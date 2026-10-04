@@ -14,7 +14,7 @@ void main() {
     final service = MusicCatalogService(client: _client(transport));
     final token = ChkszCancelToken();
 
-    final page = await service.searchNetease(
+    final page = await service.search(
       keyword: 'Test Track',
       limit: 3,
       offset: 6,
@@ -46,11 +46,11 @@ void main() {
     final service = MusicCatalogService(client: _client(transport));
 
     await expectLater(
-      service.searchNetease(keyword: '   ', cancelToken: ChkszCancelToken()),
+      service.search(keyword: '   ', cancelToken: ChkszCancelToken()),
       throwsArgumentError,
     );
     await expectLater(
-      service.searchNetease(
+      service.search(
         keyword: 'test',
         limit: 0,
         cancelToken: ChkszCancelToken(),
@@ -58,7 +58,7 @@ void main() {
       throwsArgumentError,
     );
     await expectLater(
-      service.searchNetease(
+      service.search(
         keyword: 'test',
         offset: -1,
         cancelToken: ChkszCancelToken(),
@@ -76,7 +76,7 @@ void main() {
     final service = MusicCatalogService(client: _client(transport));
     final token = ChkszCancelToken();
 
-    final playlist = await service.fetchNeteasePlaylist(
+    final playlist = await service.fetchPlaylist(
       playlistId: '5202687076',
       cancelToken: token,
     );
@@ -99,7 +99,7 @@ void main() {
     final cancelledBefore = ChkszCancelToken()..cancel();
 
     final earlyError = await _captureChkszException(
-      service.fetchNeteasePlaylist(
+      service.fetchPlaylist(
         playlistId: '5202687076',
         cancelToken: cancelledBefore,
       ),
@@ -108,7 +108,7 @@ void main() {
     expect(transport.requests, isEmpty);
 
     final token = ChkszCancelToken();
-    final future = service.fetchNeteasePlaylist(
+    final future = service.fetchPlaylist(
       playlistId: '5202687076',
       cancelToken: token,
     );
@@ -130,13 +130,13 @@ void main() {
     final cancelledBefore = ChkszCancelToken()..cancel();
 
     final earlyError = await _captureChkszException(
-      service.searchNetease(keyword: 'test', cancelToken: cancelledBefore),
+      service.search(keyword: 'test', cancelToken: cancelledBefore),
     );
     expect(earlyError.kind, ChkszErrorKind.cancelled);
     expect(transport.requests, isEmpty);
 
     final token = ChkszCancelToken();
-    final future = service.searchNetease(keyword: 'test', cancelToken: token);
+    final future = service.search(keyword: 'test', cancelToken: token);
     await Future<void>.delayed(Duration.zero);
     token.cancel();
     response.complete(
@@ -169,7 +169,7 @@ void main() {
       final transport = _FakeTransport((_, _) async => responses[index]);
       final service = MusicCatalogService(client: _client(transport));
       final error = await _captureChkszException(
-        service.searchNetease(keyword: 'test', cancelToken: ChkszCancelToken()),
+        service.search(keyword: 'test', cancelToken: ChkszCancelToken()),
       );
 
       expect(error.kind, expectedKinds[index]);
@@ -196,7 +196,7 @@ void main() {
       );
       final service = MusicCatalogService(client: _client(transport));
       final error = await _captureChkszException(
-        service.searchNetease(keyword: 'test', cancelToken: ChkszCancelToken()),
+        service.search(keyword: 'test', cancelToken: ChkszCancelToken()),
       );
 
       expect(error.kind, ChkszErrorKind.invalidResponse);
@@ -222,7 +222,7 @@ void main() {
     final service = MusicCatalogService(client: _client(transport));
     final token = ChkszCancelToken();
 
-    final lyrics = await service.fetchNeteaseLyrics(
+    final lyrics = await service.fetchLyrics(
       ref: const PlatformTrackRef(
         platform: MusicPlatform.netease,
         trackId: '123456',
