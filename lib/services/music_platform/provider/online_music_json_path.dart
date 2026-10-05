@@ -61,8 +61,9 @@ final class JsonPath {
 
   /// 读取路径上的值。
   ///
-  /// - 单值路径返回该值；
-  /// - 路径里含 `[*]`（或某一步产生多个节点）时返回 `List<Object?>`；
+  /// - 路径里含 `[*]` 时**总是**返回 `List<Object?>`（哪怕只有一个元素或为空），
+  ///   这样"投影路径 = 列表字段"是稳定的，不会因为样本里恰好只有一首歌而变形；
+  /// - 不含投影时返回单个值；
   /// - 任何一步落空都返回 null（不抛异常——缺失是正常情况，"必填"由 FieldSpec 判定）。
   Object? read(Object? root) {
     var current = <Object?>[root];
@@ -83,9 +84,10 @@ final class JsonPath {
             if (node is List) next.addAll(node);
         }
       }
-      if (next.isEmpty) return null;
+      if (next.isEmpty) return projects ? const <Object?>[] : null;
       current = next;
     }
+    if (projects) return current;
     return current.length == 1 ? current.first : current;
   }
 

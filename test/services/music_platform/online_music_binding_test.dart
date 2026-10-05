@@ -327,6 +327,8 @@ void main() {
       expect(_path('result.songs[0].name').read(sample), 'first');
       expect(_path('result.songs[*].name').read(sample), ['first', 'second']);
       expect(_path('result.songs[0].ar[*].name').read(sample), ['A', 'B']);
+      // 投影路径总是列表：哪怕只剩一个元素，也不会退化成标量。
+      expect(_path('result.songs[1].ar[*].name').read(sample), ['C']);
       expect(_path('result.missing').read(sample), isNull);
       expect(_path('result.songs[5].name').read(sample), isNull);
       expect(_path('result.songs').read(sample), isA<List<Object?>>());

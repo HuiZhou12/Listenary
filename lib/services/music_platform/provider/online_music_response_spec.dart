@@ -392,6 +392,8 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.streamBitrate,
         OnlineMusicDomainField.streamExpiresAt,
         OnlineMusicDomainField.coverUri,
+        // 可选：映射后用来校验返回的曲目就是请求的那首。
+        OnlineMusicDomainField.trackId,
       };
     case OnlineMusicCapability.playlist:
       return const {
