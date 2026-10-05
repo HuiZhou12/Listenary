@@ -381,17 +381,29 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   }
 
   /// 脱敏 + 截断的响应片段：让用户核对字段名，但不把签名/凭据带进界面。
+  ///
+  /// 同时覆盖两种真实形态：查询串（`apikey=…`、`?h=…&sid=…`）与 JSON 键值对
+  /// （`"token":"…"`）。宁可多脱敏，也不要把签名串渲染到界面上。
   String? _redactPreview(Object? data) {
     if (data == null) return null;
-    final text = data is String ? data : jsonEncode(data);
-    final redacted = text.replaceAll(
+    var text = data is String ? data : jsonEncode(data);
+    text = text.replaceAllMapped(
       RegExp(
-        r'\b(apikey|api_key|key|token|sign|signature|auth)=[^&"\s,}]+',
+        r'\b(apikey|api_key|key|token|access_token|refresh_token|secret|'
+        r'password|pwd|sign|signature|auth|sid|h)=[^&"\s,}]+',
         caseSensitive: false,
       ),
-      r'$1=[redacted]',
+      (match) => '${match.group(1)}=[redacted]',
     );
-    return redacted.length <= 400 ? redacted : '${redacted.substring(0, 400)}…';
+    text = text.replaceAllMapped(
+      RegExp(
+        r'"(apikey|api_key|key|token|access_token|refresh_token|secret|'
+        r'password|pwd|sign|signature|auth|sid)"\s*:\s*"[^"]*"',
+        caseSensitive: false,
+      ),
+      (match) => '"${match.group(1)}":"[redacted]"',
+    );
+    return text.length <= 400 ? text : '${text.substring(0, 400)}…';
   }
 
   void _notify() {

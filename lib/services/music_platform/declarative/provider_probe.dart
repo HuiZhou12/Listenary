@@ -103,7 +103,7 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
   final startedAt = now();
   final token = cancelToken ?? OnlineMusicCancelToken();
   final candidates = (templates ?? onlineMusicProviderTemplates())
-      .take(maxRequests)
+      .take(maxRequests.clamp(1, providerProbeMaxRequests))
       .toList(growable: false);
 
   final outcomes = <ProviderProbeOutcome>[];
@@ -172,20 +172,19 @@ Future<ProviderProbeOutcome> _probeCandidate({
   final binding = template.search;
   final spec = binding.request;
 
-  // P5：认证是"可选使用"而不是"必须先有"。没有凭据时不带凭据发一次，
-  // 由服务端告诉我们它是否需要认证。
-  final needsCredential = spec.auth is! OnlineMusicNoAuthPlacement;
-  if (needsCredential && (credential == null || credential.isEmpty)) {
-    return Future.value(
-      ProviderProbeOutcome(
-        candidateId: template.id,
-        label: template.label,
-        score: 0,
-        needsAuthentication: true,
-        failureReason: '该接口需要凭据；配置后重新探测即可自动生成初稿',
-      ),
-    );
-  }
+  // P5：**不因为缺凭据而拒绝探测**。没有凭据时用「无认证」的副本发一次，
+  // 让服务端自己回答（401/403 → 需要认证；200 且能解析 → 直接拿到初稿）。
+  final hasCredential = credential != null && credential.isNotEmpty;
+  final probeSpec = hasCredential
+      ? spec
+      : OnlineMusicRequestSpec(
+          verb: spec.verb,
+          path: spec.path,
+          query: spec.query,
+          headers: spec.headers,
+          body: spec.body,
+          auth: const OnlineMusicNoAuthPlacement(),
+        );
 
   final inputs = DeclarativeInputs(
     keyword: keyword,
@@ -198,6 +197,7 @@ Future<ProviderProbeOutcome> _probeCandidate({
     transport: transport,
     template: template,
     binding: binding,
+    spec: probeSpec,
     inputs: inputs,
     credential: credential,
     platform: platform,
@@ -210,6 +210,7 @@ Future<ProviderProbeOutcome> _send({
   required DeclarativeHttpTransport transport,
   required OnlineMusicProviderTemplate template,
   required OnlineMusicDeclarativeCapabilityBinding binding,
+  required OnlineMusicRequestSpec spec,
   required DeclarativeInputs inputs,
   required String? credential,
   required MusicPlatform platform,
@@ -218,7 +219,7 @@ Future<ProviderProbeOutcome> _send({
 }) async {
   try {
     final request = buildDeclarativeRequest(
-      spec: binding.request,
+      spec: spec,
       inputs: inputs,
       credential: credential,
     );

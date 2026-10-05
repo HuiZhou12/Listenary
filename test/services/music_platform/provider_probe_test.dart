@@ -65,12 +65,57 @@ void main() {
     expect(best.statusCode, 200);
   });
 
-  test('a netease-proxy service is recognised without any credential', () async {
+  test('probeSearch reports "needs authentication" from the real response', () async {
+    // P5：缺凭据也要真的发一次请求，让服务端回答。
+    transport.statusCode = 401;
+    transport.responder = (options) async => const {'message': 'unauthorized'};
+
+    final report = await probeDeclarativeSearch(
+      transport: transport,
+      platform: MusicPlatform.netease,
+    );
+
+    expect(
+      transport.requests.any((request) => request.path == '/api/163_search'),
+      isTrue,
+      reason: '没有凭据也要发出探测请求',
+    );
+    expect(report.anyNeedsAuthentication, isTrue);
+    expect(report.hasDraft, isFalse);
+  });
+
+  test('a keyed template without a credential still probes', () async {
     transport.responder = (options) async {
-      expect(options.path, '/search');
-      expect(options.queryParameters['keywords'], providerProbeKeyword);
+      // 探测副本必须不带任何鉴权参数。
+      expect(options.queryParameters.containsKey('apikey'), isFalse);
       return _msapiBody;
     };
+
+    await probeDeclarativeSearch(
+      transport: transport,
+      platform: MusicPlatform.netease,
+    );
+
+    expect(
+      transport.requests.map((request) => request.path).toSet(),
+      {'/api/163_search', '/search'},
+    );
+  });
+
+  test('the candidate list is clamped to the hard limit', () async {
+    transport.responder = (options) async => const {'nope': true};
+
+    await probeDeclarativeSearch(
+      transport: transport,
+      platform: MusicPlatform.netease,
+      maxRequests: 99,
+    );
+
+    expect(transport.requests.length, lessThanOrEqualTo(providerProbeMaxRequests));
+  });
+
+  test('a netease-proxy service is recognised without any credential', () async {
+    transport.responder = (options) async => _msapiBody;
 
     final report = await probeDeclarativeSearch(
       transport: transport,
@@ -78,13 +123,16 @@ void main() {
     );
 
     expect(report.draftTemplateId, 'netease-proxy');
-    // ChkSz 模板需要凭据，因此探测按"需要认证"记录而不是发请求。
+    // 两个模板都会被真的探测一次；ChkSz 模板的成功判定不匹配这份响应，因此得分 0。
+    expect(
+      transport.requests.map((request) => request.path).toSet(),
+      {'/api/163_search', '/search'},
+    );
     final chkszOutcome = report.outcomes.firstWhere(
       (outcome) => outcome.candidateId == builtinOnlineMusicChkszId,
     );
-    expect(chkszOutcome.needsAuthentication, isTrue);
-    expect(chkszOutcome.failureReason, contains('需要凭据'));
-    expect(transport.requests, hasLength(1));
+    expect(chkszOutcome.score, 0);
+    expect(chkszOutcome.failureReason, contains('成功判定未通过'));
   });
 
   test('401 and 403 are reported as "needs authentication"', () async {

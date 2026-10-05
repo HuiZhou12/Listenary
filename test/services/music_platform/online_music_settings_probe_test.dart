@@ -30,7 +30,10 @@ void main() {
     final report = await controller().probeSearch(store.value.providers.single);
 
     expect(report.draftTemplateId, 'netease-proxy');
-    expect(transport.requests.single.path, '/search');
+    expect(
+      transport.requests.map((request) => request.path),
+      contains('/search'),
+    );
   });
 
   test('probeSearch passes an already-configured credential', () async {
@@ -56,17 +59,20 @@ void main() {
     expect(report.draftTemplateId, builtinOnlineMusicChkszId);
   });
 
-  test('probeSearch reports "needs authentication" without a credential', () async {
-    // 条目不需要凭据 → ChkSz 模板无法带上 key。
+  test('probeSearch never attaches a credential the entry does not have', () async {
     transport.responder = (request) async => _msapiBody;
 
     final report = await controller().probeSearch(store.value.providers.single);
 
-    expect(report.anyNeedsAuthentication, isTrue);
+    // 两个候选都会真的被探测一次，且都不带凭据。
     expect(
-      transport.requests.any((request) => request.path == '/api/163_search'),
-      isFalse,
+      transport.requests.map((request) => request.path).toSet(),
+      {'/api/163_search', '/search'},
     );
+    for (final request in transport.requests) {
+      expect(request.query.containsKey('apikey'), isFalse);
+    }
+    expect(report.draftTemplateId, 'netease-proxy');
   });
 
   test('testCapability(search) reports both HTTP and mapped result', () async {
@@ -177,6 +183,24 @@ void main() {
     expect(result.responsePreview, isNot(contains('chksz_SECRET_TEST_ONLY')));
     expect(result.responsePreview, contains('[redacted]'));
     expect(result.responsePreview!.length, lessThan(420));
+  });
+
+  test('the preview also redacts JSON key/value secrets', () async {
+    // JSON 键值形式（含签名 URL 的常见参数名）同样不能出现在界面上。
+    transport.responder = (request) async => {
+      'token': 'SECRET_TOKEN_TEST_ONLY',
+      'url': 'https://media.invalid/a.flac?h=SECRET_H_TEST_ONLY&sid=SECRET_SID',
+    };
+
+    final result = await controller().testCapability(
+      store.value.providers.single,
+      OnlineMusicCapability.search,
+    );
+
+    expect(result.responsePreview, isNot(contains('SECRET_TOKEN_TEST_ONLY')));
+    expect(result.responsePreview, isNot(contains('SECRET_H_TEST_ONLY')));
+    expect(result.responsePreview, isNot(contains('SECRET_SID')));
+    expect(result.responsePreview, contains('"token":"[redacted]"'));
   });
 }
 

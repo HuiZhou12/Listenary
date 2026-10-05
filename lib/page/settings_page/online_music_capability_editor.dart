@@ -132,11 +132,15 @@ class _OnlineMusicCapabilityEditorDialogState
   final _testTrackId = TextEditingController();
 
   bool _showJson = false;
+  bool _bound = false;
   String? _error;
   String? _notice;
   bool _busy = false;
   String? _lastTestSummary;
   String? _lastPreview;
+
+  /// `_collect()` 收集过程中发现的、无法解释成有效配置的输入。
+  final List<String> _collectErrors = [];
 
   bool get _isSearch => widget.capability == OnlineMusicCapability.search;
 
@@ -188,6 +192,18 @@ class _OnlineMusicCapabilityEditorDialogState
       );
 
   void _loadFromBinding(OnlineMusicDeclarativeCapabilityBinding binding) {
+    // 重载（应用 JSON / 探测初稿）时先释放上一批标量控制器，避免泄漏。
+    if (_bound) {
+      _path.dispose();
+      _fieldsRoot.dispose();
+      _listPath.dispose();
+      _totalPath.dispose();
+      _nextCursor.dispose();
+      _statusCodes.dispose();
+      _authName.dispose();
+      _authPrefix.dispose();
+    }
+    _bound = true;
     _verb = binding.request.verb;
     _path = TextEditingController(text: binding.request.path);
     _fieldsRoot = TextEditingController(
@@ -272,28 +288,43 @@ class _OnlineMusicCapabilityEditorDialogState
             value: row.value.text,
           ),
     ];
-    final predicates = [
-      for (final row in _predicateRows)
-        if (row.path.text.trim().isNotEmpty)
-          OnlineMusicSuccessPredicate(
-            path: JsonPath.tryParse(row.path.text.trim()) ??
-                JsonPath.tryParse('code')!,
-            op: row.op,
-            value: row.value.text.trim().isEmpty
-                ? null
-                : _coerce(row.value.text.trim()),
-          ),
-    ];
+    final predicates = <OnlineMusicSuccessPredicate>[];
+    _collectErrors.clear();
+    for (final row in _predicateRows) {
+      final raw = row.path.text.trim();
+      if (raw.isEmpty) continue;
+      final path = JsonPath.tryParse(raw);
+      if (path == null) {
+        // §6：越界配置必须显式拒绝，不能悄悄换成别的路径。
+        _collectErrors.add('成功判定路径「$raw」写法无效');
+        continue;
+      }
+      predicates.add(
+        OnlineMusicSuccessPredicate(
+          path: path,
+          op: row.op,
+          value: row.value.text.trim().isEmpty
+              ? null
+              : _coerce(row.value.text.trim()),
+        ),
+      );
+    }
     final fields = <OnlineMusicDomainField, OnlineMusicFieldSpec>{};
     for (final entry in _fieldRows.entries) {
       if (!entry.value.enabled) continue;
-      final paths = entry.value.paths.text
-          .split(',')
-          .map((entry) => entry.trim())
-          .where((entry) => entry.isNotEmpty)
-          .map(JsonPath.tryParse)
-          .whereType<JsonPath>()
-          .toList();
+      final paths = <JsonPath>[];
+      for (final raw in entry.value.paths.text.split(',')) {
+        final candidate = raw.trim();
+        if (candidate.isEmpty) continue;
+        final path = JsonPath.tryParse(candidate);
+        if (path == null) {
+          _collectErrors.add(
+            '字段 ${entry.key.name} 的路径「$candidate」写法无效',
+          );
+          continue;
+        }
+        paths.add(path);
+      }
       if (paths.isEmpty) continue;
       fields[entry.key] = OnlineMusicFieldSpec(
         candidates: paths,
@@ -384,6 +415,11 @@ class _OnlineMusicCapabilityEditorDialogState
   }
 
   Future<void> _runTest() async {
+    final binding = _collect();
+    if (_collectErrors.isNotEmpty) {
+      setState(() => _error = _collectErrors.join('；'));
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -391,7 +427,7 @@ class _OnlineMusicCapabilityEditorDialogState
     });
     try {
       final result = await widget.onTest(
-        _collect(),
+        binding,
         _testTrackId.text.trim().isEmpty ? null : _testTrackId.text.trim(),
       );
       if (!mounted) return;
@@ -436,7 +472,7 @@ class _OnlineMusicCapabilityEditorDialogState
 
   void _submit() {
     final binding = _collect();
-    final issues = binding.validationIssues(widget.capability);
+    final issues = [..._collectErrors, ...binding.validationIssues(widget.capability)];
     if (issues.isNotEmpty) {
       setState(() => _error = issues.join('；'));
       return;
