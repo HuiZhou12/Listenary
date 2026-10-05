@@ -1,3 +1,5 @@
+import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
 
@@ -54,6 +56,8 @@ final class OnlineMusicProviderDefinition {
     required this.requiresCredential,
     required this.parameterName,
     required this.capabilityAuth,
+    this.capabilities,
+    this.contentPlatform = MusicPlatform.netease,
   });
 
   static const defaultCredentialReference = 'PureMusic/ChKSz/APIKey';
@@ -90,6 +94,55 @@ final class OnlineMusicProviderDefinition {
 
   final String parameterName;
 
+  /// 该条目代理的**内容来源**（D1）。
+  ///
+  /// 身份模型（`PlatformTrackRef.platform`）本轮不泛化，因此自建 Provider 必须声明
+  /// 它代理哪一家的内容；非 netease 型来源属于当前模型的边界。
+  final MusicPlatform contentPlatform;
+
+  /// 逐能力绑定。
+  ///
+  /// `null` 表示配置里**没有** `capabilities` 这个 key —— 那是旧条目，按 [protocol] 解释；
+  /// 非 null（即使是空 Map）表示条目已进入新模型，此时 [protocol] 被完全忽略。
+  /// 这个「key 是否存在」的判别式就是 §5.3 定义的唯一优先级规则。
+  final Map<OnlineMusicCapability, OnlineMusicCapabilityBinding>? capabilities;
+
+  /// 该能力最终生效的绑定（含旧条目的兼容解释）。
+  OnlineMusicCapabilityBinding bindingFor(OnlineMusicCapability capability) {
+    final explicit = capabilities;
+    if (explicit != null) {
+      return explicit[capability] ??
+          const OnlineMusicUnsupportedCapabilityBinding();
+    }
+    if (protocol == builtinOnlineMusicChkszId) {
+      return const OnlineMusicBuiltinCapabilityBinding();
+    }
+    return const OnlineMusicUnsupportedCapabilityBinding();
+  }
+
+  /// 条目级 + 能力级配置校验；空列表表示可用。
+  List<String> validationIssues() {
+    final issues = <String>[];
+    final idError = validateOnlineMusicProviderId(
+      id,
+      existingIds: const {},
+      allowReserved: true,
+    );
+    if (idError != null) issues.add(idError);
+    if (normalizeOnlineMusicBaseUrl(baseUrl) != baseUrl) {
+      issues.add('服务地址无效或会被回落为默认值');
+    }
+    final explicit = capabilities;
+    if (explicit != null) {
+      for (final entry in explicit.entries) {
+        for (final issue in entry.value.validationIssues(entry.key)) {
+          issues.add('${entry.key.name}：$issue');
+        }
+      }
+    }
+    return issues;
+  }
+
   /// 能力级认证覆盖；未列出的能力使用 Provider 默认要求。
   final Map<OnlineMusicCapability, OnlineMusicProviderAuth> capabilityAuth;
 
@@ -123,13 +176,17 @@ final class OnlineMusicProviderDefinition {
       requiresCredential: requiresCredential,
       parameterName: defaultOnlineMusicCredentialParameter,
       capabilityAuth: const {},
+      // 新条目一律写入 capabilities（即使为空）：这样它永远走新模型，
+      // 未配置的能力就是「不支持」，而不是被当成旧条目按 ChkSz 协议执行。
+      capabilities: const {},
     );
   }
 
-  /// 界面可编辑的部分：服务地址与认证方式；标识、协议与凭据槽位保持不变。
+  /// 界面可编辑的部分：服务地址、认证方式与内容来源；标识、协议与凭据槽位保持不变。
   OnlineMusicProviderDefinition editedBy({
     required String baseUrl,
     required bool requiresCredential,
+    MusicPlatform? contentPlatform,
   }) {
     return OnlineMusicProviderDefinition(
       id: id,
@@ -143,6 +200,59 @@ final class OnlineMusicProviderDefinition {
       requiresCredential: requiresCredential,
       parameterName: parameterName,
       capabilityAuth: capabilityAuth,
+      capabilities: capabilities,
+      contentPlatform: contentPlatform ?? this.contentPlatform,
+    );
+  }
+
+  /// 替换某个能力的绑定；条目因此进入新模型（`capabilities` 不再是 null）。
+  OnlineMusicProviderDefinition withCapabilityBinding(
+    OnlineMusicCapability capability,
+    OnlineMusicCapabilityBinding binding,
+  ) {
+    return OnlineMusicProviderDefinition(
+      id: id,
+      protocol: protocol,
+      baseUrl: baseUrl,
+      connectTimeout: connectTimeout,
+      sendTimeout: sendTimeout,
+      receiveTimeout: receiveTimeout,
+      credentialReference: credentialReference,
+      requiresCredential: requiresCredential,
+      parameterName: parameterName,
+      capabilityAuth: capabilityAuth,
+      capabilities: Map.unmodifiable({
+        ...(capabilities ??
+            {
+              for (final entry in OnlineMusicCapability.values)
+                entry: bindingFor(entry),
+            }),
+        capability: binding,
+      }),
+      contentPlatform: contentPlatform,
+    );
+  }
+
+  /// 一键按 ChkSz 兼容方式填充（D5）：四能力全部走内置实现，兼容 ChkSz mirror。
+  OnlineMusicProviderDefinition withChkszCompatibleCapabilities() {
+    return OnlineMusicProviderDefinition(
+      id: id,
+      protocol: protocol,
+      baseUrl: baseUrl,
+      connectTimeout: connectTimeout,
+      sendTimeout: sendTimeout,
+      receiveTimeout: receiveTimeout,
+      credentialReference: credentialReference,
+      requiresCredential: requiresCredential,
+      parameterName: parameterName,
+      capabilityAuth: capabilityAuth,
+      capabilities: const {
+        OnlineMusicCapability.search: OnlineMusicBuiltinCapabilityBinding(),
+        OnlineMusicCapability.playlist: OnlineMusicBuiltinCapabilityBinding(),
+        OnlineMusicCapability.lyric: OnlineMusicBuiltinCapabilityBinding(),
+        OnlineMusicCapability.stream: OnlineMusicBuiltinCapabilityBinding(),
+      },
+      contentPlatform: contentPlatform,
     );
   }
 
@@ -150,6 +260,7 @@ final class OnlineMusicProviderDefinition {
     'id': id,
     'protocol': protocol,
     'baseUrl': baseUrl,
+    'contentPlatform': contentPlatform.name,
     'connectTimeoutMs': connectTimeout.inMilliseconds,
     'sendTimeoutMs': sendTimeout.inMilliseconds,
     'receiveTimeoutMs': receiveTimeout.inMilliseconds,
@@ -158,6 +269,11 @@ final class OnlineMusicProviderDefinition {
       'capabilityAuth': {
         for (final entry in capabilityAuth.entries)
           entry.key.name: entry.value is OnlineMusicNoAuth ? 'none' : 'apiKey',
+      },
+    if (capabilities != null)
+      'capabilities': {
+        for (final entry in capabilities!.entries)
+          entry.key.name: entry.value.toJson(),
       },
   };
 
@@ -182,6 +298,8 @@ final class OnlineMusicProviderDefinition {
       other.credentialReference == credentialReference &&
       other.requiresCredential == requiresCredential &&
       other.parameterName == parameterName &&
+      other.contentPlatform == contentPlatform &&
+      _sameBindings(other.capabilities, capabilities) &&
       _sameCapabilityAuth(other.capabilityAuth, capabilityAuth);
 
   @override
@@ -195,6 +313,15 @@ final class OnlineMusicProviderDefinition {
     credentialReference,
     requiresCredential,
     parameterName,
+    contentPlatform,
+    // capabilities 为 null 与空 Map 语义不同（旧条目 vs 新条目），必须区分。
+    capabilities == null
+        ? -1
+        : Object.hashAllUnordered(
+            capabilities!.entries.map(
+              (entry) => Object.hash(entry.key, entry.value),
+            ),
+          ),
     Object.hashAllUnordered(
       capabilityAuth.entries.map((entry) {
         final auth = entry.value;
@@ -210,7 +337,20 @@ final class OnlineMusicProviderDefinition {
   @override
   String toString() =>
       'OnlineMusicProviderDefinition($id, $baseUrl, '
-      'requiresCredential=$requiresCredential, slot=${credentialReference != null})';
+      'requiresCredential=$requiresCredential, slot=${credentialReference != null}, '
+      'capabilities=${capabilities == null ? 'legacy' : capabilities!.length})';
+}
+
+bool _sameBindings(
+  Map<OnlineMusicCapability, OnlineMusicCapabilityBinding>? a,
+  Map<OnlineMusicCapability, OnlineMusicCapabilityBinding>? b,
+) {
+  if (a == null || b == null) return a == b;
+  if (a.length != b.length) return false;
+  for (final entry in a.entries) {
+    if (b[entry.key] != entry.value) return false;
+  }
+  return true;
 }
 
 bool _sameCapabilityAuth(
@@ -240,9 +380,12 @@ const defaultOnlineMusicProtocol = 'chksz';
 const reservedOnlineMusicProviderIds = {defaultOnlineMusicProviderId};
 
 /// 界面新增条目时的轻量校验：非空、无空白、未保留、不重复。
+///
+/// [allowReserved] 用于校验**已存在**的条目（默认条目本身就叫 `chksz`）。
 String? validateOnlineMusicProviderId(
   String value, {
   required Set<String> existingIds,
+  bool allowReserved = false,
 }) {
   final normalized = value.trim();
   if (normalized.isEmpty) return '请填写标识';
@@ -250,7 +393,9 @@ String? validateOnlineMusicProviderId(
   if (!RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(normalized)) {
     return '标识只能包含字母、数字、下划线或连字符';
   }
-  if (reservedOnlineMusicProviderIds.contains(normalized)) return '该标识已被占用';
+  if (!allowReserved && reservedOnlineMusicProviderIds.contains(normalized)) {
+    return '该标识已被占用';
+  }
   if (existingIds.contains(normalized)) return '该标识已存在';
   return null;
 }
@@ -441,7 +586,16 @@ final class OnlineMusicSettings {
     if (id == null) return null;
     final protocol =
         _nonEmptyString(value['protocol']) ?? defaultOnlineMusicProtocol;
-    if (protocol != defaultOnlineMusicProtocol) return null;
+
+    // §5.3 的判别式：`capabilities` 这个 key 是否存在。
+    // 存在（即使为空对象）⇒ 新模型，protocol 被完全忽略；
+    // 不存在 ⇒ 旧条目兼容路径，由 protocol 决定，未知 protocol 沿用既有「忽略该条目」语义。
+    final hasCapabilities = value.containsKey('capabilities');
+    if (!hasCapabilities && protocol != defaultOnlineMusicProtocol) return null;
+
+    final parsedCapabilities = hasCapabilities
+        ? _parseCapabilities(value['capabilities'])
+        : null;
 
     final auth = value['auth'];
     final authMap = auth is Map ? auth : const <Object?, Object?>{};
@@ -465,6 +619,8 @@ final class OnlineMusicSettings {
     return OnlineMusicProviderDefinition(
       id: id,
       protocol: protocol,
+      contentPlatform: _parseContentPlatform(value['contentPlatform']),
+      capabilities: parsedCapabilities,
       baseUrl: normalizeOnlineMusicBaseUrl(value['baseUrl']),
       connectTimeout: normalizeOnlineMusicTimeout(
         value['connectTimeoutMs'],
@@ -531,6 +687,36 @@ final class OnlineMusicSettings {
       result[capability] = id;
     }
     return Map.unmodifiable(result);
+  }
+
+  /// 解析能力绑定。
+  ///
+  /// 单个能力解析失败只影响该能力（标记为不支持），不影响同一条目的其它能力；
+  /// 未写出的能力同样视为「不支持」，不回落 `protocol`。
+  static Map<OnlineMusicCapability, OnlineMusicCapabilityBinding>
+  _parseCapabilities(Object? value) {
+    if (value is! Map) return const {};
+    final result = <OnlineMusicCapability, OnlineMusicCapabilityBinding>{};
+    for (final capability in OnlineMusicCapability.values) {
+      final raw = value[capability.name];
+      if (raw == null) continue;
+      try {
+        result[capability] = OnlineMusicCapabilityBinding.fromJson(raw);
+      } on FormatException {
+        result[capability] = const OnlineMusicUnsupportedCapabilityBinding();
+      }
+    }
+    return Map.unmodifiable(result);
+  }
+
+  /// D1：内容来源只支持既有闭集；无法识别的值回落 netease（默认内容来源）。
+  static MusicPlatform _parseContentPlatform(Object? value) {
+    final name = _nonEmptyString(value);
+    if (name == null) return MusicPlatform.netease;
+    for (final platform in MusicPlatform.values) {
+      if (platform.name == name) return platform;
+    }
+    return MusicPlatform.netease;
   }
 }
 
