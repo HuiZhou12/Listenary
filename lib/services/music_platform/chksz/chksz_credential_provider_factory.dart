@@ -16,11 +16,17 @@ ChkszCredentialProvider createChkszCredentialProvider({
   required bool portableBuild,
   String credentialReference = chkszWindowsCredentialTargetName,
   ChkszCredentialStoreFactory? windowsStoreFactory,
+  bool Function(String)? validateFormat,
 }) {
-  if (portableBuild) return InMemoryChkszCredentialProvider();
+  if (portableBuild) {
+    return InMemoryChkszCredentialProvider(validateFormat: validateFormat);
+  }
 
   final store = windowsStoreFactory != null
       ? windowsStoreFactory()
       : createChkszWindowsCredentialStore(credentialReference);
-  return PersistentChkszCredentialProvider(store: store);
+  return PersistentChkszCredentialProvider(
+    store: store,
+    validateFormat: validateFormat,
+  );
 }

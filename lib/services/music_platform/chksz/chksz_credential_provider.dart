@@ -43,13 +43,17 @@ final class ChkszCredentialStorageException implements Exception {
 }
 
 final class InMemoryChkszCredentialProvider implements ChkszCredentialProvider {
-  InMemoryChkszCredentialProvider({String? initialApiKey}) {
+  InMemoryChkszCredentialProvider({
+    String? initialApiKey,
+    bool Function(String)? validateFormat,
+  }) : _validate = validateFormat ?? isValidChkszApiKeyFormat {
     if (initialApiKey != null) {
-      _validateChkszApiKey(initialApiKey);
+      _validateChkszApiKey(initialApiKey, _validate);
       _apiKey = initialApiKey;
     }
   }
 
+  final bool Function(String) _validate;
   String? _apiKey;
 
   @override
@@ -57,7 +61,7 @@ final class InMemoryChkszCredentialProvider implements ChkszCredentialProvider {
 
   @override
   Future<void> writeApiKey(String apiKey) async {
-    _validateChkszApiKey(apiKey);
+    _validateChkszApiKey(apiKey, _validate);
     _apiKey = apiKey;
   }
 
@@ -73,10 +77,17 @@ final class InMemoryChkszCredentialProvider implements ChkszCredentialProvider {
 
 final class PersistentChkszCredentialProvider
     implements ChkszCredentialProvider {
-  PersistentChkszCredentialProvider({required ChkszCredentialStore store})
-    : _store = store;
+  PersistentChkszCredentialProvider({
+    required ChkszCredentialStore store,
+    bool Function(String)? validateFormat,
+  }) : _store = store,
+       _validate = validateFormat ?? isValidChkszApiKeyFormat;
 
   final ChkszCredentialStore _store;
+
+  /// 凭据格式约束。ChkSz 的 Key 有固定前缀，但**其它 Provider 的凭据形态由各自协议决定**，
+  /// 因此通用凭据槽位会传入一个不做格式限制的校验器。
+  final bool Function(String) _validate;
   Future<void> _pendingOperation = Future<void>.value();
   bool _loaded = false;
   String? _apiKey;
@@ -88,7 +99,7 @@ final class PersistentChkszCredentialProvider
       ChkszCredentialStorageOperation.read,
       _store.read,
     );
-    if (stored != null && !isValidChkszApiKeyFormat(stored)) {
+    if (stored != null && !_validate(stored)) {
       throw const ChkszCredentialStorageException(
         operation: ChkszCredentialStorageOperation.read,
       );
@@ -101,7 +112,7 @@ final class PersistentChkszCredentialProvider
   @override
   Future<void> writeApiKey(String apiKey) {
     try {
-      _validateChkszApiKey(apiKey);
+      _validateChkszApiKey(apiKey, _validate);
     } catch (error, stackTrace) {
       return Future<void>.error(error, stackTrace);
     }
@@ -150,8 +161,8 @@ final class PersistentChkszCredentialProvider
   }
 }
 
-void _validateChkszApiKey(String apiKey) {
-  if (!isValidChkszApiKeyFormat(apiKey)) {
+void _validateChkszApiKey(String apiKey, bool Function(String) validate) {
+  if (!validate(apiKey)) {
     throw const FormatException('Invalid ChKSz API Key format');
   }
 }

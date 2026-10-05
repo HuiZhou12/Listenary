@@ -15,3 +15,11 @@ abstract interface class OnlineMusicCredentialAccess {
 
   Future<void> clear(String reference);
 }
+
+/// 按引用**读取凭据值**，供发起请求时注入。
+///
+/// 与 [OnlineMusicCredentialAccess] 分开是刻意的：设置界面只用前者（它拿不到凭据值），
+/// 只有真正要发请求的执行者才需要后者。
+abstract interface class OnlineMusicCredentialReader {
+  Future<String?> readCredential(String reference);
+}
