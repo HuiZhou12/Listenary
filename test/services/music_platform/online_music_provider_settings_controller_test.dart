@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
+import 'package:pure_music/services/music_platform/online_music_composition.dart';
 
 void main() {
   group('provider edits', () {
@@ -241,6 +242,142 @@ void main() {
       expect(running.saved['running'], 'chksz_RUNNING_TEST_ONLY');
       controller.dispose();
     });
+
+    test(
+      'turning a running credential-free entry into an api-key one is usable '
+      'before restart',
+      () async {
+        // 启动时该条目不需要 Key，所以运行中的 Provider 没有凭据源。
+        final activeSettings = OnlineMusicSettings.fromJson({
+          'providers': [
+            {'id': 'selfData', 'auth': {'kind': 'none'}},
+          ],
+        });
+        final running = _RunningWithoutCredentialController();
+        final fallback = _FakeCredentialAccess();
+        final store = _MemorySettingsStore(activeSettings);
+        final controller = OnlineMusicProviderSettingsController(
+          activeSettings: activeSettings,
+          store: store,
+          fallbackCredentials: fallback,
+          runningCredentials: {'selfData': running},
+        );
+
+        final edited = controller.settings.providers.single.editedBy(
+          baseUrl: defaultOnlineMusicBaseUrl,
+          requiresCredential: true,
+        );
+        await controller.updateProvider(edited);
+
+        // 界面必须能配置这个 Key（而不是复用没有凭据源的运行中出口）。
+        expect(await controller.isCredentialConfigured(edited), isFalse);
+        await controller.saveCredential(edited, 'chksz_SELFDATA_TEST_ONLY');
+        expect(running.saveCalls, 0);
+        expect(fallback.saved[edited.credentialReference],
+            'chksz_SELFDATA_TEST_ONLY');
+        expect(await controller.isCredentialConfigured(edited), isTrue);
+        controller.dispose();
+      },
+    );
+  });
+
+  group('credential slot stability', () {
+    test('toggling authentication off and on keeps the original slot', () {
+      const original = OnlineMusicProviderDefinition.defaults;
+      final off = original.editedBy(
+        baseUrl: original.baseUrl,
+        requiresCredential: false,
+      );
+      final on = off.editedBy(
+        baseUrl: original.baseUrl,
+        requiresCredential: true,
+      );
+
+      expect(off.requiresCredential, isFalse);
+      expect(off.credentialReference, original.credentialReference);
+      expect(on.requiresCredential, isTrue);
+      expect(on.credentialReference, original.credentialReference);
+      expect(
+        on.credentialReference,
+        OnlineMusicProviderDefinition.defaultCredentialReference,
+      );
+    });
+
+    test('a hand-written slot is preserved across the same toggle', () {
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'shared',
+            'auth': {
+              'kind': 'apiKey',
+              'reference': 'PureMusic/Shared/APIKey',
+            },
+          },
+        ],
+      });
+      final original = settings.providers.single;
+      final roundTripped = original
+          .editedBy(baseUrl: original.baseUrl, requiresCredential: false)
+          .editedBy(baseUrl: original.baseUrl, requiresCredential: true);
+
+      expect(roundTripped.credentialReference, 'PureMusic/Shared/APIKey');
+    });
+
+    test('the derived slot keeps the confirmed default for the default id', () {
+      expect(
+        deriveOnlineMusicCredentialReference(defaultOnlineMusicProviderId),
+        OnlineMusicProviderDefinition.defaultCredentialReference,
+      );
+      expect(
+        deriveOnlineMusicCredentialReference('selfData'),
+        'PureMusic/selfData/APIKey',
+      );
+    });
+  });
+
+  group('restart applies the saved configuration', () {
+    test('a UI edit is re-parsed into the composition after restart', () async {
+      final store = _MemorySettingsStore(OnlineMusicSettings.defaults);
+      final controller = OnlineMusicProviderSettingsController(
+        activeSettings: OnlineMusicSettings.defaults,
+        store: store,
+        fallbackCredentials: _FakeCredentialAccess(),
+      );
+
+      await controller.addProvider(
+        OnlineMusicProviderDefinition.custom(
+          id: 'selfData',
+          baseUrl: 'http://127.0.0.1:8080',
+          requiresCredential: false,
+        ),
+      );
+      await controller.assignCapability(
+        OnlineMusicCapability.stream,
+        'selfData',
+      );
+      expect(controller.hasPendingRestart, isTrue);
+
+      // 模拟重启：把「落盘」的内容重新解析，并按它组装 Provider。
+      final persisted = OnlineMusicSettings.fromJson(store.value.toJson());
+      final composition = createOnlineMusicComposition(
+        settings: persisted,
+        portableBuild: true,
+      );
+      addTearDown(composition.service.dispose);
+
+      final registry =
+          (composition.service as CompositeOnlineMusicService).registry;
+      expect(registry.providerIdFor(OnlineMusicCapability.search), 'chksz');
+      expect(
+        registry.providerIdFor(OnlineMusicCapability.stream),
+        'selfData',
+      );
+      expect(
+        composition.credentialControllers.keys,
+        containsAll(<String>['chksz', 'selfData']),
+      );
+      controller.dispose();
+    });
   });
 
   group('serialization', () {
@@ -419,6 +556,36 @@ final class _FakeCredentialAccess implements OnlineMusicCredentialAccess {
   }
 }
 
+/// 启动时声明「不需要凭据」，因此没有凭据来源；保存必然失败。
+final class _RunningWithoutCredentialController
+    implements OnlineMusicCredentialController {
+  int saveCalls = 0;
+
+  @override
+  String get credentialDisplayName => 'API Key';
+
+  @override
+  String get inputHint => 'chksz_...';
+
+  @override
+  bool isCredentialFormatValid(String value) => true;
+
+  @override
+  Future<bool> isConfigured() async => false;
+
+  @override
+  Future<void> saveCredential(String value) async {
+    saveCalls++;
+    throw const OnlineMusicCredentialException(
+      operation: OnlineMusicCredentialOperation.save,
+      safeMessage: '当前在线音乐服务不需要 API Key',
+    );
+  }
+
+  @override
+  Future<void> clearCredential() async {}
+}
+
 /// 把某个引用的凭据操作暴露成 Provider 形状的控制器。
 final class _RunningCredentialController
     implements OnlineMusicCredentialController {
@@ -426,9 +593,6 @@ final class _RunningCredentialController
 
   final _FakeCredentialAccess _access;
   final String _reference;
-
-  @override
-  String get providerDisplayName => 'ChKSz';
 
   @override
   String get credentialDisplayName => 'API Key';

@@ -211,37 +211,63 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   }
 
   Widget _buildProviderAction(OnlineMusicProviderDefinition provider) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (provider.requiresCredential) ...[
-          FilledButton.icon(
-            onPressed: () => _openCredentialDialog(provider),
-            icon: Icon(
-              _configured[provider.id] == true ? Symbols.edit : Symbols.key,
+    // SettingsTile 在非紧凑宽度下不会替 action 做滚动，条目操作按钮较多时
+    // 需要自己提供横向滚动，避免溢出。
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      reverse: true,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (provider.requiresCredential) ...[
+            FilledButton.icon(
+              onPressed: () => _openCredentialDialog(provider),
+              icon: Icon(
+                _configured[provider.id] == true ? Symbols.edit : Symbols.key,
+              ),
+              label: Text(_configured[provider.id] == true ? '更新' : '配置'),
             ),
-            label: Text(_configured[provider.id] == true ? '更新' : '配置'),
+            const SizedBox(width: 8),
+          ],
+          IconButton(
+            tooltip: '编辑',
+            onPressed: () => _editProvider(provider),
+            icon: const Icon(Symbols.edit_note),
           ),
-          const SizedBox(width: 8),
+          if (provider.requiresCredential && _configured[provider.id] == true)
+            IconButton(
+              tooltip: '清除 API Key',
+              onPressed: () => _clearCredential(provider),
+              icon: const Icon(Symbols.delete),
+            ),
+          if (_controller.settings.providers.length > 1)
+            IconButton(
+              tooltip: '删除',
+              onPressed: () => _removeProvider(provider),
+              icon: const Icon(Symbols.remove_circle),
+            ),
         ],
-        IconButton(
-          tooltip: '编辑',
-          onPressed: () => _editProvider(provider),
-          icon: const Icon(Symbols.edit_note),
-        ),
-        if (provider.requiresCredential && _configured[provider.id] == true)
-          IconButton(
-            tooltip: '清除 API Key',
-            onPressed: () => _clearCredential(provider),
-            icon: const Icon(Symbols.delete),
-          ),
-        if (_controller.settings.providers.length > 1)
-          IconButton(
-            tooltip: '删除',
-            onPressed: () => _removeProvider(provider),
-            icon: const Icon(Symbols.remove_circle),
-          ),
-      ],
+      ),
+    );
+  }
+
+  /// 能力分配与默认提供商共用的选择控件。
+  Widget _buildProviderSelector({
+    required List<String> providerIds,
+    required String selected,
+    required ValueChanged<String> onChanged,
+  }) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: SegmentedButton<String>(
+        showSelectedIcon: false,
+        segments: [
+          for (final id in providerIds)
+            ButtonSegment(value: id, label: Text(id)),
+        ],
+        selected: {selected},
+        onSelectionChanged: (selection) => onChanged(selection.first),
+      ),
     );
   }
 
@@ -285,7 +311,27 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
           const _SettingsHint('修改将在下次启动时生效'),
           const SizedBox(height: 8),
         ],
-        if (_error != null || _loading) ...[
+        if (portableBuild) ...[
+          const _SettingsHint('便携版：API Key 只在本次运行内有效，重启后需要重新配置'),
+          const SizedBox(height: 8),
+        ],
+        if (_error != null) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _error!,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: AppType.body,
+                  ),
+                ),
+              ),
+              _buildCredentialStatus(),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ] else if (_loading) ...[
           Row(children: [_buildCredentialStatus()]),
           const SizedBox(height: 8),
         ],
@@ -315,16 +361,11 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
           SettingsTile(
             description: _capabilityLabel(capability),
             subtitle: '当前使用 ${settings.resolvedProviderIdFor(capability)}',
-            action: SegmentedButton<String>(
-              showSelectedIcon: false,
-              segments: [
-                for (final id in providerIds)
-                  ButtonSegment(value: id, label: Text(id)),
-              ],
-              selected: {settings.resolvedProviderIdFor(capability)},
-              onSelectionChanged: (selection) => _apply(
-                _controller.assignCapability(capability, selection.first),
-              ),
+            action: _buildProviderSelector(
+              providerIds: providerIds,
+              selected: settings.resolvedProviderIdFor(capability),
+              onChanged: (id) =>
+                  _apply(_controller.assignCapability(capability, id)),
             ),
           ),
           const SizedBox(height: 12),
@@ -334,15 +375,10 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
         SettingsTile(
           description: '默认提供商',
           subtitle: '能力没有单独指定时使用；也是能力分配回落的目标',
-          action: SegmentedButton<String>(
-            showSelectedIcon: false,
-            segments: [
-              for (final id in providerIds)
-                ButtonSegment(value: id, label: Text(id)),
-            ],
-            selected: {settings.defaultProviderId},
-            onSelectionChanged: (selection) =>
-                _apply(_controller.setDefaultProvider(selection.first)),
+          action: _buildProviderSelector(
+            providerIds: providerIds,
+            selected: settings.defaultProviderId,
+            onChanged: (id) => _apply(_controller.setDefaultProvider(id)),
           ),
         ),
         const SizedBox(height: 24),

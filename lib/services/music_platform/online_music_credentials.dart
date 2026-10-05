@@ -15,7 +15,6 @@ final class OnlineMusicCredentialException implements Exception {
 }
 
 abstract interface class OnlineMusicCredentialController {
-  String get providerDisplayName;
   String get credentialDisplayName;
   String get inputHint;
 

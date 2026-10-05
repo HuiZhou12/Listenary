@@ -163,6 +163,90 @@ void main() {
     expect(find.byTooltip('清除 API Key'), findsOneWidget);
     controller.dispose();
   });
+
+  testWidgets('editing a provider validates the service address', (
+    tester,
+  ) async {
+    final controller = _controller();
+    await pumpPanel(tester, controller);
+
+    await tester.tap(find.byTooltip('编辑'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('编辑提供商'), findsOneWidget);
+    // 标识创建后不可改。
+    expect(tester.widget<TextField>(find.byType(TextField).at(0)).enabled, isFalse);
+
+    await tester.enterText(find.byType(TextField).at(1), '');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(find.text('请填写服务地址'), findsOneWidget);
+
+    await tester.enterText(
+      find.byType(TextField).at(1),
+      'http://127.0.0.1:9999',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(
+      controller.settings.providers.single.baseUrl,
+      'http://127.0.0.1:9999',
+    );
+    expect(find.textContaining('http://127.0.0.1:9999'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('clears a configured per-entry API key', (tester) async {
+    final credentials = _FakeCredentialAccess();
+    credentials.saved[OnlineMusicProviderDefinition.defaultCredentialReference] =
+        _apiKey;
+    final controller = _controller(credentials: credentials);
+    await pumpPanel(tester, controller);
+
+    expect(find.textContaining('需要 API Key · 已配置'), findsOneWidget);
+    await tester.tap(find.byTooltip('清除 API Key'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('清除'));
+    await tester.pumpAndSettle();
+
+    expect(credentials.saved, isEmpty);
+    expect(find.textContaining('需要 API Key · 未配置'), findsOneWidget);
+    expect(find.byTooltip('清除 API Key'), findsNothing);
+    controller.dispose();
+  });
+
+  testWidgets('configures two entries independently', (tester) async {
+    final credentials = _FakeCredentialAccess();
+    final controller = _controller(credentials: credentials);
+    await pumpPanel(tester, controller);
+
+    await controller.addProvider(
+      OnlineMusicProviderDefinition.custom(
+        id: 'selfData',
+        baseUrl: 'https://self.invalid',
+        requiresCredential: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('配置'), findsNWidgets(2));
+    await tester.tap(find.text('配置').at(1));
+    await tester.pumpAndSettle();
+    // 对话框标题能看出正在配置哪个条目。
+    expect(find.textContaining('配置 selfData 的'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'chksz_SECOND_TEST_ONLY');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(credentials.saved, {
+      deriveOnlineMusicCredentialReference('selfData'): 'chksz_SECOND_TEST_ONLY',
+    });
+    controller.dispose();
+  });
 }
 
 OnlineMusicProviderSettingsController _controller({

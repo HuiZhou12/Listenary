@@ -22,9 +22,16 @@ final class AppPreferenceOnlineMusicSettingsStore
   OnlineMusicSettings read() => AppPreference.instance.onlineMusicSettings;
 
   @override
-  Future<bool> write(OnlineMusicSettings settings) {
-    AppPreference.instance.setOnlineMusicSettings(settings);
-    return AppPreference.instance.save();
+  Future<bool> write(OnlineMusicSettings settings) async {
+    final preference = AppPreference.instance;
+    final previous = preference.onlineMusicSettings;
+    final wasDirty = preference.onlineMusicSettingsDirty;
+    preference.setOnlineMusicSettings(settings);
+    final saved = await preference.save();
+    if (!saved) {
+      preference.restoreOnlineMusicSettings(previous, dirty: wasDirty);
+    }
+    return saved;
   }
 }
 
@@ -71,9 +78,22 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
 
   /// 已进入运行时的条目用运行中的凭据入口（保留其取消/配额语义），
   /// 新增条目回落到按引用访问。
+  ///
+  /// 只有「启动时就需要凭据、且槽位未被改动」的条目才能复用运行中的入口：
+  /// 否则运行中的 Provider 根本没有凭据源，复用它会让保存报出
+  /// 「当前在线音乐服务不需要 API Key」这种自相矛盾的错误。
   OnlineMusicCredentialController? _runningFor(
     OnlineMusicProviderDefinition definition,
-  ) => _runningCredentials[definition.id];
+  ) {
+    final running = _runningCredentials[definition.id];
+    if (running == null) return null;
+    final active = _activeSettings.providerById(definition.id);
+    if (active == null || !active.requiresCredential) return null;
+    if (active.credentialReference != definition.credentialReference) {
+      return null;
+    }
+    return running;
+  }
 
   /// 写入一次配置改动；落盘失败时把界面状态回滚为改动前的值。
   Future<bool> apply(OnlineMusicSettings next) async {
@@ -109,6 +129,8 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   Future<bool> isCredentialConfigured(
     OnlineMusicProviderDefinition definition,
   ) async {
+    // 槽位可能被保留着以备再次打开认证，但「当前不需要凭据」的条目不算已配置。
+    if (!definition.requiresCredential) return false;
     final running = _runningFor(definition);
     if (running != null) return running.isConfigured();
     final reference = definition.credentialReference;
@@ -120,16 +142,20 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     OnlineMusicProviderDefinition definition,
     String value,
   ) async {
+    if (!definition.requiresCredential) {
+      throw const FormatException('该 Provider 不需要 API Key');
+    }
     final running = _runningFor(definition);
     if (running != null) return running.saveCredential(value);
     final reference = definition.credentialReference;
     if (reference == null) {
-      throw const FormatException('该 Provider 不需要 API Key');
+      throw const FormatException('该 Provider 没有凭据槽位');
     }
     return _fallbackCredentials.save(reference, value);
   }
 
   Future<void> clearCredential(OnlineMusicProviderDefinition definition) {
+    if (!definition.requiresCredential) return Future<void>.value();
     final running = _runningFor(definition);
     if (running != null) return running.clearCredential();
     final reference = definition.credentialReference;

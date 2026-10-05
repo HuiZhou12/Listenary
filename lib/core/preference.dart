@@ -691,6 +691,19 @@ class AppPreference {
     _onlineMusicSettingsDirty = true;
   }
 
+  /// 该键是否有尚未落盘的改动。
+  bool get onlineMusicSettingsDirty => _onlineMusicSettingsDirty;
+
+  /// 落盘失败时把内存状态恢复为改动前：值与脏标记一起还原，
+  /// 避免之后任何无关的 `save()` 把「界面已回滚」的配置偷偷写盘。
+  void restoreOnlineMusicSettings(
+    OnlineMusicSettings value, {
+    required bool dirty,
+  }) {
+    onlineMusicSettings = value;
+    _onlineMusicSettingsDirty = dirty;
+  }
+
   /// 用户手动添加的文件夹路径列表（不包括自动发现的子文件夹）
   List<String> userFolders = [];
 
@@ -853,8 +866,13 @@ class AppPreference {
         'app_preference.json',
       );
 
-      final prefJson = json.encode(buildPreferenceMap());
+      final prefMap = buildPreferenceMap();
+      final prefJson = json.encode(prefMap);
       await writeTextFileAtomically(appPreferencePath, prefJson);
+      // 写盘成功：原始映射跟进到刚落盘的内容，脏标记随之清除。
+      // 两者必须一起更新——只清脏标记会让下次 save() 把 onlineMusic 还原成旧原文。
+      _rawPrefMap = prefMap;
+      _onlineMusicSettingsDirty = false;
       return true;
     } catch (err, trace) {
       logger.e(err, stackTrace: trace);

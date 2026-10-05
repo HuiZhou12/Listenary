@@ -123,9 +123,6 @@ final class ChkszOnlineMusicProvider
   }
 
   @override
-  String get providerDisplayName => 'ChKSz';
-
-  @override
   String get credentialDisplayName => 'API Key';
 
   @override

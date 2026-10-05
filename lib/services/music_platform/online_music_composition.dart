@@ -50,7 +50,11 @@ OnlineMusicComposition createOnlineMusicComposition({
 }) {
   final providers = <ChkszOnlineMusicProvider>[];
   for (final definition in settings.providers) {
-    final reference = definition.credentialReference;
+    // 槽位可能被保留着以备再次打开认证；但「当前不需要凭据」的条目真的不建凭据源，
+    // 这样它的 Provider 就是无凭据的（保存 Key 会给出明确原因）。
+    final reference = definition.requiresCredential
+        ? definition.credentialReference
+        : null;
     final runtime = createChkszRuntime(
       credentialProvider: reference == null
           ? null

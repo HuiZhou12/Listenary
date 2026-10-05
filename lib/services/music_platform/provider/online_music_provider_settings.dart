@@ -51,6 +51,7 @@ final class OnlineMusicProviderDefinition {
     required this.sendTimeout,
     required this.receiveTimeout,
     required this.credentialReference,
+    required this.requiresCredential,
     required this.parameterName,
     required this.capabilityAuth,
   });
@@ -66,6 +67,7 @@ final class OnlineMusicProviderDefinition {
     sendTimeout: defaultOnlineMusicSendTimeout,
     receiveTimeout: defaultOnlineMusicReceiveTimeout,
     credentialReference: defaultCredentialReference,
+    requiresCredential: true,
     parameterName: defaultOnlineMusicCredentialParameter,
     capabilityAuth: {},
   );
@@ -77,24 +79,32 @@ final class OnlineMusicProviderDefinition {
   final Duration sendTimeout;
   final Duration receiveTimeout;
 
-  /// 凭据槽位名；null 表示该 Provider 不需要凭据。
+  /// 凭据槽位名。
+  ///
+  /// 槽位与「当前是否需要凭据」是两件事：关闭认证时**保留**槽位，
+  /// 这样再次打开认证不会改写槽位、也就不会孤立用户已经保存的 Key。
   final String? credentialReference;
+
+  /// 该条目当前是否使用凭据。
+  final bool requiresCredential;
+
   final String parameterName;
 
   /// 能力级认证覆盖；未列出的能力使用 Provider 默认要求。
   final Map<OnlineMusicCapability, OnlineMusicProviderAuth> capabilityAuth;
 
-  bool get requiresCredential => credentialReference != null;
-
   OnlineMusicProviderAuth authFor(OnlineMusicCapability capability) {
     final override = capabilityAuth[capability];
     if (override != null) return override;
-    final reference = credentialReference;
-    if (reference == null) return const OnlineMusicNoAuth();
+    if (!requiresCredential || credentialReference == null) {
+      return const OnlineMusicNoAuth();
+    }
     return OnlineMusicApiKeyAuth(parameterName: parameterName);
   }
 
   /// 界面新增条目：只暴露标识、服务地址与是否需要 Key，其余用默认值。
+  ///
+  /// 槽位总是先派生好（即使当前不需要 Key），以便之后打开认证时复用。
   factory OnlineMusicProviderDefinition.custom({
     required String id,
     required String baseUrl,
@@ -108,22 +118,19 @@ final class OnlineMusicProviderDefinition {
       connectTimeout: defaultOnlineMusicConnectTimeout,
       sendTimeout: defaultOnlineMusicSendTimeout,
       receiveTimeout: defaultOnlineMusicReceiveTimeout,
-      credentialReference: requiresCredential
-          ? (credentialReference ?? deriveOnlineMusicCredentialReference(id))
-          : null,
+      credentialReference:
+          credentialReference ?? deriveOnlineMusicCredentialReference(id),
+      requiresCredential: requiresCredential,
       parameterName: defaultOnlineMusicCredentialParameter,
       capabilityAuth: const {},
     );
   }
 
-  /// 界面可编辑的部分：服务地址与认证方式；标识与协议保持不变。
+  /// 界面可编辑的部分：服务地址与认证方式；标识、协议与凭据槽位保持不变。
   OnlineMusicProviderDefinition editedBy({
     required String baseUrl,
     required bool requiresCredential,
   }) {
-    final reference = requiresCredential
-        ? (credentialReference ?? deriveOnlineMusicCredentialReference(id))
-        : null;
     return OnlineMusicProviderDefinition(
       id: id,
       protocol: protocol,
@@ -131,7 +138,9 @@ final class OnlineMusicProviderDefinition {
       connectTimeout: connectTimeout,
       sendTimeout: sendTimeout,
       receiveTimeout: receiveTimeout,
-      credentialReference: reference,
+      credentialReference:
+          credentialReference ?? deriveOnlineMusicCredentialReference(id),
+      requiresCredential: requiresCredential,
       parameterName: parameterName,
       capabilityAuth: capabilityAuth,
     );
@@ -154,8 +163,11 @@ final class OnlineMusicProviderDefinition {
 
   Map<String, dynamic> authToJson() {
     final reference = credentialReference;
-    if (reference == null) return const {'kind': 'none'};
-    return {'kind': 'apiKey', 'reference': reference, 'parameter': parameterName};
+    return {
+      'kind': requiresCredential ? 'apiKey' : 'none',
+      'reference': ?reference,
+      'parameter': parameterName,
+    };
   }
 
   @override
@@ -168,6 +180,7 @@ final class OnlineMusicProviderDefinition {
       other.sendTimeout == sendTimeout &&
       other.receiveTimeout == receiveTimeout &&
       other.credentialReference == credentialReference &&
+      other.requiresCredential == requiresCredential &&
       other.parameterName == parameterName &&
       _sameCapabilityAuth(other.capabilityAuth, capabilityAuth);
 
@@ -180,6 +193,7 @@ final class OnlineMusicProviderDefinition {
     sendTimeout,
     receiveTimeout,
     credentialReference,
+    requiresCredential,
     parameterName,
     Object.hashAllUnordered(
       capabilityAuth.entries.map((entry) {
@@ -196,7 +210,7 @@ final class OnlineMusicProviderDefinition {
   @override
   String toString() =>
       'OnlineMusicProviderDefinition($id, $baseUrl, '
-      'credential=${credentialReference != null})';
+      'requiresCredential=$requiresCredential, slot=${credentialReference != null})';
 }
 
 bool _sameCapabilityAuth(
@@ -242,8 +256,12 @@ String? validateOnlineMusicProviderId(
 }
 
 /// 界面新增条目时派生凭据槽位名；引用只是槽位，不含凭据值。
+///
+/// 默认条目复用既有槽位，避免派生出一个与历史 Key 不同的新槽位。
 String deriveOnlineMusicCredentialReference(String providerId) =>
-    'PureMusic/$providerId/APIKey';
+    providerId == defaultOnlineMusicProviderId
+    ? OnlineMusicProviderDefinition.defaultCredentialReference
+    : 'PureMusic/$providerId/APIKey';
 
 /// 在线音乐 Provider 与能力映射的配置。
 final class OnlineMusicSettings {
@@ -431,10 +449,15 @@ final class OnlineMusicSettings {
     // 处理（与「未知 protocol 忽略整个条目」不同：认证缺失必须落到安全的默认要求，
     // 不能让一个条目因为拼错 kind 而变成无凭据可用的 Provider）。
     final kind = _nonEmptyString(authMap['kind']) ?? 'apiKey';
-    final reference = kind == 'none'
-        ? null
-        : (_nonEmptyString(authMap['reference']) ??
-              OnlineMusicProviderDefinition.defaultCredentialReference);
+    final requiresCredential = kind != 'none';
+    // `kind` 与槽位解耦：`kind: none` 也会保留写明的槽位，这样界面关掉再打开认证
+    // 不会改写槽位、也不会孤立用户已经保存的 Key。
+    final providedReference = _nonEmptyString(authMap['reference']);
+    final reference =
+        providedReference ??
+        (requiresCredential
+            ? OnlineMusicProviderDefinition.defaultCredentialReference
+            : null);
     final parameterName =
         _nonEmptyString(authMap['parameter']) ??
         defaultOnlineMusicCredentialParameter;
@@ -456,10 +479,12 @@ final class OnlineMusicSettings {
         defaultValue: defaultOnlineMusicReceiveTimeout,
       ),
       credentialReference: reference,
+      requiresCredential: requiresCredential,
       parameterName: parameterName,
       capabilityAuth: _parseCapabilityAuth(
         value['capabilityAuth'],
         reference: reference,
+        requiresCredential: requiresCredential,
         parameterName: parameterName,
       ),
     );
@@ -469,6 +494,7 @@ final class OnlineMusicSettings {
   _parseCapabilityAuth(
     Object? value, {
     required String? reference,
+    required bool requiresCredential,
     required String parameterName,
   }) {
     if (value is! Map) return const {};
@@ -484,6 +510,9 @@ final class OnlineMusicSettings {
             result[capability] = OnlineMusicApiKeyAuth(
               parameterName: parameterName,
             );
+          } else if (!requiresCredential) {
+            // 整个条目都没有槽位时，能力级 apiKey 覆盖无法生效，忽略即可。
+            continue;
           }
       }
     }
