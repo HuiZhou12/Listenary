@@ -1,9 +1,50 @@
+import 'dart:convert';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_errors.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_response_mapper.dart';
+import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
+import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_credentials.dart';
+import 'package:pure_music/services/music_platform/online_music_request.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_credentials.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
+
+/// 单项试跑的结果：给界面同时看"HTTP 层发生了什么"和"映射成了什么"。
+final class DeclarativeCapabilityTestResult {
+  const DeclarativeCapabilityTestResult({
+    required this.ok,
+    this.statusCode,
+    this.mappedSummary,
+    this.failureReason,
+    this.responsePreview,
+  });
+
+  final bool ok;
+  final int? statusCode;
+
+  /// 映射结果的**非敏感**摘要（例如「1 首曲目 / 第 1 首：海阔天空」）。
+  final String? mappedSummary;
+
+  final String? failureReason;
+
+  /// 截断并脱敏后的响应片段，供用户判断字段名是否对得上。
+  final String? responsePreview;
+}
+
+/// 探测/试跑用的传输层工厂；默认按条目 baseUrl 建一个**不跟随重定向**的 Dio。
+typedef DeclarativeProbeTransportFactory =
+    DeclarativeHttpTransport Function(OnlineMusicProviderDefinition definition);
+
+/// 单项试跑播放解析时的默认音质（与内置实现的默认档位一致）。
+const defaultDeclarativeTestQuality = 'lossless';
+
 
 /// 已保存配置的读写出口。
 abstract interface class OnlineMusicSettingsStore {
@@ -47,16 +88,24 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     required OnlineMusicSettingsStore store,
     required OnlineMusicCredentialAccess fallbackCredentials,
     Map<String, OnlineMusicCredentialController> runningCredentials = const {},
+    DeclarativeProbeTransportFactory? probeTransportFactory,
+    OnlineMusicCredentialReader? credentialReader,
   }) : _activeSettings = activeSettings,
        _store = store,
        _fallbackCredentials = fallbackCredentials,
        _runningCredentials = Map.unmodifiable(runningCredentials),
+       _probeTransportFactory = probeTransportFactory,
+       _credentialReader = credentialReader,
        _settings = store.read();
 
   final OnlineMusicSettings _activeSettings;
   final OnlineMusicSettingsStore _store;
   final OnlineMusicCredentialAccess _fallbackCredentials;
   final Map<String, OnlineMusicCredentialController> _runningCredentials;
+  final DeclarativeProbeTransportFactory? _probeTransportFactory;
+
+  /// 探测/试跑时需要凭据值（界面层拿不到），因此单独注入一个读取口。
+  final OnlineMusicCredentialReader? _credentialReader;
   OnlineMusicSettings _settings;
   bool _disposed = false;
 
@@ -161,6 +210,188 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     final reference = definition.credentialReference;
     if (reference == null) return Future<void>.value();
     return _fallbackCredentials.clear(reference);
+  }
+
+  /// 探测该条目的 search 能力（Spec §4 的 P1–P10）。
+  ///
+  /// 已经配置好的凭据会被使用；没有凭据也照样探测（记「需要认证」）。
+  Future<ProviderProbeReport> probeSearch(
+    OnlineMusicProviderDefinition definition, {
+    OnlineMusicCancelToken? cancelToken,
+  }) async {
+    return probeDeclarativeSearch(
+      transport: _transportFor(definition),
+      platform: definition.contentPlatform,
+      credential: await _readCredential(definition),
+      cancelToken: cancelToken,
+    );
+  }
+
+  /// 单项试跑：只跑这一个能力，把 HTTP 结果与映射结果一起回报。
+  Future<DeclarativeCapabilityTestResult> testCapability(
+    OnlineMusicProviderDefinition definition,
+    OnlineMusicCapability capability, {
+    String keyword = providerProbeKeyword,
+    String? trackId,
+    String quality = defaultDeclarativeTestQuality,
+    OnlineMusicCancelToken? cancelToken,
+  }) async {
+    if (capability == OnlineMusicCapability.playlist ||
+        capability == OnlineMusicCapability.lyric) {
+      return const DeclarativeCapabilityTestResult(
+        ok: false,
+        failureReason: '该能力属于第二阶段，尚未开放声明式配置',
+      );
+    }
+    final binding = definition.bindingFor(capability);
+    if (binding is! OnlineMusicDeclarativeCapabilityBinding) {
+      return const DeclarativeCapabilityTestResult(
+        ok: false,
+        failureReason: '该能力不是声明式配置（内置实现，或尚未配置）',
+      );
+    }
+    if (capability == OnlineMusicCapability.stream &&
+        (trackId == null || trackId.trim().isEmpty)) {
+      return const DeclarativeCapabilityTestResult(
+        ok: false,
+        failureReason: '试跑播放解析需要先填一个曲目 ID',
+      );
+    }
+
+    final token = cancelToken ?? OnlineMusicCancelToken();
+    String? preview;
+    try {
+      final request = buildDeclarativeRequest(
+        spec: binding.request,
+        inputs: DeclarativeInputs(
+          keyword: keyword,
+          limit: 1,
+          offset: 0,
+          page: 1,
+          trackId: trackId,
+          quality: quality,
+        ),
+        credential: await _readCredential(definition),
+      );
+      final response = await _transportFor(
+        definition,
+      ).send(request, cancelToken: token);
+      preview = _redactPreview(response.data);
+
+      if (!declarativeResponseIsSuccess(
+        spec: binding.response.success,
+        statusCode: response.statusCode,
+        body: response.data,
+      )) {
+        return DeclarativeCapabilityTestResult(
+          ok: false,
+          statusCode: response.statusCode,
+          responsePreview: preview,
+          failureReason: '成功判定未通过（HTTP ${response.statusCode}）',
+        );
+      }
+
+      if (capability == OnlineMusicCapability.search) {
+        final page = mapDeclarativeSearchResponse(
+          spec: binding.response,
+          body: response.data,
+          platform: definition.contentPlatform,
+          limit: 1,
+          offset: 0,
+        );
+        final first = page.items.isEmpty ? null : page.items.first.title;
+        return DeclarativeCapabilityTestResult(
+          ok: page.items.isNotEmpty,
+          statusCode: response.statusCode,
+          responsePreview: preview,
+          mappedSummary: page.items.isEmpty
+              ? '解析成功，但没有曲目'
+              : '${page.items.length} 首曲目 · 第 1 首：$first',
+          failureReason: page.items.isEmpty ? '没有解析出曲目' : null,
+        );
+      }
+
+      final stream = mapDeclarativeResolveResponse(
+        spec: binding.response,
+        body: response.data,
+        expectedRef: PlatformTrackRef(
+          platform: definition.contentPlatform,
+          trackId: trackId!,
+        ),
+        requestedQuality: quality,
+        resolvedAt: DateTime.now(),
+      );
+      return DeclarativeCapabilityTestResult(
+        ok: true,
+        statusCode: response.statusCode,
+        responsePreview: preview,
+        // 只显示主机与路径：签名串留在 query 里，不进界面。
+        mappedSummary: '播放地址：${stream.uri.host}${stream.uri.path}',
+      );
+    } on DeclarativeRequestException catch (error) {
+      return DeclarativeCapabilityTestResult(
+        ok: false,
+        failureReason: error.safeMessage,
+      );
+    } on DeclarativeMappingException catch (error) {
+      return DeclarativeCapabilityTestResult(
+        ok: false,
+        responsePreview: preview,
+        failureReason: '映射失败：${error.reason}',
+      );
+    } catch (_) {
+      return DeclarativeCapabilityTestResult(
+        ok: false,
+        responsePreview: preview,
+        failureReason: '请求失败（网络或服务不可达）',
+      );
+    }
+  }
+
+  DeclarativeHttpTransport _transportFor(
+    OnlineMusicProviderDefinition definition,
+  ) {
+    final factory = _probeTransportFactory;
+    if (factory != null) return factory(definition);
+    return DioDeclarativeHttpTransport(
+      dio: Dio(
+        BaseOptions(
+          baseUrl: definition.baseUrl,
+          connectTimeout: definition.connectTimeout,
+          sendTimeout: definition.sendTimeout,
+          receiveTimeout: definition.receiveTimeout,
+        ),
+      ),
+      // P3：探测/试跑不跟随重定向，避免打到用户没有提供的主机。
+      followRedirects: false,
+    );
+  }
+
+  Future<String?> _readCredential(
+    OnlineMusicProviderDefinition definition,
+  ) async {
+    final reader = _credentialReader;
+    final reference = definition.credentialReference;
+    if (reader == null || reference == null) return null;
+    try {
+      return await reader.readCredential(reference);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 脱敏 + 截断的响应片段：让用户核对字段名，但不把签名/凭据带进界面。
+  String? _redactPreview(Object? data) {
+    if (data == null) return null;
+    final text = data is String ? data : jsonEncode(data);
+    final redacted = text.replaceAll(
+      RegExp(
+        r'\b(apikey|api_key|key|token|sign|signature|auth)=[^&"\s,}]+',
+        caseSensitive: false,
+      ),
+      r'$1=[redacted]',
+    );
+    return redacted.length <= 400 ? redacted : '${redacted.substring(0, 400)}…';
   }
 
   void _notify() {

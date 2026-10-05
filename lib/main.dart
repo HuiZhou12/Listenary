@@ -125,14 +125,20 @@ Future<void> main() async {
   MemoryMonitorService.instance.start();
 
   final activeOnlineMusicSettings = AppPreference.instance.onlineMusicSettings;
+  // 同一个凭据出口同时给「装配」与「设置页/探测」用：portable 模式下写入与读取才是同一份。
+  final onlineMusicCredentialAccess = ChkszCredentialAccess(
+    portableBuild: portableBuild,
+  );
   final onlineMusic = createOnlineMusicComposition(
     settings: activeOnlineMusicSettings,
     portableBuild: portableBuild,
+    credentialAccess: onlineMusicCredentialAccess,
   );
   final onlineMusicSettingsController = OnlineMusicProviderSettingsController(
     activeSettings: activeOnlineMusicSettings,
     store: const AppPreferenceOnlineMusicSettingsStore(),
-    fallbackCredentials: ChkszCredentialAccess(portableBuild: portableBuild),
+    fallbackCredentials: onlineMusicCredentialAccess,
+    credentialReader: onlineMusicCredentialAccess,
     runningCredentials: onlineMusic.credentialControllers,
   );
   runApp(
