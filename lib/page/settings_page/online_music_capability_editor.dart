@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
@@ -133,14 +134,28 @@ class _OnlineMusicCapabilityEditorDialogState
 
   bool _showJson = false;
   bool _bound = false;
-  String? _error;
-  String? _notice;
   bool _busy = false;
-  String? _lastTestSummary;
-  String? _lastPreview;
+
+  /// 最近一次 试跑 / 探测 / 校验 的**单行**状态。固定高度槽位，内容变化不引起布局位移。
+  String? _resultHeadline;
+  bool? _resultOk;
+
+  /// 结果详情：只读、可滚动、可复制。长错误、映射摘要与原始响应都放在这里，
+  /// 不再用不限行数的裸 Text 铺在对话框里。
+  final _resultController = TextEditingController();
 
   /// `_collect()` 收集过程中发现的、无法解释成有效配置的输入。
   final List<String> _collectErrors = [];
+
+  void _setResult({required String headline, bool? ok, String? detail}) {
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _resultHeadline = headline;
+      _resultOk = ok;
+      _resultController.text = detail ?? '';
+    });
+  }
 
   bool get _isSearch => widget.capability == OnlineMusicCapability.search;
 
@@ -166,6 +181,7 @@ class _OnlineMusicCapabilityEditorDialogState
     _authName.dispose();
     _authPrefix.dispose();
     _json.dispose();
+    _resultController.dispose();
     _testTrackId.dispose();
     for (final row in _queryRows) {
       row.dispose();
@@ -244,14 +260,14 @@ class _OnlineMusicCapabilityEditorDialogState
     }
     _fieldRows.clear();
     for (final field in domainFieldsFor(widget.capability)) {
-      _fieldRows[field] = _FieldRow.from(
-        field,
-        binding.response.fields[field],
-      );
+      _fieldRows[field] = _FieldRow.from(field, binding.response.fields[field]);
     }
     _authPlacement = binding.request.auth;
     final (name, prefix) = switch (_authPlacement) {
-      OnlineMusicQueryAuthPlacement(:final parameterName) => (parameterName, ''),
+      OnlineMusicQueryAuthPlacement(:final parameterName) => (
+        parameterName,
+        '',
+      ),
       OnlineMusicHeaderAuthPlacement(:final headerName, :final prefix) => (
         headerName,
         prefix ?? '',
@@ -318,9 +334,7 @@ class _OnlineMusicCapabilityEditorDialogState
         if (candidate.isEmpty) continue;
         final path = JsonPath.tryParse(candidate);
         if (path == null) {
-          _collectErrors.add(
-            '字段 ${entry.key.name} 的路径「$candidate」写法无效',
-          );
+          _collectErrors.add('字段 ${entry.key.name} 的路径「$candidate」写法无效');
           continue;
         }
         paths.add(path);
@@ -384,67 +398,78 @@ class _OnlineMusicCapabilityEditorDialogState
   }
 
   Future<void> _runProbe() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-      _notice = null;
-    });
+    setState(() => _busy = true);
     try {
       final report = await widget.onProbe();
       if (!mounted) return;
+      final detail = StringBuffer();
+      for (final outcome in report.outcomes) {
+        detail.writeln(
+          '· ${outcome.label}（${outcome.candidateId}）：得分 ${outcome.score}'
+          '${outcome.statusCode == null ? '' : ' · HTTP ${outcome.statusCode}'}'
+          '${outcome.mappedTrackCount > 0 ? ' · 解析出 ${outcome.mappedTrackCount} 首' : ''}'
+          '${outcome.needsAuthentication ? ' · 需要认证' : ''}',
+        );
+        if (outcome.failureReason != null) {
+          detail.writeln('    ${outcome.failureReason}');
+        }
+      }
       setState(() {
         _busy = false;
-        _lastTestSummary = null;
-        _lastPreview = null;
-        _notice = report.hasDraft
-            ? '探测命中「${report.draftTemplateId}」，已生成初稿'
-            : '没有候选可用：${report.outcomes.map((o) => '${o.candidateId}: ${o.failureReason ?? '得分 0'}').join('；')}';
+        _resultOk = report.hasDraft;
+        _resultHeadline = report.hasDraft
+            ? '探测命中「${report.draftTemplateId}」，已生成可编辑初稿'
+            : '没有候选可用（${report.outcomes.length} 个候选均未通过）';
+        _resultController.text = detail.toString().trimRight();
         if (report.hasDraft) {
           _loadFromBinding(report.draft!);
           _json.text = _jsonPreview();
         }
       });
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _error = '探测失败';
-        });
-      }
+      _setResult(headline: '探测失败（网络或服务不可达）', ok: false);
     }
   }
 
   Future<void> _runTest() async {
     final binding = _collect();
-    if (_collectErrors.isNotEmpty) {
-      setState(() => _error = _collectErrors.join('；'));
+    final issues = [
+      ..._collectErrors,
+      ...binding.validationIssues(widget.capability),
+    ];
+    if (issues.isNotEmpty) {
+      _setResult(headline: '无法试跑：配置还不完整', ok: false, detail: issues.join('\n'));
       return;
     }
-    setState(() {
-      _busy = true;
-      _error = null;
-      _notice = null;
-    });
+    setState(() => _busy = true);
     try {
       final result = await widget.onTest(
         binding,
         _testTrackId.text.trim().isEmpty ? null : _testTrackId.text.trim(),
       );
       if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _lastTestSummary = result.ok
-            ? '试跑成功（HTTP ${result.statusCode}）：${result.mappedSummary ?? '已解析'}'
-            : '试跑失败（HTTP ${result.statusCode ?? '-'}）：${result.failureReason ?? '未知原因'}';
-        _lastPreview = result.responsePreview;
-      });
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _error = '试跑失败';
-        });
+      final detail = StringBuffer();
+      if (result.mappedSummary != null) {
+        detail.writeln('映射结果：${result.mappedSummary}');
       }
+      if (result.failureReason != null) {
+        detail.writeln('失败原因：${result.failureReason}');
+      }
+      if (result.responsePreview != null) {
+        detail
+          ..writeln('原始响应（已脱敏并截断）：')
+          ..writeln(result.responsePreview);
+      }
+      final suffix = result.statusCode == null
+          ? ''
+          : ' · HTTP ${result.statusCode}';
+      _setResult(
+        headline: '${result.ok ? '试跑成功' : '试跑失败'}$suffix',
+        ok: result.ok,
+        detail: detail.toString().trimRight(),
+      );
+    } catch (_) {
+      _setResult(headline: '试跑失败（网络或服务不可达）', ok: false);
     }
   }
 
@@ -454,7 +479,7 @@ class _OnlineMusicCapabilityEditorDialogState
         jsonDecode(_json.text),
       );
       if (parsed is! OnlineMusicDeclarativeCapabilityBinding) {
-        setState(() => _error = 'JSON 必须是声明式（http）绑定');
+        _setResult(headline: 'JSON 不是声明式（http）绑定', ok: false);
         return;
       }
       final issues = parsed.validationIssues(widget.capability);
@@ -462,19 +487,25 @@ class _OnlineMusicCapabilityEditorDialogState
         _binding = parsed;
         _loadFromBinding(parsed);
         _json.text = _jsonPreview();
-        _error = issues.isEmpty ? null : issues.join('；');
-        _notice = issues.isEmpty ? '已应用 JSON' : null;
       });
+      _setResult(
+        headline: issues.isEmpty ? '已应用 JSON' : '已应用 JSON，但有配置问题',
+        ok: issues.isEmpty,
+        detail: issues.join('\n'),
+      );
     } catch (error) {
-      setState(() => _error = 'JSON 解析失败：$error');
+      _setResult(headline: 'JSON 解析失败', ok: false, detail: '$error');
     }
   }
 
   void _submit() {
     final binding = _collect();
-    final issues = [..._collectErrors, ...binding.validationIssues(widget.capability)];
+    final issues = [
+      ..._collectErrors,
+      ...binding.validationIssues(widget.capability),
+    ];
     if (issues.isNotEmpty) {
-      setState(() => _error = issues.join('；'));
+      _setResult(headline: '无法保存：配置还不完整', ok: false, detail: issues.join('\n'));
       return;
     }
     Navigator.of(context).pop(binding);
@@ -482,83 +513,114 @@ class _OnlineMusicCapabilityEditorDialogState
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return AlertDialog(
-      title: Text('${capabilityLabel(widget.capability)} · ${widget.definition.id}'),
-      content: SizedBox(
-        width: 720,
-        height: 560,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_error != null)
-              _Banner(text: _error!, color: scheme.error),
-            if (_notice != null) _Banner(text: _notice!, color: scheme.primary),
-            if (_lastTestSummary != null)
-              _Banner(text: _lastTestSummary!, color: scheme.onSurfaceVariant),
-            if (_lastPreview != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 4, bottom: 8),
-                child: Text(
-                  _lastPreview!,
-                  maxLines: 4,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: scheme.onSurfaceVariant,
-                    fontSize: AppType.caption,
-                  ),
-                ),
+    final size = MediaQuery.sizeOf(context);
+    // 与项目其它设置对话框一致：按窗口算尺寸，窄窗口也放得下（不再固定 720×560）。
+    final width = (size.width - 96.0).clamp(360.0, 880.0).toDouble();
+    final height = (size.height - 96.0).clamp(320.0, 720.0).toDouble();
+    final resultHeight = (height * 0.24).clamp(72.0, 168.0).toDouble();
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: 24.0,
+        vertical: 24.0,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _DialogHeader(
+                title:
+                    '${capabilityLabel(widget.capability)} · ${widget.definition.id}',
+                subtitle: _showJson
+                    ? 'JSON 高级视图（与表单共享同一份校验）'
+                    : (_isSearch
+                          ? '声明式搜索：请求与响应映射都可以在这里改'
+                          : '声明式播放解析：请求与响应映射都可以在这里改'),
               ),
-            Expanded(
-              child: _showJson
-                  ? TextField(
-                      controller: _json,
-                      maxLines: null,
-                      expands: true,
-                      style: const TextStyle(fontFamily: 'monospace'),
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        hintText: '能力绑定的 JSON',
-                      ),
-                    )
-                  : _buildForm(),
-            ),
-          ],
+              const SizedBox(height: 12.0),
+              _ResultArea(
+                height: resultHeight,
+                headline: _resultHeadline,
+                ok: _resultOk,
+                busy: _busy,
+                controller: _resultController,
+                hint: _showJson
+                    ? '点「应用 JSON」检查这份配置。'
+                    : '点「试跑」检查这份配置；映射结果与原始响应会显示在这里。',
+              ),
+              const SizedBox(height: 12.0),
+              Expanded(child: _showJson ? _buildJsonView() : _buildForm()),
+              const SizedBox(height: 16.0),
+              OverflowBar(
+                alignment: MainAxisAlignment.end,
+                spacing: 8.0,
+                overflowSpacing: 8.0,
+                children: [
+                  TextButton.icon(
+                    onPressed: () => setState(() => _showJson = !_showJson),
+                    icon: Icon(_showJson ? Symbols.list : Symbols.data_object),
+                    label: Text(_showJson ? '表单' : 'JSON'),
+                  ),
+                  if (_showJson)
+                    TextButton(
+                      onPressed: _applyJson,
+                      child: const Text('应用 JSON'),
+                    ),
+                  if (_isSearch)
+                    TextButton.icon(
+                      onPressed: _busy ? null : _runProbe,
+                      icon: const Icon(Symbols.radar),
+                      label: const Text('探测该服务'),
+                    ),
+                  TextButton.icon(
+                    onPressed: _busy ? null : _runTest,
+                    icon: const Icon(Symbols.play_arrow),
+                    label: const Text('试跑'),
+                  ),
+                  TextButton(
+                    onPressed: _busy ? null : () => Navigator.of(context).pop(),
+                    child: const Text('取消'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: _busy ? null : _submit,
+                    icon: const Icon(Symbols.check),
+                    label: const Text('保存'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
-      actions: [
-        TextButton.icon(
-          onPressed: () => setState(() => _showJson = !_showJson),
-          icon: Icon(_showJson ? Symbols.list : Symbols.data_object),
-          label: Text(_showJson ? '表单' : 'JSON'),
+    );
+  }
+
+  Widget _buildJsonView() {
+    return Focus(
+      onFocusChange: HotkeysHelper.onFocusChanges,
+      child: TextField(
+        controller: _json,
+        expands: true,
+        maxLines: null,
+        textAlignVertical: TextAlignVertical.top,
+        style: const TextStyle(fontFamily: 'monospace'),
+        decoration: const InputDecoration(
+          border: OutlineInputBorder(),
+          hintText: '能力绑定的 JSON',
         ),
-        if (_showJson)
-          TextButton(onPressed: _applyJson, child: const Text('应用 JSON')),
-        if (_isSearch)
-          TextButton.icon(
-            onPressed: _busy ? null : _runProbe,
-            icon: const Icon(Symbols.radar),
-            label: const Text('探测该服务'),
-          ),
-        TextButton.icon(
-          onPressed: _busy ? null : _runTest,
-          icon: const Icon(Symbols.play_arrow),
-          label: const Text('试跑'),
-        ),
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: _busy ? null : _submit,
-          child: const Text('保存'),
-        ),
-      ],
+      ),
     );
   }
 
   Widget _buildForm() {
     return ListView(
+      key: capabilityFormKey,
+      padding: EdgeInsets.zero,
       children: [
         const _SectionTitle('请求'),
         SettingsTile(
@@ -567,7 +629,10 @@ class _OnlineMusicCapabilityEditorDialogState
             showSelectedIcon: false,
             segments: const [
               ButtonSegment(value: OnlineMusicHttpVerb.get, label: Text('GET')),
-              ButtonSegment(value: OnlineMusicHttpVerb.post, label: Text('POST')),
+              ButtonSegment(
+                value: OnlineMusicHttpVerb.post,
+                label: Text('POST'),
+              ),
             ],
             selected: {_verb},
             onSelectionChanged: (selection) =>
@@ -578,13 +643,9 @@ class _OnlineMusicCapabilityEditorDialogState
         _textRow('请求路径（相对 baseUrl，可用 {trackId}）', _path),
         for (var index = 0; index < _queryRows.length; index++)
           _queryRow(index),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: () => setState(() => _queryRows.add(_ParamRow.empty())),
-            icon: const Icon(Symbols.add),
-            label: const Text('加查询参数'),
-          ),
+        _addRowButton(
+          '加查询参数',
+          () => setState(() => _queryRows.add(_ParamRow.empty())),
         ),
         const SizedBox(height: 8),
         SettingsTile(
@@ -594,9 +655,18 @@ class _OnlineMusicCapabilityEditorDialogState
             showSelectedIcon: false,
             segments: const [
               ButtonSegment(value: OnlineMusicAuthKind.none, label: Text('无')),
-              ButtonSegment(value: OnlineMusicAuthKind.query, label: Text('查询串')),
-              ButtonSegment(value: OnlineMusicAuthKind.header, label: Text('请求头')),
-              ButtonSegment(value: OnlineMusicAuthKind.body, label: Text('请求体')),
+              ButtonSegment(
+                value: OnlineMusicAuthKind.query,
+                label: Text('查询串'),
+              ),
+              ButtonSegment(
+                value: OnlineMusicAuthKind.header,
+                label: Text('请求头'),
+              ),
+              ButtonSegment(
+                value: OnlineMusicAuthKind.body,
+                label: Text('请求体'),
+              ),
             ],
             selected: {_authKindOf(_authPlacement)},
             onSelectionChanged: (selection) => setState(() {
@@ -631,27 +701,18 @@ class _OnlineMusicCapabilityEditorDialogState
         const SizedBox(height: 12),
         for (var index = 0; index < _headerRows.length; index++)
           _headerRow(index),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: () => setState(() => _headerRows.add(_HeaderRow.empty())),
-            icon: const Icon(Symbols.add),
-            label: const Text('加请求头'),
-          ),
+        _addRowButton(
+          '加请求头',
+          () => setState(() => _headerRows.add(_HeaderRow.empty())),
         ),
         const SizedBox(height: 16),
         const _SectionTitle('响应'),
         _textRow('成功状态码（逗号分隔，留空 = 2xx）', _statusCodes),
         for (var index = 0; index < _predicateRows.length; index++)
           _predicateRow(index),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: () =>
-                setState(() => _predicateRows.add(_PredicateRow.empty())),
-            icon: const Icon(Symbols.add),
-            label: const Text('加成功判定'),
-          ),
+        _addRowButton(
+          '加成功判定',
+          () => setState(() => _predicateRows.add(_PredicateRow.empty())),
         ),
         const SizedBox(height: 12),
         if (_isSearch)
@@ -662,64 +723,94 @@ class _OnlineMusicCapabilityEditorDialogState
         _textRow('游标路径（可选）', _nextCursor),
         const SizedBox(height: 16),
         const _SectionTitle('字段映射'),
+        const Padding(
+          padding: EdgeInsets.only(bottom: 8.0),
+          child: _Hint('勾选后该字段才会写进配置；候选路径按顺序取第一个存在的。'),
+        ),
         for (final field in domainFieldsFor(widget.capability))
           _fieldRow(field, _fieldRows[field]!),
-        const SizedBox(height: 16),
-        const _SectionTitle('试跑'),
-        if (!_isSearch) _textRow('试跑用的曲目 ID', _testTrackId),
+        if (!_isSearch) ...[
+          const SizedBox(height: 12.0),
+          const _SectionTitle('试跑'),
+          _textRow('试跑用的曲目 ID', _testTrackId),
+        ],
       ],
     );
   }
 
-  Widget _textRow(String label, TextEditingController controller) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4),
+  /// 表单里的单行文本字段：与项目其它设置对话框一致（不用 dense 装饰），
+  /// 并通知全局快捷键让位给输入（house 惯例，`HotkeysHelper`）。
+  Widget _field(TextEditingController controller, String label) => Focus(
+    onFocusChange: HotkeysHelper.onFocusChanges,
     child: TextField(
       controller: controller,
-      decoration: InputDecoration(labelText: label, isDense: true),
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+      ),
+    ),
+  );
+
+  Widget _textRow(String label, TextEditingController controller) => Padding(
+    padding: const EdgeInsets.only(bottom: 12.0),
+    child: _field(controller, label),
+  );
+
+  Widget _addRowButton(String label, VoidCallback onPressed) => Align(
+    alignment: Alignment.centerLeft,
+    child: TextButton.icon(
+      onPressed: onPressed,
+      icon: const Icon(Symbols.add),
+      label: Text(label),
     ),
   );
 
   Widget _queryRow(int index) {
     final row = _queryRows[index];
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 3,
-            child: TextField(
-              controller: row.name,
-              decoration: const InputDecoration(
-                labelText: '参数名',
-                isDense: true,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 3,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SegmentedButton<OnlineMusicInputSource>(
-                showSelectedIcon: false,
-                segments: [
-                  for (final source in OnlineMusicInputSource.values)
-                    ButtonSegment(value: source, label: Text(source.name)),
-                ],
-                selected: {row.source},
-                onSelectionChanged: (selection) =>
-                    setState(() => row.source = selection.first),
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: '删除',
-            onPressed: () => setState(() {
-              _queryRows.removeAt(index).dispose();
-            }),
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 560.0;
+          final nameField = _field(row.name, '参数名');
+          final sourceField = _EnumMenuField<OnlineMusicInputSource>(
+            label: '取值来源',
+            value: row.source,
+            options: OnlineMusicInputSource.values,
+            labelOf: inputSourceLabel,
+            sublabelOf: (source) => source.name,
+            onChanged: (value) => setState(() => row.source = value),
+          );
+          final removeButton = IconButton(
+            tooltip: '删除这一行',
+            onPressed: () =>
+                setState(() => _queryRows.removeAt(index).dispose()),
             icon: const Icon(Symbols.remove_circle),
-          ),
-        ],
+          );
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                nameField,
+                const SizedBox(height: 8.0),
+                Row(
+                  children: [
+                    Expanded(child: sourceField),
+                    removeButton,
+                  ],
+                ),
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(flex: 3, child: nameField),
+              const SizedBox(width: 12.0),
+              Expanded(flex: 3, child: sourceField),
+              removeButton,
+            ],
+          );
+        },
       ),
     );
   }
@@ -727,33 +818,38 @@ class _OnlineMusicCapabilityEditorDialogState
   Widget _headerRow(int index) {
     final row = _headerRows[index];
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: row.name,
-              decoration: const InputDecoration(
-                labelText: '请求头名',
-                isDense: true,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: TextField(
-              controller: row.value,
-              decoration: const InputDecoration(labelText: '值', isDense: true),
-            ),
-          ),
-          IconButton(
-            tooltip: '删除',
-            onPressed: () => setState(() {
-              _headerRows.removeAt(index).dispose();
-            }),
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 560.0;
+          final nameField = _field(row.name, '请求头名');
+          final valueField = _field(row.value, '值');
+          final removeButton = IconButton(
+            tooltip: '删除这一行',
+            onPressed: () =>
+                setState(() => _headerRows.removeAt(index).dispose()),
             icon: const Icon(Symbols.remove_circle),
-          ),
-        ],
+          );
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                nameField,
+                const SizedBox(height: 8.0),
+                valueField,
+                Align(alignment: Alignment.centerRight, child: removeButton),
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: nameField),
+              const SizedBox(width: 12.0),
+              Expanded(child: valueField),
+              removeButton,
+            ],
+          );
+        },
       ),
     );
   }
@@ -761,97 +857,112 @@ class _OnlineMusicCapabilityEditorDialogState
   Widget _predicateRow(int index) {
     final row = _predicateRows[index];
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 3,
-            child: TextField(
-              controller: row.path,
-              decoration: const InputDecoration(
-                labelText: '路径（如 code）',
-                isDense: true,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 3,
-            child: SegmentedButton<OnlineMusicPredicateOp>(
-              showSelectedIcon: false,
-              segments: [
-                for (final op in OnlineMusicPredicateOp.values)
-                  ButtonSegment(value: op, label: Text(op.name)),
-              ],
-              selected: {row.op},
-              onSelectionChanged: (selection) =>
-                  setState(() => row.op = selection.first),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 2,
-            child: TextField(
-              controller: row.value,
-              decoration: const InputDecoration(labelText: '值', isDense: true),
-            ),
-          ),
-          IconButton(
-            tooltip: '删除',
-            onPressed: () => setState(() {
-              _predicateRows.removeAt(index).dispose();
-            }),
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 560.0;
+          final pathField = _field(row.path, '路径（如 code）');
+          final opField = _EnumMenuField<OnlineMusicPredicateOp>(
+            label: '判定方式',
+            value: row.op,
+            options: OnlineMusicPredicateOp.values,
+            onChanged: (value) => setState(() => row.op = value),
+          );
+          final valueField = _field(row.value, '值');
+          final removeButton = IconButton(
+            tooltip: '删除这一行',
+            onPressed: () =>
+                setState(() => _predicateRows.removeAt(index).dispose()),
             icon: const Icon(Symbols.remove_circle),
-          ),
-        ],
+          );
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                pathField,
+                const SizedBox(height: 8.0),
+                opField,
+                const SizedBox(height: 8.0),
+                valueField,
+                Align(alignment: Alignment.centerRight, child: removeButton),
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(flex: 3, child: pathField),
+              const SizedBox(width: 12.0),
+              Expanded(flex: 2, child: opField),
+              const SizedBox(width: 12.0),
+              Expanded(flex: 2, child: valueField),
+              removeButton,
+            ],
+          );
+        },
       ),
     );
   }
 
   Widget _fieldRow(OnlineMusicDomainField field, _FieldRow row) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Checkbox(
-            value: row.enabled,
-            onChanged: (value) => setState(() => row.enabled = value ?? false),
-          ),
-          SizedBox(
-            width: 120,
-            child: Text(field.name, style: const TextStyle(fontSize: AppType.body)),
-          ),
-          Expanded(
-            flex: 4,
-            child: TextField(
-              controller: row.paths,
-              decoration: const InputDecoration(
-                labelText: '候选路径（逗号分隔，按序取第一个存在的）',
-                isDense: true,
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final scheme = Theme.of(context).colorScheme;
+          final compact = constraints.maxWidth < 640.0;
+          final header = Row(
+            children: [
+              Checkbox(
+                value: row.enabled,
+                visualDensity: VisualDensity.compact,
+                onChanged: (value) =>
+                    setState(() => row.enabled = value ?? false),
               ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 4,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SegmentedButton<OnlineMusicFieldTransform>(
-                showSelectedIcon: false,
-                segments: [
-                  for (final transform in _transformChoicesFor(field))
-                    ButtonSegment(
-                      value: transform,
-                      label: Text(transform.name),
-                    ),
-                ],
-                selected: {row.transform},
-                onSelectionChanged: (selection) =>
-                    setState(() => row.transform = selection.first),
+              Expanded(
+                child: Text(
+                  domainFieldLabel(field),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: row.enabled
+                        ? scheme.onSurface
+                        : scheme.onSurfaceVariant,
+                    fontSize: AppType.body,
+                    fontWeight: AppType.weightSemibold,
+                  ),
+                ),
               ),
-            ),
-          ),
-        ],
+            ],
+          );
+          final pathsField = _field(row.paths, '候选路径（逗号分隔，按序取第一个存在的）');
+          final transformField = _EnumMenuField<OnlineMusicFieldTransform>(
+            label: '类型转换',
+            value: row.transform,
+            options: _transformChoicesFor(field),
+            labelOf: transformLabel,
+            sublabelOf: (transform) => transform.name,
+            onChanged: (value) => setState(() => row.transform = value),
+          );
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              header,
+              const SizedBox(height: 4.0),
+              if (compact) ...[
+                pathsField,
+                const SizedBox(height: 8.0),
+                transformField,
+              ] else
+                Row(
+                  children: [
+                    Expanded(flex: 3, child: pathsField),
+                    const SizedBox(width: 12.0),
+                    Expanded(flex: 2, child: transformField),
+                  ],
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -871,6 +982,62 @@ OnlineMusicAuthKind _authKindOf(OnlineMusicAuthPlacement placement) =>
       OnlineMusicBodyAuthPlacement() => OnlineMusicAuthKind.body,
     };
 
+/// 字段的界面标签：只影响展示，不参与任何映射。
+const _domainFieldLabels = <OnlineMusicDomainField, String>{
+  OnlineMusicDomainField.trackId: '曲目 ID（必填）',
+  OnlineMusicDomainField.title: '标题（必填）',
+  OnlineMusicDomainField.artists: '艺术家',
+  OnlineMusicDomainField.album: '专辑',
+  OnlineMusicDomainField.coverUri: '封面地址',
+  OnlineMusicDomainField.duration: '时长',
+  OnlineMusicDomainField.playlistId: '歌单 ID',
+  OnlineMusicDomainField.playlistName: '歌单名称',
+  OnlineMusicDomainField.playlistCoverUri: '歌单封面',
+  OnlineMusicDomainField.playlistCreator: '歌单创建者',
+  OnlineMusicDomainField.playlistTrackCount: '歌单曲目数',
+  OnlineMusicDomainField.lyricOriginal: '原文歌词',
+  OnlineMusicDomainField.lyricTranslation: '翻译歌词',
+  OnlineMusicDomainField.lyricRomanization: '罗马音歌词',
+  OnlineMusicDomainField.streamUrl: '播放地址',
+  OnlineMusicDomainField.streamQuality: '音质',
+  OnlineMusicDomainField.streamBitrate: '码率',
+  OnlineMusicDomainField.streamExpiresAt: '有效期',
+};
+
+String domainFieldLabel(OnlineMusicDomainField field) =>
+    _domainFieldLabels[field] ?? field.name;
+
+/// 查询参数取值来源的界面标签。
+const _inputSourceLabels = <OnlineMusicInputSource, String>{
+  OnlineMusicInputSource.keyword: '搜索关键词',
+  OnlineMusicInputSource.limit: '每页数量',
+  OnlineMusicInputSource.offset: '偏移量',
+  OnlineMusicInputSource.page: '页码',
+  OnlineMusicInputSource.cursor: '游标',
+  OnlineMusicInputSource.trackId: '曲目 ID',
+  OnlineMusicInputSource.playlistId: '歌单 ID',
+  OnlineMusicInputSource.quality: '音质',
+};
+
+String inputSourceLabel(OnlineMusicInputSource source) =>
+    _inputSourceLabels[source] ?? source.name;
+
+/// 类型转换的界面标签；菜单里同时显示原始枚举名，便于与 JSON 视图对照。
+const _transformLabels = <OnlineMusicFieldTransform, String>{
+  OnlineMusicFieldTransform.asString: '文本',
+  OnlineMusicFieldTransform.asInt: '整数',
+  OnlineMusicFieldTransform.asUri: '链接',
+  OnlineMusicFieldTransform.asHttpsUri: 'HTTPS 链接',
+  OnlineMusicFieldTransform.asDurationMs: '时长（毫秒）',
+  OnlineMusicFieldTransform.asDurationSeconds: '时长（秒）',
+  OnlineMusicFieldTransform.asSingleStringList: '单个字符串 → 列表',
+  OnlineMusicFieldTransform.asStringList: '字符串列表',
+  OnlineMusicFieldTransform.asBool: '布尔值',
+};
+
+String transformLabel(OnlineMusicFieldTransform transform) =>
+    _transformLabels[transform] ?? transform.name;
+
 String capabilityLabel(OnlineMusicCapability capability) =>
     switch (capability) {
       OnlineMusicCapability.search => '搜索',
@@ -883,6 +1050,247 @@ bool isPhaseTwo(OnlineMusicCapability capability) =>
     capability == OnlineMusicCapability.playlist ||
     capability == OnlineMusicCapability.lyric;
 
+/// 对话框标题头：与项目其它设置对话框一致（标题 + 一行说明）。
+class _DialogHeader extends StatelessWidget {
+  const _DialogHeader({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: scheme.onSurface,
+            fontSize: AppType.sectionTitle,
+            fontWeight: AppType.weightBold,
+          ),
+        ),
+        const SizedBox(height: 4.0),
+        Text(
+          subtitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: scheme.onSurfaceVariant,
+            fontSize: AppType.caption,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 试跑 / 探测结果区。
+///
+/// 结构要点（对应上一轮验收的 UI 问题 1）：
+/// - **固定高度**：不参与表单的布局竞争，长结果不会把表单挤崩；
+/// - 状态行高度固定，文案变化不引起位移；
+/// - 详情在只读、可滚动的文本框里（项目展示日志的既有做法），可复制、可看全；
+/// - 底部操作栏在滚动区之外，不会因为结果变长而消失。
+class _ResultArea extends StatelessWidget {
+  const _ResultArea({
+    required this.height,
+    required this.headline,
+    required this.ok,
+    required this.busy,
+    required this.controller,
+    required this.hint,
+  });
+
+  final double height;
+  final String? headline;
+  final bool? ok;
+  final bool busy;
+  final TextEditingController controller;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = switch (ok) {
+      true => scheme.primary,
+      false => scheme.error,
+      null => scheme.onSurfaceVariant,
+    };
+    final icon = switch (ok) {
+      true => Symbols.check_circle,
+      false => Symbols.error,
+      null => Symbols.info,
+    };
+    return SizedBox(
+      height: height,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 22.0,
+            child: Row(
+              children: [
+                if (busy)
+                  const SizedBox(
+                    width: 14.0,
+                    height: 14.0,
+                    child: CircularProgressIndicator(strokeWidth: 2.0),
+                  )
+                else
+                  Icon(icon, size: 16.0, color: color),
+                const SizedBox(width: 8.0),
+                Expanded(
+                  child: Text(
+                    headline ?? (busy ? '正在请求…' : '尚未试跑'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: AppType.caption,
+                      fontWeight: AppType.weightSemibold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6.0),
+          Expanded(
+            child: Focus(
+              onFocusChange: HotkeysHelper.onFocusChanges,
+              child: TextField(
+                controller: controller,
+                readOnly: true,
+                expands: true,
+                maxLines: null,
+                textAlignVertical: TextAlignVertical.top,
+                style: TextStyle(
+                  fontSize: AppType.caption,
+                  fontFamily: 'monospace',
+                  color: scheme.onSurfaceVariant,
+                ),
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  contentPadding: const EdgeInsets.all(10.0),
+                  hintText: hint,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 能力配置表单滚动区的 key：供测试与辅助定位「表单」这一处滚动区。
+const capabilityFormKey = ValueKey<String>('onlineMusicCapabilityForm');
+
+/// 高基数枚举选择。
+///
+/// 项目既有做法是 `MenuAnchor`（全仓 18 处）；分段按钮只适合 2–5 个短选项，
+/// 选项一多就只能靠横向滚动条。这里用 `InputDecorator` 让它与相邻文本框同高同款。
+class _EnumMenuField<T> extends StatelessWidget {
+  const _EnumMenuField({
+    required this.label,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    this.labelOf,
+    this.sublabelOf,
+  });
+
+  final String label;
+  final T value;
+  final List<T> options;
+  final ValueChanged<T> onChanged;
+  final String Function(T value)? labelOf;
+  final String Function(T value)? sublabelOf;
+
+  String _textOf(T item) => labelOf?.call(item) ?? '$item';
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return MenuAnchor(
+      style: MenuStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
+        ),
+      ),
+      menuChildren: [
+        for (final option in options)
+          MenuItemButton(
+            onPressed: option == value ? null : () => onChanged(option),
+            leadingIcon: Icon(
+              option == value ? Symbols.check : Symbols.radio_button_unchecked,
+              size: 18.0,
+              color: option == value ? scheme.primary : scheme.onSurfaceVariant,
+            ),
+            child: _MenuOptionLabel(
+              text: _textOf(option),
+              sublabel: sublabelOf?.call(option),
+            ),
+          ),
+      ],
+      builder: (context, controller, child) => Tooltip(
+        message: sublabelOf == null
+            ? '$label：${_textOf(value)}'
+            : '$label：${_textOf(value)}（${sublabelOf!(value)}）',
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () =>
+              controller.isOpen ? controller.close() : controller.open(),
+          child: InputDecorator(
+            isEmpty: false,
+            decoration: InputDecoration(
+              labelText: label,
+              border: const OutlineInputBorder(),
+              suffixIcon: const Icon(Symbols.arrow_drop_down),
+            ),
+            child: Text(
+              _textOf(value),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuOptionLabel extends StatelessWidget {
+  const _MenuOptionLabel({required this.text, this.sublabel});
+
+  final String text;
+  final String? sublabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (sublabel == null) return Text(text);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(text),
+        Text(
+          sublabel!,
+          style: TextStyle(
+            color: scheme.onSurfaceVariant,
+            fontSize: AppType.caption,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle(this.label);
 
@@ -892,13 +1300,13 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8, top: 4),
+      padding: const EdgeInsets.only(bottom: 12.0),
       child: Text(
         label,
         style: TextStyle(
-          color: scheme.onSurfaceVariant,
-          fontSize: AppType.caption,
-          fontWeight: AppType.weightSemibold,
+          color: scheme.primary,
+          fontSize: AppType.body,
+          fontWeight: AppType.weightBold,
           letterSpacing: 0.5,
         ),
       ),
@@ -906,18 +1314,18 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-class _Banner extends StatelessWidget {
-  const _Banner({required this.text, required this.color});
+/// 表单里的说明文字。
+class _Hint extends StatelessWidget {
+  const _Hint(this.text);
 
   final String text;
-  final Color color;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Text(
-      text,
-      style: TextStyle(color: color, fontSize: AppType.body),
+  Widget build(BuildContext context) => Text(
+    text,
+    style: TextStyle(
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+      fontSize: AppType.caption,
     ),
   );
 }
@@ -953,8 +1361,10 @@ class _ParamRow {
 class _HeaderRow {
   _HeaderRow(this.name, this.value);
 
-  factory _HeaderRow.from(OnlineMusicHeaderSpec header) =>
-      _HeaderRow(TextEditingController(text: header.name), TextEditingController(text: header.value));
+  factory _HeaderRow.from(OnlineMusicHeaderSpec header) => _HeaderRow(
+    TextEditingController(text: header.name),
+    TextEditingController(text: header.value),
+  );
 
   factory _HeaderRow.empty() =>
       _HeaderRow(TextEditingController(), TextEditingController());

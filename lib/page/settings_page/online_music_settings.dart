@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
@@ -30,6 +31,9 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   final Map<String, bool> _configured = {};
   bool _hasLoaded = false;
   bool _loading = false;
+
+  /// 状态行固定高度：为 0 或变化都会重新引入布局位移。
+  static const double _statusRowHeight = 40.0;
   String? _error;
 
   @override
@@ -97,9 +101,8 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   Future<void> _addProvider() async {
     final result = await showDialog<_ProviderDraft>(
       context: context,
-      builder: (context) => _ProviderDialog(
-        existingIds: _controller.providerIds,
-      ),
+      builder: (context) =>
+          _ProviderDialog(existingIds: _controller.providerIds),
     );
     if (result == null || !mounted) return;
     final definition = OnlineMusicProviderDefinition.custom(
@@ -151,7 +154,8 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     final confirmed = await showDangerConfirmDialog(
       context: context,
       title: '删除提供商 ${provider.id}？',
-      message: '指向它的能力分配与默认提供商都会回落到列表中的第一个条目。'
+      message:
+          '指向它的能力分配与默认提供商都会回落到列表中的第一个条目。'
           '已保存的 API Key 不会被删除。',
       confirmLabel: '删除',
     );
@@ -161,9 +165,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   }
 
   /// 能力列表：四个能力各自的状态，以及一键按 ChkSz 兼容方式填充。
-  Future<void> _openCapabilities(
-    OnlineMusicProviderDefinition provider,
-  ) async {
+  Future<void> _openCapabilities(OnlineMusicProviderDefinition provider) async {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => OnlineMusicCapabilitiesDialog(
@@ -204,12 +206,15 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     );
     if (result == null || !mounted) return;
     final saved = await _apply(
-      _controller.updateProvider(provider.withCapabilityBinding(capability, result)),
+      _controller.updateProvider(
+        provider.withCapabilityBinding(capability, result),
+      ),
     );
     if (saved && mounted) showTextOnSnackBar('能力配置已保存；重启后生效');
   }
 
-  Future<void> _openCredentialDialog(    OnlineMusicProviderDefinition provider,
+  Future<void> _openCredentialDialog(
+    OnlineMusicProviderDefinition provider,
   ) async {
     await showDialog<void>(
       context: context,
@@ -224,9 +229,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     );
   }
 
-  Future<void> _clearCredential(
-    OnlineMusicProviderDefinition provider,
-  ) async {
+  Future<void> _clearCredential(OnlineMusicProviderDefinition provider) async {
     final confirmed = await showDangerConfirmDialog(
       context: context,
       title: '清除 ${provider.id} 的 ${_controller.credentialDisplayName}？',
@@ -253,7 +256,8 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   String _authDescription(OnlineMusicProviderDefinition provider) {
     if (!provider.requiresCredential) return '不需要 API Key';
     final configured = _configured[provider.id];
-    if (configured == null) return '需要 API Key';
+    // 状态未知时给一个长度接近的稳定占位，避免加载完成前后文字剧烈变化。
+    if (configured == null) return '需要 API Key · 读取中';
     return configured ? '需要 API Key · 已配置' : '需要 API Key · 未配置';
   }
 
@@ -330,32 +334,60 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     );
   }
 
-  Widget _buildCredentialStatus() {
-    if (!widget.active) return const SizedBox.shrink();
-    if (_loading) {
-      return const SizedBox(
-        width: 24,
-        height: 24,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          semanticsLabel: '读取中',
-        ),
-      );
-    }
-    if (_error != null) {
-      return IconButton(
-        tooltip: '重试',
-        onPressed: () {
-          setState(() {
-            _hasLoaded = false;
-            _error = null;
-          });
-          _load();
-        },
-        icon: const Icon(Symbols.refresh),
-      );
-    }
-    return const SizedBox.shrink();
+  /// 固定高度的凭据状态行。
+  ///
+  /// **始终占位**：无论「读取中」「出错」还是「正常」，这里的高度都不变，
+  /// 因此加载完成或出现错误都不会把下面的内容整体推上推下
+  /// （上一轮人工验收的 UI 问题 4）。
+  Widget _buildStatusRow() {
+    if (!widget.active) return const SizedBox(height: _statusRowHeight);
+    final scheme = Theme.of(context).colorScheme;
+    final hasError = _error != null;
+    return SizedBox(
+      height: _statusRowHeight,
+      child: Row(
+        children: [
+          if (_loading)
+            const SizedBox(
+              width: 16.0,
+              height: 16.0,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.0,
+                semanticsLabel: '读取中',
+              ),
+            )
+          else if (hasError)
+            Icon(Symbols.error, size: 16.0, color: scheme.error)
+          else
+            const SizedBox(width: 16.0),
+          const SizedBox(width: 8.0),
+          Expanded(
+            child: Text(
+              _loading ? '正在读取凭据状态…' : (_error ?? ''),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: hasError ? scheme.error : scheme.onSurfaceVariant,
+                fontSize: AppType.body,
+              ),
+            ),
+          ),
+          if (hasError)
+            IconButton(
+              tooltip: '重试',
+              visualDensity: VisualDensity.compact,
+              onPressed: () {
+                setState(() {
+                  _hasLoaded = false;
+                  _error = null;
+                });
+                _load();
+              },
+              icon: const Icon(Symbols.refresh, size: 18.0),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -374,26 +406,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
           const _SettingsHint('便携版：API Key 只在本次运行内有效，重启后需要重新配置'),
           const SizedBox(height: 8),
         ],
-        if (_error != null) ...[
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _error!,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                    fontSize: AppType.body,
-                  ),
-                ),
-              ),
-              _buildCredentialStatus(),
-            ],
-          ),
-          const SizedBox(height: 8),
-        ] else if (_loading) ...[
-          Row(children: [_buildCredentialStatus()]),
-          const SizedBox(height: 8),
-        ],
+        _buildStatusRow(),
         for (final provider in settings.providers) ...[
           SettingsTile(
             description: provider.id == settings.defaultProviderId
@@ -448,12 +461,13 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   }
 }
 
-String _capabilityLabel(OnlineMusicCapability capability) => switch (capability) {
-  OnlineMusicCapability.search => '搜索',
-  OnlineMusicCapability.playlist => '歌曲列表',
-  OnlineMusicCapability.lyric => '歌词',
-  OnlineMusicCapability.stream => '播放解析',
-};
+String _capabilityLabel(OnlineMusicCapability capability) =>
+    switch (capability) {
+      OnlineMusicCapability.search => '搜索',
+      OnlineMusicCapability.playlist => '歌曲列表',
+      OnlineMusicCapability.lyric => '歌词',
+      OnlineMusicCapability.stream => '播放解析',
+    };
 
 /// 设置分块标题：本页有多个设置项，用标题把它们分开。
 class _SettingsSectionTitle extends StatelessWidget {
@@ -621,15 +635,10 @@ class _ProviderDialogState extends State<_ProviderDialog> {
   }
 
   void _submit() {
-    final id = _isEditing
-        ? widget.editing!.id
-        : _idController.text.trim();
+    final id = _isEditing ? widget.editing!.id : _idController.text.trim();
     final idError = _isEditing
         ? null
-        : validateOnlineMusicProviderId(
-            id,
-            existingIds: widget.existingIds,
-          );
+        : validateOnlineMusicProviderId(id, existingIds: widget.existingIds);
     final baseUrl = _baseUrlController.text.trim();
     final baseUrlError = _validateBaseUrl(baseUrl);
     setState(() {
@@ -669,34 +678,43 @@ class _ProviderDialogState extends State<_ProviderDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
-              controller: _idController,
-              autofocus: !_isEditing,
-              enabled: !_isEditing,
-              onChanged: (_) => setState(() => _idError = null),
-              decoration: InputDecoration(
-                labelText: '标识',
-                hintText: 'selfdata',
-                errorText: _idError,
-                helperText: _isEditing ? '标识用于区分条目，创建后不可修改' : null,
+            Focus(
+              onFocusChange: HotkeysHelper.onFocusChanges,
+              child: TextField(
+                controller: _idController,
+                autofocus: !_isEditing,
+                enabled: !_isEditing,
+                onChanged: (_) => setState(() => _idError = null),
+                decoration: InputDecoration(
+                  labelText: '标识',
+                  hintText: 'selfdata',
+                  errorText: _idError,
+                  helperText: _isEditing ? '标识用于区分条目，创建后不可修改' : null,
+                ),
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _baseUrlController,
-              onChanged: (_) => setState(() => _baseUrlError = null),
-              decoration: InputDecoration(
-                labelText: '服务地址',
-                hintText: defaultOnlineMusicBaseUrl,
-                errorText: _baseUrlError,
+            Focus(
+              onFocusChange: HotkeysHelper.onFocusChanges,
+              child: TextField(
+                controller: _baseUrlController,
+                onChanged: (_) => setState(() => _baseUrlError = null),
+                decoration: InputDecoration(
+                  labelText: '服务地址',
+                  hintText: defaultOnlineMusicBaseUrl,
+                  errorText: _baseUrlError,
+                ),
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _displayNameController,
-              decoration: const InputDecoration(
-                labelText: '显示名（可选）',
-                hintText: '留空则显示标识',
+            Focus(
+              onFocusChange: HotkeysHelper.onFocusChanges,
+              child: TextField(
+                controller: _displayNameController,
+                decoration: const InputDecoration(
+                  labelText: '显示名（可选）',
+                  hintText: '留空则显示标识',
+                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -707,10 +725,7 @@ class _ProviderDialogState extends State<_ProviderDialog> {
                 showSelectedIcon: false,
                 segments: [
                   for (final platform in MusicPlatform.values)
-                    ButtonSegment(
-                      value: platform,
-                      label: Text(platform.name),
-                    ),
+                    ButtonSegment(value: platform, label: Text(platform.name)),
                 ],
                 selected: {_contentPlatform},
                 onSelectionChanged: (selection) =>
@@ -820,27 +835,30 @@ class _ProviderApiKeyDialogState extends State<_ProviderApiKeyDialog> {
       ),
       content: SizedBox(
         width: 420,
-        child: TextField(
-          controller: _controller,
-          autofocus: true,
-          enabled: !_saving,
-          obscureText: _obscureText,
-          textInputAction: TextInputAction.done,
-          onSubmitted: (_) => _submit(),
-          onChanged: (_) {
-            setState(() => _saveError = null);
-          },
-          decoration: InputDecoration(
-            labelText: widget.controller.credentialDisplayName,
-            hintText: widget.controller.credentialHint,
-            errorText: errorText,
-            suffixIcon: IconButton(
-              tooltip: _obscureText ? '显示 API Key' : '隐藏 API Key',
-              onPressed: _saving
-                  ? null
-                  : () => setState(() => _obscureText = !_obscureText),
-              icon: Icon(
-                _obscureText ? Symbols.visibility : Symbols.visibility_off,
+        child: Focus(
+          onFocusChange: HotkeysHelper.onFocusChanges,
+          child: TextField(
+            controller: _controller,
+            autofocus: true,
+            enabled: !_saving,
+            obscureText: _obscureText,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _submit(),
+            onChanged: (_) {
+              setState(() => _saveError = null);
+            },
+            decoration: InputDecoration(
+              labelText: widget.controller.credentialDisplayName,
+              hintText: widget.controller.credentialHint,
+              errorText: errorText,
+              suffixIcon: IconButton(
+                tooltip: _obscureText ? '显示 API Key' : '隐藏 API Key',
+                onPressed: _saving
+                    ? null
+                    : () => setState(() => _obscureText = !_obscureText),
+                icon: Icon(
+                  _obscureText ? Symbols.visibility : Symbols.visibility_off,
+                ),
               ),
             ),
           ),
