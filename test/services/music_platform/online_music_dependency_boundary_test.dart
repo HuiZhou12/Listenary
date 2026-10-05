@@ -7,8 +7,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// 唯一的例外是设置页的在线音乐配置面板：它的职责就是编辑 Provider 配置，
 /// 因此允许它引用 provider 层的**配置契约**（`OnlineMusicSettings` 等），
 /// 但仍然禁止它引用任何 ChkSz 实现类型。
-const _configurationPanelPath =
-    'lib/page/settings_page/online_music_settings.dart';
+/// 允许引用 provider 层**配置契约**的界面文件（只有在线音乐配置这一处）。
+const _configurationPanelPaths = {
+  'lib/page/settings_page/online_music_settings.dart',
+  'lib/page/settings_page/online_music_capability_editor.dart',
+};
 
 final _implementationSymbols = RegExp(
   r'\b(?:ChkszRuntime|ChkszException|ChkszCancelToken|ChkszNeteaseCodec'
@@ -33,7 +36,7 @@ void main() {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
         final source = entity.readAsStringSync();
         final path = entity.path.replaceAll(r'\', '/');
-        final isConfigurationPanel = path == _configurationPanelPath;
+        final isConfigurationPanel = _configurationPanelPaths.contains(path);
         final banned =
             source.contains('services/music_platform/chksz/') ||
             _implementationSymbols.hasMatch(source) ||

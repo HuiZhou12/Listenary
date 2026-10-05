@@ -7,7 +7,9 @@ import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/page/settings_page/online_music_capability_editor.dart';
 import 'package:pure_music/services/music_platform/index.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings_controller.dart';
@@ -154,8 +156,56 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     if (mounted) setState(() => _configured.remove(provider.id));
   }
 
-  Future<void> _openCredentialDialog(
+  /// 能力列表：四个能力各自的状态，以及一键按 ChkSz 兼容方式填充。
+  Future<void> _openCapabilities(
     OnlineMusicProviderDefinition provider,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => OnlineMusicCapabilitiesDialog(
+        definition: provider,
+        onEditCapability: (capability) {
+          Navigator.of(dialogContext).pop();
+          _openCapabilityEditor(provider, capability);
+        },
+        onFillChkszCompatible: () {
+          Navigator.of(dialogContext).pop();
+          _apply(
+            _controller.updateProvider(
+              provider.withChkszCompatibleCapabilities(),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _openCapabilityEditor(
+    OnlineMusicProviderDefinition provider,
+    OnlineMusicCapability capability,
+  ) async {
+    final result = await showDialog<OnlineMusicCapabilityBinding>(
+      context: context,
+      builder: (dialogContext) => OnlineMusicCapabilityEditorDialog(
+        definition: provider,
+        capability: capability,
+        initialBinding: provider.bindingFor(capability),
+        onProbe: () => _controller.probeSearch(provider),
+        onTest: (binding, trackId) => _controller.testCapability(
+          provider.withCapabilityBinding(capability, binding),
+          capability,
+          trackId: trackId,
+        ),
+      ),
+    );
+    if (result == null || !mounted) return;
+    final saved = await _apply(
+      _controller.updateProvider(provider.withCapabilityBinding(capability, result)),
+    );
+    if (saved && mounted) showTextOnSnackBar('能力配置已保存；重启后生效');
+  }
+
+  Future<void> _openCredentialDialog(    OnlineMusicProviderDefinition provider,
   ) async {
     await showDialog<void>(
       context: context,
@@ -229,6 +279,11 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
             ),
             const SizedBox(width: 8),
           ],
+          IconButton(
+            tooltip: '能力配置',
+            onPressed: () => _openCapabilities(provider),
+            icon: const Icon(Symbols.tune),
+          ),
           IconButton(
             tooltip: '编辑',
             onPressed: () => _editProvider(provider),

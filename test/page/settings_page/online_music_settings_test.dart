@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/page/settings_page/online_music_settings.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 
 const _apiKey = 'chksz_SETTINGS_TEST_ONLY';
 
@@ -247,17 +249,128 @@ void main() {
     });
     controller.dispose();
   });
+
+  testWidgets('opens the capability list and fills the ChkSz-compatible template', (
+    tester,
+  ) async {
+    final controller = _controller();
+    await pumpPanel(tester, controller);
+
+    await tester.tap(find.byTooltip('能力配置'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('能力配置 · '), findsOneWidget);
+    for (final label in ['搜索', '歌曲列表', '歌词', '播放解析']) {
+      expect(find.text(label), findsWidgets);
+    }
+    // 第二阶段的两个能力不可配置。
+    expect(find.text('第二阶段'), findsNWidgets(2));
+
+    await tester.tap(find.text('一键按 ChkSz 兼容方式填充'));
+    await tester.pumpAndSettle();
+
+    final definition = controller.settings.providers.single;
+    for (final capability in OnlineMusicCapability.values) {
+      expect(
+        definition.bindingFor(capability),
+        isA<OnlineMusicBuiltinCapabilityBinding>(),
+      );
+    }
+    controller.dispose();
+  });
+
+  testWidgets('the capability editor validates before saving', (tester) async {
+    final controller = _controller();
+    await pumpPanel(tester, controller);
+
+    await tester.tap(find.byTooltip('能力配置'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .descendant(
+            of: find.byType(AlertDialog),
+            matching: find.text('配置'),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('请求'), findsOneWidget);
+    expect(find.text('响应'), findsOneWidget);
+    expect(find.text('探测该服务'), findsOneWidget);
+
+    // 清空请求路径后保存：内联报错且对话框不关闭。
+    await tester.enterText(find.byType(TextField).first, '');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('请求路径不能为空'), findsOneWidget);
+    expect(find.text('请求'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('the capability editor can probe and test', (tester) async {
+    final transport = _StubTransport();
+    final controller = _controller(probeTransportFactory: (_) => transport);
+    await pumpPanel(tester, controller);
+
+    await tester.tap(find.byTooltip('能力配置'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .descendant(
+            of: find.byType(AlertDialog),
+            matching: find.text('配置'),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('试跑'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('试跑'), findsWidgets);
+
+    await tester.tap(find.text('探测该服务'));
+    await tester.pumpAndSettle();
+    expect(transport.probeCalls, greaterThan(0));
+    controller.dispose();
+  });
+}
+
+final class _StubTransport implements DeclarativeHttpTransport {
+  int probeCalls = 0;
+
+  @override
+  Future<DeclarativeHttpResponse> send(
+    BuiltDeclarativeRequest request, {
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    probeCalls++;
+    return const DeclarativeHttpResponse(
+      statusCode: 200,
+      data: {
+        'result': {
+          'songs': [
+            {'id': 1, 'name': 'probe', 'duration': 1000},
+          ],
+        },
+      },
+    );
+  }
 }
 
 OnlineMusicProviderSettingsController _controller({
   OnlineMusicSettings configured = OnlineMusicSettings.defaults,
   OnlineMusicSettings active = OnlineMusicSettings.defaults,
   _FakeCredentialAccess? credentials,
+  DeclarativeProbeTransportFactory? probeTransportFactory,
 }) {
   return OnlineMusicProviderSettingsController(
     activeSettings: active,
     store: _MemorySettingsStore(configured),
     fallbackCredentials: credentials ?? _FakeCredentialAccess(),
+    probeTransportFactory: probeTransportFactory,
   );
 }
 
