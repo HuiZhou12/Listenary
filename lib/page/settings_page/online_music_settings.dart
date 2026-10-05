@@ -106,6 +106,8 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
       id: result.id,
       baseUrl: result.baseUrl,
       requiresCredential: result.requiresCredential,
+      displayName: result.displayName,
+      contentPlatform: result.contentPlatform,
     );
     await _apply(_controller.addProvider(definition));
     if (mounted) setState(() => _configured[definition.id] = false);
@@ -123,6 +125,8 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     final updated = provider.editedBy(
       baseUrl: result.baseUrl,
       requiresCredential: result.requiresCredential,
+      contentPlatform: result.contentPlatform,
+      displayName: result.displayName,
     );
     final saved = await _apply(_controller.updateProvider(updated));
     if (saved && mounted) {
@@ -393,10 +397,10 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
         for (final provider in settings.providers) ...[
           SettingsTile(
             description: provider.id == settings.defaultProviderId
-                ? '${provider.id} · 默认'
-                : provider.id,
+                ? '${provider.label} · 默认'
+                : provider.label,
             subtitle:
-                '${_hostOf(provider.baseUrl)} · ${_authDescription(provider)}',
+                '${_hostOf(provider.baseUrl)} · ${provider.contentPlatform.name} · ${_authDescription(provider)}',
             action: _buildProviderAction(provider),
           ),
           const SizedBox(height: 12),
@@ -561,11 +565,15 @@ final class _ProviderDraft {
     required this.id,
     required this.baseUrl,
     required this.requiresCredential,
+    this.displayName = '',
+    this.contentPlatform = MusicPlatform.netease,
   });
 
   final String id;
   final String baseUrl;
   final bool requiresCredential;
+  final String displayName;
+  final MusicPlatform contentPlatform;
 }
 
 class _ProviderDialog extends StatefulWidget {
@@ -581,7 +589,9 @@ class _ProviderDialog extends StatefulWidget {
 class _ProviderDialogState extends State<_ProviderDialog> {
   late final TextEditingController _idController;
   late final TextEditingController _baseUrlController;
+  late final TextEditingController _displayNameController;
   late bool _requiresCredential;
+  late MusicPlatform _contentPlatform;
   String? _idError;
   String? _baseUrlError;
 
@@ -595,13 +605,18 @@ class _ProviderDialogState extends State<_ProviderDialog> {
     _baseUrlController = TextEditingController(
       text: editing?.baseUrl ?? defaultOnlineMusicBaseUrl,
     );
+    _displayNameController = TextEditingController(
+      text: editing?.displayName ?? '',
+    );
     _requiresCredential = editing?.requiresCredential ?? true;
+    _contentPlatform = editing?.contentPlatform ?? MusicPlatform.netease;
   }
 
   @override
   void dispose() {
     _idController.dispose();
     _baseUrlController.dispose();
+    _displayNameController.dispose();
     super.dispose();
   }
 
@@ -627,6 +642,8 @@ class _ProviderDialogState extends State<_ProviderDialog> {
         id: id,
         baseUrl: baseUrl,
         requiresCredential: _requiresCredential,
+        displayName: _displayNameController.text.trim(),
+        contentPlatform: _contentPlatform,
       ),
     );
   }
@@ -672,6 +689,32 @@ class _ProviderDialogState extends State<_ProviderDialog> {
                 labelText: '服务地址',
                 hintText: defaultOnlineMusicBaseUrl,
                 errorText: _baseUrlError,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _displayNameController,
+              decoration: const InputDecoration(
+                labelText: '显示名（可选）',
+                hintText: '留空则显示标识',
+              ),
+            ),
+            const SizedBox(height: 16),
+            SettingsTile(
+              description: '内容来源',
+              subtitle: '该服务代理哪一家的内容；非网易云来源属于当前模型边界',
+              action: SegmentedButton<MusicPlatform>(
+                showSelectedIcon: false,
+                segments: [
+                  for (final platform in MusicPlatform.values)
+                    ButtonSegment(
+                      value: platform,
+                      label: Text(platform.name),
+                    ),
+                ],
+                selected: {_contentPlatform},
+                onSelectionChanged: (selection) =>
+                    setState(() => _contentPlatform = selection.first),
               ),
             ),
             const SizedBox(height: 16),

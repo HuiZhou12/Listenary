@@ -164,6 +164,40 @@ void main() {
       );
     });
 
+    test('display name and content platform round-trip', () {
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'selfData',
+            'displayName': '我的自建服务',
+            'contentPlatform': 'qq',
+            'capabilities': {'search': _searchBinding().toJson()},
+          },
+        ],
+      });
+
+      final definition = settings.providers.single;
+      expect(definition.displayName, '我的自建服务');
+      expect(definition.label, '我的自建服务');
+      expect(definition.contentPlatform, MusicPlatform.qq);
+
+      final restored = OnlineMusicSettings.fromJson(settings.toJson());
+      expect(restored, settings);
+      expect(restored.providers.single.displayName, '我的自建服务');
+
+      // 未写显示名时回落到标识，且不会写进配置。
+      final unnamed = OnlineMusicSettings.fromJson({
+        'providers': [
+          {'id': 'selfData'},
+        ],
+      });
+      expect(unnamed.providers.single.label, 'selfData');
+      expect(
+        (unnamed.providers.single.toJson()).containsKey('displayName'),
+        isFalse,
+      );
+    });
+
     test('builtin and unsupported round-trip', () {
       expect(
         OnlineMusicCapabilityBinding.fromJson(

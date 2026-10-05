@@ -58,6 +58,7 @@ final class OnlineMusicProviderDefinition {
     required this.capabilityAuth,
     this.capabilities,
     this.contentPlatform = MusicPlatform.netease,
+    this.displayName = '',
   });
 
   static const defaultCredentialReference = 'PureMusic/ChKSz/APIKey';
@@ -79,6 +80,12 @@ final class OnlineMusicProviderDefinition {
   final String id;
   final String protocol;
   final String baseUrl;
+
+  /// 展示名；留空时回落到 [id]。它只影响界面文案，不参与任何映射。
+  final String displayName;
+
+  /// 界面上展示的名字（displayName 优先）。
+  String get label => displayName.trim().isEmpty ? id : displayName.trim();
   final Duration connectTimeout;
   final Duration sendTimeout;
   final Duration receiveTimeout;
@@ -163,11 +170,15 @@ final class OnlineMusicProviderDefinition {
     required String baseUrl,
     required bool requiresCredential,
     String? credentialReference,
+    String displayName = '',
+    MusicPlatform contentPlatform = MusicPlatform.netease,
   }) {
     return OnlineMusicProviderDefinition(
       id: id,
       protocol: defaultOnlineMusicProtocol,
       baseUrl: normalizeOnlineMusicBaseUrl(baseUrl),
+      displayName: displayName.trim(),
+      contentPlatform: contentPlatform,
       connectTimeout: defaultOnlineMusicConnectTimeout,
       sendTimeout: defaultOnlineMusicSendTimeout,
       receiveTimeout: defaultOnlineMusicReceiveTimeout,
@@ -187,11 +198,13 @@ final class OnlineMusicProviderDefinition {
     required String baseUrl,
     required bool requiresCredential,
     MusicPlatform? contentPlatform,
+    String? displayName,
   }) {
     return OnlineMusicProviderDefinition(
       id: id,
       protocol: protocol,
       baseUrl: normalizeOnlineMusicBaseUrl(baseUrl),
+      displayName: displayName?.trim() ?? this.displayName,
       connectTimeout: connectTimeout,
       sendTimeout: sendTimeout,
       receiveTimeout: receiveTimeout,
@@ -230,6 +243,7 @@ final class OnlineMusicProviderDefinition {
         capability: binding,
       }),
       contentPlatform: contentPlatform,
+      displayName: displayName,
     );
   }
 
@@ -253,6 +267,7 @@ final class OnlineMusicProviderDefinition {
         OnlineMusicCapability.stream: OnlineMusicBuiltinCapabilityBinding(),
       },
       contentPlatform: contentPlatform,
+      displayName: displayName,
     );
   }
 
@@ -260,6 +275,7 @@ final class OnlineMusicProviderDefinition {
     'id': id,
     'protocol': protocol,
     'baseUrl': baseUrl,
+    if (displayName.trim().isNotEmpty) 'displayName': displayName,
     'contentPlatform': contentPlatform.name,
     'connectTimeoutMs': connectTimeout.inMilliseconds,
     'sendTimeoutMs': sendTimeout.inMilliseconds,
@@ -299,6 +315,7 @@ final class OnlineMusicProviderDefinition {
       other.requiresCredential == requiresCredential &&
       other.parameterName == parameterName &&
       other.contentPlatform == contentPlatform &&
+      other.displayName == displayName &&
       _sameBindings(other.capabilities, capabilities) &&
       _sameCapabilityAuth(other.capabilityAuth, capabilityAuth);
 
@@ -314,6 +331,7 @@ final class OnlineMusicProviderDefinition {
     requiresCredential,
     parameterName,
     contentPlatform,
+    displayName,
     // capabilities 为 null 与空 Map 语义不同（旧条目 vs 新条目），必须区分。
     capabilities == null
         ? -1
@@ -620,6 +638,7 @@ final class OnlineMusicSettings {
       id: id,
       protocol: protocol,
       contentPlatform: _parseContentPlatform(value['contentPlatform']),
+      displayName: _nonEmptyString(value['displayName']) ?? '',
       capabilities: parsedCapabilities,
       baseUrl: normalizeOnlineMusicBaseUrl(value['baseUrl']),
       connectTimeout: normalizeOnlineMusicTimeout(
