@@ -9,15 +9,20 @@ import 'package:pure_music/services/music_platform/provider/composite_online_mus
 import 'package:pure_music/services/music_platform/provider/online_music_provider_registry.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 
-/// 组合结果：应用层用的 service，以及设置页用的凭据入口。
+/// 组合结果：应用层用的 service，以及**每个条目各自**的凭据入口。
+///
+/// 设置页对已在运行的条目走这里的凭据入口（保留「更换 Key 会取消在途请求并清空配额」的语义）；
+/// 对新增、尚未组装的条目则走设置控制器里的按引用访问。
 final class OnlineMusicComposition {
-  const OnlineMusicComposition({
+  OnlineMusicComposition({
     required this.service,
-    required this.credentials,
-  });
+    required Iterable<ChkszOnlineMusicProvider> providers,
+  }) : credentialControllers = Map.unmodifiable({
+         for (final provider in providers) provider.providerId: provider,
+       });
 
   final OnlineMusicService service;
-  final OnlineMusicCredentialController credentials;
+  final Map<String, OnlineMusicCredentialController> credentialControllers;
 }
 
 /// 为一个配置条目建立 ChkSz 连接配置。
@@ -43,9 +48,6 @@ OnlineMusicComposition createOnlineMusicComposition({
   required bool portableBuild,
   OnlineMusicDioFactory? dioFactory,
 }) {
-  final definitions = {
-    for (final definition in settings.providers) definition.id: definition,
-  };
   final providers = <ChkszOnlineMusicProvider>[];
   for (final definition in settings.providers) {
     final reference = definition.credentialReference;
@@ -73,27 +75,6 @@ OnlineMusicComposition createOnlineMusicComposition({
 
   return OnlineMusicComposition(
     service: CompositeOnlineMusicService(registry: registry),
-    credentials: _credentialOwner(providers, definitions, registry),
+    providers: providers,
   );
-}
-
-/// 全应用只暴露一个凭据入口：优先默认 Provider；若它声明不需要凭据，
-/// 则退到第一个需要凭据的条目（这样「数据无 Key + 播放有 Key」的用户仍能配置播放 Key）；
-/// 所有条目都不需要凭据时，仍返回默认 Provider，保存时给出明确原因。
-ChkszOnlineMusicProvider _credentialOwner(
-  List<ChkszOnlineMusicProvider> providers,
-  Map<String, OnlineMusicProviderDefinition> definitions,
-  OnlineMusicProviderRegistry registry,
-) {
-  final defaultId = registry.defaultProvider.providerId;
-  final owner = providers.firstWhere(
-    (provider) => provider.providerId == defaultId,
-  );
-  if (definitions[owner.providerId]?.requiresCredential ?? false) return owner;
-  for (final provider in providers) {
-    if (definitions[provider.providerId]?.requiresCredential ?? false) {
-      return provider;
-    }
-  }
-  return owner;
 }

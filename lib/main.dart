@@ -14,7 +14,9 @@ import 'package:pure_music/native/rust/api/logger.dart';
 import 'package:pure_music/native/rust/frb_generated.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/services/music_platform/chksz/chksz_credential_access.dart';
 import 'package:pure_music/services/music_platform/online_music_composition.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_settings_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
@@ -122,15 +124,22 @@ Future<void> main() async {
 
   MemoryMonitorService.instance.start();
 
+  final activeOnlineMusicSettings = AppPreference.instance.onlineMusicSettings;
   final onlineMusic = createOnlineMusicComposition(
-    settings: AppPreference.instance.onlineMusicSettings,
+    settings: activeOnlineMusicSettings,
     portableBuild: portableBuild,
+  );
+  final onlineMusicSettingsController = OnlineMusicProviderSettingsController(
+    activeSettings: activeOnlineMusicSettings,
+    store: const AppPreferenceOnlineMusicSettingsStore(),
+    fallbackCredentials: ChkszCredentialAccess(portableBuild: portableBuild),
+    runningCredentials: onlineMusic.credentialControllers,
   );
   runApp(
     Entry(
       welcome: welcome,
       onlineMusicService: onlineMusic.service,
-      onlineMusicCredentials: onlineMusic.credentials,
+      onlineMusicSettings: onlineMusicSettingsController,
     ),
   );
 }

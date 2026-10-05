@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
 import 'package:pure_music/services/music_platform/online_music_composition.dart';
-import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 
 void main() {
   group('OnlineMusicSettings defaults', () {
@@ -271,12 +270,8 @@ void main() {
       expect(capabilities.lyricPlatforms, {MusicPlatform.netease});
       expect(capabilities.resolvablePlatforms, {MusicPlatform.netease});
       expect(
-        composition.credentials,
-        isA<ChkszOnlineMusicProvider>().having(
-          (provider) => provider.providerId,
-          'providerId',
-          defaultOnlineMusicProviderId,
-        ),
+        composition.credentialControllers.keys,
+        [defaultOnlineMusicProviderId],
       );
     });
 
@@ -319,18 +314,14 @@ void main() {
       expect(composition.service.capabilities.searchablePlatforms, {
         MusicPlatform.netease,
       });
-      // 默认 Provider 是 selfData（无凭据），设置页凭据入口退到需要凭据的播放 Provider。
+      // 每个条目都有各自的凭据入口，界面不再需要「谁是凭据所有者」的推断。
       expect(
-        composition.credentials,
-        isA<ChkszOnlineMusicProvider>().having(
-          (provider) => provider.providerId,
-          'providerId',
-          'playback',
-        ),
+        composition.credentialControllers.keys,
+        containsAll(<String>['selfData', 'playback']),
       );
     });
 
-    test('a credential-free default keeps its own credential entry', () {
+    test('every entry exposes its own credential entry', () {
       final settings = OnlineMusicSettings.fromJson({
         'providers': [
           {
@@ -345,14 +336,7 @@ void main() {
       );
       addTearDown(composition.service.dispose);
 
-      expect(
-        composition.credentials,
-        isA<ChkszOnlineMusicProvider>().having(
-          (provider) => provider.providerId,
-          'providerId',
-          'selfData',
-        ),
-      );
+      expect(composition.credentialControllers.keys, ['selfData']);
     });
   });
 
@@ -493,7 +477,7 @@ void main() {
       expect(playbackDio.adapter.requests, hasLength(1));
     });
 
-    test('a credential-free owner reports why saving is impossible', () async {
+    test('a credential-free entry reports why saving is impossible', () async {
       final settings = OnlineMusicSettings.fromJson({
         'providers': [
           {'id': 'selfData', 'auth': {'kind': 'none'}},
@@ -505,9 +489,10 @@ void main() {
       );
       addTearDown(composition.service.dispose);
 
-      expect(await composition.credentials.isConfigured(), isFalse);
+      final credentials = composition.credentialControllers['selfData']!;
+      expect(await credentials.isConfigured(), isFalse);
       await expectLater(
-        composition.credentials.saveCredential('chksz_TEST_ONLY'),
+        credentials.saveCredential('chksz_TEST_ONLY'),
         throwsA(
           isA<OnlineMusicCredentialException>()
               .having(
@@ -522,8 +507,8 @@ void main() {
               ),
         ),
       );
-      // 不需要凭据的 Provider 仍然可以正常发请求。
-      await composition.credentials.clearCredential();
+      // 不需要凭据的 Provider 仍然可以正常清除（无操作）。
+      await credentials.clearCredential();
     });
   });
 }

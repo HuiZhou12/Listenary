@@ -1,0 +1,218 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:pure_music/page/settings_page/online_music_settings.dart';
+import 'package:pure_music/services/music_platform/chksz/index.dart';
+
+const _apiKey = 'chksz_SETTINGS_TEST_ONLY';
+
+void main() {
+  Future<void> pumpPanel(
+    WidgetTester tester,
+    OnlineMusicProviderSettingsController controller, {
+    bool active = true,
+  }) async {
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body: ChangeNotifierProvider<OnlineMusicProviderSettingsController>
+              .value(
+                value: controller,
+                child: OnlineMusicSettingsPanel(active: active),
+              ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('renders the confirmed default configuration', (tester) async {
+    final controller = _controller();
+
+    await pumpPanel(tester, controller);
+
+    expect(find.text('服务提供商'), findsOneWidget);
+    expect(find.text('$defaultOnlineMusicProviderId · 默认'), findsOneWidget);
+    expect(find.text('修改将在下次启动时生效'), findsNothing);
+    expect(find.text('添加提供商'), findsOneWidget);
+    expect(find.text('能力分配'), findsOneWidget);
+    for (final label in ['搜索', '歌曲列表', '歌词', '播放解析']) {
+      expect(find.text(label), findsOneWidget);
+    }
+    expect(find.text('默认提供商'), findsWidgets);
+    expect(find.text('播放音质'), findsOneWidget);
+    expect(find.text('默认音质'), findsOneWidget);
+    // 只有一个条目时不提供删除。
+    expect(find.byTooltip('删除'), findsNothing);
+    controller.dispose();
+  });
+
+  testWidgets('warns that changes need a restart', (tester) async {
+    final controller = _controller(
+      configured: OnlineMusicSettings.fromJson({
+        'providers': [
+          {'id': 'selfData', 'auth': {'kind': 'none'}},
+        ],
+      }),
+    );
+
+    await pumpPanel(tester, controller);
+
+    expect(find.text('修改将在下次启动时生效'), findsOneWidget);
+    expect(find.text('selfData · 默认'), findsOneWidget);
+    expect(find.textContaining('不需要 API Key'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('adding a provider validates the id and the service address', (
+    tester,
+  ) async {
+    final controller = _controller();
+    await pumpPanel(tester, controller);
+
+    await tester.tap(find.text('添加'));
+    await tester.pumpAndSettle();
+
+    // 空标识 + 非法地址：内联报错且对话框不关闭。
+    await tester.enterText(find.byType(TextField).at(0), '');
+    await tester.enterText(find.byType(TextField).at(1), 'ftp://invalid');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(find.text('请填写标识'), findsOneWidget);
+    expect(
+      find.text('服务地址必须以 http:// 或 https:// 开头'),
+      findsOneWidget,
+    );
+
+    // 与既有条目重名也要被拒绝。
+    await tester.enterText(
+      find.byType(TextField).at(0),
+      defaultOnlineMusicProviderId,
+    );
+    await tester.enterText(find.byType(TextField).at(1), 'http://127.0.0.1:9');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(find.text('该标识已被占用'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).at(0), 'selfData');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(
+      controller.settings.providers.map((provider) => provider.id),
+      [defaultOnlineMusicProviderId, 'selfData'],
+    );
+    expect(find.text('selfData'), findsWidgets);
+    expect(find.byTooltip('删除'), findsWidgets);
+    controller.dispose();
+  });
+
+  testWidgets('deleting a provider falls back to the remaining entry', (
+    tester,
+  ) async {
+    final controller = _controller(
+      configured: OnlineMusicSettings.fromJson({
+        'providers': [
+          {'id': 'a', 'auth': {'kind': 'none'}},
+          {'id': 'b', 'auth': {'kind': 'none'}},
+        ],
+        'defaultProvider': 'b',
+        'capabilities': {'stream': 'b'},
+      }),
+    );
+    await pumpPanel(tester, controller);
+
+    expect(find.byTooltip('删除'), findsNWidgets(2));
+    await tester.tap(find.byTooltip('删除').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除').last);
+    await tester.pumpAndSettle();
+
+    expect(controller.settings.providers.single.id, 'a');
+    expect(controller.settings.defaultProviderId, 'a');
+    expect(
+      controller.settings.resolvedProviderIdFor(OnlineMusicCapability.stream),
+      'a',
+    );
+    controller.dispose();
+  });
+
+  testWidgets('configures a per-entry API key', (tester) async {
+    final credentials = _FakeCredentialAccess();
+    final controller = _controller(credentials: credentials);
+    await pumpPanel(tester, controller);
+
+    expect(find.textContaining('需要 API Key · 未配置'), findsOneWidget);
+    await tester.tap(find.text('配置'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), _apiKey);
+    // 按钮的可用性由输入内容决定，因此需要一次重建后再点击。
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(
+      credentials.saved,
+      {OnlineMusicProviderDefinition.defaultCredentialReference: _apiKey},
+    );
+    expect(find.textContaining('需要 API Key · 已配置'), findsOneWidget);
+    expect(find.byTooltip('清除 API Key'), findsOneWidget);
+    controller.dispose();
+  });
+}
+
+OnlineMusicProviderSettingsController _controller({
+  OnlineMusicSettings configured = OnlineMusicSettings.defaults,
+  OnlineMusicSettings active = OnlineMusicSettings.defaults,
+  _FakeCredentialAccess? credentials,
+}) {
+  return OnlineMusicProviderSettingsController(
+    activeSettings: active,
+    store: _MemorySettingsStore(configured),
+    fallbackCredentials: credentials ?? _FakeCredentialAccess(),
+  );
+}
+
+final class _MemorySettingsStore implements OnlineMusicSettingsStore {
+  _MemorySettingsStore(this.value);
+
+  OnlineMusicSettings value;
+
+  @override
+  OnlineMusicSettings read() => value;
+
+  @override
+  Future<bool> write(OnlineMusicSettings settings) async {
+    value = settings;
+    return true;
+  }
+}
+
+final class _FakeCredentialAccess implements OnlineMusicCredentialAccess {
+  final Map<String, String> saved = {};
+
+  @override
+  String get credentialDisplayName => 'API Key';
+
+  @override
+  String get inputHint => 'chksz_...';
+
+  @override
+  bool isValidFormat(String value) => RegExp(r'^chksz_\S+$').hasMatch(value);
+
+  @override
+  Future<bool> isConfigured(String reference) async =>
+      saved.containsKey(reference);
+
+  @override
+  Future<void> save(String reference, String value) async {
+    saved[reference] = value;
+  }
+
+  @override
+  Future<void> clear(String reference) async => saved.remove(reference);
+}
