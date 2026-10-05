@@ -398,7 +398,13 @@ class _OnlineMusicCapabilityEditorDialogState
   }
 
   Future<void> _runProbe() async {
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      // 进行中先清空上一次结果，避免旧标题/旧详情被误读成本次结果。
+      _resultHeadline = null;
+      _resultOk = null;
+      _resultController.clear();
+    });
     try {
       final report = await widget.onProbe();
       if (!mounted) return;
@@ -441,7 +447,13 @@ class _OnlineMusicCapabilityEditorDialogState
       _setResult(headline: '无法试跑：配置还不完整', ok: false, detail: issues.join('\n'));
       return;
     }
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      // 进行中先清空上一次结果，避免旧标题/旧详情被误读成本次结果。
+      _resultHeadline = null;
+      _resultOk = null;
+      _resultController.clear();
+    });
     try {
       final result = await widget.onTest(
         binding,
@@ -515,8 +527,10 @@ class _OnlineMusicCapabilityEditorDialogState
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     // 与项目其它设置对话框一致：按窗口算尺寸，窄窗口也放得下（不再固定 720×560）。
-    final width = (size.width - 96.0).clamp(360.0, 880.0).toDouble();
-    final height = (size.height - 96.0).clamp(320.0, 720.0).toDouble();
+    // 上限是偏好尺寸，下限随窗口收缩（insetPadding 两侧各 24）：
+    // 小窗口下宁可对话框变小，也不要它超出屏幕导致内容够不到。
+    final width = (size.width - 48.0).clamp(200.0, 880.0).toDouble();
+    final height = (size.height - 48.0).clamp(200.0, 720.0).toDouble();
     final resultHeight = (height * 0.24).clamp(72.0, 168.0).toDouble();
 
     return Dialog(
@@ -601,6 +615,7 @@ class _OnlineMusicCapabilityEditorDialogState
   }
 
   Widget _buildJsonView() {
+    final scheme = Theme.of(context).colorScheme;
     return Focus(
       onFocusChange: HotkeysHelper.onFocusChanges,
       child: TextField(
@@ -608,7 +623,11 @@ class _OnlineMusicCapabilityEditorDialogState
         expands: true,
         maxLines: null,
         textAlignVertical: TextAlignVertical.top,
-        style: const TextStyle(fontFamily: 'monospace'),
+        style: TextStyle(
+          fontFamily: 'monospace',
+          fontSize: AppType.caption,
+          color: scheme.onSurfaceVariant,
+        ),
         decoration: const InputDecoration(
           border: OutlineInputBorder(),
           hintText: '能力绑定的 JSON',
@@ -920,7 +939,12 @@ class _OnlineMusicCapabilityEditorDialogState
               ),
               Expanded(
                 child: Text(
-                  domainFieldLabel(field),
+                  domainFieldLabel(
+                    field,
+                    required: requiredFieldsFor(
+                      widget.capability,
+                    ).contains(field),
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -984,8 +1008,8 @@ OnlineMusicAuthKind _authKindOf(OnlineMusicAuthPlacement placement) =>
 
 /// 字段的界面标签：只影响展示，不参与任何映射。
 const _domainFieldLabels = <OnlineMusicDomainField, String>{
-  OnlineMusicDomainField.trackId: '曲目 ID（必填）',
-  OnlineMusicDomainField.title: '标题（必填）',
+  OnlineMusicDomainField.trackId: '曲目 ID',
+  OnlineMusicDomainField.title: '标题',
   OnlineMusicDomainField.artists: '艺术家',
   OnlineMusicDomainField.album: '专辑',
   OnlineMusicDomainField.coverUri: '封面地址',
@@ -1004,8 +1028,12 @@ const _domainFieldLabels = <OnlineMusicDomainField, String>{
   OnlineMusicDomainField.streamExpiresAt: '有效期',
 };
 
-String domainFieldLabel(OnlineMusicDomainField field) =>
-    _domainFieldLabels[field] ?? field.name;
+/// 字段的界面标签。「必填」标记由**该能力真实的校验集合**决定，
+/// 不在标签表里写死——同一个字段在不同能力下的必填性不同。
+String domainFieldLabel(OnlineMusicDomainField field, {bool required = false}) {
+  final base = _domainFieldLabels[field] ?? field.name;
+  return required ? '$base（必填）' : base;
+}
 
 /// 查询参数取值来源的界面标签。
 const _inputSourceLabels = <OnlineMusicInputSource, String>{
@@ -1188,6 +1216,7 @@ class _ResultArea extends StatelessWidget {
 }
 
 /// 能力配置表单滚动区的 key：供测试与辅助定位「表单」这一处滚动区。
+@visibleForTesting
 const capabilityFormKey = ValueKey<String>('onlineMusicCapabilityForm');
 
 /// 高基数枚举选择。
@@ -1225,7 +1254,9 @@ class _EnumMenuField<T> extends StatelessWidget {
       menuChildren: [
         for (final option in options)
           MenuItemButton(
-            onPressed: option == value ? null : () => onChanged(option),
+            // 当前项也要保持「可用态」：用禁用态会被读成"这一项不可用"。
+            // 选中当前项是幂等的，菜单会自动收起。
+            onPressed: () => onChanged(option),
             leadingIcon: Icon(
               option == value ? Symbols.check : Symbols.radio_button_unchecked,
               size: 18.0,

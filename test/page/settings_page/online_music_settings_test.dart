@@ -409,14 +409,41 @@ void main() {
     expect(field.expands, isTrue);
     expect(field.maxLines, isNull);
 
-    // 结果区高度受限：不会随内容增长而把表单挤没。
+    // 失败原因确实写进了结果区（可读、可复制）。
+    expect(field.controller!.text, isNotEmpty);
+    expect(field.controller!.text, contains('必填字段映射'));
+
+    // 结果区高度有界：落在设计区间内，不会随内容增长。
     final bounded = find.ancestor(of: result, matching: find.byType(SizedBox));
-    expect(tester.widget<SizedBox>(bounded.first).height, isNotNull);
+    final resultHeight = tester.widget<SizedBox>(bounded.first).height!;
+    expect(resultHeight, greaterThanOrEqualTo(72.0));
+    expect(resultHeight, lessThanOrEqualTo(168.0));
+
+    // 结果再长也不挤压表单：表单滚动区仍有实际高度。
+    expect(
+      tester.getSize(find.byKey(capabilityFormKey)).height,
+      greaterThan(0.0),
+    );
 
     // 底部操作栏在滚动区之外，始终可用。
     expect(find.text('保存'), findsOneWidget);
     expect(find.text('试跑'), findsOneWidget);
     expect(tester.getSize(find.text('保存')).height, greaterThan(0));
+
+    // 探测会写入逐候选的多行明细：内容更长时结论不变。
+    await tester.tap(find.text('探测该服务'));
+    await tester.pumpAndSettle();
+    final longDetail = tester
+        .widget<TextField>(readOnlyResultField())
+        .controller!
+        .text;
+    expect(longDetail, contains('·'));
+    expect(longDetail.split('\n').length, greaterThan(1));
+    expect(
+      tester.getSize(find.byKey(capabilityFormKey)).height,
+      greaterThan(0.0),
+    );
+    expect(find.text('保存'), findsOneWidget);
     controller.dispose();
   });
 
@@ -444,7 +471,10 @@ void main() {
       probeTransportFactory: (_) => _StubTransport(),
     );
     await pumpPanel(tester, controller);
+    // 明确指定缩放，避免沿用默认 dpr=3 把 520 物理像素变成 ~173 逻辑像素。
     tester.view.physicalSize = const Size(520, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
     await tester.pumpAndSettle();
     await openSearchEditor(tester);
     expect(tester.takeException(), isNull);
