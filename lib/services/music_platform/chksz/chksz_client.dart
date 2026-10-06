@@ -4,6 +4,7 @@ import 'package:pure_music/services/music_platform/chksz/chksz_credential_provid
 import 'package:pure_music/services/music_platform/chksz/chksz_error.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_quota.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_request.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
 
 typedef ChkszBusinessSuccess = bool Function(Map<String, dynamic> body);
 typedef ChkszDelay = Future<void> Function(Duration duration);
@@ -25,7 +26,7 @@ final class ChkszJsonResponse {
 final class ChkszClient {
   ChkszClient({
     required ChkszTransport transport,
-    required ChkszCredentialProvider credentialProvider,
+    ChkszCredentialProvider? credentialProvider,
     ChkszDelay? delay,
     ChkszClock? clock,
     ChkszQuotaUpdated? onQuotaUpdated,
@@ -36,7 +37,7 @@ final class ChkszClient {
        _onQuotaUpdated = onQuotaUpdated;
 
   final ChkszTransport _transport;
-  final ChkszCredentialProvider _credentialProvider;
+  final ChkszCredentialProvider? _credentialProvider;
   final ChkszDelay _delay;
   final ChkszClock _clock;
   final ChkszQuotaUpdated? _onQuotaUpdated;
@@ -44,18 +45,12 @@ final class ChkszClient {
   Future<ChkszJsonResponse> sendJson(
     ChkszRequest request, {
     required ChkszBusinessSuccess isBusinessSuccess,
+    OnlineMusicProviderAuth auth = const OnlineMusicApiKeyAuth(),
     ChkszCancelToken? cancelToken,
   }) async {
     final token = cancelToken ?? ChkszCancelToken();
     _throwIfCancelled(token);
-    final key = await _credentialProvider.readApiKey();
-    if (key == null || !isValidChkszApiKeyFormat(key)) {
-      throw const ChkszException(
-        kind: ChkszErrorKind.unauthorized,
-        safeMessage: '请先配置有效的 ChKSz API Key',
-      );
-    }
-    final authorized = request.authorize(key);
+    final authorized = await _authorize(request, auth);
 
     for (var attempt = 0; attempt < 2; attempt++) {
       _throwIfCancelled(token);
@@ -86,6 +81,26 @@ final class ChkszClient {
       );
     }
     throw StateError('Unreachable ChKSz retry state');
+  }
+
+  /// 按能力声明的认证要求准备请求：无凭据的 Provider 完全不触碰凭据来源。
+  Future<ChkszAuthorizedRequest> _authorize(
+    ChkszRequest request,
+    OnlineMusicProviderAuth auth,
+  ) async {
+    switch (auth) {
+      case OnlineMusicNoAuth():
+        return request.withoutCredentials();
+      case OnlineMusicApiKeyAuth(:final parameterName):
+        final key = await _credentialProvider?.readApiKey();
+        if (key == null || !isValidChkszApiKeyFormat(key)) {
+          throw const ChkszException(
+            kind: ChkszErrorKind.unauthorized,
+            safeMessage: '请先配置有效的 ChKSz API Key',
+          );
+        }
+        return request.authorize(key, parameterName: parameterName);
+    }
   }
 
   Future<ChkszTransportResponse> _send(

@@ -26,7 +26,7 @@ void main() {
 
     final stream = await resolver(
       _ref,
-      requestedQuality: NeteaseAdapter.defaultQuality,
+      requestedQuality: ChkszNeteaseCodec.defaultQuality,
       cancelToken: token,
     );
 

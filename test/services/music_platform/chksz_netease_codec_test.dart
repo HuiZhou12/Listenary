@@ -2,9 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
 
 void main() {
-  const adapter = NeteaseAdapter();
+  const adapter = ChkszNeteaseCodec();
 
-  group('NeteaseAdapter search request', () {
+  group('ChkszNeteaseCodec search request', () {
     test('builds the confirmed request without an API key', () {
       final request = adapter.createSearchRequest(
         keyword: 'Test Track',
@@ -38,7 +38,7 @@ void main() {
     });
   });
 
-  group('NeteaseAdapter search response', () {
+  group('ChkszNeteaseCodec search response', () {
     test('maps the confirmed response shape to a search page', () {
       final page = adapter.parseSearchResponse(
         const {
@@ -216,7 +216,7 @@ void main() {
     });
   });
 
-  group('NeteaseAdapter resolve request', () {
+  group('ChkszNeteaseCodec resolve request', () {
     test('builds the confirmed lossless request without an API key', () {
       final request = adapter.createResolveRequest(
         const PlatformTrackRef(
@@ -248,7 +248,7 @@ void main() {
     });
   });
 
-  group('NeteaseAdapter playlist request', () {
+  group('ChkszNeteaseCodec playlist request', () {
     test('builds the confirmed playlist request without an API key', () {
       final request = adapter.createPlaylistRequest('5202687076');
 
@@ -265,7 +265,7 @@ void main() {
     });
   });
 
-  group('NeteaseAdapter playlist response', () {
+  group('ChkszNeteaseCodec playlist response', () {
     test('maps the complete snapshot and conservative track fields', () {
       final playlist = adapter.parsePlaylistResponse(_playlistBody());
 
@@ -353,7 +353,7 @@ void main() {
     });
   });
 
-  group('NeteaseAdapter resolve response', () {
+  group('ChkszNeteaseCodec resolve response', () {
     const ref = PlatformTrackRef(
       platform: MusicPlatform.netease,
       trackId: '123456',
@@ -387,7 +387,7 @@ void main() {
         stream.uri,
         Uri.parse('https://media.invalid/test.flac?signature=TEST_ONLY'),
       );
-      expect(stream.requestedQuality, NeteaseAdapter.defaultQuality);
+      expect(stream.requestedQuality, ChkszNeteaseCodec.defaultQuality);
       expect(stream.coverUri, Uri.parse('https://cover.invalid/test.jpg'));
       expect(stream.toString(), isNot(contains('cover.invalid')));
       expect(stream.actualQuality, 'lossless');
@@ -467,7 +467,7 @@ void main() {
     });
   });
 
-  group('NeteaseAdapter lyric contract', () {
+  group('ChkszNeteaseCodec lyric contract', () {
     const ref = PlatformTrackRef(
       platform: MusicPlatform.netease,
       trackId: '123456',

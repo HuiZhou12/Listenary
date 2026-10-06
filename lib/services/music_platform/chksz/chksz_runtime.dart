@@ -1,4 +1,4 @@
-import 'package:pure_music/services/music_platform/adapters/netease_adapter.dart';
+import 'package:pure_music/services/music_platform/chksz/chksz_netease_codec.dart';
 import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_client.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider.dart';
@@ -8,18 +8,22 @@ import 'package:pure_music/services/music_platform/chksz/netease_stream_resolver
 import 'package:pure_music/services/music_platform/remote_stream_coordinator.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/chksz/music_catalog_service.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
 
 typedef ChkszTransportDispose = void Function();
 
 final class ChkszRuntime {
   ChkszRuntime({
-    required ChkszCredentialProvider credentialProvider,
+    ChkszCredentialProvider? credentialProvider,
     required ChkszTransport transport,
     ChkszTransportDispose? disposeTransport,
-    NeteaseAdapter neteaseAdapter = const NeteaseAdapter(),
+    ChkszNeteaseCodec neteaseAdapter = const ChkszNeteaseCodec(),
+    OnlineMusicAuthResolver authResolver = defaultOnlineMusicAuthResolver,
     RemoteStreamClock? clock,
   }) : _credentialProvider = credentialProvider,
-       _disposeTransport = disposeTransport {
+       _disposeTransport = disposeTransport,
+       _authResolver = authResolver {
     final client = ChkszClient(
       transport: transport,
       credentialProvider: credentialProvider,
@@ -28,16 +32,19 @@ final class ChkszRuntime {
     _catalogService = MusicCatalogService(
       client: client,
       neteaseAdapter: neteaseAdapter,
+      authResolver: authResolver,
     );
     _neteaseStreamResolver = NeteaseStreamResolver(
       client: client,
       adapter: neteaseAdapter,
+      authResolver: authResolver,
       clock: clock,
     );
   }
 
-  final ChkszCredentialProvider _credentialProvider;
+  final ChkszCredentialProvider? _credentialProvider;
   final ChkszTransportDispose? _disposeTransport;
+  final OnlineMusicAuthResolver _authResolver;
   final Set<ChkszCancelToken> _activeTokens = {};
   late final MusicCatalogService _catalogService;
   late final NeteaseStreamResolver _neteaseStreamResolver;
@@ -47,27 +54,48 @@ final class ChkszRuntime {
 
   ChkszQuotaSnapshot? get quota => _quota;
 
+  /// 该 Provider 是否绑定了凭据槽位；`false` 表示它不需要 API Key。
+  bool get hasCredentialSource => _credentialProvider != null;
+
+  OnlineMusicProviderAuth authFor(OnlineMusicCapability capability) =>
+      _authResolver(capability);
+
+  /// Provider 声明 `auth.kind = none` 时没有凭据来源，读取结果为「未配置」。
   Future<String?> readApiKey() {
     _throwIfDisposed();
-    return _credentialProvider.readApiKey();
+    return _credentialProvider?.readApiKey() ?? Future<String?>.value();
   }
 
   Future<void> writeApiKey(String apiKey) => _serializeCredentialOperation(
-    () => _replaceCredential(() => _credentialProvider.writeApiKey(apiKey)),
+    () => _replaceCredential(
+      () => _requireCredentialProvider().writeApiKey(apiKey),
+    ),
   );
 
   Future<void> clearApiKey() => _serializeCredentialOperation(
-    () => _replaceCredential(_credentialProvider.clearApiKey),
+    () => _replaceCredential(
+      () => _credentialProvider?.clearApiKey() ?? Future<void>.value(),
+    ),
   );
 
-  Future<MusicSearchPage> searchNetease({
+  ChkszCredentialProvider _requireCredentialProvider() {
+    final provider = _credentialProvider;
+    if (provider == null) {
+      throw const ChkszCredentialStorageException(
+        operation: ChkszCredentialStorageOperation.write,
+      );
+    }
+    return provider;
+  }
+
+  Future<MusicSearchPage> search({
     required String keyword,
     int limit = 30,
     int offset = 0,
     required ChkszCancelToken cancelToken,
   }) => _runRequest(
     cancelToken,
-    () => _catalogService.searchNetease(
+    () => _catalogService.search(
       keyword: keyword,
       limit: limit,
       offset: offset,
@@ -75,29 +103,26 @@ final class ChkszRuntime {
     ),
   );
 
-  Future<RemotePlaylist> fetchNeteasePlaylist({
+  Future<RemotePlaylist> fetchPlaylist({
     required String playlistId,
     required ChkszCancelToken cancelToken,
   }) => _runRequest(
     cancelToken,
-    () => _catalogService.fetchNeteasePlaylist(
+    () => _catalogService.fetchPlaylist(
       playlistId: playlistId,
       cancelToken: cancelToken,
     ),
   );
 
-  Future<MusicLyrics> fetchNeteaseLyrics({
+  Future<MusicLyrics> fetchLyrics({
     required PlatformTrackRef ref,
     required ChkszCancelToken cancelToken,
   }) => _runRequest(
     cancelToken,
-    () => _catalogService.fetchNeteaseLyrics(
-      ref: ref,
-      cancelToken: cancelToken,
-    ),
+    () => _catalogService.fetchLyrics(ref: ref, cancelToken: cancelToken),
   );
 
-  Future<ResolvedStream> resolveNetease(
+  Future<ResolvedStream> resolve(
     PlatformTrackRef ref, {
     required String requestedQuality,
     required ChkszCancelToken cancelToken,
@@ -110,7 +135,7 @@ final class ChkszRuntime {
     ),
   );
 
-  Future<ResolvedStream> resolveAndOpenNetease(
+  Future<ResolvedStream> resolveAndOpen(
     PlatformTrackRef ref, {
     required String requestedQuality,
     required PlaybackBackend backend,

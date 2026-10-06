@@ -70,6 +70,7 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/services/music_platform/index.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_settings_controller.dart';
 import 'package:pure_music/services/music_platform/online_library/online_history_controller.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:pure_music/services/music_platform/online_library/online_playlist_controller.dart';
@@ -117,11 +118,11 @@ class Entry extends StatefulWidget {
     super.key,
     required this.welcome,
     required this.onlineMusicService,
-    required this.onlineMusicCredentials,
+    required this.onlineMusicSettings,
   });
   final bool welcome;
   final OnlineMusicService onlineMusicService;
-  final OnlineMusicCredentialController onlineMusicCredentials;
+  final OnlineMusicProviderSettingsController onlineMusicSettings;
 
   @override
   State<Entry> createState() => _EntryState();
@@ -668,8 +669,8 @@ class _EntryState extends State<Entry>
                 Provider<OnlineMusicService>.value(
                   value: widget.onlineMusicService,
                 ),
-                Provider<OnlineMusicCredentialController>.value(
-                  value: widget.onlineMusicCredentials,
+                ChangeNotifierProvider<OnlineMusicProviderSettingsController>.value(
+                  value: widget.onlineMusicSettings,
                 ),
                 ChangeNotifierProvider<ActivePlaybackSession>.value(
                   value: _activePlaybackSessionComposition.activeSession,

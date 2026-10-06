@@ -10,6 +10,7 @@ import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 import 'package:path/path.dart' as path;
 
 class PagePreference {
@@ -677,6 +678,32 @@ class AppPreference {
   String? lastSeenUpdateTag;
   List<String> updateCheckUrls = List.of(defaultUpdateCheckUrls);
 
+  /// 在线音乐 Provider 与能力映射配置；缺失或非法时回落默认 Provider。
+  ///
+  /// 只有用户在设置页改过它（[setOnlineMusicSettings]）时 `save()` 才会写回；
+  /// 从未用过界面的用户其手写原文通过 `_rawPrefMap` 原样保留。
+  OnlineMusicSettings onlineMusicSettings = OnlineMusicSettings.defaults;
+  bool _onlineMusicSettingsDirty = false;
+
+  /// 由设置页调用：标记该键需要在下次 `save()` 时写回。
+  void setOnlineMusicSettings(OnlineMusicSettings value) {
+    onlineMusicSettings = value;
+    _onlineMusicSettingsDirty = true;
+  }
+
+  /// 该键是否有尚未落盘的改动。
+  bool get onlineMusicSettingsDirty => _onlineMusicSettingsDirty;
+
+  /// 落盘失败时把内存状态恢复为改动前：值与脏标记一起还原，
+  /// 避免之后任何无关的 `save()` 把「界面已回滚」的配置偷偷写盘。
+  void restoreOnlineMusicSettings(
+    OnlineMusicSettings value, {
+    required bool dirty,
+  }) {
+    onlineMusicSettings = value;
+    _onlineMusicSettingsDirty = dirty;
+  }
+
   /// 用户手动添加的文件夹路径列表（不包括自动发现的子文件夹）
   List<String> userFolders = [];
 
@@ -787,6 +814,48 @@ class AppPreference {
       prefMap['excludedFolderPaths'],
     );
     folderAliases = _folderAliasesFromStoredValue(prefMap['folderAliases']);
+    onlineMusicSettings = OnlineMusicSettings.fromJson(prefMap['onlineMusic']);
+    _onlineMusicSettingsDirty = false;
+  }
+
+  /// 组装要写盘的偏好结构；`save()` 用它，单测直接检查它，
+  /// 从而在不接触用户数据目录的前提下验证「脏了才写 `onlineMusic`」。
+  Map<String, dynamic> buildPreferenceMap() {
+    final prefMap = _rawPrefMap != null
+        ? Map<String, dynamic>.from(_rawPrefMap!)
+        : <String, dynamic>{};
+    prefMap['version'] = AppSettings.version;
+    if (_onlineMusicSettingsDirty) {
+      prefMap['onlineMusic'] = onlineMusicSettings.toJson();
+    }
+    prefMap.addAll({
+      'audiosPagePref': audiosPagePref.toMap(),
+      'artistsPagePref': artistsPagePref.toMap(),
+      'artistDetailPagePref': artistDetailPagePref.toMap(),
+      'albumsPagePref': albumsPagePref.toMap(),
+      'albumDetailPagePref': albumDetailPagePref.toMap(),
+      'foldersPagePref': foldersPagePref.toMap(),
+      'folderDetailPagePref': folderDetailPagePref.toMap(),
+      'playlistsPagePref': playlistsPagePref.toMap(),
+      'playlistDetailPagePref': playlistDetailPagePref.toMap(),
+      'onlinePlaylistDetailPagePref': onlinePlaylistDetailPagePref.toMap(),
+      'personalPlaylistDetailPagePref': personalPlaylistDetailPagePref.toMap(),
+      'startPage': startPage,
+      'sidebarExpanded': sidebarExpanded,
+      'playbackPref': playbackPref.toMap(),
+      'nowPlayingPagePref': nowPlayingPagePref.toMap(),
+      'customCpFeedbackKey': customCpFeedbackKey,
+      'updateRepoSlug': updateRepoSlug,
+      'defaultQuality': defaultQuality,
+      'autoCheckUpdate': autoCheckUpdate,
+      'lastUpdateCheckTime': lastUpdateCheckTime,
+      'lastSeenUpdateTag': lastSeenUpdateTag,
+      'updateCheckUrls': updateCheckUrls,
+      'userFolders': userFolders,
+      'excludedFolderPaths': excludedFolderPaths,
+      'folderAliases': folderAliases,
+    });
+    return prefMap;
   }
 
   Future<bool> save() async {
@@ -797,41 +866,13 @@ class AppPreference {
         'app_preference.json',
       );
 
-      final prefMap = _rawPrefMap != null
-          ? Map<String, dynamic>.from(_rawPrefMap!)
-          : <String, dynamic>{};
-      prefMap['version'] = AppSettings.version;
-      prefMap.addAll({
-        'audiosPagePref': audiosPagePref.toMap(),
-        'artistsPagePref': artistsPagePref.toMap(),
-        'artistDetailPagePref': artistDetailPagePref.toMap(),
-        'albumsPagePref': albumsPagePref.toMap(),
-        'albumDetailPagePref': albumDetailPagePref.toMap(),
-        'foldersPagePref': foldersPagePref.toMap(),
-        'folderDetailPagePref': folderDetailPagePref.toMap(),
-        'playlistsPagePref': playlistsPagePref.toMap(),
-        'playlistDetailPagePref': playlistDetailPagePref.toMap(),
-        'onlinePlaylistDetailPagePref': onlinePlaylistDetailPagePref.toMap(),
-        'personalPlaylistDetailPagePref': personalPlaylistDetailPagePref
-            .toMap(),
-        'startPage': startPage,
-        'sidebarExpanded': sidebarExpanded,
-        'playbackPref': playbackPref.toMap(),
-        'nowPlayingPagePref': nowPlayingPagePref.toMap(),
-        'customCpFeedbackKey': customCpFeedbackKey,
-        'updateRepoSlug': updateRepoSlug,
-        'defaultQuality': defaultQuality,
-        'autoCheckUpdate': autoCheckUpdate,
-        'lastUpdateCheckTime': lastUpdateCheckTime,
-        'lastSeenUpdateTag': lastSeenUpdateTag,
-        'updateCheckUrls': updateCheckUrls,
-        'userFolders': userFolders,
-        'excludedFolderPaths': excludedFolderPaths,
-        'folderAliases': folderAliases,
-      });
-
+      final prefMap = buildPreferenceMap();
       final prefJson = json.encode(prefMap);
       await writeTextFileAtomically(appPreferencePath, prefJson);
+      // 写盘成功：原始映射跟进到刚落盘的内容，脏标记随之清除。
+      // 两者必须一起更新——只清脏标记会让下次 save() 把 onlineMusic 还原成旧原文。
+      _rawPrefMap = prefMap;
+      _onlineMusicSettingsDirty = false;
       return true;
     } catch (err, trace) {
       logger.e(err, stackTrace: trace);

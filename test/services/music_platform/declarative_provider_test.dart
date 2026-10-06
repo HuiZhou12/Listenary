@@ -1,0 +1,363 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:pure_music/services/music_platform/chksz/index.dart';
+import 'package:pure_music/services/music_platform/online_music_composition.dart';
+
+JsonPath _p(String source) => JsonPath.tryParse(source)!;
+
+Map<String, Object?> _searchBindingJson({
+  String path = '/search',
+  String keywordParam = 'keywords',
+  String listPath = 'result.songs',
+  String titlePath = 'name',
+}) => OnlineMusicDeclarativeCapabilityBinding(
+  request: OnlineMusicRequestSpec(
+    path: path,
+    query: [
+      OnlineMusicParamBinding(
+        name: keywordParam,
+        source: OnlineMusicInputSource.keyword,
+        required: true,
+      ),
+      const OnlineMusicParamBinding(
+        name: 'limit',
+        source: OnlineMusicInputSource.limit,
+        defaultValue: 30,
+      ),
+    ],
+  ),
+  response: OnlineMusicResponseSpec(
+    listPath: _p(listPath),
+    fields: {
+      OnlineMusicDomainField.trackId: OnlineMusicFieldSpec(
+        candidates: [_p('id')],
+        transform: OnlineMusicFieldTransform.asInt,
+        required: true,
+      ),
+      OnlineMusicDomainField.title: OnlineMusicFieldSpec(
+        candidates: [_p(titlePath)],
+        transform: OnlineMusicFieldTransform.asString,
+        required: true,
+      ),
+      OnlineMusicDomainField.artists: OnlineMusicFieldSpec(
+        candidates: [_p('artists[*].name')],
+        transform: OnlineMusicFieldTransform.asStringList,
+      ),
+    },
+  ),
+).toJson();
+
+Map<String, Object?> _streamBindingJson() => {
+  'kind': 'http',
+  'request': const OnlineMusicRequestSpec(
+    path: '/song/url',
+    query: [
+      OnlineMusicParamBinding(
+        name: 'id',
+        source: OnlineMusicInputSource.trackId,
+        required: true,
+      ),
+    ],
+    auth: OnlineMusicQueryAuthPlacement(parameterName: 'key'),
+  ).toJson(),
+  'response': OnlineMusicResponseSpec(
+    success: OnlineMusicSuccessSpec(
+      allOf: [
+        OnlineMusicSuccessPredicate(
+          path: _p('code'),
+          op: OnlineMusicPredicateOp.eq,
+          value: 0,
+        ),
+      ],
+    ),
+    fieldsRootPath: _p('data'),
+    fields: {
+      OnlineMusicDomainField.streamUrl: OnlineMusicFieldSpec(
+        candidates: [_p('url')],
+        transform: OnlineMusicFieldTransform.asUri,
+        required: true,
+      ),
+      OnlineMusicDomainField.streamBitrate: OnlineMusicFieldSpec(
+        candidates: [_p('br')],
+        transform: OnlineMusicFieldTransform.asInt,
+      ),
+    },
+  ).toJson(),
+};
+
+/// 一份「自建服务」配置：数据来自声明式 Search，播放走声明式 Stream，
+/// Playlist / Lyric 明确不支持。
+OnlineMusicSettings _selfHostedSettings() => OnlineMusicSettings.fromJson({
+  'providers': [
+    {
+      'id': 'selfData',
+      'baseUrl': 'https://self.invalid',
+      'auth': {'kind': 'apiKey', 'reference': 'PureMusic/Self/APIKey'},
+      'capabilities': {
+        'search': _searchBindingJson(),
+        'stream': _streamBindingJson(),
+      },
+    },
+  ],
+  'defaultProvider': 'selfData',
+});
+
+void main() {
+  late _RecordingAdapter adapter;
+  late ChkszCredentialAccess access;
+
+  setUp(() {
+    adapter = _RecordingAdapter();
+    access = ChkszCredentialAccess(portableBuild: true);
+  });
+
+  Future<OnlineMusicComposition> compose(
+    OnlineMusicSettings settings, {
+    _Responder? responder,
+  }) async {
+    adapter.responder = responder ?? _defaultResponder;
+    return createOnlineMusicComposition(
+      settings: settings,
+      portableBuild: true,
+      credentialAccess: access,
+      dioFactory: (_) =>
+          Dio(BaseOptions(baseUrl: 'https://self.invalid'))
+            ..httpClientAdapter = adapter,
+    );
+  }
+
+  test('a declarative search really issues the configured request', () async {
+    final composition = await compose(_selfHostedSettings());
+    addTearDown(composition.service.dispose);
+
+    final page = await composition.service.search(
+      platform: MusicPlatform.netease,
+      keyword: '海阔天空',
+      limit: 5,
+      cancelToken: OnlineMusicCancelToken(),
+    );
+
+    final sent = adapter.requests.single;
+    expect(sent.method, 'GET');
+    expect(sent.path, '/search');
+    expect(sent.queryParameters, {'keywords': '海阔天空', 'limit': '5'});
+
+    expect(page.items, hasLength(1));
+    final track = page.items.single;
+    expect(track.ref.trackId, '347230');
+    expect(track.title, '海阔天空');
+    expect(track.artists, ['Beyond']);
+  });
+
+  test('a declarative stream injects the provider credential', () async {
+    await access.save('PureMusic/Self/APIKey', 'self_KEY_TEST_ONLY');
+    final composition = await compose(_selfHostedSettings());
+    addTearDown(composition.service.dispose);
+
+    const ref = PlatformTrackRef(
+      platform: MusicPlatform.netease,
+      trackId: '347230',
+    );
+    final stream = await composition.service.resolve(
+      ref,
+      requestedQuality: 'lossless',
+      cancelToken: OnlineMusicCancelToken(),
+    );
+
+    final sent = adapter.requests.single;
+    expect(sent.path, '/song/url');
+    expect(sent.queryParameters['id'], '347230');
+    expect(sent.queryParameters['key'], 'self_KEY_TEST_ONLY');
+    expect(stream.uri, Uri.parse('https://media.invalid/song.flac'));
+    expect(stream.bitrate, 320000);
+  });
+
+  test('a capability without a binding is unavailable, not faked', () async {
+    final composition = await compose(_selfHostedSettings());
+    addTearDown(composition.service.dispose);
+
+    expect(composition.service.capabilities.playlistPlatforms, isEmpty);
+    expect(composition.service.capabilities.lyricPlatforms, isEmpty);
+    expect(composition.service.capabilities.searchablePlatforms, {
+      MusicPlatform.netease,
+    });
+
+    await expectLater(
+      composition.service.fetchPlaylist(
+        platform: MusicPlatform.netease,
+        playlistId: '1',
+        cancelToken: OnlineMusicCancelToken(),
+      ),
+      throwsA(
+        isA<OnlineMusicException>().having(
+          (error) => error.kind,
+          'kind',
+          OnlineMusicErrorKind.unavailable,
+        ),
+      ),
+    );
+  });
+
+  test('a declarative capability that needs a key reports notConfigured', () async {
+    final composition = await compose(_selfHostedSettings());
+    addTearDown(composition.service.dispose);
+
+    await expectLater(
+      composition.service.resolve(
+        const PlatformTrackRef(
+          platform: MusicPlatform.netease,
+          trackId: '347230',
+        ),
+        requestedQuality: 'lossless',
+        cancelToken: OnlineMusicCancelToken(),
+      ),
+      throwsA(
+        isA<OnlineMusicException>().having(
+          (error) => error.kind,
+          'kind',
+          OnlineMusicErrorKind.notConfigured,
+        ),
+      ),
+    );
+    expect(adapter.requests, isEmpty, reason: '不应在缺凭据时发出请求');
+  });
+
+  test('a business-level failure is reported, not mapped as success', () async {
+    final settings = OnlineMusicSettings.fromJson({
+      'providers': [
+        {
+          'id': 'selfData',
+          'baseUrl': 'https://self.invalid',
+          'capabilities': {'stream': _streamBindingJson()},
+        },
+      ],
+    });
+    final composition = await compose(
+      settings,
+      responder: (options) async => <String, Object?>{'code': 5, 'data': <String, Object?>{}},
+    );
+    addTearDown(composition.service.dispose);
+
+    await expectLater(
+      composition.service.resolve(
+        const PlatformTrackRef(
+          platform: MusicPlatform.netease,
+          trackId: '1',
+        ),
+        requestedQuality: 'lossless',
+        cancelToken: OnlineMusicCancelToken(),
+      ),
+      throwsA(isA<OnlineMusicException>()),
+    );
+  });
+
+  test('an HTTP failure maps to the matching error kind', () async {
+    final composition = await compose(
+      _selfHostedSettings(),
+      responder: (options) async => <String, Object?>{'message': 'nope'},
+    );
+    adapter.failWithStatus = 404;
+    addTearDown(composition.service.dispose);
+
+    await expectLater(
+      composition.service.search(
+        platform: MusicPlatform.netease,
+        keyword: 'x',
+        cancelToken: OnlineMusicCancelToken(),
+      ),
+      throwsA(
+        isA<OnlineMusicException>().having(
+          (error) => error.kind,
+          'kind',
+          OnlineMusicErrorKind.notFound,
+        ),
+      ),
+    );
+  });
+
+  test('legacy ChkSz entries keep working through the builtin path', () async {
+    final composition = await compose(
+      OnlineMusicSettings.fromJson({
+        'providers': [
+          {'id': 'chksz', 'protocol': 'chksz'},
+        ],
+      }),
+    );
+    addTearDown(composition.service.dispose);
+
+    expect(composition.service.capabilities.searchablePlatforms, {
+      MusicPlatform.netease,
+    });
+    expect(
+      composition.credentialControllers.keys,
+      [defaultOnlineMusicProviderId],
+    );
+  });
+
+  test('declarative entries still expose a credential entry for the UI', () async {
+    final composition = await compose(_selfHostedSettings());
+    addTearDown(composition.service.dispose);
+
+    final controller = composition.credentialControllers['selfData']!;
+    expect(await controller.isConfigured(), isFalse);
+    await controller.saveCredential('self_SETTINGS_TEST_ONLY');
+    expect(await controller.isConfigured(), isTrue);
+    await controller.clearCredential();
+    expect(await controller.isConfigured(), isFalse);
+  });
+}
+
+Future<Map<String, Object?>> _defaultResponder(RequestOptions options) async {
+  if (options.path == '/search') {
+    return const {
+      'result': {
+        'songs': [
+          {
+            'id': 347230,
+            'name': '海阔天空',
+            'artists': [
+              {'id': 11127, 'name': 'Beyond'},
+            ],
+            'duration': 239560,
+          },
+        ],
+      },
+    };
+  }
+  return const {
+    'code': 0,
+    'data': {'url': 'https://media.invalid/song.flac', 'br': 320000},
+  };
+}
+
+typedef _Responder = Future<Map<String, Object?>> Function(RequestOptions options);
+
+final class _RecordingAdapter implements HttpClientAdapter {
+  final List<RequestOptions> requests = [];
+  _Responder responder = _defaultResponder;
+  int? failWithStatus;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    requests.add(options);
+    final body = await responder(options);
+    final status = failWithStatus ?? 200;
+    return ResponseBody.fromString(
+      jsonEncode(body),
+      status,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}

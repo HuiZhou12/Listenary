@@ -1,0 +1,673 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:pure_music/page/settings_page/online_music_capability_editor.dart';
+import 'package:pure_music/page/settings_page/online_music_settings.dart';
+import 'package:pure_music/services/music_platform/chksz/index.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
+
+const _apiKey = 'chksz_SETTINGS_TEST_ONLY';
+
+void main() {
+  Future<void> pumpPanel(
+    WidgetTester tester,
+    OnlineMusicProviderSettingsController controller, {
+    bool active = true,
+  }) async {
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body:
+              ChangeNotifierProvider<
+                OnlineMusicProviderSettingsController
+              >.value(
+                value: controller,
+                child: OnlineMusicSettingsPanel(active: active),
+              ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('renders the confirmed default configuration', (tester) async {
+    final controller = _controller();
+
+    await pumpPanel(tester, controller);
+
+    expect(find.text('服务提供商'), findsOneWidget);
+    expect(find.text('$defaultOnlineMusicProviderId · 默认'), findsOneWidget);
+    expect(find.text('修改将在下次启动时生效'), findsNothing);
+    expect(find.text('添加提供商'), findsOneWidget);
+    expect(find.text('能力分配'), findsOneWidget);
+    for (final label in ['搜索', '歌曲列表', '歌词', '播放解析']) {
+      expect(find.text(label), findsOneWidget);
+    }
+    expect(find.text('默认提供商'), findsWidgets);
+    expect(find.text('播放音质'), findsOneWidget);
+    expect(find.text('默认音质'), findsOneWidget);
+    // 只有一个条目时不提供删除。
+    expect(find.byTooltip('删除'), findsNothing);
+    controller.dispose();
+  });
+
+  testWidgets('warns that changes need a restart', (tester) async {
+    final controller = _controller(
+      configured: OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'selfData',
+            'auth': {'kind': 'none'},
+          },
+        ],
+      }),
+    );
+
+    await pumpPanel(tester, controller);
+
+    expect(find.text('修改将在下次启动时生效'), findsOneWidget);
+    expect(find.text('selfData · 默认'), findsOneWidget);
+    expect(find.textContaining('不需要 API Key'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('adding a provider validates the id and the service address', (
+    tester,
+  ) async {
+    final controller = _controller();
+    await pumpPanel(tester, controller);
+
+    await tester.tap(find.text('添加'));
+    await tester.pumpAndSettle();
+
+    // 空标识 + 非法地址：内联报错且对话框不关闭。
+    await tester.enterText(find.byType(TextField).at(0), '');
+    await tester.enterText(find.byType(TextField).at(1), 'ftp://invalid');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(find.text('请填写标识'), findsOneWidget);
+    expect(find.text('服务地址必须以 http:// 或 https:// 开头'), findsOneWidget);
+
+    // 与既有条目重名也要被拒绝。
+    await tester.enterText(
+      find.byType(TextField).at(0),
+      defaultOnlineMusicProviderId,
+    );
+    await tester.enterText(find.byType(TextField).at(1), 'http://127.0.0.1:9');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(find.text('该标识已被占用'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).at(0), 'selfData');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(controller.settings.providers.map((provider) => provider.id), [
+      defaultOnlineMusicProviderId,
+      'selfData',
+    ]);
+    expect(find.text('selfData'), findsWidgets);
+    expect(find.byTooltip('删除'), findsWidgets);
+    controller.dispose();
+  });
+
+  testWidgets('deleting a provider falls back to the remaining entry', (
+    tester,
+  ) async {
+    final controller = _controller(
+      configured: OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'a',
+            'auth': {'kind': 'none'},
+          },
+          {
+            'id': 'b',
+            'auth': {'kind': 'none'},
+          },
+        ],
+        'defaultProvider': 'b',
+        'capabilities': {'stream': 'b'},
+      }),
+    );
+    await pumpPanel(tester, controller);
+
+    expect(find.byTooltip('删除'), findsNWidgets(2));
+    await tester.tap(find.byTooltip('删除').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除').last);
+    await tester.pumpAndSettle();
+
+    expect(controller.settings.providers.single.id, 'a');
+    expect(controller.settings.defaultProviderId, 'a');
+    expect(
+      controller.settings.resolvedProviderIdFor(OnlineMusicCapability.stream),
+      'a',
+    );
+    controller.dispose();
+  });
+
+  testWidgets('configures a per-entry API key', (tester) async {
+    final credentials = _FakeCredentialAccess();
+    final controller = _controller(credentials: credentials);
+    await pumpPanel(tester, controller);
+
+    expect(find.textContaining('需要 API Key · 未配置'), findsOneWidget);
+    await tester.tap(find.text('配置'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), _apiKey);
+    // 按钮的可用性由输入内容决定，因此需要一次重建后再点击。
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(credentials.saved, {
+      OnlineMusicProviderDefinition.defaultCredentialReference: _apiKey,
+    });
+    expect(find.textContaining('需要 API Key · 已配置'), findsOneWidget);
+    expect(find.byTooltip('清除 API Key'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('editing a provider validates the service address', (
+    tester,
+  ) async {
+    final controller = _controller();
+    await pumpPanel(tester, controller);
+
+    await tester.tap(find.byTooltip('编辑'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('编辑提供商'), findsOneWidget);
+    // 标识创建后不可改。
+    expect(
+      tester.widget<TextField>(find.byType(TextField).at(0)).enabled,
+      isFalse,
+    );
+
+    await tester.enterText(find.byType(TextField).at(1), '');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(find.text('请填写服务地址'), findsOneWidget);
+
+    await tester.enterText(
+      find.byType(TextField).at(1),
+      'http://127.0.0.1:9999',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(
+      controller.settings.providers.single.baseUrl,
+      'http://127.0.0.1:9999',
+    );
+    expect(find.textContaining('http://127.0.0.1:9999'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('clears a configured per-entry API key', (tester) async {
+    final credentials = _FakeCredentialAccess();
+    credentials.saved[OnlineMusicProviderDefinition
+            .defaultCredentialReference] =
+        _apiKey;
+    final controller = _controller(credentials: credentials);
+    await pumpPanel(tester, controller);
+
+    expect(find.textContaining('需要 API Key · 已配置'), findsOneWidget);
+    await tester.tap(find.byTooltip('清除 API Key'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('清除'));
+    await tester.pumpAndSettle();
+
+    expect(credentials.saved, isEmpty);
+    expect(find.textContaining('需要 API Key · 未配置'), findsOneWidget);
+    expect(find.byTooltip('清除 API Key'), findsNothing);
+    controller.dispose();
+  });
+
+  testWidgets('configures two entries independently', (tester) async {
+    final credentials = _FakeCredentialAccess();
+    final controller = _controller(credentials: credentials);
+    await pumpPanel(tester, controller);
+
+    await controller.addProvider(
+      OnlineMusicProviderDefinition.custom(
+        id: 'selfData',
+        baseUrl: 'https://self.invalid',
+        requiresCredential: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('配置'), findsNWidgets(2));
+    await tester.tap(find.text('配置').at(1));
+    await tester.pumpAndSettle();
+    // 对话框标题能看出正在配置哪个条目。
+    expect(find.textContaining('配置 selfData 的'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'chksz_SECOND_TEST_ONLY');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(credentials.saved, {
+      deriveOnlineMusicCredentialReference('selfData'):
+          'chksz_SECOND_TEST_ONLY',
+    });
+    controller.dispose();
+  });
+
+  testWidgets(
+    'opens the capability list and fills the ChkSz-compatible template',
+    (tester) async {
+      final controller = _controller();
+      await pumpPanel(tester, controller);
+
+      await tester.tap(find.byTooltip('能力配置'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('能力配置 · '), findsOneWidget);
+      for (final label in ['搜索', '歌曲列表', '歌词', '播放解析']) {
+        expect(find.text(label), findsWidgets);
+      }
+      // 第二阶段的两个能力不可配置。
+      expect(find.text('第二阶段'), findsNWidgets(2));
+
+      await tester.tap(find.text('一键按 ChkSz 兼容方式填充'));
+      await tester.pumpAndSettle();
+
+      final definition = controller.settings.providers.single;
+      for (final capability in OnlineMusicCapability.values) {
+        expect(
+          definition.bindingFor(capability),
+          isA<OnlineMusicBuiltinCapabilityBinding>(),
+        );
+      }
+      controller.dispose();
+    },
+  );
+
+  testWidgets('the capability editor validates before saving', (tester) async {
+    final controller = _controller();
+    await pumpPanel(tester, controller);
+
+    await tester.tap(find.byTooltip('能力配置'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .descendant(of: find.byType(AlertDialog), matching: find.text('配置'))
+          .first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('请求'), findsOneWidget);
+    expect(find.text('响应'), findsOneWidget);
+    expect(find.text('探测该服务'), findsOneWidget);
+
+    // 清空请求路径后保存：结果区给出明确报错，且对话框不关闭。
+    await tester.enterText(
+      find
+          .ancestor(
+            of: find.text('请求路径（相对 baseUrl，可用 {trackId}）'),
+            matching: find.byType(TextField),
+          )
+          .first,
+      '',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('请求路径不能为空'), findsOneWidget);
+    expect(find.text('请求'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('the capability editor can probe and test', (tester) async {
+    final transport = _StubTransport();
+    final controller = _controller(probeTransportFactory: (_) => transport);
+    await pumpPanel(tester, controller);
+
+    await tester.tap(find.byTooltip('能力配置'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .descendant(of: find.byType(AlertDialog), matching: find.text('配置'))
+          .first,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('试跑'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('试跑'), findsWidgets);
+
+    await tester.tap(find.text('探测该服务'));
+    await tester.pumpAndSettle();
+    expect(transport.probeCalls, greaterThan(0));
+    controller.dispose();
+  });
+
+  // ---------------------------------------------------------------- UI polish
+
+  Finder searchPathField() => find
+      .ancestor(
+        of: find.text('请求路径（相对 baseUrl，可用 {trackId}）'),
+        matching: find.byType(TextField),
+      )
+      .first;
+
+  Finder readOnlyResultField() => find.byWidgetPredicate(
+    (widget) => widget is TextField && widget.readOnly,
+  );
+
+  Widget wrapPanel(
+    OnlineMusicProviderSettingsController controller, {
+    bool active = true,
+  }) => MaterialApp(
+    theme: ThemeData(useMaterial3: true),
+    home: Scaffold(
+      body: ChangeNotifierProvider<OnlineMusicProviderSettingsController>.value(
+        value: controller,
+        child: OnlineMusicSettingsPanel(active: active),
+      ),
+    ),
+  );
+
+  Future<void> openSearchEditor(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('能力配置'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .descendant(of: find.byType(AlertDialog), matching: find.text('配置'))
+          .first,
+    );
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('试跑结果放在限高可滚动的只读区域里，操作栏不受影响', (tester) async {
+    final controller = _controller(
+      probeTransportFactory: (_) => _StubTransport(),
+    );
+    await pumpPanel(tester, controller);
+    await openSearchEditor(tester);
+
+    await tester.tap(find.text('试跑'));
+    await tester.pumpAndSettle();
+
+    // 结果不是铺开的裸文本，而是只读、可展开滚动的文本框。
+    final result = readOnlyResultField();
+    expect(result, findsOneWidget);
+    final field = tester.widget<TextField>(result);
+    expect(field.expands, isTrue);
+    expect(field.maxLines, isNull);
+
+    // 失败原因确实写进了结果区（可读、可复制）。
+    expect(field.controller!.text, isNotEmpty);
+    expect(field.controller!.text, contains('必填字段映射'));
+
+    // 结果区高度有界：落在设计区间内，不会随内容增长。
+    final bounded = find.ancestor(of: result, matching: find.byType(SizedBox));
+    final resultHeight = tester.widget<SizedBox>(bounded.first).height!;
+    expect(resultHeight, greaterThanOrEqualTo(72.0));
+    expect(resultHeight, lessThanOrEqualTo(168.0));
+
+    // 结果再长也不挤压表单：表单滚动区仍有实际高度。
+    expect(
+      tester.getSize(find.byKey(capabilityFormKey)).height,
+      greaterThan(0.0),
+    );
+
+    // 底部操作栏在滚动区之外，始终可用。
+    expect(find.text('保存'), findsOneWidget);
+    expect(find.text('试跑'), findsOneWidget);
+    expect(tester.getSize(find.text('保存')).height, greaterThan(0));
+
+    // 探测会写入逐候选的多行明细：内容更长时结论不变。
+    await tester.tap(find.text('探测该服务'));
+    await tester.pumpAndSettle();
+    final longDetail = tester
+        .widget<TextField>(readOnlyResultField())
+        .controller!
+        .text;
+    expect(longDetail, contains('·'));
+    expect(longDetail.split('\n').length, greaterThan(1));
+    expect(
+      tester.getSize(find.byKey(capabilityFormKey)).height,
+      greaterThan(0.0),
+    );
+    expect(find.text('保存'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('配置不完整时明确失败，且原因可读', (tester) async {
+    final controller = _controller(
+      probeTransportFactory: (_) => _StubTransport(),
+    );
+    await pumpPanel(tester, controller);
+    await openSearchEditor(tester);
+
+    await tester.enterText(searchPathField(), '');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('试跑'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('无法试跑'), findsOneWidget);
+    expect(find.textContaining('请求路径不能为空'), findsOneWidget);
+    // 明确失败而不是静默通过：对话框仍在。
+    expect(find.text('保存'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('窄窗口没有横向溢出，且枚举选项全部可达', (tester) async {
+    final controller = _controller(
+      probeTransportFactory: (_) => _StubTransport(),
+    );
+    await pumpPanel(tester, controller);
+    // 明确指定缩放，避免沿用默认 dpr=3 把 520 物理像素变成 ~173 逻辑像素。
+    tester.view.physicalSize = const Size(520, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpAndSettle();
+    await openSearchEditor(tester);
+    expect(tester.takeException(), isNull);
+
+    // 表单是惰性列表：窗口窄时下方控件还没构建，需要先滚到可见。
+    final formScrollable = find
+        .descendant(
+          of: find.byKey(capabilityFormKey),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      find.text('加查询参数'),
+      120.0,
+      scrollable: formScrollable,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('加查询参数'));
+    await tester.pumpAndSettle();
+
+    // 取值来源改成菜单：不需要横向滚动就能看到当前值，且 8 个选项一次可及。
+    await tester.scrollUntilVisible(
+      find.text('取值来源'),
+      120.0,
+      scrollable: formScrollable,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .ancestor(
+            of: find.text('取值来源'),
+            matching: find.byType(GestureDetector),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+    for (final label in [
+      '搜索关键词',
+      '每页数量',
+      '偏移量',
+      '页码',
+      '游标',
+      '曲目 ID',
+      '歌单 ID',
+      '音质',
+    ]) {
+      // 当前取值会在按钮上再显示一次，因此这里只要求「存在且可达」。
+      expect(find.text(label), findsWidgets);
+    }
+    expect(tester.takeException(), isNull);
+    controller.dispose();
+  });
+
+  testWidgets('凭据读取在后台静默完成，不插入任何加载行', (tester) async {
+    final credentials = _FakeCredentialAccess()..gate = Completer<void>();
+    final controller = _controller(credentials: credentials);
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(wrapPanel(controller));
+    await tester.pump();
+
+    // 读取尚未完成：页面里既没有进度条，也没有任何"读取中"文案占位。
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.textContaining('读取中'), findsNothing);
+    expect(find.textContaining('正在读取'), findsNothing);
+    final loadingDy = tester.getTopLeft(find.text('添加提供商')).dy;
+
+    credentials.gate!.complete();
+    await tester.pump();
+    await tester.pump();
+
+    // 读取完成后页面结构没有任何变化（也就没有位移）；
+    // 只有行内副标题从"需要 API Key"补上真实状态。
+    expect(tester.getTopLeft(find.text('添加提供商')).dy, loadingDy);
+    expect(find.textContaining('需要 API Key · 未配置'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('凭据读取失败时才出现提示与重试', (tester) async {
+    final credentials = _FakeCredentialAccess()..failReads = true;
+    final controller = _controller(credentials: credentials);
+
+    await pumpPanel(tester, controller);
+
+    expect(find.text('无法读取在线音乐配置'), findsOneWidget);
+    expect(find.byTooltip('重试'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('JSON 视图带缩进，能看出层次', (tester) async {
+    final controller = _controller(
+      probeTransportFactory: (_) => _StubTransport(),
+    );
+    await pumpPanel(tester, controller);
+    await openSearchEditor(tester);
+
+    await tester.tap(find.text('JSON'));
+    await tester.pumpAndSettle();
+
+    final jsonField = find.byWidgetPredicate(
+      (widget) => widget is TextField && !widget.readOnly,
+    );
+    final text = tester.widget<TextField>(jsonField).controller!.text;
+    expect(text, contains('\n'));
+    expect(text, contains('"request"'));
+    expect(text, contains('  '));
+    controller.dispose();
+  });
+}
+
+final class _StubTransport implements DeclarativeHttpTransport {
+  int probeCalls = 0;
+
+  @override
+  Future<DeclarativeHttpResponse> send(
+    BuiltDeclarativeRequest request, {
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    probeCalls++;
+    return const DeclarativeHttpResponse(
+      statusCode: 200,
+      data: {
+        'result': {
+          'songs': [
+            {'id': 1, 'name': 'probe', 'duration': 1000},
+          ],
+        },
+      },
+    );
+  }
+}
+
+OnlineMusicProviderSettingsController _controller({
+  OnlineMusicSettings configured = OnlineMusicSettings.defaults,
+  OnlineMusicSettings active = OnlineMusicSettings.defaults,
+  _FakeCredentialAccess? credentials,
+  DeclarativeProbeTransportFactory? probeTransportFactory,
+}) {
+  return OnlineMusicProviderSettingsController(
+    activeSettings: active,
+    store: _MemorySettingsStore(configured),
+    fallbackCredentials: credentials ?? _FakeCredentialAccess(),
+    probeTransportFactory: probeTransportFactory,
+  );
+}
+
+final class _MemorySettingsStore implements OnlineMusicSettingsStore {
+  _MemorySettingsStore(this.value);
+
+  OnlineMusicSettings value;
+
+  @override
+  OnlineMusicSettings read() => value;
+
+  @override
+  Future<bool> write(OnlineMusicSettings settings) async {
+    value = settings;
+    return true;
+  }
+}
+
+final class _FakeCredentialAccess implements OnlineMusicCredentialAccess {
+  final Map<String, String> saved = {};
+
+  /// 非空时挂起 [`isConfigured`]，用于观察「加载中」这一帧的布局。
+  Completer<void>? gate;
+
+  /// 为真时让凭据读取抛错，用于覆盖错误提示与重试。
+  bool failReads = false;
+
+  @override
+  String get credentialDisplayName => 'API Key';
+
+  @override
+  String get inputHint => 'chksz_...';
+
+  @override
+  bool isValidFormat(String value) => RegExp(r'^chksz_\S+$').hasMatch(value);
+
+  @override
+  Future<bool> isConfigured(String reference) async {
+    if (gate != null) await gate!.future;
+    if (failReads) throw StateError('credential read failed');
+    return saved.containsKey(reference);
+  }
+
+  @override
+  Future<void> save(String reference, String value) async {
+    saved[reference] = value;
+  }
+
+  @override
+  Future<void> clear(String reference) async => saved.remove(reference);
+}

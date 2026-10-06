@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider.dart';
 import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider_factory.dart';
+import 'package:pure_music/services/music_platform/chksz/chksz_windows_credential_store.dart';
 
 const _fakeApiKey = 'chksz_TEST_ONLY';
 
@@ -61,6 +62,20 @@ void main() {
 
       expect(provider, isA<PersistentChkszCredentialProvider>());
       expect(provider.toString(), isNot(contains(_fakeApiKey)));
+    });
+
+    test('binds each credential reference to its own slot', () {
+      final first =
+          createChkszWindowsCredentialStore('PureMusic/First/APIKey')
+              as WindowsChkszCredentialStore;
+      final second =
+          createChkszWindowsCredentialStore('PureMusic/Second/APIKey')
+              as WindowsChkszCredentialStore;
+
+      expect(first.targetName, 'PureMusic/First/APIKey');
+      expect(second.targetName, 'PureMusic/Second/APIKey');
+      expect(first.targetName, isNot(chkszWindowsCredentialTargetName));
+      expect(first.targetName, isNot(second.targetName));
     });
 
     test('installed store failures remain sanitized', () async {

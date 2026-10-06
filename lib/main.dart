@@ -14,9 +14,9 @@ import 'package:pure_music/native/rust/api/logger.dart';
 import 'package:pure_music/native/rust/frb_generated.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
-import 'package:pure_music/services/music_platform/chksz/chksz_credential_provider_factory.dart';
-import 'package:pure_music/services/music_platform/chksz/chksz_runtime_factory.dart';
-import 'package:pure_music/services/music_platform/chksz/chksz_online_music_provider.dart';
+import 'package:pure_music/services/music_platform/chksz/chksz_credential_access.dart';
+import 'package:pure_music/services/music_platform/online_music_composition.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_settings_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
@@ -124,18 +124,28 @@ Future<void> main() async {
 
   MemoryMonitorService.instance.start();
 
-  final credentialProvider = createChkszCredentialProvider(
+  final activeOnlineMusicSettings = AppPreference.instance.onlineMusicSettings;
+  // 同一个凭据出口同时给「装配」与「设置页/探测」用：portable 模式下写入与读取才是同一份。
+  final onlineMusicCredentialAccess = ChkszCredentialAccess(
     portableBuild: portableBuild,
   );
-  final chkszRuntime = createChkszRuntime(
-    credentialProvider: credentialProvider,
+  final onlineMusic = createOnlineMusicComposition(
+    settings: activeOnlineMusicSettings,
+    portableBuild: portableBuild,
+    credentialAccess: onlineMusicCredentialAccess,
   );
-  final onlineMusicProvider = ChkszOnlineMusicProvider(runtime: chkszRuntime);
+  final onlineMusicSettingsController = OnlineMusicProviderSettingsController(
+    activeSettings: activeOnlineMusicSettings,
+    store: const AppPreferenceOnlineMusicSettingsStore(),
+    fallbackCredentials: onlineMusicCredentialAccess,
+    credentialReader: onlineMusicCredentialAccess,
+    runningCredentials: onlineMusic.credentialControllers,
+  );
   runApp(
     Entry(
       welcome: welcome,
-      onlineMusicService: onlineMusicProvider,
-      onlineMusicCredentials: onlineMusicProvider,
+      onlineMusicService: onlineMusic.service,
+      onlineMusicSettings: onlineMusicSettingsController,
     ),
   );
 }

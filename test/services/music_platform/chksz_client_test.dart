@@ -381,6 +381,107 @@ void main() {
       expect(exception.toString(), isNot(contains('api.invalid')));
     });
   });
+
+  group('ChkszClient auth boundary', () {
+    test('a credential-free capability never reads or injects a key', () async {
+      final transport = _FakeTransport(
+        (_, _) async =>
+            ChkszTransportResponse(statusCode: 200, data: const {'ok': true}),
+      );
+      final credentials = _RecordingCredentialProvider();
+      final client = ChkszClient(
+        transport: transport,
+        credentialProvider: credentials,
+      );
+
+      await client.sendJson(
+        ChkszRequest(
+          path: '/api/search',
+          queryParameters: const {'keyword': 'test'},
+        ),
+        isBusinessSuccess: (body) => body['ok'] == true,
+        auth: const OnlineMusicNoAuth(),
+      );
+
+      expect(credentials.readCount, 0);
+      expect(transport.requests.single.queryParameters, {'keyword': 'test'});
+    });
+
+    test('injects the key under the configured parameter name', () async {
+      final transport = _FakeTransport(
+        (_, _) async =>
+            ChkszTransportResponse(statusCode: 200, data: const {'ok': true}),
+      );
+      final client = _client(transport);
+
+      await client.sendJson(
+        ChkszRequest(path: '/api/search'),
+        isBusinessSuccess: (body) => body['ok'] == true,
+        auth: const OnlineMusicApiKeyAuth(parameterName: 'token'),
+      );
+
+      final sent = transport.requests.single;
+      expect(sent.queryParameters['token'], _fakeApiKey);
+      expect(sent.queryParameters.containsKey('apikey'), isFalse);
+      expect(sent.toString(), isNot(contains(_fakeApiKey)));
+    });
+
+    test('an api-key capability without a credential source is unauthorized', () async {
+      final transport = _FakeTransport(
+        (_, _) async =>
+            ChkszTransportResponse(statusCode: 200, data: const {'ok': true}),
+      );
+      final client = ChkszClient(transport: transport);
+
+      final exception = await _captureException(
+        client.sendJson(
+          ChkszRequest(path: '/api/search'),
+          isBusinessSuccess: (body) => body['ok'] == true,
+        ),
+      );
+
+      expect(exception.kind, ChkszErrorKind.unauthorized);
+      expect(transport.requests, isEmpty);
+    });
+
+    test('a missing credential is unauthorized for an api-key capability', () async {
+      final transport = _FakeTransport(
+        (_, _) async =>
+            ChkszTransportResponse(statusCode: 200, data: const {'ok': true}),
+      );
+      final client = ChkszClient(
+        transport: transport,
+        credentialProvider: InMemoryChkszCredentialProvider(),
+      );
+
+      final exception = await _captureException(
+        client.sendJson(
+          ChkszRequest(path: '/api/search'),
+          isBusinessSuccess: (body) => body['ok'] == true,
+          auth: const OnlineMusicApiKeyAuth(),
+        ),
+      );
+
+      expect(exception.kind, ChkszErrorKind.unauthorized);
+      expect(transport.requests, isEmpty);
+    });
+  });
+}
+
+final class _RecordingCredentialProvider implements ChkszCredentialProvider {
+  int readCount = 0;
+
+  @override
+  Future<String?> readApiKey() async {
+    readCount++;
+    return _fakeApiKey;
+  }
+
+  @override
+  Future<void> writeApiKey(String apiKey) async {}
+
+  @override
+  Future<void> clearApiKey() async {}
 }
 
 ChkszClient _client(

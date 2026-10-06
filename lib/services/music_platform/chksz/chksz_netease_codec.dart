@@ -4,8 +4,12 @@ import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/online_lyric/parsed_lyric_converter.dart';
 import 'package:pure_music/services/online_lyric/parsers/lrc_tool.dart';
 
-final class NeteaseAdapter {
-  const NeteaseAdapter();
+/// ChkSz 这条链路对网易云来源的请求形状与响应解析。
+///
+/// 端点路径、查询参数名与业务响应信封都属于 ChkSz 自己的 API 契约，
+/// 因此由 Provider 拥有，而不是放在中立的适配目录让业务层反向依赖协议层。
+final class ChkszNeteaseCodec {
+  const ChkszNeteaseCodec();
 
   static const defaultQuality = 'lossless';
 
