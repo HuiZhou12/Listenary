@@ -280,7 +280,10 @@ class _OnlineMusicCapabilityEditorDialogState
     _showJson = false;
   }
 
-  String _jsonPreview() => jsonEncode(_binding.toJson());
+  /// JSON 视图也做缩进，便于看出请求 / 响应 / 字段映射的层次。
+  /// 解析侧用 `jsonDecode`，缩进不影响「应用 JSON」。
+  String _jsonPreview() =>
+      const JsonEncoder.withIndent('  ').convert(_binding.toJson());
 
   /// 把当前表单收集成一个绑定（供试跑/保存/JSON 预览用）。
   OnlineMusicDeclarativeCapabilityBinding _collect() {

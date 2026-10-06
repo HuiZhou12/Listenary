@@ -528,7 +528,7 @@ void main() {
     controller.dispose();
   });
 
-  testWidgets('进入页面时凭据状态加载不会引起布局位移', (tester) async {
+  testWidgets('凭据读取在后台静默完成，不插入任何加载行', (tester) async {
     final credentials = _FakeCredentialAccess()..gate = Completer<void>();
     final controller = _controller(credentials: credentials);
     tester.view.physicalSize = const Size(1200, 2600);
@@ -537,15 +537,52 @@ void main() {
 
     await tester.pumpWidget(wrapPanel(controller));
     await tester.pump();
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    // 读取尚未完成：页面里既没有进度条，也没有任何"读取中"文案占位。
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.textContaining('读取中'), findsNothing);
+    expect(find.textContaining('正在读取'), findsNothing);
     final loadingDy = tester.getTopLeft(find.text('添加提供商')).dy;
 
     credentials.gate!.complete();
     await tester.pump();
     await tester.pump();
 
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    // 读取完成后页面结构没有任何变化（也就没有位移）；
+    // 只有行内副标题从"需要 API Key"补上真实状态。
     expect(tester.getTopLeft(find.text('添加提供商')).dy, loadingDy);
+    expect(find.textContaining('需要 API Key · 未配置'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('凭据读取失败时才出现提示与重试', (tester) async {
+    final credentials = _FakeCredentialAccess()..failReads = true;
+    final controller = _controller(credentials: credentials);
+
+    await pumpPanel(tester, controller);
+
+    expect(find.text('无法读取在线音乐配置'), findsOneWidget);
+    expect(find.byTooltip('重试'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('JSON 视图带缩进，能看出层次', (tester) async {
+    final controller = _controller(
+      probeTransportFactory: (_) => _StubTransport(),
+    );
+    await pumpPanel(tester, controller);
+    await openSearchEditor(tester);
+
+    await tester.tap(find.text('JSON'));
+    await tester.pumpAndSettle();
+
+    final jsonField = find.byWidgetPredicate(
+      (widget) => widget is TextField && !widget.readOnly,
+    );
+    final text = tester.widget<TextField>(jsonField).controller!.text;
+    expect(text, contains('\n'));
+    expect(text, contains('"request"'));
+    expect(text, contains('  '));
     controller.dispose();
   });
 }
@@ -607,6 +644,9 @@ final class _FakeCredentialAccess implements OnlineMusicCredentialAccess {
   /// 非空时挂起 [`isConfigured`]，用于观察「加载中」这一帧的布局。
   Completer<void>? gate;
 
+  /// 为真时让凭据读取抛错，用于覆盖错误提示与重试。
+  bool failReads = false;
+
   @override
   String get credentialDisplayName => 'API Key';
 
@@ -619,6 +659,7 @@ final class _FakeCredentialAccess implements OnlineMusicCredentialAccess {
   @override
   Future<bool> isConfigured(String reference) async {
     if (gate != null) await gate!.future;
+    if (failReads) throw StateError('credential read failed');
     return saved.containsKey(reference);
   }
 

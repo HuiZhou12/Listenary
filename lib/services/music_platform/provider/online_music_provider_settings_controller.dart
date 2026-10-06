@@ -45,6 +45,11 @@ typedef DeclarativeProbeTransportFactory =
 /// 单项试跑播放解析时的默认音质（与内置实现的默认档位一致）。
 const defaultDeclarativeTestQuality = 'lossless';
 
+/// 结果区展示响应片段时的字符上限。
+///
+/// 结果区现在是限高可滚动的，所以这个上限只管"别把超大响应整个塞进内存/界面"，
+/// 不影响正常阅读；超出时会明确写出完整长度。
+const responsePreviewMaxChars = 20000;
 
 /// 已保存配置的读写出口。
 abstract interface class OnlineMusicSettingsStore {
@@ -116,7 +121,8 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   /// 是否有尚未生效（需要重启）的改动。
   bool get hasPendingRestart => _settings != _activeSettings;
 
-  String get credentialDisplayName => _fallbackCredentials.credentialDisplayName;
+  String get credentialDisplayName =>
+      _fallbackCredentials.credentialDisplayName;
 
   String get credentialHint => _fallbackCredentials.inputHint;
 
@@ -380,13 +386,16 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     }
   }
 
-  /// 脱敏 + 截断的响应片段：让用户核对字段名，但不把签名/凭据带进界面。
+  /// 结果区展示的响应片段：**先格式化，再脱敏，最后才考虑截断**。
   ///
-  /// 同时覆盖两种真实形态：查询串（`apikey=…`、`?h=…&sid=…`）与 JSON 键值对
-  /// （`"token":"…"`）。宁可多脱敏，也不要把签名串渲染到界面上。
+  /// - 格式化：JSON 用 2 空格缩进，界面里才看得出层次（此前是压成一行的 `jsonEncode`）。
+  /// - 脱敏：同时覆盖查询串（`apikey=…`、`?h=…&sid=…`）与 JSON 键值对（`"token":"…"`）。
+  ///   宁可多脱敏，也不要把签名串渲染到界面上。
+  /// - 截断：上限 [responsePreviewMaxChars]；超出时**明确写出完整长度**，
+  ///   而不是让用户以为响应本来就只有这么长。
   String? _redactPreview(Object? data) {
     if (data == null) return null;
-    var text = data is String ? data : jsonEncode(data);
+    var text = _prettyJson(data);
     text = text.replaceAllMapped(
       RegExp(
         r'\b(apikey|api_key|key|token|access_token|refresh_token|secret|'
@@ -403,7 +412,18 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       ),
       (match) => '"${match.group(1)}":"[redacted]"',
     );
-    return text.length <= 400 ? text : '${text.substring(0, 400)}…';
+    if (text.length <= responsePreviewMaxChars) return text;
+    return '${text.substring(0, responsePreviewMaxChars)}\n'
+        '…（已截断展示：完整响应共 ${text.length} 字符）';
+  }
+
+  String _prettyJson(Object? data) {
+    if (data is String) return data;
+    try {
+      return const JsonEncoder.withIndent('  ').convert(data);
+    } catch (_) {
+      return '$data';
+    }
   }
 
   void _notify() {

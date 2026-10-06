@@ -31,9 +31,6 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   final Map<String, bool> _configured = {};
   bool _hasLoaded = false;
   bool _loading = false;
-
-  /// 状态行固定高度：为 0 或变化都会重新引入布局位移。
-  static const double _statusRowHeight = 40.0;
   String? _error;
 
   @override
@@ -257,7 +254,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     if (!provider.requiresCredential) return '不需要 API Key';
     final configured = _configured[provider.id];
     // 状态未知时给一个长度接近的稳定占位，避免加载完成前后文字剧烈变化。
-    if (configured == null) return '需要 API Key · 读取中';
+    if (configured == null) return '需要 API Key';
     return configured ? '需要 API Key · 已配置' : '需要 API Key · 未配置';
   }
 
@@ -334,57 +331,38 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     );
   }
 
-  /// 固定高度的凭据状态行。
+  /// 凭据读取**静默进行**，不为"读取中"做任何占位。
   ///
-  /// **始终占位**：无论「读取中」「出错」还是「正常」，这里的高度都不变，
-  /// 因此加载完成或出现错误都不会把下面的内容整体推上推下
-  /// （上一轮人工验收的 UI 问题 4）。
-  Widget _buildStatusRow() {
-    if (!widget.active) return const SizedBox(height: _statusRowHeight);
+  /// 上一轮验收反馈：固定高度的空占位只留下一条没有意义的空白间距，而
+  /// 「正在读取凭据状态…」又只是闪一下，反而更吵。所以这里只在**真的失败**时
+  /// 才出现提示与重试；成功路径下这一块完全不占高度。
+  Widget _buildLoadErrorRow() {
+    final error = _error;
+    if (error == null) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
-    final hasError = _error != null;
-    return SizedBox(
-      height: _statusRowHeight,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
       child: Row(
         children: [
-          if (_loading)
-            const SizedBox(
-              width: 16.0,
-              height: 16.0,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.0,
-                semanticsLabel: '读取中',
-              ),
-            )
-          else if (hasError)
-            Icon(Symbols.error, size: 16.0, color: scheme.error)
-          else
-            const SizedBox(width: 16.0),
+          Icon(Symbols.error, size: 16.0, color: scheme.error),
           const SizedBox(width: 8.0),
           Expanded(
             child: Text(
-              _loading ? '正在读取凭据状态…' : (_error ?? ''),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: hasError ? scheme.error : scheme.onSurfaceVariant,
-                fontSize: AppType.body,
-              ),
+              error,
+              style: TextStyle(color: scheme.error, fontSize: AppType.body),
             ),
           ),
-          if (hasError)
-            IconButton(
-              tooltip: '重试',
-              visualDensity: VisualDensity.compact,
-              onPressed: () {
-                setState(() {
-                  _hasLoaded = false;
-                  _error = null;
-                });
-                _load();
-              },
-              icon: const Icon(Symbols.refresh, size: 18.0),
-            ),
+          IconButton(
+            tooltip: '重试',
+            onPressed: () {
+              setState(() {
+                _hasLoaded = false;
+                _error = null;
+              });
+              _load();
+            },
+            icon: const Icon(Symbols.refresh),
+          ),
         ],
       ),
     );
@@ -406,7 +384,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
           const _SettingsHint('便携版：API Key 只在本次运行内有效，重启后需要重新配置'),
           const SizedBox(height: 8),
         ],
-        _buildStatusRow(),
+        _buildLoadErrorRow(),
         for (final provider in settings.providers) ...[
           SettingsTile(
             description: provider.id == settings.defaultProviderId

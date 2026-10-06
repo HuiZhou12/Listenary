@@ -24,17 +24,22 @@ void main() {
         credentialReader: reader,
       );
 
-  test('probeSearch uses the entry baseUrl transport and yields a draft', () async {
-    transport.responder = (request) async => _msapiBody;
+  test(
+    'probeSearch uses the entry baseUrl transport and yields a draft',
+    () async {
+      transport.responder = (request) async => _msapiBody;
 
-    final report = await controller().probeSearch(store.value.providers.single);
+      final report = await controller().probeSearch(
+        store.value.providers.single,
+      );
 
-    expect(report.draftTemplateId, 'netease-proxy');
-    expect(
-      transport.requests.map((request) => request.path),
-      contains('/search'),
-    );
-  });
+      expect(report.draftTemplateId, 'netease-proxy');
+      expect(
+        transport.requests.map((request) => request.path),
+        contains('/search'),
+      );
+    },
+  );
 
   test('probeSearch passes an already-configured credential', () async {
     reader.value = 'chksz_KEY_TEST_ONLY';
@@ -59,21 +64,26 @@ void main() {
     expect(report.draftTemplateId, builtinOnlineMusicChkszId);
   });
 
-  test('probeSearch never attaches a credential the entry does not have', () async {
-    transport.responder = (request) async => _msapiBody;
+  test(
+    'probeSearch never attaches a credential the entry does not have',
+    () async {
+      transport.responder = (request) async => _msapiBody;
 
-    final report = await controller().probeSearch(store.value.providers.single);
+      final report = await controller().probeSearch(
+        store.value.providers.single,
+      );
 
-    // 两个候选都会真的被探测一次，且都不带凭据。
-    expect(
-      transport.requests.map((request) => request.path).toSet(),
-      {'/api/163_search', '/search'},
-    );
-    for (final request in transport.requests) {
-      expect(request.query.containsKey('apikey'), isFalse);
-    }
-    expect(report.draftTemplateId, 'netease-proxy');
-  });
+      // 两个候选都会真的被探测一次，且都不带凭据。
+      expect(transport.requests.map((request) => request.path).toSet(), {
+        '/api/163_search',
+        '/search',
+      });
+      for (final request in transport.requests) {
+        expect(request.query.containsKey('apikey'), isFalse);
+      }
+      expect(report.draftTemplateId, 'netease-proxy');
+    },
+  );
 
   test('testCapability(search) reports both HTTP and mapped result', () async {
     transport.responder = (request) async => _msapiBody;
@@ -90,53 +100,59 @@ void main() {
     expect(transport.requests.single.query['keywords'], 'listenary');
   });
 
-  test('testCapability reports a mapping failure instead of guessing', () async {
-    transport.responder = (request) async => const {
-      'result': {
-        'songs': [
-          {'id': 1},
-        ],
-      },
-    };
+  test(
+    'testCapability reports a mapping failure instead of guessing',
+    () async {
+      transport.responder = (request) async => const {
+        'result': {
+          'songs': [
+            {'id': 1},
+          ],
+        },
+      };
 
-    final result = await controller().testCapability(
-      store.value.providers.single,
-      OnlineMusicCapability.search,
-    );
+      final result = await controller().testCapability(
+        store.value.providers.single,
+        OnlineMusicCapability.search,
+      );
 
-    expect(result.ok, isFalse);
-    expect(result.failureReason, contains('映射失败'));
-    expect(result.failureReason, contains('title'));
-  });
+      expect(result.ok, isFalse);
+      expect(result.failureReason, contains('映射失败'));
+      expect(result.failureReason, contains('title'));
+    },
+  );
 
-  test('testCapability(stream) needs a track id and hides signed URLs', () async {
-    transport.responder = (request) async => const {
-      'code': 0,
-      'data': {
-        'id': 123456,
-        'url': 'https://media.invalid/a.flac?sign=SECRET_TEST_ONLY',
-        'br': 320000,
-      },
-    };
+  test(
+    'testCapability(stream) needs a track id and hides signed URLs',
+    () async {
+      transport.responder = (request) async => const {
+        'code': 0,
+        'data': {
+          'id': 123456,
+          'url': 'https://media.invalid/a.flac?sign=SECRET_TEST_ONLY',
+          'br': 320000,
+        },
+      };
 
-    final declaration = store.value.providers.single;
-    final withoutTrack = await controller().testCapability(
-      declaration,
-      OnlineMusicCapability.stream,
-    );
-    expect(withoutTrack.ok, isFalse);
-    expect(withoutTrack.failureReason, contains('曲目 ID'));
-    expect(transport.requests, isEmpty);
+      final declaration = store.value.providers.single;
+      final withoutTrack = await controller().testCapability(
+        declaration,
+        OnlineMusicCapability.stream,
+      );
+      expect(withoutTrack.ok, isFalse);
+      expect(withoutTrack.failureReason, contains('曲目 ID'));
+      expect(transport.requests, isEmpty);
 
-    final result = await controller().testCapability(
-      declaration,
-      OnlineMusicCapability.stream,
-      trackId: '123456',
-    );
-    expect(result.ok, isTrue);
-    expect(result.mappedSummary, '播放地址：media.invalid/a.flac');
-    expect(result.mappedSummary, isNot(contains('SECRET')));
-  });
+      final result = await controller().testCapability(
+        declaration,
+        OnlineMusicCapability.stream,
+        trackId: '123456',
+      );
+      expect(result.ok, isTrue);
+      expect(result.mappedSummary, '播放地址：media.invalid/a.flac');
+      expect(result.mappedSummary, isNot(contains('SECRET')));
+    },
+  );
 
   test('testCapability refuses builtin and phase-two capabilities', () async {
     final builtinStore = _MemorySettingsStore(
@@ -169,21 +185,50 @@ void main() {
     expect(transport.requests, isEmpty);
   });
 
-  test('the response preview is redacted and truncated', () async {
-    transport.responder = (request) async => {
-      'msg': 'apikey=chksz_SECRET_TEST_ONLY',
-      'padding': 'x' * 600,
-    };
+  test(
+    'the response preview is redacted but no longer hard-truncated at 400',
+    () async {
+      transport.responder = (request) async => {
+        'msg': 'apikey=chksz_SECRET_TEST_ONLY',
+        'padding': 'x' * 600,
+      };
 
-    final result = await controller().testCapability(
-      store.value.providers.single,
-      OnlineMusicCapability.search,
-    );
+      final result = await controller().testCapability(
+        store.value.providers.single,
+        OnlineMusicCapability.search,
+      );
 
-    expect(result.responsePreview, isNot(contains('chksz_SECRET_TEST_ONLY')));
-    expect(result.responsePreview, contains('[redacted]'));
-    expect(result.responsePreview!.length, lessThan(420));
-  });
+      expect(result.responsePreview, isNot(contains('chksz_SECRET_TEST_ONLY')));
+      expect(result.responsePreview, contains('[redacted]'));
+      // 之前固定截到 400 字符，看起来就像"服务只返回了这么点数据"。
+      expect(result.responsePreview!.length, greaterThan(600));
+    },
+  );
+
+  test(
+    'the preview is pretty-printed and states the full length when cut',
+    () async {
+      transport.responder = (request) async => {
+        'result': {
+          'songs': [
+            {'id': 1, 'name': 'x' * (responsePreviewMaxChars + 5000)},
+          ],
+        },
+      };
+
+      final result = await controller().testCapability(
+        store.value.providers.single,
+        OnlineMusicCapability.search,
+      );
+
+      final preview = result.responsePreview!;
+      // 缩进 → 界面里能看出层次。
+      expect(preview, contains('\n  "result"'));
+      // 超长时才截断，并明确写出完整长度，避免被读成"数据不完整"。
+      expect(preview, contains('已截断展示：完整响应共'));
+      expect(preview.length, lessThanOrEqualTo(responsePreviewMaxChars + 100));
+    },
+  );
 
   test('the preview also redacts JSON key/value secrets', () async {
     // JSON 键值形式（含签名 URL 的常见参数名）同样不能出现在界面上。
