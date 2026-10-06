@@ -176,12 +176,22 @@ void main() {
     expect(builtinResult.ok, isFalse);
     expect(builtinResult.failureReason, contains('不是声明式'));
 
-    final unsupported = await controller().testCapability(
+    // S7b-2：lyric / playlist 不再被"第二阶段"拦住。这个 fixture 的条目**没有**
+    // 声明式 lyric / playlist 绑定，所以它们会走到"该能力不是声明式配置"这一层；
+    // 关键是**不再有阶段守卫**，且同样在发请求之前返回。
+    final lyricWithoutTrack = await controller().testCapability(
       store.value.providers.single,
       OnlineMusicCapability.lyric,
     );
-    expect(unsupported.ok, isFalse);
-    expect(unsupported.failureReason, contains('第二阶段'));
+    expect(lyricWithoutTrack.ok, isFalse);
+    expect(lyricWithoutTrack.failureReason, isNot(contains('第二阶段')));
+
+    final playlistWithoutId = await controller().testCapability(
+      store.value.providers.single,
+      OnlineMusicCapability.playlist,
+    );
+    expect(playlistWithoutId.ok, isFalse);
+    expect(playlistWithoutId.failureReason, isNot(contains('第二阶段')));
     expect(transport.requests, isEmpty);
   });
 

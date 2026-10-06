@@ -239,16 +239,10 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     OnlineMusicCapability capability, {
     String keyword = providerProbeKeyword,
     String? trackId,
+    String? playlistId,
     String quality = defaultDeclarativeTestQuality,
     OnlineMusicCancelToken? cancelToken,
   }) async {
-    if (capability == OnlineMusicCapability.playlist ||
-        capability == OnlineMusicCapability.lyric) {
-      return const DeclarativeCapabilityTestResult(
-        ok: false,
-        failureReason: '该能力属于第二阶段，尚未开放声明式配置',
-      );
-    }
     final binding = definition.bindingFor(capability);
     if (binding is! OnlineMusicDeclarativeCapabilityBinding) {
       return const DeclarativeCapabilityTestResult(
@@ -263,6 +257,20 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
         failureReason: '试跑播放解析需要先填一个曲目 ID',
       );
     }
+    if (capability == OnlineMusicCapability.lyric &&
+        (trackId == null || trackId.trim().isEmpty)) {
+      return const DeclarativeCapabilityTestResult(
+        ok: false,
+        failureReason: '试跑歌词需要先填一个曲目 ID',
+      );
+    }
+    if (capability == OnlineMusicCapability.playlist &&
+        (playlistId == null || playlistId.trim().isEmpty)) {
+      return const DeclarativeCapabilityTestResult(
+        ok: false,
+        failureReason: '试跑歌曲列表需要先填一个歌单 ID',
+      );
+    }
 
     final token = cancelToken ?? OnlineMusicCancelToken();
     String? preview;
@@ -275,6 +283,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
           offset: 0,
           page: 1,
           trackId: trackId,
+          playlistId: playlistId,
           quality: quality,
         ),
         credential: await _readCredential(definition),
@@ -314,6 +323,42 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
               ? '解析成功，但没有曲目'
               : '${page.items.length} 首曲目 · 第 1 首：$first',
           failureReason: page.items.isEmpty ? '没有解析出曲目' : null,
+        );
+      }
+
+      if (capability == OnlineMusicCapability.playlist) {
+        final playlist = mapDeclarativePlaylistResponse(
+          spec: binding.response,
+          body: response.data,
+          platform: definition.contentPlatform,
+          requestedPlaylistId: playlistId!,
+        );
+        return DeclarativeCapabilityTestResult(
+          ok: true,
+          statusCode: response.statusCode,
+          responsePreview: preview,
+          mappedSummary: '歌单「${playlist.name}」· ${playlist.tracks.length} 首曲目',
+        );
+      }
+
+      if (capability == OnlineMusicCapability.lyric) {
+        final lyrics = mapDeclarativeLyricsResponse(
+          spec: binding.response,
+          body: response.data,
+          ref: PlatformTrackRef(
+            platform: definition.contentPlatform,
+            trackId: trackId!,
+          ),
+        );
+        // 空歌词**不是失败**：纯音乐/间奏本来就没有歌词，配置可能是对的。
+        return DeclarativeCapabilityTestResult(
+          ok: true,
+          statusCode: response.statusCode,
+          responsePreview: preview,
+          mappedSummary: lyrics.isEmpty
+              ? '解析成功，但这份响应里没有歌词（纯音乐？）'
+              : '歌词：原文${lyrics.original != null ? '有' : '无'}'
+                    '${lyrics.translation != null ? ' · 翻译有' : ''}',
         );
       }
 
