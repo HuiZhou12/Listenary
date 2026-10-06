@@ -42,11 +42,9 @@ class OnlineMusicCapabilitiesDialog extends StatelessWidget {
                 description: capabilityLabel(capability),
                 subtitle: _describe(capability),
                 action: FilledButton.icon(
-                  onPressed: isPhaseTwo(capability)
-                      ? null
-                      : () => onEditCapability(capability),
+                  onPressed: () => onEditCapability(capability),
                   icon: const Icon(Symbols.tune),
-                  label: Text(isPhaseTwo(capability) ? '第二阶段' : '配置'),
+                  label: const Text('配置'),
                 ),
               ),
               const SizedBox(height: 12),
@@ -754,7 +752,7 @@ class _OnlineMusicCapabilityEditorDialogState
         if (!_isSearch) ...[
           const SizedBox(height: 12.0),
           const _SectionTitle('试跑'),
-          _textRow('试跑用的曲目 ID', _testTrackId),
+          _textRow('试跑用的 ID（曲目 / 歌单）', _testTrackId),
         ],
       ],
     );
@@ -1076,10 +1074,6 @@ String capabilityLabel(OnlineMusicCapability capability) =>
       OnlineMusicCapability.lyric => '歌词',
       OnlineMusicCapability.stream => '播放解析',
     };
-
-bool isPhaseTwo(OnlineMusicCapability capability) =>
-    capability == OnlineMusicCapability.playlist ||
-    capability == OnlineMusicCapability.lyric;
 
 /// 对话框标题头：与项目其它设置对话框一致（标题 + 一行说明）。
 class _DialogHeader extends StatelessWidget {

@@ -264,8 +264,11 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
         failureReason: '试跑歌词需要先填一个曲目 ID',
       );
     }
+    // 试跑面板只有一个 ID 输入框（一次只编辑一个能力）：playlist 用它当歌单 ID，
+    // stream / lyric 用它当曲目 ID；程序化调用仍可显式传 playlistId。
+    final effectivePlaylistId = playlistId ?? trackId;
     if (capability == OnlineMusicCapability.playlist &&
-        (playlistId == null || playlistId.trim().isEmpty)) {
+        (effectivePlaylistId == null || effectivePlaylistId.trim().isEmpty)) {
       return const DeclarativeCapabilityTestResult(
         ok: false,
         failureReason: '试跑歌曲列表需要先填一个歌单 ID',
@@ -283,7 +286,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
           offset: 0,
           page: 1,
           trackId: trackId,
-          playlistId: playlistId,
+          playlistId: effectivePlaylistId,
           quality: quality,
         ),
         credential: await _readCredential(definition),
@@ -331,7 +334,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
           spec: binding.response,
           body: response.data,
           platform: definition.contentPlatform,
-          requestedPlaylistId: playlistId!,
+          requestedPlaylistId: effectivePlaylistId!,
         );
         return DeclarativeCapabilityTestResult(
           ok: true,

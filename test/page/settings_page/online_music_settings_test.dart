@@ -278,8 +278,9 @@ void main() {
       for (final label in ['搜索', '歌曲列表', '歌词', '播放解析']) {
         expect(find.text(label), findsWidgets);
       }
-      // 第二阶段的两个能力不可配置。
-      expect(find.text('第二阶段'), findsNWidgets(2));
+      // S7b-3：不再有"第二阶段" —— 四个能力都可以进配置。
+      expect(find.text('第二阶段'), findsNothing);
+      expect(find.text('配置'), findsWidgets);
 
       await tester.tap(find.text('一键按 ChkSz 兼容方式填充'));
       await tester.pumpAndSettle();
