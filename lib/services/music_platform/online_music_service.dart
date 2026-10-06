@@ -1,4 +1,5 @@
 import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/online_music_error.dart';
 import 'package:pure_music/services/music_platform/online_music_request.dart';
 
 final class OnlineMusicCapabilities {
@@ -32,6 +33,44 @@ final class OnlineMusicCapabilities {
   /// 该平台为何不能参与搜索；[searchablePlatforms] 里的平台返回 null。
   String? unavailableSearchReasonFor(MusicPlatform platform) =>
       unavailableSearchReasons[platform];
+}
+
+/// 多平台聚合搜索的结果（D6）。
+///
+/// 刻意**不改** [MusicSearchPage]：每个平台仍然是一个独立的、带自己分页游标的
+/// `MusicSearchPage`，这里只是把它们收集起来，并保留**每个平台各自的错误**，
+/// 这样一个平台失败不会让整次搜索失去其它平台的结果。
+///
+/// **不做跨平台去重**（D6b:a）：同名同艺术家也可能是不同 remoteId、不同歌词、
+/// 不同播放与不同音质体系，合并会破坏来源语义。每项的来源身份在
+/// `page.items[*].ref`（platform + remoteId）里。
+final class AggregatedSearchResult {
+  AggregatedSearchResult({
+    required Map<MusicPlatform, MusicSearchPage> perPlatform,
+    required Map<MusicPlatform, OnlineMusicException> failures,
+  }) : perPlatform = Map.unmodifiable(perPlatform),
+       failures = Map.unmodifiable(failures);
+
+  /// 成功返回的平台 → 该平台的搜索页（含各自的分页信息与来源身份）。
+  final Map<MusicPlatform, MusicSearchPage> perPlatform;
+
+  /// 失败平台 → 该平台的最终错误（例如 `unavailable` / `endpointMismatch`）。
+  final Map<MusicPlatform, OnlineMusicException> failures;
+
+  Iterable<MusicPlatform> get platforms => perPlatform.keys;
+
+  bool get hasFailures => failures.isNotEmpty;
+
+  /// 所有平台的结果都为空（或根本没有平台）。
+  bool get isEmpty => perPlatform.values.every((page) => page.items.isEmpty);
+
+  int get totalItems =>
+      perPlatform.values.fold(0, (sum, page) => sum + page.items.length);
+
+  @override
+  String toString() =>
+      'AggregatedSearchResult(${perPlatform.length} platforms, '
+      '$totalItems items, ${failures.length} failures)';
 }
 
 abstract interface class OnlineMusicService {

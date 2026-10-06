@@ -146,6 +146,76 @@ final class CompositeOnlineMusicService implements OnlineMusicService {
     return candidates.first.defaultQualityFor(platform);
   }
 
+  /// 多平台聚合搜索（D6:A / D6b:a / D6c:a）。
+  ///
+  /// - **门槛**：只接受 [capabilities]`.searchablePlatforms` 里的平台（D3）；
+  ///   被挡下的平台不会发起任何请求，也不会出现在结果的任一 map 里。
+  /// - **并行**：各平台同时请求；**单平台失败不影响其它平台** —— 失败进
+  ///   [AggregatedSearchResult.failures]，成功的进 `.perPlatform`。
+  /// - **分页各自独立**：`limit` / `offset` 原样传给每个平台，调用方按平台分别
+  ///   加载更多（D6c:a）。
+  /// - **不去重**（D6b:a）：每项都保留自己的 `ref.platform` 与 `ref.trackId`。
+  Future<AggregatedSearchResult> searchAggregated({
+    required Iterable<MusicPlatform> platforms,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    final requested = {
+      for (final platform in platforms)
+        if (capabilities.searchablePlatforms.contains(platform)) platform,
+    };
+    final perPlatform = <MusicPlatform, MusicSearchPage>{};
+    final failures = <MusicPlatform, OnlineMusicException>{};
+
+    await Future.wait([
+      for (final platform in requested)
+        _searchOnePlatform(
+          platform: platform,
+          keyword: keyword,
+          limit: limit,
+          offset: offset,
+          cancelToken: cancelToken,
+          perPlatform: perPlatform,
+          failures: failures,
+        ),
+    ]);
+
+    // 取消要如实向上传播，而不是被收进 failures 假装成"某个平台失败了"。
+    if (cancelToken.isCancelled) {
+      throw const OnlineMusicException(
+        kind: OnlineMusicErrorKind.cancelled,
+        safeMessage: '搜索已取消',
+      );
+    }
+    return AggregatedSearchResult(perPlatform: perPlatform, failures: failures);
+  }
+
+  /// 单平台搜索；永不抛出 `OnlineMusicException`（改写进 failures），
+  /// 以便 `Future.wait` 不会因为一个平台失败而丢掉其它平台的结果。
+  Future<void> _searchOnePlatform({
+    required MusicPlatform platform,
+    required String keyword,
+    required int limit,
+    required int offset,
+    required OnlineMusicCancelToken cancelToken,
+    required Map<MusicPlatform, MusicSearchPage> perPlatform,
+    required Map<MusicPlatform, OnlineMusicException> failures,
+  }) async {
+    try {
+      perPlatform[platform] = await search(
+        platform: platform,
+        keyword: keyword,
+        limit: limit,
+        offset: offset,
+        cancelToken: cancelToken,
+      );
+    } on OnlineMusicException catch (error) {
+      failures[platform] = error;
+    }
+  }
+
   @override
   void dispose() {
     for (final provider in registry.providers) {
