@@ -17,6 +17,7 @@ import 'package:pure_music/services/music_platform/provider/online_music_binding
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_quality_tiers.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_credentials.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_request_spec.dart';
 
@@ -129,6 +130,12 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
   @override
   String defaultQualityFor(MusicPlatform platform) =>
       MusicQuality.lossless.level;
+
+  /// 声明式 Provider **不声明档位**：它的 `quality` 参数含义由用户自己的接口决定
+  /// （可能是 `level`，也可能是 `sq` 这种平台专有取值），程序无从推断。
+  /// 留空即"原样透传内部偏好"，与引入档位模型之前的行为完全一致。
+  @override
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) => const [];
 
   @override
   void dispose() => _disposeTransport?.call();

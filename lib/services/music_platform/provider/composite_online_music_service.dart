@@ -5,6 +5,7 @@ import 'package:pure_music/services/music_platform/online_music_service.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_registry.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_quality_tiers.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_route_diagnostics.dart';
 
 /// 应用层唯一消费的在线音乐入口：把每个能力分发给 `(platform, capability)` 的候选
@@ -138,13 +139,42 @@ final class CompositeOnlineMusicService implements OnlineMusicService {
   @override
   String defaultQualityFor(MusicPlatform platform) {
     // 同步查询：没有候选即不可用；不在此处回退（无异步空间，也没有请求可失败）。
-    final candidates = registry.providersFor(
-      platform,
-      OnlineMusicCapability.stream,
-    );
+    final candidates = _streamCandidates(platform);
     if (candidates.isEmpty) throw unsupportedCapability();
-    return candidates.first.defaultQualityFor(platform);
+    final provider = candidates.first;
+    // D2:A / D10:A：Provider 报的是**内部偏好档位**，这里按该平台自己的档位声明
+    // 解析成"实际传给它"的取值（含"不高于期望的最接近档位"的回落）。
+    return selectPlatformQuality(
+      tiers: provider.qualityTiersFor(platform),
+      preference: provider.defaultQualityFor(platform),
+    ).requestValue;
   }
+
+  /// 该平台**可用的音质档位**（含平台自己的文案），供 UI 渲染选择菜单。
+  ///
+  /// 空列表表示该 Provider 没有声明档位（内部偏好原样透传）；UI 此时只应展示内部
+  /// 偏好本身，**不要伪造平台档位名称**（补充口径④）。
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) {
+    final candidates = _streamCandidates(platform);
+    return candidates.isEmpty
+        ? const []
+        : candidates.first.qualityTiersFor(platform);
+  }
+
+  /// 把内部偏好解析成该平台实际使用的档位，并告知**是否发生了回落**。
+  ///
+  /// 用途：UI 用 `displayLabel` 展示该平台自己的档位名称；`fellBack == true` 时提示
+  /// "已回落为 displayLabel"。
+  PlatformQualitySelection selectQualityFor(
+    MusicPlatform platform, {
+    required String preference,
+  }) => selectPlatformQuality(
+    tiers: qualityTiersFor(platform),
+    preference: preference,
+  );
+
+  List<OnlineMusicProvider> _streamCandidates(MusicPlatform platform) =>
+      registry.providersFor(platform, OnlineMusicCapability.stream);
 
   /// 多平台聚合搜索（D6:A / D6b:a / D6c:a）。
   ///

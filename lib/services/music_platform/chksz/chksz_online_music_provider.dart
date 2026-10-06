@@ -11,6 +11,7 @@ import 'package:pure_music/services/music_platform/provider/online_music_capabil
 import 'package:pure_music/services/music_platform/provider/online_music_provider.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_quality_tiers.dart';
 
 /// ChkSz 作为「一个 Provider」的实现。
 ///
@@ -122,6 +123,16 @@ final class ChkszOnlineMusicProvider
     return AppPreference.instance.defaultQuality;
   }
 
+  /// 网易云档位：7 档，文案与请求值都来自 [MusicQuality]。
+  ///
+  /// 之所以要显式声明而不是留空：留空表示"不声明档位"，UI 就只能拿内部键当文案；
+  /// 而内置 ChkSz 的档位就是网易云的那 7 档，声明的结果与今天完全一致（行为不变）。
+  @override
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) =>
+      platformsFor(OnlineMusicCapability.stream).contains(platform)
+      ? neteaseQualityTiers
+      : const [];
+
   @override
   String get credentialDisplayName => 'API Key';
 
@@ -169,7 +180,10 @@ final class ChkszOnlineMusicProvider
   @override
   void dispose() => _runtime.dispose();
 
-  void _ensurePlatform(MusicPlatform platform, OnlineMusicCapability capability) {
+  void _ensurePlatform(
+    MusicPlatform platform,
+    OnlineMusicCapability capability,
+  ) {
     if (!platformsFor(capability).contains(platform)) {
       throw const OnlineMusicException(
         kind: OnlineMusicErrorKind.unavailable,

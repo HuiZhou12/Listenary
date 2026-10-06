@@ -14,6 +14,7 @@ import 'package:pure_music/services/music_platform/provider/online_music_binding
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_quality_tiers.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_registry.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 
@@ -242,6 +243,13 @@ final class _ConfiguredMusicProvider implements OnlineMusicProvider {
   String defaultQualityFor(MusicPlatform platform) =>
       _delegate(OnlineMusicCapability.stream)?.defaultQualityFor(platform) ??
       MusicQuality.lossless.level;
+
+  /// 档位声明同样委托给**播放解析**能力的那个 delegate —— 档位是"该平台怎么播"
+  /// 的一部分，和数据能力（搜索/歌单）无关。
+  @override
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) =>
+      _delegate(OnlineMusicCapability.stream)?.qualityTiersFor(platform) ??
+      const [];
 
   @override
   void dispose() {
