@@ -119,13 +119,38 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
     required MusicPlatform platform,
     required String playlistId,
     required OnlineMusicCancelToken cancelToken,
-  }) async => throw unsupportedCapability();
+  }) async {
+    final binding = _requireBinding(OnlineMusicCapability.playlist, platform);
+    return _run(
+      binding: binding,
+      cancelToken: cancelToken,
+      inputs: DeclarativeInputs(playlistId: playlistId),
+      map: (body) => mapDeclarativePlaylistResponse(
+        spec: binding.response,
+        body: body,
+        platform: contentPlatform,
+        requestedPlaylistId: playlistId,
+      ),
+    );
+  }
 
   @override
   Future<MusicLyrics> fetchLyrics(
     PlatformTrackRef ref, {
     required OnlineMusicCancelToken cancelToken,
-  }) async => throw unsupportedCapability();
+  }) async {
+    final binding = _requireBinding(OnlineMusicCapability.lyric, ref.platform);
+    return _run(
+      binding: binding,
+      cancelToken: cancelToken,
+      inputs: DeclarativeInputs(trackId: ref.trackId),
+      map: (body) => mapDeclarativeLyricsResponse(
+        spec: binding.response,
+        body: body,
+        ref: ref,
+      ),
+    );
+  }
 
   @override
   String defaultQualityFor(MusicPlatform platform) =>

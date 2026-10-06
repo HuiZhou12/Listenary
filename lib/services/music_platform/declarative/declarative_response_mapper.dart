@@ -133,7 +133,11 @@ ResolvedStream mapDeclarativeResolveResponse({
     uri: uri,
     requestedQuality: requestedQuality,
     coverUri: _readUri(spec, OnlineMusicDomainField.coverUri, root),
-    actualQuality: _readString(spec, OnlineMusicDomainField.streamQuality, root),
+    actualQuality: _readString(
+      spec,
+      OnlineMusicDomainField.streamQuality,
+      root,
+    ),
     bitrate: _readIntField(spec, OnlineMusicDomainField.streamBitrate, root),
     resolvedAt: resolvedAt,
     expiresAt: expiresAt,
@@ -143,6 +147,91 @@ ResolvedStream mapDeclarativeResolveResponse({
 // ---------------------------------------------------------------------------
 // 字段读取
 // ---------------------------------------------------------------------------
+
+/// 映射歌单响应（S7a）。
+///
+/// 约定与搜索/播放解析一致：
+/// - `fieldsRootPath` 指向**歌单元数据**所在对象（未配置时用整个响应体）；
+/// - `listPath` 指向**歌单内曲目数组**（未配置则不带曲目，保持结构可用）；
+/// - 歌单 id 读不到时**回落到请求里的 id**（调用方本来就知道它，不算映射失败）。
+RemotePlaylist mapDeclarativePlaylistResponse({
+  required OnlineMusicResponseSpec spec,
+  required Object? body,
+  required MusicPlatform platform,
+  required String requestedPlaylistId,
+}) {
+  final root = spec.fieldsRootPath?.read(body) ?? body;
+  final id =
+      _readOptional(
+        spec,
+        OnlineMusicDomainField.playlistId,
+        root,
+      )?.toString() ??
+      requestedPlaylistId;
+
+  final tracks = <MusicTrack>[];
+  final listPath = spec.listPath;
+  if (listPath != null) {
+    final rawList = listPath.read(body);
+    if (rawList is! List) {
+      throw const DeclarativeMappingException('列表路径没有取到数组');
+    }
+    for (final element in rawList) {
+      tracks.add(_mapTrack(spec, element, platform));
+    }
+  }
+
+  return RemotePlaylist(
+    platform: platform,
+    id: id,
+    name: _readString(spec, OnlineMusicDomainField.playlistName, root) ?? id,
+    coverUri: _readUri(spec, OnlineMusicDomainField.playlistCoverUri, root),
+    creator: _readString(spec, OnlineMusicDomainField.playlistCreator, root),
+    trackCount: _readIntField(
+      spec,
+      OnlineMusicDomainField.playlistTrackCount,
+      root,
+    ),
+    tracks: tracks,
+  );
+}
+
+/// 映射歌词响应（S7a）。
+///
+/// 与歌单/搜索不同，这里**不因为"取不到歌词"就报映射失败**：间奏曲、纯音乐本来
+/// 就可能没有歌词，那是正常的空结果（上层会显示"暂无歌词"）。
+/// 只有当用户**一个歌词字段都没配置**时才判定为配置错误 —— 那种情况下永远取不到
+/// 歌词，属于"接口定义无法匹配响应"，必须让用户知道。
+MusicLyrics mapDeclarativeLyricsResponse({
+  required OnlineMusicResponseSpec spec,
+  required Object? body,
+  required PlatformTrackRef ref,
+}) {
+  const lyricFields = [
+    OnlineMusicDomainField.lyricOriginal,
+    OnlineMusicDomainField.lyricTranslation,
+    OnlineMusicDomainField.lyricRomanization,
+  ];
+  if (!lyricFields.any(spec.fields.containsKey)) {
+    throw const DeclarativeMappingException('未配置任何歌词字段');
+  }
+
+  final root = spec.fieldsRootPath?.read(body) ?? body;
+  return MusicLyrics(
+    original: _readString(spec, OnlineMusicDomainField.lyricOriginal, root),
+    translation: _readString(
+      spec,
+      OnlineMusicDomainField.lyricTranslation,
+      root,
+    ),
+    romanization: _readString(
+      spec,
+      OnlineMusicDomainField.lyricRomanization,
+      root,
+    ),
+    ref: ref,
+  );
+}
 
 Object? _readOptional(
   OnlineMusicResponseSpec spec,
