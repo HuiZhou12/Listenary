@@ -426,25 +426,36 @@ String deriveOnlineMusicCredentialReference(String providerId) =>
     ? OnlineMusicProviderDefinition.defaultCredentialReference
     : 'PureMusic/$providerId/APIKey';
 
-/// 在线音乐 Provider 与能力映射的配置。
+/// 在线音乐 Provider、平台感知路由与旧单值能力映射的配置。
 final class OnlineMusicSettings {
   const OnlineMusicSettings({
     required this.providers,
     required this.defaultProviderId,
     required this.capabilityProviders,
+    required this.routing,
   });
 
   static const defaults = OnlineMusicSettings(
     providers: [OnlineMusicProviderDefinition.defaults],
     defaultProviderId: defaultOnlineMusicProviderId,
     capabilityProviders: {},
+    routing: {},
   );
 
   final List<OnlineMusicProviderDefinition> providers;
+
+  /// 旧配置里的"默认 Provider"。**仅作兼容读取**：自 D14 起不再参与任何路由。
   final String defaultProviderId;
 
-  /// 能力 → Provider id；缺失或指向未注册 id 时回落默认 Provider。
+  /// 旧配置的**平台无关**单值能力选择（`capabilities{cap → providerId}`）。
+  /// 旧界面仍会读写它；解析候选时作为 [routing] 缺失项的回落（D13:A：不迁移、改写）。
   final Map<OnlineMusicCapability, String> capabilityProviders;
+
+  /// **平台感知**的显式候选：`platform → capability → 有序 providerId`（D4:A）。
+  ///
+  /// 与 [capabilityProviders] **并存**而非互相派生：`routing` 优先，缺失时回落到旧的
+  /// 单值映射（且仅当该 Provider 的 `contentPlatform` 等于查询平台时才生效）。
+  final Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> routing;
 
   Set<String> get providerIds => {for (final p in providers) p.id};
 
@@ -453,6 +464,32 @@ final class OnlineMusicSettings {
       if (provider.id == id) return provider;
     }
     return null;
+  }
+
+  /// 解析 `(platform, capability)` 的**显式**候选 id（D4:A + D13:A）。
+  ///
+  /// 顺序：`routing[platform][capability]`（过滤未注册 id）→ 旧单值映射
+  /// （仅当该 Provider 的 `contentPlatform` 恰为查询平台时生效）→ 空列表。
+  /// 空列表表示"没有显式候选"，由调用方按注册顺序补齐支持的 Provider；
+  /// 这里**不做**平台无关的默认回落（D14）。
+  List<String> explicitCandidateIdsFor(
+    MusicPlatform platform,
+    OnlineMusicCapability capability,
+  ) {
+    final configured = routing[platform]?[capability];
+    if (configured != null && configured.isNotEmpty) {
+      return [
+        for (final id in configured)
+          if (providerIds.contains(id)) id,
+      ];
+    }
+    final legacy = capabilityProviders[capability];
+    if (legacy == null) return const [];
+    final provider = providerById(legacy);
+    if (provider == null || provider.contentPlatform != platform) {
+      return const [];
+    }
+    return [legacy];
   }
 
   /// 某个能力实际会用到的 Provider id（缺失/未注册时回落默认）。
@@ -473,6 +510,7 @@ final class OnlineMusicSettings {
       providers: List.unmodifiable([...providers, provider]),
       defaultProviderId: defaultProviderId,
       capabilityProviders: capabilityProviders,
+      routing: routing,
     );
   }
 
@@ -488,10 +526,11 @@ final class OnlineMusicSettings {
       ]),
       defaultProviderId: defaultProviderId,
       capabilityProviders: capabilityProviders,
+      routing: routing,
     );
   }
 
-  /// 删除一个条目：默认 Provider 与指向它的能力分配一并回落到新的首项。
+  /// 删除一个条目：默认 Provider、旧单值映射与平台候选里的它一并清理。
   /// 列表只允许删到剩一个条目。
   OnlineMusicSettings withoutProvider(String providerId) {
     if (providers.length <= 1 || !providerIds.contains(providerId)) return this;
@@ -509,7 +548,31 @@ final class OnlineMusicSettings {
         for (final entry in capabilityProviders.entries)
           if (entry.value != providerId) entry.key: entry.value,
       }),
+      routing: _routingWithoutProvider(routing, providerId),
     );
+  }
+
+  /// 从所有平台候选中剔除某个 providerId；空掉的层级一并移除。
+  static Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>>
+  _routingWithoutProvider(
+    Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> routing,
+    String providerId,
+  ) {
+    final result = <MusicPlatform, Map<OnlineMusicCapability, List<String>>>{};
+    for (final platform in routing.entries) {
+      final capabilities = <OnlineMusicCapability, List<String>>{};
+      for (final entry in platform.value.entries) {
+        final kept = [
+          for (final id in entry.value)
+            if (id != providerId) id,
+        ];
+        if (kept.isNotEmpty) capabilities[entry.key] = List.unmodifiable(kept);
+      }
+      if (capabilities.isNotEmpty) {
+        result[platform.key] = Map.unmodifiable(capabilities);
+      }
+    }
+    return Map.unmodifiable(result);
   }
 
   OnlineMusicSettings withCapabilityProvider(
@@ -524,6 +587,40 @@ final class OnlineMusicSettings {
         ...capabilityProviders,
         capability: providerId,
       }),
+      routing: routing,
+    );
+  }
+
+  /// 设置某个 `(platform, capability)` 的**显式有序候选**（D4:A）。
+  /// 传入空列表等价于清除该组合的显式配置（回到按注册顺序推导）。
+  OnlineMusicSettings withRoutingCandidates(
+    MusicPlatform platform,
+    OnlineMusicCapability capability,
+    Iterable<String> providerIds,
+  ) {
+    final kept = [
+      for (final id in providerIds)
+        if (this.providerIds.contains(id)) id,
+    ];
+    // 显式写出类型：否则 `...?` 展开 + 条件元素会让字面量退化成 Map<dynamic, dynamic>，
+    // 运行时 Map.unmodifiable 的视图无法转回声明类型。
+    final Map<OnlineMusicCapability, List<String>> platformRouting = {
+      ...?routing[platform],
+      if (kept.isNotEmpty) capability: List.unmodifiable(kept),
+    };
+    if (kept.isEmpty) platformRouting.remove(capability);
+    final Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> next = {
+      ...routing,
+      if (platformRouting.isNotEmpty)
+        platform: Map.unmodifiable(platformRouting),
+    };
+    // 空列表 = 清除该组合的显式配置：把从 `...routing` 带过来的旧项删掉。
+    if (platformRouting.isEmpty) next.remove(platform);
+    return OnlineMusicSettings(
+      providers: providers,
+      defaultProviderId: defaultProviderId,
+      capabilityProviders: capabilityProviders,
+      routing: Map.unmodifiable(next),
     );
   }
 
@@ -533,10 +630,13 @@ final class OnlineMusicSettings {
       providers: providers,
       defaultProviderId: providerId,
       capabilityProviders: capabilityProviders,
+      routing: routing,
     );
   }
 
   /// 写回 `app_preference.json` 的结构；键名与 [OnlineMusicSettings.fromJson] 一致。
+  ///
+  /// `routing` 为空时不写该键 —— 默认配置与旧配置的落盘内容保持不变（D13:A：不迁移）。
   Map<String, dynamic> toJson() => {
     'defaultProvider': defaultProviderId,
     'providers': [for (final provider in providers) provider.toJson()],
@@ -544,6 +644,14 @@ final class OnlineMusicSettings {
       for (final entry in capabilityProviders.entries)
         entry.key.name: entry.value,
     },
+    if (routing.isNotEmpty)
+      'routing': {
+        for (final platform in routing.entries)
+          platform.key.name: {
+            for (final entry in platform.value.entries)
+              entry.key.name: entry.value,
+          },
+      },
   };
 
   @override
@@ -551,23 +659,45 @@ final class OnlineMusicSettings {
       other is OnlineMusicSettings &&
       other.defaultProviderId == defaultProviderId &&
       _sameProviders(other.providers, providers) &&
-      _sameCapabilityProviders(other.capabilityProviders, capabilityProviders);
+      _sameCapabilityProviders(
+        other.capabilityProviders,
+        capabilityProviders,
+      ) &&
+      _sameRouting(other.routing, routing);
 
   @override
   int get hashCode => Object.hash(
     defaultProviderId,
     Object.hashAll(providers),
-    Object.hashAllUnordered(capabilityProviders.entries.map(
-      (entry) => Object.hash(entry.key, entry.value),
-    )),
+    Object.hashAllUnordered(
+      capabilityProviders.entries.map(
+        (entry) => Object.hash(entry.key, entry.value),
+      ),
+    ),
+    Object.hashAll(
+      routing.entries.map(
+        (platform) => Object.hash(
+          platform.key,
+          Object.hashAll(
+            platform.value.entries.map(
+              (entry) => Object.hash(entry.key, Object.hashAll(entry.value)),
+            ),
+          ),
+        ),
+      ),
+    ),
   );
 
   @override
   String toString() =>
       'OnlineMusicSettings(${providers.length} providers, '
-      'default=$defaultProviderId, capabilities=${capabilityProviders.length})';
+      'default=$defaultProviderId, capabilities=${capabilityProviders.length}, '
+      'routing=${routing.length} platforms)';
 
   /// 解析 `onlineMusic` 配置；任何缺失、非法或未注册的内容逐项回落默认。
+  ///
+  /// D13:A：**不做一次性迁移** —— 旧 `capabilities{cap→providerId}` 与新的 `routing`
+  /// 各按各自语义读入，不互相改写、不回写用户文件。
   factory OnlineMusicSettings.fromJson(Object? value) {
     if (value is! Map) return defaults;
     final providers = _parseProviders(value['providers']);
@@ -575,14 +705,68 @@ final class OnlineMusicSettings {
     final requestedDefault = _nonEmptyString(value['defaultProvider']);
     return OnlineMusicSettings(
       providers: providers,
-      defaultProviderId: (requestedDefault != null && ids.contains(requestedDefault))
+      defaultProviderId:
+          (requestedDefault != null && ids.contains(requestedDefault))
           ? requestedDefault
           : providers.first.id,
       capabilityProviders: _parseCapabilityProviders(
         value['capabilities'],
         ids,
       ),
+      routing: _parseRouting(value['routing'], ids),
     );
+  }
+
+  /// 解析 `routing{platform → capability → [providerId]}`。
+  ///
+  /// 逐项容错：平台名 / 能力名无法识别就跳过该项；未注册的 providerId 直接丢弃
+  /// （不是回落到默认 Provider —— D14）。整体为空时返回空表。
+  static Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>>
+  _parseRouting(Object? value, Set<String> ids) {
+    if (value is! Map) return const {};
+    final result = <MusicPlatform, Map<OnlineMusicCapability, List<String>>>{};
+    for (final platformEntry in value.entries) {
+      final platform = _matchPlatform(platformEntry.key);
+      if (platform == null) continue;
+      final rawCapabilities = platformEntry.value;
+      if (rawCapabilities is! Map) continue;
+      final capabilities = <OnlineMusicCapability, List<String>>{};
+      for (final capabilityEntry in rawCapabilities.entries) {
+        final capability = _matchCapability(capabilityEntry.key);
+        if (capability == null) continue;
+        final rawIds = capabilityEntry.value;
+        if (rawIds is! List) continue;
+        final kept = <String>[];
+        for (final raw in rawIds) {
+          final id = _nonEmptyString(raw);
+          if (id == null || !ids.contains(id) || kept.contains(id)) continue;
+          kept.add(id);
+        }
+        if (kept.isNotEmpty) capabilities[capability] = List.unmodifiable(kept);
+      }
+      if (capabilities.isNotEmpty) {
+        result[platform] = Map.unmodifiable(capabilities);
+      }
+    }
+    return Map.unmodifiable(result);
+  }
+
+  static MusicPlatform? _matchPlatform(Object? value) {
+    final name = _nonEmptyString(value);
+    if (name == null) return null;
+    for (final platform in MusicPlatform.values) {
+      if (platform.name == name) return platform;
+    }
+    return null;
+  }
+
+  static OnlineMusicCapability? _matchCapability(Object? value) {
+    final name = _nonEmptyString(value);
+    if (name == null) return null;
+    for (final capability in OnlineMusicCapability.values) {
+      if (capability.name == name) return capability;
+    }
+    return null;
   }
 
   static List<OnlineMusicProviderDefinition> _parseProviders(Object? value) {
@@ -757,6 +941,27 @@ bool _sameCapabilityProviders(
   if (a.length != b.length) return false;
   for (final entry in a.entries) {
     if (b[entry.key] != entry.value) return false;
+  }
+  return true;
+}
+
+bool _sameRouting(
+  Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> a,
+  Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> b,
+) {
+  if (a.length != b.length) return false;
+  for (final platform in a.entries) {
+    final other = b[platform.key];
+    if (other == null || other.length != platform.value.length) return false;
+    for (final entry in platform.value.entries) {
+      final otherIds = other[entry.key];
+      if (otherIds == null || otherIds.length != entry.value.length) {
+        return false;
+      }
+      for (var index = 0; index < entry.value.length; index++) {
+        if (otherIds[index] != entry.value[index]) return false;
+      }
+    }
   }
   return true;
 }

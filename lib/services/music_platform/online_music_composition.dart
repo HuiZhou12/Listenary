@@ -40,9 +40,8 @@ ChkszProviderConfig chkszProviderConfigFor(
 );
 
 /// 可注入的 Dio 出口；按条目提供，便于为每个条目绑定自己的连接。
-typedef OnlineMusicDioFactory = Dio Function(
-  OnlineMusicProviderDefinition definition,
-);
+typedef OnlineMusicDioFactory =
+    Dio Function(OnlineMusicProviderDefinition definition);
 
 /// 按配置装配在线音乐 Provider，并把每个能力接到被选中的实现。
 ///
@@ -75,8 +74,7 @@ OnlineMusicComposition createOnlineMusicComposition({
             runtime: createChkszRuntime(
               credentialProvider: definition.requiresCredential
                   ? access.providerFor(
-                      definition.credentialReference ??
-                          definition.id,
+                      definition.credentialReference ?? definition.id,
                     )
                   : null,
               config: chkszProviderConfigFor(definition),
@@ -122,11 +120,15 @@ OnlineMusicComposition createOnlineMusicComposition({
       _ConfiguredMusicProvider(
         providerId: definition.id,
         delegates: delegates,
-        delegateDisposables: {builtin, declarative}.whereType<OnlineMusicProvider>(),
+        delegateDisposables: {
+          builtin,
+          declarative,
+        }.whereType<OnlineMusicProvider>(),
       ),
     );
 
-    credentialControllers[definition.id] = builtin ??
+    credentialControllers[definition.id] =
+        builtin ??
         _ReferenceCredentialController(
           reference:
               definition.credentialReference ??
@@ -139,6 +141,9 @@ OnlineMusicComposition createOnlineMusicComposition({
     providers: providers,
     defaultProviderId: settings.defaultProviderId,
     capabilityProviders: settings.capabilityProviders,
+    // 平台感知路由（D4:A / D14）：候选由配置层的 (platform, capability) 查询决定，
+    // 其中已包含旧单值映射的回落语义；不再使用平台无关的 defaultProvider 做路由。
+    explicitCandidates: settings.explicitCandidateIdsFor,
   );
 
   return OnlineMusicComposition(
@@ -169,8 +174,7 @@ final class _ConfiguredMusicProvider implements OnlineMusicProvider {
 
   @override
   OnlineMusicProviderAuth authFor(OnlineMusicCapability capability) =>
-      _delegates[capability]?.authFor(capability) ??
-      const OnlineMusicNoAuth();
+      _delegates[capability]?.authFor(capability) ?? const OnlineMusicNoAuth();
 
   OnlineMusicProvider? _delegate(OnlineMusicCapability capability) =>
       _delegates[capability];
@@ -251,7 +255,10 @@ final class _ConfiguredMusicProvider implements OnlineMusicProvider {
 /// 这里按引用把它适配成凭据入口。
 final class _ReferenceCredentialController
     implements OnlineMusicCredentialController {
-  _ReferenceCredentialController({required this.reference, required this.access});
+  _ReferenceCredentialController({
+    required this.reference,
+    required this.access,
+  });
 
   final String reference;
   final ChkszCredentialAccess access;

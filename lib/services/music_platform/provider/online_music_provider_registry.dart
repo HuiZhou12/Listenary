@@ -2,6 +2,16 @@ import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider.dart';
 
+/// 由配置层提供的「显式候选」查询（D4:A）：`(platform, capability) → 有序 providerId`。
+///
+/// 提供它时，平台感知解析只用它（它已包含旧单值映射的回落语义，见
+/// `OnlineMusicSettings.explicitCandidateIdsFor`）；不提供时退回旧行为。
+typedef OnlineMusicExplicitCandidates =
+    List<String> Function(
+      MusicPlatform platform,
+      OnlineMusicCapability capability,
+    );
+
 /// 能力 → Provider 的解析结果。
 ///
 /// 两条解析路径刻意分开：
@@ -15,7 +25,9 @@ final class OnlineMusicProviderRegistry {
     required Iterable<OnlineMusicProvider> providers,
     String? defaultProviderId,
     Map<OnlineMusicCapability, String> capabilityProviders = const {},
-  }) : _explicitCapabilityProviders = Map.unmodifiable(capabilityProviders) {
+    OnlineMusicExplicitCandidates? explicitCandidates,
+  }) : _explicitCapabilityProviders = Map.unmodifiable(capabilityProviders),
+       _explicitCandidates = explicitCandidates {
     for (final provider in providers) {
       _providers.putIfAbsent(provider.providerId, () => provider);
     }
@@ -39,6 +51,7 @@ final class OnlineMusicProviderRegistry {
 
   final Map<String, OnlineMusicProvider> _providers = {};
   final Map<OnlineMusicCapability, String> _explicitCapabilityProviders;
+  final OnlineMusicExplicitCandidates? _explicitCandidates;
   late final OnlineMusicProvider _defaultProvider;
   late final Map<OnlineMusicCapability, OnlineMusicProvider> _selectedProviders;
 
@@ -65,16 +78,28 @@ final class OnlineMusicProviderRegistry {
     OnlineMusicCapability capability,
   ) {
     final result = <OnlineMusicProvider>[];
-    final explicitId = _explicitCapabilityProviders[capability];
-    final explicit = explicitId == null ? null : _providers[explicitId];
-    if (explicit != null && _supports(explicit, platform, capability)) {
-      result.add(explicit);
+    for (final id in _explicitIdsFor(platform, capability)) {
+      final provider = _providers[id];
+      if (provider == null || result.contains(provider)) continue;
+      if (_supports(provider, platform, capability)) result.add(provider);
     }
     for (final provider in _providers.values) {
-      if (identical(provider, explicit)) continue;
+      if (result.contains(provider)) continue;
       if (_supports(provider, platform, capability)) result.add(provider);
     }
     return List.unmodifiable(result);
+  }
+
+  /// 显式候选 id：配置层提供了 [OnlineMusicExplicitCandidates] 就用它，
+  /// 否则退回旧的**平台无关单值**选择。
+  List<String> _explicitIdsFor(
+    MusicPlatform platform,
+    OnlineMusicCapability capability,
+  ) {
+    final resolver = _explicitCandidates;
+    if (resolver != null) return resolver(platform, capability);
+    final legacyId = _explicitCapabilityProviders[capability];
+    return legacyId == null ? const [] : [legacyId];
   }
 
   static bool _supports(
