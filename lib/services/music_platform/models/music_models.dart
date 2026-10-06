@@ -116,12 +116,27 @@ final class MusicLyrics {
     this.translation,
     this.romanization,
     this.parsed,
+    this.ref,
   });
 
   final String? original;
   final String? translation;
   final String? romanization;
   final Lyric? parsed;
+
+  /// 这份歌词**属于哪条在线曲目**（platform + remoteId）。
+  ///
+  /// 由服务层在成功取词后按请求回填（D9 / 不变量 I1）：在线歌词必须始终能回答
+  /// "它来自哪个平台的哪首歌"，不允许出现来源不明的歌词对象。
+  final PlatformTrackRef? ref;
+
+  MusicLyrics withRef(PlatformTrackRef ref) => MusicLyrics(
+    original: original,
+    translation: translation,
+    romanization: romanization,
+    parsed: parsed,
+    ref: ref,
+  );
 
   bool get isEmpty =>
       (original == null || original!.isEmpty) &&

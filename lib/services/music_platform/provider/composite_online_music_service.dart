@@ -116,6 +116,9 @@ final class CompositeOnlineMusicService implements OnlineMusicService {
     ref.platform,
     OnlineMusicCapability.lyric,
     (provider) => provider.fetchLyrics(ref, cancelToken: cancelToken),
+    // D9 / I1：歌词必须带回来源身份（用请求里的 ref 回填，Provider 不必自己提供）。
+    stamp: (lyrics, providerId) =>
+        lyrics.ref == null ? lyrics.withRef(ref) : lyrics,
   );
 
   @override
