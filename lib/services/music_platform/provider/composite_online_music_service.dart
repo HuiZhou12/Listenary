@@ -19,20 +19,40 @@ import 'package:pure_music/services/music_platform/provider/online_music_route_d
 /// 但每次分发都记入 [routeLog] 以便诊断。
 final class CompositeOnlineMusicService implements OnlineMusicService {
   CompositeOnlineMusicService({required this.registry})
-    : capabilities = OnlineMusicCapabilities(
-        searchablePlatforms: registry
-            .providerFor(OnlineMusicCapability.search)
-            .platformsFor(OnlineMusicCapability.search),
-        resolvablePlatforms: registry
-            .providerFor(OnlineMusicCapability.stream)
-            .platformsFor(OnlineMusicCapability.stream),
-        playlistPlatforms: registry
-            .providerFor(OnlineMusicCapability.playlist)
-            .platformsFor(OnlineMusicCapability.playlist),
-        lyricPlatforms: registry
-            .providerFor(OnlineMusicCapability.lyric)
-            .platformsFor(OnlineMusicCapability.lyric),
-      );
+    : capabilities = _capabilitiesFor(registry);
+
+  /// 由**候选**推导能力集合，并在搜索上施加 **Stream 硬门槛**（D3）。
+  ///
+  /// 旧实现取"被选中的那一个 Provider 声明了什么"，多平台下会漏掉"这个平台其实
+  /// 还有另一个可用 Provider"的情况；这里改为按 `(platform, capability)` 候选求并集。
+  ///
+  /// 门槛：一个平台必须**同时**有可用的 Search 与 Stream 候选，才允许作为搜索来源
+  /// —— 否则会出现"搜得到但播不了"。被挡下的平台连同**原因**一起暴露，供 UI 解释
+  /// （D3b:a）。
+  static OnlineMusicCapabilities _capabilitiesFor(
+    OnlineMusicProviderRegistry registry,
+  ) {
+    final search = registry.platformsFor(OnlineMusicCapability.search);
+    final stream = registry.platformsFor(OnlineMusicCapability.stream);
+    final searchable = {
+      for (final platform in search)
+        if (stream.contains(platform)) platform,
+    };
+    final reasons = <MusicPlatform, String>{};
+    for (final platform in {...search, ...stream}) {
+      if (searchable.contains(platform)) continue;
+      reasons[platform] = stream.contains(platform)
+          ? '缺少搜索能力，因此不会参与搜索'
+          : '缺少播放解析能力，因此不会参与搜索';
+    }
+    return OnlineMusicCapabilities(
+      searchablePlatforms: searchable,
+      resolvablePlatforms: stream,
+      playlistPlatforms: registry.platformsFor(OnlineMusicCapability.playlist),
+      lyricPlatforms: registry.platformsFor(OnlineMusicCapability.lyric),
+      unavailableSearchReasons: reasons,
+    );
+  }
 
   final OnlineMusicProviderRegistry registry;
 

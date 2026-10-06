@@ -102,6 +102,15 @@ final class OnlineMusicProviderRegistry {
     return legacyId == null ? const [] : [legacyId];
   }
 
+  /// 某能力在**所有平台**上的可用集合，按候选推导（多 Provider 取并集）。
+  ///
+  /// 与旧的「看被选中的那一个 Provider 声明了什么」不同：这里回答的是
+  /// "这个平台到底有没有能用的 Provider"，这正是平台门槛（D3）需要的依据。
+  Set<MusicPlatform> platformsFor(OnlineMusicCapability capability) => {
+    for (final platform in MusicPlatform.values)
+      if (providersFor(platform, capability).isNotEmpty) platform,
+  };
+
   static bool _supports(
     OnlineMusicProvider provider,
     MusicPlatform platform,
