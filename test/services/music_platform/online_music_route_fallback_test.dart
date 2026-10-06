@@ -1,0 +1,376 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_music_provider.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
+import 'package:pure_music/services/music_platform/declarative/provider_templates.dart';
+import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/online_music_error.dart';
+import 'package:pure_music/services/music_platform/online_music_request.dart';
+import 'package:pure_music/services/music_platform/provider/composite_online_music_service.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_credentials.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_registry.dart';
+
+/// S2：fail-closed 受限回退、诊断可观测、以及 D15 的 `endpointMismatch` 分类。
+void main() {
+  const search = OnlineMusicCapability.search;
+  const stream = OnlineMusicCapability.stream;
+  const netease = MusicPlatform.netease;
+
+  final neteaseSearchAndStream = <OnlineMusicCapability, Set<MusicPlatform>>{
+    search: {netease},
+    stream: {netease},
+  };
+
+  CompositeOnlineMusicService serviceWith(List<_ScriptedProvider> providers) =>
+      CompositeOnlineMusicService(
+        registry: OnlineMusicProviderRegistry(providers: providers),
+      );
+
+  Future<MusicSearchPage> searchWith(CompositeOnlineMusicService service) =>
+      service.search(
+        platform: netease,
+        keyword: 'x',
+        cancelToken: OnlineMusicCancelToken(),
+      );
+
+  group('回退判定（fail-closed，Spec §6.3 + D16）', () {
+    test('允许回退的 kind 恰好是规定的五项', () {
+      const allowed = {
+        OnlineMusicErrorKind.network,
+        OnlineMusicErrorKind.unavailable,
+        OnlineMusicErrorKind.notConfigured,
+        OnlineMusicErrorKind.quotaExhausted,
+        OnlineMusicErrorKind.rateLimited,
+      };
+      for (final kind in OnlineMusicErrorKind.values) {
+        expect(
+          allowsProviderFallback(kind),
+          allowed.contains(kind),
+          reason: '${kind.name} 的回退判定与 Spec 不一致',
+        );
+      }
+    });
+
+    test('网络失败 → 换下一个候选并成功，诊断记录可读', () async {
+      final failing = _ScriptedProvider(
+        'neteaseA',
+        neteaseSearchAndStream,
+        failure: OnlineMusicErrorKind.network,
+      );
+      final healthy = _ScriptedProvider('neteaseB', neteaseSearchAndStream);
+      final service = serviceWith([failing, healthy]);
+
+      final page = await searchWith(service);
+
+      expect(page.items, isEmpty);
+      expect(failing.searchCalls, 1);
+      expect(healthy.searchCalls, 1);
+      final record = service.lastRoute!;
+      expect(record.didFallback, isTrue);
+      expect(record.attempts.single.providerId, 'neteaseA');
+      expect(record.attempts.single.kind, OnlineMusicErrorKind.network);
+      expect(record.winnerProviderId, 'neteaseB');
+    });
+
+    test('业务"资源不存在"不换 Provider（D15）', () async {
+      final missing = _ScriptedProvider(
+        'neteaseA',
+        neteaseSearchAndStream,
+        failure: OnlineMusicErrorKind.notFound,
+      );
+      final healthy = _ScriptedProvider('neteaseB', neteaseSearchAndStream);
+      final service = serviceWith([missing, healthy]);
+
+      await expectLater(
+        searchWith(service),
+        throwsA(
+          isA<OnlineMusicException>().having(
+            (error) => error.kind,
+            'kind',
+            OnlineMusicErrorKind.notFound,
+          ),
+        ),
+      );
+      expect(healthy.searchCalls, 0, reason: '内容语义类错误不得触发回退');
+      expect(service.lastRoute!.winnerProviderId, isNull);
+    });
+
+    test('接口定义不匹配不换 Provider（D15）', () async {
+      final mismatch = _ScriptedProvider(
+        'neteaseA',
+        neteaseSearchAndStream,
+        failure: OnlineMusicErrorKind.endpointMismatch,
+      );
+      final healthy = _ScriptedProvider('neteaseB', neteaseSearchAndStream);
+      final service = serviceWith([mismatch, healthy]);
+
+      await expectLater(
+        searchWith(service),
+        throwsA(
+          isA<OnlineMusicException>().having(
+            (error) => error.kind,
+            'kind',
+            OnlineMusicErrorKind.endpointMismatch,
+          ),
+        ),
+      );
+      expect(healthy.searchCalls, 0, reason: '配置类错误不得靠换 Provider 掩盖');
+    });
+
+    test('全部候选都因可回退错误失败时，抛出最后一个错误', () async {
+      final first = _ScriptedProvider(
+        'neteaseA',
+        neteaseSearchAndStream,
+        failure: OnlineMusicErrorKind.network,
+      );
+      final second = _ScriptedProvider(
+        'neteaseB',
+        neteaseSearchAndStream,
+        failure: OnlineMusicErrorKind.unavailable,
+      );
+      final service = serviceWith([first, second]);
+
+      await expectLater(
+        searchWith(service),
+        throwsA(
+          isA<OnlineMusicException>().having(
+            (error) => error.kind,
+            'kind',
+            OnlineMusicErrorKind.unavailable,
+          ),
+        ),
+      );
+      expect(first.searchCalls, 1);
+      expect(second.searchCalls, 1);
+      expect(service.lastRoute!.attempts, hasLength(2));
+    });
+
+    test('空结果不是错误：直接返回，不触发回退', () async {
+      final empty = _ScriptedProvider('neteaseA', neteaseSearchAndStream);
+      final next = _ScriptedProvider('neteaseB', neteaseSearchAndStream);
+      final service = serviceWith([empty, next]);
+
+      final page = await searchWith(service);
+
+      expect(page.items, isEmpty);
+      expect(next.searchCalls, 0);
+      expect(service.lastRoute!.didFallback, isFalse);
+      expect(service.lastRoute!.winnerProviderId, 'neteaseA');
+    });
+
+    test('该平台没有候选时，发请求前就失败且不留路由记录', () async {
+      final provider = _ScriptedProvider('neteaseA', neteaseSearchAndStream);
+      final service = serviceWith([provider]);
+
+      await expectLater(
+        service.search(
+          platform: MusicPlatform.qq,
+          keyword: 'x',
+          cancelToken: OnlineMusicCancelToken(),
+        ),
+        throwsA(
+          isA<OnlineMusicException>().having(
+            (error) => error.kind,
+            'kind',
+            OnlineMusicErrorKind.unavailable,
+          ),
+        ),
+      );
+      expect(provider.searchCalls, 0);
+      expect(service.routeLog, isEmpty);
+    });
+
+    test('播放解析结果带上实际使用的 Provider，仅供诊断', () async {
+      final provider = _ScriptedProvider('neteaseA', neteaseSearchAndStream);
+      final service = serviceWith([provider]);
+
+      final result = await service.resolve(
+        const PlatformTrackRef(platform: netease, trackId: '1'),
+        requestedQuality: 'lossless',
+        cancelToken: OnlineMusicCancelToken(),
+      );
+
+      expect(result.servedByProviderId, 'neteaseA');
+      expect(service.lastRoute!.capability, stream);
+    });
+  });
+
+  group('D15：声明式 Provider 的两类"找不到"必须分开', () {
+    DeclarativeMusicProvider declarativeWith(_StubTransport transport) =>
+        DeclarativeMusicProvider(
+          providerId: 'declarativeA',
+          bindings: {OnlineMusicCapability.search: msapiSearchTemplate},
+          transport: transport,
+          credentials: const _NoCredentialReader(),
+          contentPlatform: netease,
+        );
+
+    Future<void> runSearch(DeclarativeMusicProvider provider) =>
+        provider.search(
+          platform: netease,
+          keyword: 'x',
+          cancelToken: OnlineMusicCancelToken(),
+        );
+
+    test('声明式 404 → endpointMismatch，文案指向接口定义', () async {
+      final provider = declarativeWith(
+        _StubTransport(
+          const DeclarativeHttpResponse(
+            statusCode: 404,
+            data: {'message': 'not found'},
+          ),
+        ),
+      );
+
+      await expectLater(
+        runSearch(provider),
+        throwsA(
+          isA<OnlineMusicException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                OnlineMusicErrorKind.endpointMismatch,
+              )
+              .having(
+                (error) => error.safeMessage,
+                'message',
+                contains('接口定义无法匹配响应'),
+              ),
+        ),
+      );
+    });
+
+    test('响应不是 JSON → endpointMismatch', () async {
+      final provider = declarativeWith(
+        _StubTransport(
+          const DeclarativeHttpResponse(statusCode: 200, data: '<html>oops'),
+        ),
+      );
+
+      await expectLater(
+        runSearch(provider),
+        throwsA(
+          isA<OnlineMusicException>().having(
+            (error) => error.kind,
+            'kind',
+            OnlineMusicErrorKind.endpointMismatch,
+          ),
+        ),
+      );
+    });
+
+    test('字段映射失败 → endpointMismatch，且说明缺什么', () async {
+      final provider = declarativeWith(
+        _StubTransport(
+          const DeclarativeHttpResponse(
+            statusCode: 200,
+            // 列表存在但缺少必填的 id → 映射失败（配置的字段路径对不上）。
+            data: {
+              'result': {
+                'songs': [
+                  {'name': '海阔天空'},
+                ],
+              },
+            },
+          ),
+        ),
+      );
+
+      await expectLater(
+        runSearch(provider),
+        throwsA(
+          isA<OnlineMusicException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                OnlineMusicErrorKind.endpointMismatch,
+              )
+              .having(
+                (error) => error.safeMessage,
+                'message',
+                contains('接口定义无法匹配响应'),
+              ),
+        ),
+      );
+    });
+  });
+}
+
+final class _ScriptedProvider extends UnsupportedOnlineMusicProvider {
+  _ScriptedProvider(this.providerId, this._platforms, {this.failure});
+
+  @override
+  final String providerId;
+
+  final Map<OnlineMusicCapability, Set<MusicPlatform>> _platforms;
+
+  /// 非空时，该 Provider 的所有调用都以这个 kind 失败。
+  final OnlineMusicErrorKind? failure;
+
+  int searchCalls = 0;
+
+  @override
+  Set<MusicPlatform> platformsFor(OnlineMusicCapability capability) =>
+      _platforms[capability] ?? const {};
+
+  @override
+  Future<MusicSearchPage> search({
+    required MusicPlatform platform,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    searchCalls++;
+    final kind = failure;
+    if (kind != null) {
+      throw OnlineMusicException(
+        kind: kind,
+        safeMessage: 'failed:${kind.name}',
+      );
+    }
+    return MusicSearchPage(platform: platform, items: const []);
+  }
+
+  @override
+  Future<ResolvedStream> resolve(
+    PlatformTrackRef ref, {
+    required String requestedQuality,
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    final kind = failure;
+    if (kind != null) {
+      throw OnlineMusicException(
+        kind: kind,
+        safeMessage: 'failed:${kind.name}',
+      );
+    }
+    return ResolvedStream(
+      ref: ref,
+      uri: Uri.parse('https://media.invalid/a.flac'),
+      requestedQuality: requestedQuality,
+      resolvedAt: DateTime.now(),
+    );
+  }
+}
+
+final class _StubTransport implements DeclarativeHttpTransport {
+  _StubTransport(this.response);
+
+  final DeclarativeHttpResponse response;
+
+  @override
+  Future<DeclarativeHttpResponse> send(
+    BuiltDeclarativeRequest request, {
+    required OnlineMusicCancelToken cancelToken,
+  }) async => response;
+}
+
+final class _NoCredentialReader implements OnlineMusicCredentialReader {
+  const _NoCredentialReader();
+
+  @override
+  Future<String?> readCredential(String reference) async => null;
+}

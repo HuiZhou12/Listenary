@@ -74,6 +74,7 @@ final class ResolvedStream {
     this.format,
     required this.resolvedAt,
     this.expiresAt,
+    this.servedByProviderId,
   });
 
   final PlatformTrackRef ref;
@@ -85,6 +86,25 @@ final class ResolvedStream {
   final String? format;
   final DateTime resolvedAt;
   final DateTime? expiresAt;
+
+  /// 实际解析出这个播放地址的 Provider id。
+  ///
+  /// **仅用于诊断与调试**（D5b:B：回退静默但可观测），**不参与内容身份、不落库**
+  /// （D1：Provider 不是内容事实）。
+  final String? servedByProviderId;
+
+  ResolvedStream withServedByProvider(String providerId) => ResolvedStream(
+    ref: ref,
+    uri: uri,
+    requestedQuality: requestedQuality,
+    coverUri: coverUri,
+    actualQuality: actualQuality,
+    bitrate: bitrate,
+    format: format,
+    resolvedAt: resolvedAt,
+    expiresAt: expiresAt,
+    servedByProviderId: providerId,
+  );
 
   bool isExpiredAt(DateTime time) =>
       expiresAt != null && !time.isBefore(expiresAt!);

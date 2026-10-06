@@ -40,24 +40,27 @@ void main() {
   });
 
   group('OnlineMusicSettings providers', () {
-    test('an empty or fully invalid provider list falls back to the default', () {
-      expect(
-        OnlineMusicSettings.fromJson({
-          'providers': <Object?>[],
-        }).providers.single.id,
-        defaultOnlineMusicProviderId,
-      );
-      expect(
-        OnlineMusicSettings.fromJson({
-          'providers': [
-            'text',
-            {'protocol': 'chksz'},
-            {'id': '   '},
-          ],
-        }).providers.single.id,
-        defaultOnlineMusicProviderId,
-      );
-    });
+    test(
+      'an empty or fully invalid provider list falls back to the default',
+      () {
+        expect(
+          OnlineMusicSettings.fromJson({
+            'providers': <Object?>[],
+          }).providers.single.id,
+          defaultOnlineMusicProviderId,
+        );
+        expect(
+          OnlineMusicSettings.fromJson({
+            'providers': [
+              'text',
+              {'protocol': 'chksz'},
+              {'id': '   '},
+            ],
+          }).providers.single.id,
+          defaultOnlineMusicProviderId,
+        );
+      },
+    );
 
     test('an unknown protocol is ignored', () {
       final settings = OnlineMusicSettings.fromJson({
@@ -165,7 +168,10 @@ void main() {
         ],
       });
 
-      expect(settings.providers.first.credentialReference, 'PureMusic/A/APIKey');
+      expect(
+        settings.providers.first.credentialReference,
+        'PureMusic/A/APIKey',
+      );
       expect(
         settings.providers.first.authFor(OnlineMusicCapability.search),
         isA<OnlineMusicApiKeyAuth>().having(
@@ -242,9 +248,7 @@ void main() {
         },
       });
 
-      expect(settings.capabilityProviders, {
-        OnlineMusicCapability.search: 'b',
-      });
+      expect(settings.capabilityProviders, {OnlineMusicCapability.search: 'b'});
     });
 
     test('a non-map capability section is ignored', () {
@@ -269,10 +273,9 @@ void main() {
       expect(capabilities.playlistPlatforms, {MusicPlatform.netease});
       expect(capabilities.lyricPlatforms, {MusicPlatform.netease});
       expect(capabilities.resolvablePlatforms, {MusicPlatform.netease});
-      expect(
-        composition.credentialControllers.keys,
-        [defaultOnlineMusicProviderId],
-      );
+      expect(composition.credentialControllers.keys, [
+        defaultOnlineMusicProviderId,
+      ]);
     });
 
     test('data and playback providers can be configured separately', () {
@@ -285,7 +288,10 @@ void main() {
           },
           {
             'id': 'playback',
-            'auth': {'kind': 'apiKey', 'reference': 'PureMusic/Playback/APIKey'},
+            'auth': {
+              'kind': 'apiKey',
+              'reference': 'PureMusic/Playback/APIKey',
+            },
           },
         ],
         'capabilities': {
@@ -304,12 +310,12 @@ void main() {
       final registry =
           (composition.service as CompositeOnlineMusicService).registry;
       expect(registry.providerIdFor(OnlineMusicCapability.search), 'selfData');
-      expect(registry.providerIdFor(OnlineMusicCapability.playlist), 'selfData');
-      expect(registry.providerIdFor(OnlineMusicCapability.lyric), 'selfData');
       expect(
-        registry.providerIdFor(OnlineMusicCapability.stream),
-        'playback',
+        registry.providerIdFor(OnlineMusicCapability.playlist),
+        'selfData',
       );
+      expect(registry.providerIdFor(OnlineMusicCapability.lyric), 'selfData');
+      expect(registry.providerIdFor(OnlineMusicCapability.stream), 'playback');
 
       expect(composition.service.capabilities.searchablePlatforms, {
         MusicPlatform.netease,
@@ -347,7 +353,10 @@ void main() {
         'onlineMusic': {
           'defaultProvider': 'selfData',
           'providers': [
-            {'id': 'selfData', 'auth': {'kind': 'none'}},
+            {
+              'id': 'selfData',
+              'auth': {'kind': 'none'},
+            },
           ],
           'capabilities': {'stream': 'selfData'},
         },
@@ -457,30 +466,31 @@ void main() {
         reason: '播放条目声明 auth.kind = none，不应注入凭据',
       );
 
-      // 搜索被配置到 data 条目，它需要 Key；portable 内存凭据为空，
-      // 因此必须在发出请求前就报「未配置」，而不是偷偷落到 playback 条目。
-      await expectLater(
-        composition.service.search(
-          platform: MusicPlatform.netease,
-          keyword: 'test',
-          cancelToken: OnlineMusicCancelToken(),
-        ),
-        throwsA(
-          isA<OnlineMusicException>().having(
-            (error) => error.kind,
-            'kind',
-            OnlineMusicErrorKind.notConfigured,
-          ),
-        ),
+      // 搜索被显式配置到 data 条目，它需要 Key；portable 内存凭据为空，
+      // 因此 data 一定失败。按 **D5:A**（"未配置凭据"属于允许回退的错误），
+      // 系统会**静默**改用同平台的下一个候选 playback，并留下诊断记录（D5b:B）。
+      final page = await composition.service.search(
+        platform: MusicPlatform.netease,
+        keyword: 'test',
+        cancelToken: OnlineMusicCancelToken(),
       );
-      expect(dataDio.adapter.requests, isEmpty);
-      expect(playbackDio.adapter.requests, hasLength(1));
+      expect(page.items, isEmpty);
+      expect(dataDio.adapter.requests, isEmpty, reason: '缺凭据时不应发出请求');
+
+      final route =
+          (composition.service as CompositeOnlineMusicService).lastRoute!;
+      expect(route.attempts.single.providerId, 'data');
+      expect(route.attempts.single.kind, OnlineMusicErrorKind.notConfigured);
+      expect(route.winnerProviderId, 'playback');
     });
 
     test('a credential-free entry reports why saving is impossible', () async {
       final settings = OnlineMusicSettings.fromJson({
         'providers': [
-          {'id': 'selfData', 'auth': {'kind': 'none'}},
+          {
+            'id': 'selfData',
+            'auth': {'kind': 'none'},
+          },
         ],
       });
       final composition = createOnlineMusicComposition(

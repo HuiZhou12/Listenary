@@ -95,10 +95,7 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
     required String requestedQuality,
     required OnlineMusicCancelToken cancelToken,
   }) async {
-    final binding = _requireBinding(
-      OnlineMusicCapability.stream,
-      ref.platform,
-    );
+    final binding = _requireBinding(OnlineMusicCapability.stream, ref.platform);
     return _run(
       binding: binding,
       cancelToken: cancelToken,
@@ -130,7 +127,8 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
   }) async => throw unsupportedCapability();
 
   @override
-  String defaultQualityFor(MusicPlatform platform) => MusicQuality.lossless.level;
+  String defaultQualityFor(MusicPlatform platform) =>
+      MusicQuality.lossless.level;
 
   @override
   void dispose() => _disposeTransport?.call();
@@ -183,6 +181,15 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
         statusCode: response.statusCode,
         body: response.data,
       )) {
+        // D15：声明式 Provider 的路径由**用户配置**，因此这里的 404 属于
+        // 「配置的接口对不上服务端」，与内置 Provider 的「资源不存在」是两件事。
+        // 响应根本不是 JSON 也归此类（成功判定对不上的根因是接口定义不匹配）。
+        if (response.statusCode == 404 || !_isReadableJson(response.data)) {
+          throw const OnlineMusicException(
+            kind: OnlineMusicErrorKind.endpointMismatch,
+            safeMessage: '当前接口定义无法匹配响应：请检查服务地址与请求路径',
+          );
+        }
         throw OnlineMusicException(
           kind: _errorKindForStatus(response.statusCode),
           safeMessage: _safeMessageForStatus(response.statusCode),
@@ -201,10 +208,11 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
         },
         safeMessage: error.safeMessage,
       );
-    } on DeclarativeMappingException {
-      throw const OnlineMusicException(
-        kind: OnlineMusicErrorKind.invalidResponse,
-        safeMessage: '音乐服务返回了无法识别的数据',
+    } on DeclarativeMappingException catch (error) {
+      // 响应能取到、成功判定也过了，但按当前字段映射读不出领域对象 ⇒ 接口定义不匹配。
+      throw OnlineMusicException(
+        kind: OnlineMusicErrorKind.endpointMismatch,
+        safeMessage: '当前接口定义无法匹配响应：${error.reason}',
       );
     } on DioException catch (error) {
       if (CancelToken.isCancel(error)) {
@@ -234,13 +242,22 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
     return _credentials.readCredential(reference);
   }
 
+  /// 响应是否是可读 JSON（对象 / 数组）。
+  ///
+  /// 不是的话说明接口定义与响应结构对不上（D15），而不是业务层说"没有这条数据"。
+  static bool _isReadableJson(Object? data) => data is Map || data is List;
+
+  /// 状态码 → 错误分类。
+  ///
+  /// **注意没有 `404 => notFound`**：声明式 Provider 的 404 是"配置的接口对不上
+  /// 服务端"，已在调用处归入 [OnlineMusicErrorKind.endpointMismatch]（D15）。
+  /// 内置 Provider 的 404 仍然是 `notFound`（路径由代码拥有，404 就代表资源不存在）。
   OnlineMusicErrorKind _errorKindForStatus(int statusCode) =>
       switch (statusCode) {
         400 => OnlineMusicErrorKind.badRequest,
         401 => OnlineMusicErrorKind.notConfigured,
         402 => OnlineMusicErrorKind.quotaExhausted,
         403 => OnlineMusicErrorKind.forbidden,
-        404 => OnlineMusicErrorKind.notFound,
         429 => OnlineMusicErrorKind.rateLimited,
         >= 500 => OnlineMusicErrorKind.unavailable,
         _ => OnlineMusicErrorKind.businessFailure,
@@ -250,7 +267,6 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
     400 => '音乐服务拒绝了该请求',
     401 => '请先配置有效凭据',
     403 => '音乐服务拒绝访问',
-    404 => '音乐服务没有该接口',
     429 => '请求过于频繁，请稍后再试',
     >= 500 => '音乐服务暂时不可用',
     _ => '音乐服务请求失败',

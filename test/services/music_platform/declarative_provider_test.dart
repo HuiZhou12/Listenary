@@ -201,29 +201,32 @@ void main() {
     );
   });
 
-  test('a declarative capability that needs a key reports notConfigured', () async {
-    final composition = await compose(_selfHostedSettings());
-    addTearDown(composition.service.dispose);
+  test(
+    'a declarative capability that needs a key reports notConfigured',
+    () async {
+      final composition = await compose(_selfHostedSettings());
+      addTearDown(composition.service.dispose);
 
-    await expectLater(
-      composition.service.resolve(
-        const PlatformTrackRef(
-          platform: MusicPlatform.netease,
-          trackId: '347230',
+      await expectLater(
+        composition.service.resolve(
+          const PlatformTrackRef(
+            platform: MusicPlatform.netease,
+            trackId: '347230',
+          ),
+          requestedQuality: 'lossless',
+          cancelToken: OnlineMusicCancelToken(),
         ),
-        requestedQuality: 'lossless',
-        cancelToken: OnlineMusicCancelToken(),
-      ),
-      throwsA(
-        isA<OnlineMusicException>().having(
-          (error) => error.kind,
-          'kind',
-          OnlineMusicErrorKind.notConfigured,
+        throwsA(
+          isA<OnlineMusicException>().having(
+            (error) => error.kind,
+            'kind',
+            OnlineMusicErrorKind.notConfigured,
+          ),
         ),
-      ),
-    );
-    expect(adapter.requests, isEmpty, reason: '不应在缺凭据时发出请求');
-  });
+      );
+      expect(adapter.requests, isEmpty, reason: '不应在缺凭据时发出请求');
+    },
+  );
 
   test('a business-level failure is reported, not mapped as success', () async {
     final settings = OnlineMusicSettings.fromJson({
@@ -237,16 +240,16 @@ void main() {
     });
     final composition = await compose(
       settings,
-      responder: (options) async => <String, Object?>{'code': 5, 'data': <String, Object?>{}},
+      responder: (options) async => <String, Object?>{
+        'code': 5,
+        'data': <String, Object?>{},
+      },
     );
     addTearDown(composition.service.dispose);
 
     await expectLater(
       composition.service.resolve(
-        const PlatformTrackRef(
-          platform: MusicPlatform.netease,
-          trackId: '1',
-        ),
+        const PlatformTrackRef(platform: MusicPlatform.netease, trackId: '1'),
         requestedQuality: 'lossless',
         cancelToken: OnlineMusicCancelToken(),
       ),
@@ -254,29 +257,34 @@ void main() {
     );
   });
 
-  test('an HTTP failure maps to the matching error kind', () async {
-    final composition = await compose(
-      _selfHostedSettings(),
-      responder: (options) async => <String, Object?>{'message': 'nope'},
-    );
-    adapter.failWithStatus = 404;
-    addTearDown(composition.service.dispose);
+  test(
+    'a declarative 404 is an interface mismatch, not a missing resource',
+    () async {
+      final composition = await compose(
+        _selfHostedSettings(),
+        responder: (options) async => <String, Object?>{'message': 'nope'},
+      );
+      adapter.failWithStatus = 404;
+      addTearDown(composition.service.dispose);
 
-    await expectLater(
-      composition.service.search(
-        platform: MusicPlatform.netease,
-        keyword: 'x',
-        cancelToken: OnlineMusicCancelToken(),
-      ),
-      throwsA(
-        isA<OnlineMusicException>().having(
-          (error) => error.kind,
-          'kind',
-          OnlineMusicErrorKind.notFound,
+      // D15：声明式 Provider 的 path 由用户配置，404 表示"接口定义对不上服务端"，
+      // 与内置 Provider 的"资源不存在"（notFound）必须区分。
+      await expectLater(
+        composition.service.search(
+          platform: MusicPlatform.netease,
+          keyword: 'x',
+          cancelToken: OnlineMusicCancelToken(),
         ),
-      ),
-    );
-  });
+        throwsA(
+          isA<OnlineMusicException>().having(
+            (error) => error.kind,
+            'kind',
+            OnlineMusicErrorKind.endpointMismatch,
+          ),
+        ),
+      );
+    },
+  );
 
   test('legacy ChkSz entries keep working through the builtin path', () async {
     final composition = await compose(
@@ -291,23 +299,25 @@ void main() {
     expect(composition.service.capabilities.searchablePlatforms, {
       MusicPlatform.netease,
     });
-    expect(
-      composition.credentialControllers.keys,
-      [defaultOnlineMusicProviderId],
-    );
+    expect(composition.credentialControllers.keys, [
+      defaultOnlineMusicProviderId,
+    ]);
   });
 
-  test('declarative entries still expose a credential entry for the UI', () async {
-    final composition = await compose(_selfHostedSettings());
-    addTearDown(composition.service.dispose);
+  test(
+    'declarative entries still expose a credential entry for the UI',
+    () async {
+      final composition = await compose(_selfHostedSettings());
+      addTearDown(composition.service.dispose);
 
-    final controller = composition.credentialControllers['selfData']!;
-    expect(await controller.isConfigured(), isFalse);
-    await controller.saveCredential('self_SETTINGS_TEST_ONLY');
-    expect(await controller.isConfigured(), isTrue);
-    await controller.clearCredential();
-    expect(await controller.isConfigured(), isFalse);
-  });
+      final controller = composition.credentialControllers['selfData']!;
+      expect(await controller.isConfigured(), isFalse);
+      await controller.saveCredential('self_SETTINGS_TEST_ONLY');
+      expect(await controller.isConfigured(), isTrue);
+      await controller.clearCredential();
+      expect(await controller.isConfigured(), isFalse);
+    },
+  );
 }
 
 Future<Map<String, Object?>> _defaultResponder(RequestOptions options) async {
@@ -333,7 +343,8 @@ Future<Map<String, Object?>> _defaultResponder(RequestOptions options) async {
   };
 }
 
-typedef _Responder = Future<Map<String, Object?>> Function(RequestOptions options);
+typedef _Responder =
+    Future<Map<String, Object?>> Function(RequestOptions options);
 
 final class _RecordingAdapter implements HttpClientAdapter {
   final List<RequestOptions> requests = [];
