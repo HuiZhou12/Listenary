@@ -43,19 +43,25 @@ OnlineMusicDeclarativeCapabilityBinding _searchBinding({
 
 void main() {
   group('capabilities / protocol priority (spec §5.3)', () {
-    test('legacy entry without capabilities keeps the builtin interpretation', () {
-      final settings = OnlineMusicSettings.fromJson({
-        'providers': [
-          {'id': 'chksz', 'protocol': 'chksz'},
-        ],
-      });
+    test(
+      'legacy entry without capabilities keeps the builtin interpretation',
+      () {
+        final settings = OnlineMusicSettings.fromJson({
+          'providers': [
+            {'id': 'chksz', 'protocol': 'chksz'},
+          ],
+        });
 
-      final definition = settings.providers.single;
-      expect(definition.capabilities, isNull);
-      for (final capability in OnlineMusicCapability.values) {
-        expect(definition.bindingFor(capability), isA<OnlineMusicBuiltinCapabilityBinding>());
-      }
-    });
+        final definition = settings.providers.single;
+        expect(definition.capabilities, isNull);
+        for (final capability in OnlineMusicCapability.values) {
+          expect(
+            definition.bindingFor(capability),
+            isA<OnlineMusicBuiltinCapabilityBinding>(),
+          );
+        }
+      },
+    );
 
     test('legacy entry with an unknown protocol is still dropped', () {
       final settings = OnlineMusicSettings.fromJson({
@@ -74,7 +80,11 @@ void main() {
     test('an empty capabilities object means "nothing supported"', () {
       final settings = OnlineMusicSettings.fromJson({
         'providers': [
-          {'id': 'selfData', 'protocol': 'chksz', 'capabilities': <String, Object?>{}},
+          {
+            'id': 'selfData',
+            'protocol': 'chksz',
+            'capabilities': <String, Object?>{},
+          },
         ],
       });
 
@@ -111,22 +121,25 @@ void main() {
       );
     });
 
-    test('writing a legacy entry back does not promote it to the new model', () {
-      final settings = OnlineMusicSettings.fromJson({
-        'providers': [
-          {'id': 'chksz', 'protocol': 'chksz'},
-        ],
-      });
+    test(
+      'writing a legacy entry back does not promote it to the new model',
+      () {
+        final settings = OnlineMusicSettings.fromJson({
+          'providers': [
+            {'id': 'chksz', 'protocol': 'chksz'},
+          ],
+        });
 
-      final json = settings.toJson();
-      final providers = json['providers']! as List;
-      expect((providers.single as Map).containsKey('capabilities'), isFalse);
-      expect(
-        OnlineMusicSettings.fromJson(json),
-        settings,
-        reason: '旧条目往返后语义不变',
-      );
-    });
+        final json = settings.toJson();
+        final providers = json['providers']! as List;
+        expect((providers.single as Map).containsKey('capabilities'), isFalse);
+        expect(
+          OnlineMusicSettings.fromJson(json),
+          settings,
+          reason: '旧条目往返后语义不变',
+        );
+      },
+    );
 
     test('a new entry starts as unsupported and can be filled one-click', () {
       final definition = OnlineMusicProviderDefinition.custom(
@@ -157,11 +170,11 @@ void main() {
       final restored = OnlineMusicCapabilityBinding.fromJson(binding.toJson());
 
       expect(restored, binding);
-      expect((restored as OnlineMusicDeclarativeCapabilityBinding).request.path, '/search');
       expect(
-        restored.response.listPath,
-        _path('result.songs'),
+        (restored as OnlineMusicDeclarativeCapabilityBinding).request.path,
+        '/search',
       );
+      expect(restored.response.listPath, _path('result.songs'));
     });
 
     test('display name and content platform round-trip', () {
@@ -296,15 +309,23 @@ void main() {
       expect(issues, contains('游标分页必须配置游标路径'));
     });
 
-    test('playlist and lyric declarative bindings are phase-two only', () {
+    test('playlist / lyric report real validation, not a phase-two guard', () {
       final binding = _searchBinding();
-      expect(
-        binding.validationIssues(OnlineMusicCapability.lyric),
-        contains('lyric 能力的声明式配置属于第二阶段，尚未开放'),
-      );
+
+      // S7b-1：不再有"第二阶段"这类阶段守卫，改为真实校验规则。
       expect(
         binding.validationIssues(OnlineMusicCapability.playlist),
-        contains('playlist 能力的声明式配置属于第二阶段，尚未开放'),
+        isNot(contains('第二阶段')),
+      );
+      expect(
+        binding.validationIssues(OnlineMusicCapability.lyric),
+        isNot(contains('第二阶段')),
+      );
+      // 歌词：一个歌词字段都没配 → 明确告诉用户这是配置问题
+      // （否则用户会以为是"这首没有歌词"）。
+      expect(
+        binding.validationIssues(OnlineMusicCapability.lyric),
+        contains('歌词能力至少需要配置一个歌词字段'),
       );
     });
 
@@ -350,8 +371,21 @@ void main() {
       const sample = {
         'result': {
           'songs': [
-            {'id': 1, 'name': 'first', 'ar': [{'name': 'A'}, {'name': 'B'}]},
-            {'id': 2, 'name': 'second', 'ar': [{'name': 'C'}]},
+            {
+              'id': 1,
+              'name': 'first',
+              'ar': [
+                {'name': 'A'},
+                {'name': 'B'},
+              ],
+            },
+            {
+              'id': 2,
+              'name': 'second',
+              'ar': [
+                {'name': 'C'},
+              ],
+            },
           ],
           'total': 2,
         },

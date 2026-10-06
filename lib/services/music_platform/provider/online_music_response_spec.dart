@@ -78,11 +78,7 @@ final class OnlineMusicSuccessPredicate {
     final map = _requireMap(value, '成功判定谓词');
     return OnlineMusicSuccessPredicate(
       path: _requirePath(map['path'], '成功判定路径'),
-      op: _requireEnum(
-        map['op'],
-        OnlineMusicPredicateOp.values,
-        '成功判定运算符',
-      ),
+      op: _requireEnum(map['op'], OnlineMusicPredicateOp.values, '成功判定运算符'),
       value: map['value'],
     );
   }
@@ -116,12 +112,12 @@ final class OnlineMusicSuccessSpec {
   static OnlineMusicSuccessSpec fromJson(Object? value) {
     final map = _requireMap(value, '成功判定');
     return OnlineMusicSuccessSpec(
-      okStatusCodes: _optionalList(map['statusCodes'])
-          .map((entry) => _requireInt(entry, '成功状态码'))
-          .toList(growable: false),
-      allOf: _optionalList(map['allOf'])
-          .map(OnlineMusicSuccessPredicate.fromJson)
-          .toList(growable: false),
+      okStatusCodes: _optionalList(
+        map['statusCodes'],
+      ).map((entry) => _requireInt(entry, '成功状态码')).toList(growable: false),
+      allOf: _optionalList(
+        map['allOf'],
+      ).map(OnlineMusicSuccessPredicate.fromJson).toList(growable: false),
     );
   }
 
@@ -165,9 +161,9 @@ final class OnlineMusicFieldSpec {
   static OnlineMusicFieldSpec fromJson(Object? value) {
     final map = _requireMap(value, '字段映射');
     return OnlineMusicFieldSpec(
-      candidates: _optionalList(map['paths'])
-          .map((entry) => _requirePath(entry, '字段路径'))
-          .toList(growable: false),
+      candidates: _optionalList(
+        map['paths'],
+      ).map((entry) => _requirePath(entry, '字段路径')).toList(growable: false),
       transform: _requireEnum(
         map['transform'],
         OnlineMusicFieldTransform.values,
@@ -187,8 +183,12 @@ final class OnlineMusicFieldSpec {
       other.defaultValue == defaultValue;
 
   @override
-  int get hashCode =>
-      Object.hash(Object.hashAll(candidates), transform, required, defaultValue);
+  int get hashCode => Object.hash(
+    Object.hashAll(candidates),
+    transform,
+    required,
+    defaultValue,
+  );
 }
 
 enum OnlineMusicPaginationKind { none, offsetLimit, pageSize, cursor }
@@ -211,11 +211,7 @@ final class OnlineMusicPaginationSpec {
     if (value == null) return const OnlineMusicPaginationSpec();
     final map = _requireMap(value, '分页配置');
     return OnlineMusicPaginationSpec(
-      kind: _requireEnum(
-        map['kind'],
-        OnlineMusicPaginationKind.values,
-        '分页类型',
-      ),
+      kind: _requireEnum(map['kind'], OnlineMusicPaginationKind.values, '分页类型'),
       defaultLimit: map['defaultLimit'] == null
           ? 30
           : _requireInt(map['defaultLimit'], '默认每页数量'),
@@ -292,11 +288,8 @@ final class OnlineMusicResponseSpec {
       fields: rawFields is Map
           ? Map.unmodifiable({
               for (final entry in rawFields.entries)
-                _requireEnum(
-                  entry.key,
-                  OnlineMusicDomainField.values,
-                  '领域字段',
-                ): OnlineMusicFieldSpec.fromJson(entry.value),
+                _requireEnum(entry.key, OnlineMusicDomainField.values, '领域字段'):
+                    OnlineMusicFieldSpec.fromJson(entry.value),
             })
           : const {},
       pagination: OnlineMusicPaginationSpec.fromJson(map['pagination']),
@@ -316,9 +309,7 @@ final class OnlineMusicResponseSpec {
       }
       final expected = expectedFieldKinds[entry.key];
       if (expected != null && !expected.contains(entry.value.transform)) {
-        issues.add(
-          '${entry.key.name} 的类型转换 ${entry.value.transform.name} 不合适',
-        );
+        issues.add('${entry.key.name} 的类型转换 ${entry.value.transform.name} 不合适');
       }
     }
     for (final required in requiredFieldsFor(capability)) {
@@ -333,8 +324,21 @@ final class OnlineMusicResponseSpec {
         if (listPath == null && fieldsRootPath == null) {
           issues.add('播放解析能力必须配置字段根路径');
         }
-      case OnlineMusicCapability.playlist || OnlineMusicCapability.lyric:
-        issues.add('${capability.name} 能力的声明式配置属于第二阶段，尚未开放');
+      case OnlineMusicCapability.playlist:
+        // S7b：不再是"第二阶段"，改为**真实校验** —— 歌单元数据在 fieldsRootPath、
+        // 曲目数组在 listPath，两者都没有就必然映射不出来。
+        if (listPath == null && fieldsRootPath == null) {
+          issues.add('歌曲列表能力必须配置字段根路径或列表路径');
+        }
+      case OnlineMusicCapability.lyric:
+        // 至少要有一个歌词字段，否则永远取不到歌词（配置错误，不是"这首没歌词"）。
+        if (!const [
+          OnlineMusicDomainField.lyricOriginal,
+          OnlineMusicDomainField.lyricTranslation,
+          OnlineMusicDomainField.lyricRomanization,
+        ].any(fields.containsKey)) {
+          issues.add('歌词能力至少需要配置一个歌词字段');
+        }
     }
     if (pagination.kind == OnlineMusicPaginationKind.cursor &&
         nextCursorPath == null) {
@@ -419,10 +423,15 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
 }
 
 /// 每个能力必须映射哪些字段。
-Set<OnlineMusicDomainField> requiredFieldsFor(OnlineMusicCapability capability) {
+Set<OnlineMusicDomainField> requiredFieldsFor(
+  OnlineMusicCapability capability,
+) {
   switch (capability) {
     case OnlineMusicCapability.search:
-      return const {OnlineMusicDomainField.trackId, OnlineMusicDomainField.title};
+      return const {
+        OnlineMusicDomainField.trackId,
+        OnlineMusicDomainField.title,
+      };
     case OnlineMusicCapability.stream:
       return const {OnlineMusicDomainField.streamUrl};
     case OnlineMusicCapability.playlist:
