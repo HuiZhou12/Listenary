@@ -99,10 +99,7 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
     return null;
   }
 
-  Future<void> _play(
-    Iterable<MusicTrack> tracks,
-    MusicTrack track,
-  ) async {
+  Future<void> _play(Iterable<MusicTrack> tracks, MusicTrack track) async {
     await playOnlineTrackSelection(
       context,
       OnlineTrackSelection.fromResultPage(
@@ -121,10 +118,7 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
     );
   }
 
-  Widget _buildTrackRow(
-    MusicTrack track,
-    Iterable<MusicTrack> playbackTracks,
-  ) {
+  Widget _buildTrackRow(MusicTrack track, Iterable<MusicTrack> playbackTracks) {
     final playable =
         track.availability != TrackAvailability.unavailable &&
         track.availability != TrackAvailability.paid;
@@ -138,6 +132,8 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
         track: track,
         details: details,
         enabled: playable,
+        // 收藏是**跨平台**的（任何平台的曲目都能被收藏）⇒ 每行必须标明来源（I1）。
+        sourceLabel: musicPlatformLabel(track.ref.platform),
         onTap: playable ? () => _play(playbackTracks, track) : null,
         showFavorite: true,
         favorite: true,
@@ -236,7 +232,9 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
       onSearchChanged: (v) => setState(() => _searchQuery = v),
       extraActions: [
         FilledButton.icon(
-          onPressed: playable.isEmpty ? null : () => _play(tracks, playable.first),
+          onPressed: playable.isEmpty
+              ? null
+              : () => _play(tracks, playable.first),
           icon: const Icon(Symbols.play_arrow, size: 20),
           label: const Text('播放全部'),
           style: primaryActionStyle,
@@ -305,11 +303,8 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
               break;
             case SortOrder.decending:
               list.sort(
-                (a, b) => snapshot.compareByAddedAt(
-                  a.ref,
-                  b.ref,
-                  descending: true,
-                ),
+                (a, b) =>
+                    snapshot.compareByAddedAt(a.ref, b.ref, descending: true),
               );
               break;
           }

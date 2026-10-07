@@ -603,6 +603,8 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                         const SizedBox(height: 4.0),
                         Text(
                           [
+                            // 订阅歌单有明确来源：平台名放在最前（I1）。
+                            musicPlatformLabel(item.playlist.platform),
                             if (item.playlist.creator?.isNotEmpty == true)
                               item.playlist.creator!,
                             '${item.playlist.trackCount ?? item.playlist.tracks.length}首乐曲',
