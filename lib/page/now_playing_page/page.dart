@@ -33,6 +33,7 @@ import 'package:pure_music/page/now_playing_page/component/lyric_source_view.dar
 import 'package:pure_music/page/now_playing_page/component/sound_tools.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background.dart';
+import 'package:pure_music/page/now_playing_page/component/quality_menu_button.dart';
 import 'package:pure_music/page/now_playing_page/now_playing_control_projection.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/play_service/play_service.dart';
@@ -45,7 +46,7 @@ import 'package:pure_music/play_service/remote_playback_timeline.dart';
 import 'package:pure_music/play_service/remote_media_artwork.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
-import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/online_music_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:go_router/go_router.dart';
@@ -714,45 +715,79 @@ class _RemoteQualityButton extends StatelessWidget {
     );
     // 音质切换仅对在线会话有意义，本地播放时直接隐藏该按钮。
     if (!isRemote) return const SizedBox.shrink();
-    final currentLevel = session.requestedQuality;
-    MusicQuality? current;
-    for (final quality in MusicQuality.values) {
-      if (quality.level == currentLevel) {
-        current = quality;
-        break;
-      }
+
+    final preference =
+        session.requestedQuality ?? AppPreference.instance.defaultQuality;
+
+    // D2:A / D10:A：档位必须来自**当前 Track 所属平台**自己的声明。
+    // 用可空查找：组件级测试可能没有注册在线音乐 provider。
+    final platform = context
+        .watch<RemotePlaybackQueue?>()
+        ?.value
+        .currentItem
+        ?.ref
+        .platform;
+    final service = context.read<OnlineMusicService?>();
+    final tiers = platform == null || service == null
+        ? const <PlatformQualityTier>[]
+        : service.qualityTiersFor(platform);
+
+    // 该平台**没有档位声明**（例如自建声明式 Provider 还没填档位）：
+    // 保持既有行为 —— 回到内部档位列表，不伪造平台名称（补充口径④）。
+    if (service == null || platform == null || tiers.isEmpty) {
+      return _buildInternalQualityMenu(context, session, preference);
     }
-    return PopupMenuButton<MusicQuality>(
-      tooltip: '音质',
-      enabled: isRemote,
-      onSelected: (quality) async {
-        final ok = await session.switchQuality(quality.level);
-        if (!ok && context.mounted) {
-          showTextOnSnackBar('音质切换失败，请重试', variant: ToastVariant.error);
+
+    final selection = service.selectQualityFor(
+      platform,
+      preference: preference,
+    );
+    return PlatformQualityMenuButton(
+      tiers: tiers,
+      selection: selection,
+      iconColor: color,
+      onOpened: () {
+        // D10:A：回落必须给出明确提示；提示里只说平台自己的档位名，
+        // 不把内部偏好键（如 `jymaster`）暴露给用户（I4 / 补充口径④）。
+        if (selection.fellBack) {
+          showTextOnSnackBar('该平台没有对应档位，已回落为 ${selection.displayLabel}');
         }
       },
-      itemBuilder: (context) => [
-        for (final quality in MusicQuality.values)
-          PopupMenuItem(
-            value: quality,
-            child: Row(
-              children: [
-                if (quality == current)
-                  const Icon(Symbols.check, size: 18)
-                else
-                  const SizedBox(width: 18),
-                const SizedBox(width: 8),
-                Text(quality.label),
-              ],
-            ),
-          ),
-      ],
-      icon: Icon(
-        Symbols.high_quality,
-        color: isRemote ? color : disabledColor,
-      ),
-      iconSize: 28,
+      onSelected: (level) => _switchQuality(context, session, level),
     );
+  }
+
+  /// 平台没有档位声明时的既有菜单：内部档位列表（行为与引入平台档位之前一致）。
+  Widget _buildInternalQualityMenu(
+    BuildContext context,
+    RemotePlaybackSessionController session,
+    String preference,
+  ) => InternalQualityMenuButton(
+    preference: preference,
+    iconColor: color,
+    onSelected: (level) => _switchQuality(context, session, level),
+  );
+
+  /// 切换档位：**写回的是内部偏好档位**（保持跨平台偏好语义），
+  /// 平台侧的实际取值仍由该平台的档位声明决定。
+  Future<void> _switchQuality(
+    BuildContext context,
+    RemotePlaybackSessionController session,
+    String level,
+  ) async {
+    final ok = await session.switchQuality(level);
+    if (!context.mounted) return;
+    if (!ok) {
+      showTextOnSnackBar('音质切换失败，请重试', variant: ToastVariant.error);
+      return;
+    }
+    // 切换成功后才记下这条偏好；失败时不改写用户的既有偏好。
+    if (AppPreference.instance.defaultQuality == level) return;
+    AppPreference.instance.defaultQuality = level;
+    final saved = await AppPreference.instance.save();
+    if (!saved && context.mounted) {
+      showTextOnSnackBar('保存默认音质失败', variant: ToastVariant.error);
+    }
   }
 }
 
@@ -1012,9 +1047,7 @@ class _RemotePlaybackModeButton extends StatelessWidget {
       shuffle: mode == RemotePlaybackMode.shuffle,
       singleLoop: mode == RemotePlaybackMode.repeatOne,
     );
-    final tooltip = mode == RemotePlaybackMode.loop
-        ? '列表循环'
-        : visuals.tooltip;
+    final tooltip = mode == RemotePlaybackMode.loop ? '列表循环' : visuals.tooltip;
     return IconButton(
       tooltip: tooltip,
       onPressed: session.cycleMode,
@@ -1080,7 +1113,10 @@ class _NowPlayingPlaybackModeSwitchState
     );
 
     if (controls.usesRemoteQueueMode) {
-      return _RemotePlaybackModeButton(color: color, disabledColor: disabledColor);
+      return _RemotePlaybackModeButton(
+        color: color,
+        disabledColor: disabledColor,
+      );
     }
 
     return ListenableBuilder(
