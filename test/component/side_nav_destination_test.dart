@@ -46,6 +46,21 @@ void main() {
     }
   });
 
+  test('start pages are unique and every destination path is distinct', () {
+    // 启动页按下标存储：重复项会让两个目的页抢同一个启动页下标。
+    expect(
+      app_paths.START_PAGES.toSet().length,
+      app_paths.START_PAGES.length,
+      reason: 'START_PAGES 不允许出现重复路径',
+    );
+    final paths = destinations.map((d) => d.desPath).toList(growable: false);
+    expect(
+      paths.toSet().length,
+      paths.length,
+      reason: '侧边栏目的页不允许重复，否则 currentIndex 语义有歧义',
+    );
+  });
+
   test('navigation groups cover every destination once in route order', () {
     expect(destinationGroups.map((group) => group.label), [
       '聚合',
