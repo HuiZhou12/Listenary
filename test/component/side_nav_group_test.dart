@@ -39,8 +39,9 @@ void main() {
   ) async {
     await _pumpSideNav(tester, expanded: true);
 
-    expect(find.text('在线音乐'), findsNWidgets(2));
-    for (final label in ['本地曲库', '收藏与回顾', '系统']) {
+    // 第一组现在叫「聚合」（主页 + 在线音乐 + 我的收藏），组名与条目名不再同名。
+    expect(find.text('聚合'), findsOneWidget);
+    for (final label in ['主页', '在线音乐', '本地曲库', '收藏与回顾', '系统']) {
       expect(find.text(label), findsOneWidget);
     }
     expect(find.byType(Tooltip), findsNothing);
@@ -68,8 +69,8 @@ void main() {
   testWidgets('drawer uses expanded grouped layout', (tester) async {
     await _pumpSideNav(tester, expanded: false, hasDrawer: true);
 
-    expect(find.text('在线音乐'), findsNWidgets(2));
-    for (final label in ['本地曲库', '收藏与回顾', '系统']) {
+    expect(find.text('聚合'), findsOneWidget);
+    for (final label in ['主页', '在线音乐', '本地曲库', '收藏与回顾', '系统']) {
       expect(find.text(label), findsOneWidget);
     }
     expect(find.byType(Tooltip), findsNothing);

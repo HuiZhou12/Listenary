@@ -16,6 +16,7 @@ import 'package:pure_music/page/folder_detail_page.dart';
 import 'package:pure_music/page/folders_page.dart';
 import 'package:pure_music/page/now_playing_page/page.dart';
 import 'package:pure_music/page/online_music_page.dart';
+import 'package:pure_music/page/home_page.dart';
 import 'package:pure_music/page/playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
 import 'package:pure_music/page/online_playlists_page.dart';
@@ -669,9 +670,9 @@ class _EntryState extends State<Entry>
                 Provider<OnlineMusicService>.value(
                   value: widget.onlineMusicService,
                 ),
-                ChangeNotifierProvider<OnlineMusicProviderSettingsController>.value(
-                  value: widget.onlineMusicSettings,
-                ),
+                ChangeNotifierProvider<
+                  OnlineMusicProviderSettingsController
+                >.value(value: widget.onlineMusicSettings),
                 ChangeNotifierProvider<ActivePlaybackSession>.value(
                   value: _activePlaybackSessionComposition.activeSession,
                 ),
@@ -749,6 +750,14 @@ class _EntryState extends State<Entry>
               children: children,
             ),
         branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: app_paths.HOME_PAGE,
+                builder: (context, state) => const HomePage(),
+              ),
+            ],
+          ),
           StatefulShellBranch(
             routes: [
               GoRoute(

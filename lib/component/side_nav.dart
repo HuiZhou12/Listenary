@@ -27,6 +27,15 @@ class DestinationDesc {
 }
 
 const destinations = <DestinationDesc>[
+  // 聚合主页放在第一位：它是多平台内容与各平台状态的统一入口。
+  DestinationDesc(
+    Symbols.home,
+    '主页',
+    app_paths.HOME_PAGE,
+    // 启动页下标**必须与 paths.START_PAGES 对齐**；主页追加在表尾，
+    // 因此用 paths.HOME_START_PAGE_INDEX（改动 START_PAGES 时要同步）。
+    startPageIndex: app_paths.HOME_START_PAGE_INDEX,
+  ),
   DestinationDesc(Symbols.cloud, '在线音乐', app_paths.ONLINE_MUSIC_PAGE),
   DestinationDesc(Symbols.favorite, '我的收藏', app_paths.FAVORITES_PAGE),
   DestinationDesc(
@@ -71,10 +80,12 @@ class DestinationGroupDesc {
 }
 
 const destinationGroups = <DestinationGroupDesc>[
-  DestinationGroupDesc('在线音乐', [0, 1]),
-  DestinationGroupDesc('本地曲库', [2, 3, 4, 5]),
-  DestinationGroupDesc('收藏与回顾', [6, 7]),
-  DestinationGroupDesc('系统', [8]),
+  // 主页与在线内容同组：它们都是"聚合/在线"入口；分组数量与各下标之前的
+  // 分组头数量刻意保持不变（侧边栏几何与缓存依赖它）。
+  DestinationGroupDesc('聚合', [0, 1, 2]),
+  DestinationGroupDesc('本地曲库', [3, 4, 5, 6]),
+  DestinationGroupDesc('收藏与回顾', [7, 8]),
+  DestinationGroupDesc('系统', [9]),
 ];
 
 const double sideNavItemHeight = 54.0;

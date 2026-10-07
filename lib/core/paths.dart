@@ -28,6 +28,9 @@ const String STATS_PAGE = '/stats';
 const String SETTINGS_PAGE = '/settings';
 const String SETTINGS_ISSUE_PAGE = '/settings/issue';
 
+/// 聚合主页：多平台内容与各平台状态的统一入口。
+const String HOME_PAGE = '/home';
+
 const String WELCOMING_PAGE = '/welcoming';
 
 const String UPDATING_DIALOG = '/updating';
@@ -35,10 +38,20 @@ const String UPDATING_DIALOG = '/updating';
 const String TEST_BACKGROUND = '/test/background';
 
 /// 可以作为 start page 的 pages
+///
+/// **只允许追加**：`AppPreference.startPage` 存的是这张表的下标，
+/// 往中间插值会让老用户已选的启动页漂移到别的页面上（配置语义破坏）。
 const List<String> START_PAGES = [
   AUDIOS_PAGE,
   ARTISTS_PAGE,
   ALBUMS_PAGE,
   FOLDERS_PAGE,
   PLAYLISTS_PAGE,
+  HOME_PAGE,
 ];
+
+/// 主页在 [START_PAGES] 中的下标。
+///
+/// 写成常量是因为 `const` 表达式里不能取 `List.length`；**改动 START_PAGES 时必须同步**，
+/// `test/component/side_nav_destination_test.dart` 会守住两者一致。
+const int HOME_START_PAGE_INDEX = 5;
