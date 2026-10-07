@@ -4,6 +4,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/component/motion.dart';
+import 'package:pure_music/component/online_playlist_source.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/design_tokens.dart';
@@ -36,17 +37,27 @@ class _OnlinePlaylistsPageState extends State<OnlinePlaylistsPage> {
     });
   }
 
+  /// 能提供**歌单详情**的平台（订阅需要拉取歌单）；规则见 shared helper。
+  List<MusicPlatform> _playlistPlatforms() =>
+      onlinePlaylistPlatformsOf(context);
+
   Future<void> _addPlaylist() async {
     if (_adding) return;
-    final id = await showDialog<String>(
+    final platforms = _playlistPlatforms();
+    if (platforms.isEmpty) {
+      // fail-closed：没有候选就不要假装能添加（来源身份也不该被猜出来）。
+      showTextOnSnackBar('当前没有可用的歌单服务，请先在设置里配置', variant: ToastVariant.error);
+      return;
+    }
+    final draft = await showDialog<OnlinePlaylistDraft>(
       context: context,
-      builder: (context) => const _OnlinePlaylistIdDialog(),
+      builder: (context) => _OnlinePlaylistIdDialog(platforms: platforms),
     );
-    if (id == null || !mounted) return;
+    if (draft == null || !mounted) return;
     setState(() => _adding = true);
     final result = await context.read<OnlinePlaylistController>().addOrRefresh(
-      platform: MusicPlatform.netease,
-      remotePlaylistId: id,
+      platform: draft.platform,
+      remotePlaylistId: draft.id,
     );
     if (!mounted) return;
     setState(() => _adding = false);
@@ -145,7 +156,7 @@ class _OnlinePlaylistsPageState extends State<OnlinePlaylistsPage> {
             : '还没有在线歌单',
         message: snapshot.status == OnlinePlaylistLoadStatus.failed
             ? snapshot.errorMessage ?? '请稍后重试。'
-            : '添加网易歌单 ID 后即可离线查看快照。',
+            : '添加在线歌单 ID 后即可离线查看快照。',
         action: FilledButton.tonalIcon(
           onPressed: _adding ? null : _addPlaylist,
           icon: const Icon(Symbols.add),
@@ -161,6 +172,8 @@ class _OnlinePlaylistsPageState extends State<OnlinePlaylistsPage> {
         final busy = _busy.contains(item.localId);
         final creator = item.playlist.creator;
         final count = item.playlist.trackCount;
+        // 来源标签放在最前：订阅列表里必须一眼看出这条歌单来自哪个平台（I1）。
+        final platformLabel = musicPlatformLabel(item.playlist.platform);
         final details = [
           if (creator != null && creator.isNotEmpty) creator,
           if (count != null) '$count 首歌曲',
@@ -205,13 +218,15 @@ class _OnlinePlaylistsPageState extends State<OnlinePlaylistsPage> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                details.isEmpty ? '网易 · 在线订阅' : details,
+                                details.isEmpty
+                                    ? '$platformLabel · 在线订阅'
+                                    : '$platformLabel · $details',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ],
@@ -223,7 +238,9 @@ class _OnlinePlaylistsPageState extends State<OnlinePlaylistsPage> {
                           icon: busy
                               ? const SizedBox.square(
                                   dimension: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Icon(Symbols.refresh),
                         ),
@@ -278,15 +295,23 @@ String _formatDate(DateTime value) {
       '${local.day.toString().padLeft(2, '0')}';
 }
 
+/// 添加在线歌单的输入结果：**平台 + 远端歌单 ID**（来源身份从一开始就完整，I1）。
+/// 类型本身放在 `component/online_playlist_source.dart` 的导出里，与 `playlists_page` 共用。
 class _OnlinePlaylistIdDialog extends StatefulWidget {
-  const _OnlinePlaylistIdDialog();
+  const _OnlinePlaylistIdDialog({required this.platforms});
+
+  /// 可选的来源平台（≥1）。只有 1 个时不摆选择控件。
+  final List<MusicPlatform> platforms;
 
   @override
-  State<_OnlinePlaylistIdDialog> createState() => _OnlinePlaylistIdDialogState();
+  State<_OnlinePlaylistIdDialog> createState() =>
+      _OnlinePlaylistIdDialogState();
 }
 
 class _OnlinePlaylistIdDialogState extends State<_OnlinePlaylistIdDialog> {
   final _controller = TextEditingController();
+  late MusicPlatform _platform = widget.platforms.first;
+  String? _error;
 
   @override
   void dispose() {
@@ -294,26 +319,62 @@ class _OnlinePlaylistIdDialogState extends State<_OnlinePlaylistIdDialog> {
     super.dispose();
   }
 
+  /// 平台的 ID 形状由平台自己决定；规则与 `playlists_page` 共用一份。
+  String? _validate(String value) => validateOnlinePlaylistId(_platform, value);
+
   void _submit() {
     final value = _controller.text.trim();
-    if (!RegExp(r'^[1-9][0-9]*$').hasMatch(value)) return;
-    Navigator.of(context).pop(value);
+    final error = _validate(value);
+    setState(() => _error = error);
+    if (error != null) return;
+    Navigator.of(
+      context,
+    ).pop(OnlinePlaylistDraft(platform: _platform, id: value));
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('添加在线歌单'),
-      content: TextField(
-        autofocus: true,
-        controller: _controller,
-        keyboardType: TextInputType.number,
-        textInputAction: TextInputAction.done,
-        decoration: const InputDecoration(
-          labelText: '网易歌单 ID',
-          hintText: '输入数字 ID',
+      content: SizedBox(
+        width: 380,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (widget.platforms.length > 1) ...[
+              SegmentedButton<MusicPlatform>(
+                showSelectedIcon: false,
+                segments: [
+                  for (final platform in widget.platforms)
+                    ButtonSegment(
+                      value: platform,
+                      label: Text(musicPlatformLabel(platform)),
+                    ),
+                ],
+                selected: {_platform},
+                onSelectionChanged: (selection) => setState(() {
+                  _platform = selection.first;
+                  _error = null;
+                }),
+              ),
+              const SizedBox(height: 12),
+            ],
+            TextField(
+              autofocus: true,
+              controller: _controller,
+              textInputAction: TextInputAction.done,
+              decoration: InputDecoration(
+                labelText: '${musicPlatformLabel(_platform)}歌单 ID',
+                hintText: _platform == MusicPlatform.netease
+                    ? '输入数字 ID'
+                    : '输入该平台的歌单 ID',
+                errorText: _error,
+              ),
+              onSubmitted: (_) => _submit(),
+            ),
+          ],
         ),
-        onSubmitted: (_) => _submit(),
       ),
       actions: [
         TextButton(

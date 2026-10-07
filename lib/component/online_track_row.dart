@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/motion.dart';
+import 'package:pure_music/component/online_source_label.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
@@ -165,23 +166,9 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                               ),
                               if (widget.sourceLabel case final label?) ...[
                                 const SizedBox(width: Spacing.sm),
-                                Container(
-                                  width: 4,
-                                  height: 4,
-                                  decoration: BoxDecoration(
-                                    color: metadataColor.withValues(alpha: 0.7),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: Spacing.xs),
-                                Text(
-                                  label,
-                                  key: const ValueKey('online-track-source'),
-                                  maxLines: 1,
-                                  style: TextStyle(
-                                    color: metadataColor.withValues(alpha: 0.8),
-                                    fontSize: AppType.caption,
-                                  ),
+                                OnlineSourceLabel(
+                                  label: label,
+                                  color: metadataColor,
                                 ),
                               ],
                             ],

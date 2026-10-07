@@ -112,10 +112,7 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
     return CachedRemoteImageProvider(uri.toString());
   }
 
-  Future<void> _play(
-    Iterable<MusicTrack> tracks,
-    MusicTrack track,
-  ) async {
+  Future<void> _play(Iterable<MusicTrack> tracks, MusicTrack track) async {
     await playOnlineTrackSelection(
       context,
       OnlineTrackSelection.fromResultPage(
@@ -125,10 +122,7 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
     );
   }
 
-  Widget _buildTrackRow(
-    MusicTrack track,
-    Iterable<MusicTrack> playbackTracks,
-  ) {
+  Widget _buildTrackRow(MusicTrack track, Iterable<MusicTrack> playbackTracks) {
     final playable =
         track.availability != TrackAvailability.unavailable &&
         track.availability != TrackAvailability.paid;
@@ -143,6 +137,9 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
         track: track,
         details: details,
         enabled: playable,
+        // 来源标签（I1）：订阅歌单的曲目也必须能看出它属于哪个平台，
+        // 用**曲目自己的 ref**而不是歌单的字段（两者理论上应当一致，以 ref 为准）。
+        sourceLabel: musicPlatformLabel(track.ref.platform),
         onTap: playable ? () => _play(playbackTracks, track) : null,
         onAddToPlaylist: () =>
             showPersonalPlaylistPicker(context, track: track),
@@ -248,6 +245,8 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
       picShape: PicShape.rrect,
       title: snapshot.playlist.name,
       subtitle: [
+        // 来源平台紧跟标题：订阅歌单本身就有明确来源（I1）。
+        musicPlatformLabel(snapshot.playlist.platform),
         if (creator?.isNotEmpty == true) creator!,
         '${snapshot.playlist.trackCount ?? allTracks.length} 首歌曲 · 只读订阅',
       ].join(' · '),

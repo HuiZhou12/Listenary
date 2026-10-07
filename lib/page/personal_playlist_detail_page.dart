@@ -100,10 +100,7 @@ class _PersonalPlaylistDetailPageState
     });
   }
 
-  Future<void> _play(
-    Iterable<MusicTrack> tracks,
-    MusicTrack track,
-  ) async {
+  Future<void> _play(Iterable<MusicTrack> tracks, MusicTrack track) async {
     await playOnlineTrackSelection(
       context,
       OnlineTrackSelection.fromResultPage(
@@ -171,6 +168,8 @@ class _PersonalPlaylistDetailPageState
       track: track,
       details: details,
       enabled: playable,
+      // 自建在线歌单**允许混平台**（D11），所以每一行都必须写明来源（I1）。
+      sourceLabel: musicPlatformLabel(track.ref.platform),
       onTap: playable ? () => _play(playbackTracks, track) : null,
       onRemove: () => _removeTrack(track.ref),
       showFavorite: true,
@@ -380,11 +379,8 @@ class _PersonalPlaylistDetailPageState
               break;
             case SortOrder.decending:
               list.sort(
-                (a, b) => snapshot.compareByAddedAt(
-                  a.ref,
-                  b.ref,
-                  descending: true,
-                ),
+                (a, b) =>
+                    snapshot.compareByAddedAt(a.ref, b.ref, descending: true),
               );
               break;
           }
@@ -427,9 +423,7 @@ class _PersonalPlaylistDetailPageState
                   ),
                 ),
               ),
-              Expanded(
-                child: _buildTrackRow(track, tracks, animated: false),
-              ),
+              Expanded(child: _buildTrackRow(track, tracks, animated: false)),
             ],
           ),
         );
