@@ -159,7 +159,7 @@ void main() {
       expect(registry.providersFor(MusicPlatform.qq, search), isEmpty);
     });
 
-    test('配置层的平台候选被注册表采纳并可决定顺序', () {
+    test('配置层的平台候选被注册表采纳，且只使用这些候选（D17:b）', () {
       final registry = OnlineMusicProviderRegistry(
         providers: [
           _FakeProvider('neA', {
@@ -179,7 +179,7 @@ void main() {
         registry
             .providersFor(MusicPlatform.netease, search)
             .map((provider) => provider.providerId),
-        ['neB', 'neA'],
+        ['neB'],
       );
     });
   });

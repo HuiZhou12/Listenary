@@ -467,21 +467,35 @@ void main() {
       );
 
       // 搜索被显式配置到 data 条目，它需要 Key；portable 内存凭据为空，
-      // 因此 data 一定失败。按 **D5:A**（"未配置凭据"属于允许回退的错误），
-      // 系统会**静默**改用同平台的下一个候选 playback，并留下诊断记录（D5b:B）。
-      final page = await composition.service.search(
-        platform: MusicPlatform.netease,
-        keyword: 'test',
-        cancelToken: OnlineMusicCancelToken(),
+      // 因此 data 一定失败。**D17:b**：用户显式指给 (netease, search) 的候选只有 data，
+      // 隐式条目（playback）不参与救场 —— 于是搜索以 notConfigured 失败，
+      // 而**不会**偷偷落到用户从未指派给搜索的 playback 条目。
+      await expectLater(
+        composition.service.search(
+          platform: MusicPlatform.netease,
+          keyword: 'test',
+          cancelToken: OnlineMusicCancelToken(),
+        ),
+        throwsA(
+          isA<OnlineMusicException>().having(
+            (error) => error.kind,
+            'kind',
+            OnlineMusicErrorKind.notConfigured,
+          ),
+        ),
       );
-      expect(page.items, isEmpty);
       expect(dataDio.adapter.requests, isEmpty, reason: '缺凭据时不应发出请求');
 
       final route =
           (composition.service as CompositeOnlineMusicService).lastRoute!;
       expect(route.attempts.single.providerId, 'data');
       expect(route.attempts.single.kind, OnlineMusicErrorKind.notConfigured);
-      expect(route.winnerProviderId, 'playback');
+      expect(route.winnerProviderId, isNull, reason: '隐式候选不参与救场（D17:b）');
+      expect(
+        playbackDio.adapter.requests,
+        hasLength(1),
+        reason: '仍然只有 resolve 那一次请求：搜索不得改用 playback 条目',
+      );
     });
 
     test('a credential-free entry reports why saving is impossible', () async {

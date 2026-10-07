@@ -40,7 +40,7 @@ void main() {
       );
     });
 
-    test('显式配置的 Provider 排第一，其余按注册顺序补齐', () {
+    test('显式配置时只用这些候选，不再按注册顺序补齐（D17:b）', () {
       final registry = OnlineMusicProviderRegistry(
         providers: [
           provider('neteaseA', neteaseOnly),
@@ -54,22 +54,69 @@ void main() {
         registry
             .providersFor(MusicPlatform.netease, OnlineMusicCapability.search)
             .map((it) => it.providerId),
-        ['neteaseC', 'neteaseA', 'neteaseB'],
+        ['neteaseC'],
       );
     });
 
-    test('显式配置指向不支持该平台的 Provider 时，它被排除', () {
+    test('没有显式配置时才按注册顺序使用隐式候选', () {
       final registry = OnlineMusicProviderRegistry(
-        providers: [provider('neteaseA', neteaseOnly), provider('qqA', qqOnly)],
-        // 把能力显式指向 qq 的 Provider，但查询的是 netease。
-        capabilityProviders: {OnlineMusicCapability.search: 'qqA'},
+        providers: [
+          provider('neteaseA', neteaseOnly),
+          provider('neteaseB', neteaseOnly),
+          provider('neteaseC', neteaseOnly),
+        ],
       );
 
       expect(
         registry
             .providersFor(MusicPlatform.netease, OnlineMusicCapability.search)
             .map((it) => it.providerId),
+        ['neteaseA', 'neteaseB', 'neteaseC'],
+      );
+    });
+
+    test('旧单值映射只对"该 Provider 自己支持的平台"算显式候选', () {
+      final registry = OnlineMusicProviderRegistry(
+        providers: [provider('neteaseA', neteaseOnly), provider('qqA', qqOnly)],
+        // 把能力显式指向 qq 的 Provider，但查询的是 netease。
+        capabilityProviders: {OnlineMusicCapability.search: 'qqA'},
+      );
+
+      // 旧单值映射平台无关：D13:A 把它解释为"qq 上的候选"，因此对 netease 而言
+      // **没有**显式候选，仍按注册顺序使用隐式条目（与配置层 explicitCandidateIdsFor
+      // 的 `contentPlatform != platform ⇒ 空` 一致）。
+      expect(
+        registry
+            .providersFor(MusicPlatform.netease, OnlineMusicCapability.search)
+            .map((it) => it.providerId),
         ['neteaseA'],
+      );
+      expect(
+        registry
+            .providersFor(MusicPlatform.qq, OnlineMusicCapability.search)
+            .map((it) => it.providerId),
+        ['qqA'],
+      );
+    });
+
+    test('显式候选不支持该平台时，该组合没有候选也不补隐式条目（D17:b）', () {
+      final registry = OnlineMusicProviderRegistry(
+        providers: [provider('neteaseA', neteaseOnly), provider('qqA', qqOnly)],
+        // 配置层**显式**把 (netease, search) 指给了只在 qq 上的条目：
+        // 这是用户表达过的偏好，不能再用隐式条目救场。
+        explicitCandidates: (platform, capability) =>
+            platform == MusicPlatform.netease &&
+                capability == OnlineMusicCapability.search
+            ? const ['qqA']
+            : const [],
+      );
+
+      expect(
+        registry.providersFor(
+          MusicPlatform.netease,
+          OnlineMusicCapability.search,
+        ),
+        isEmpty,
       );
     });
 

@@ -66,10 +66,17 @@ final class OnlineMusicProviderRegistry {
   String providerIdFor(OnlineMusicCapability capability) =>
       providerFor(capability).providerId;
 
-  /// `(platform, capability)` 的**有序候选 Provider**（D4:A）。
+  /// `(platform, capability)` 的**有序候选 Provider**（D4:A + D17:b）。
   ///
-  /// 顺序：显式配置的能力选择（且该 Provider 确实支持该平台 + 该能力）优先，
-  /// 其后按注册顺序补齐其它支持该平台 + 该能力的 Provider。
+  /// 两条分支互斥：
+  /// - **有显式候选**（用户给这个 `(platform, capability)` 指定过条目）⇒ 候选 =
+  ///   **仅**这些条目中已注册且支持该平台 + 该能力的那些。**不再**按注册顺序补齐其它
+  ///   条目：用户明确指派过的组合，不允许被"系统自己找的"隐式条目救场
+  ///   （D17:b —— 避免"我为搜索指定的服务缺 Key 时被静默换成另一个我从未指派过的条目"）。
+  ///   显式 id 全部被过滤掉时结果是空列表，该组合即 `unavailable`（§5.2）。
+  /// - **没有显式候选** ⇒ 候选 = 按注册顺序推导的隐式条目（与引入 D17 之前一致），
+  ///   此时回退仍在这些隐式条目之间按 §6.3 的 fail-closed 表进行（用户没有表达偏好，
+  ///   故不存在"违背显式指定"的问题）。
   ///
   /// 与 [providerFor] 的区别：前者是平台无关的单值 + 默认回落；这里是平台感知的候选
   /// 列表，**不含**任何默认回落。空列表是合法结果。
@@ -77,21 +84,31 @@ final class OnlineMusicProviderRegistry {
     MusicPlatform platform,
     OnlineMusicCapability capability,
   ) {
-    final result = <OnlineMusicProvider>[];
-    for (final id in _explicitIdsFor(platform, capability)) {
-      final provider = _providers[id];
-      if (provider == null || result.contains(provider)) continue;
-      if (_supports(provider, platform, capability)) result.add(provider);
+    final explicitIds = _explicitIdsFor(platform, capability);
+    if (explicitIds.isNotEmpty) {
+      final explicit = <OnlineMusicProvider>[];
+      for (final id in explicitIds) {
+        final provider = _providers[id];
+        if (provider == null || explicit.contains(provider)) continue;
+        if (_supports(provider, platform, capability)) explicit.add(provider);
+      }
+      return List.unmodifiable(explicit);
     }
-    for (final provider in _providers.values) {
-      if (result.contains(provider)) continue;
-      if (_supports(provider, platform, capability)) result.add(provider);
-    }
-    return List.unmodifiable(result);
+    return List.unmodifiable([
+      for (final provider in _providers.values)
+        if (_supports(provider, platform, capability)) provider,
+    ]);
   }
 
   /// 显式候选 id：配置层提供了 [OnlineMusicExplicitCandidates] 就用它，
   /// 否则退回旧的**平台无关单值**选择。
+  ///
+  /// 旧单值映射（`capabilities{cap → providerId}`）本身不含平台信息，D13:A 把它解释为
+  /// "该 Provider **自己那个平台**上的候选"。因此它只有在这个 Provider 确实支持
+  /// `(platform, capability)` 时才算一个显式候选；否则该组合视作**没有**显式候选，
+  /// 继续按注册顺序推导隐式条目。这与配置层 `explicitCandidateIdsFor`
+  /// （`contentPlatform != platform ⇒ 空`）的语义一致，避免"一个 qq 条目的旧映射
+  /// 把 netease 的候选全部清空"。
   List<String> _explicitIdsFor(
     MusicPlatform platform,
     OnlineMusicCapability capability,
@@ -99,7 +116,12 @@ final class OnlineMusicProviderRegistry {
     final resolver = _explicitCandidates;
     if (resolver != null) return resolver(platform, capability);
     final legacyId = _explicitCapabilityProviders[capability];
-    return legacyId == null ? const [] : [legacyId];
+    if (legacyId == null) return const [];
+    final provider = _providers[legacyId];
+    if (provider == null || !_supports(provider, platform, capability)) {
+      return const [];
+    }
+    return [legacyId];
   }
 
   /// 某能力在**所有平台**上的可用集合，按候选推导（多 Provider 取并集）。
