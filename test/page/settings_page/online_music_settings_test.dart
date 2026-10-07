@@ -8,6 +8,7 @@ import 'package:pure_music/page/settings_page/online_music_settings.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
+import 'package:pure_music/services/music_platform/online_music_composition.dart';
 
 const _apiKey = 'chksz_SETTINGS_TEST_ONLY';
 
@@ -16,21 +17,31 @@ void main() {
     WidgetTester tester,
     OnlineMusicProviderSettingsController controller, {
     bool active = true,
+    OnlineMusicService? service,
   }) async {
     tester.view.physicalSize = const Size(1200, 2600);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
+    final onlineMusic =
+        service ??
+        createOnlineMusicComposition(
+          settings: controller.activeSettings,
+          portableBuild: true,
+        ).service;
+    addTearDown(onlineMusic.dispose);
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(useMaterial3: true),
         home: Scaffold(
-          body:
+          body: MultiProvider(
+            providers: [
               ChangeNotifierProvider<
                 OnlineMusicProviderSettingsController
-              >.value(
-                value: controller,
-                child: OnlineMusicSettingsPanel(active: active),
-              ),
+              >.value(value: controller),
+              Provider<OnlineMusicService>.value(value: onlineMusic),
+            ],
+            child: OnlineMusicSettingsPanel(active: active),
+          ),
         ),
       ),
     );
@@ -46,11 +57,17 @@ void main() {
     expect(find.text('$defaultOnlineMusicProviderId · 默认'), findsOneWidget);
     expect(find.text('修改将在下次启动时生效'), findsNothing);
     expect(find.text('添加提供商'), findsOneWidget);
-    expect(find.text('能力分配'), findsOneWidget);
-    for (final label in ['搜索', '歌曲列表', '歌词', '播放解析']) {
-      expect(find.text(label), findsOneWidget);
+    // S8：能力分配 / 默认提供商两块被每个平台一张卡取代。
+    expect(find.text('能力分配'), findsNothing);
+    expect(find.text('默认提供商'), findsNothing);
+    expect(find.text('平台'), findsOneWidget);
+    for (final platform in MusicPlatform.values) {
+      expect(find.text(musicPlatformLabel(platform)), findsOneWidget);
     }
-    expect(find.text('默认提供商'), findsWidgets);
+    // 每个平台卡内四行能力。
+    for (final label in ['搜索', '歌曲列表', '歌词', '播放解析']) {
+      expect(find.text(label), findsNWidgets(MusicPlatform.values.length));
+    }
     expect(find.text('播放音质'), findsOneWidget);
     expect(find.text('默认音质'), findsOneWidget);
     // 只有一个条目时不提供删除。
@@ -375,8 +392,18 @@ void main() {
   }) => MaterialApp(
     theme: ThemeData(useMaterial3: true),
     home: Scaffold(
-      body: ChangeNotifierProvider<OnlineMusicProviderSettingsController>.value(
-        value: controller,
+      body: MultiProvider(
+        providers: [
+          ChangeNotifierProvider<OnlineMusicProviderSettingsController>.value(
+            value: controller,
+          ),
+          Provider<OnlineMusicService>.value(
+            value: createOnlineMusicComposition(
+              settings: controller.activeSettings,
+              portableBuild: true,
+            ).service,
+          ),
+        ],
         child: OnlineMusicSettingsPanel(active: active),
       ),
     ),
@@ -584,6 +611,148 @@ void main() {
     expect(text, contains('\n'));
     expect(text, contains('"request"'));
     expect(text, contains('  '));
+    controller.dispose();
+  });
+
+  // ---------------------------------------------------------------- 平台卡（S8）
+
+  Finder platformCard(MusicPlatform platform) => find
+      .ancestor(
+        of: find.text(musicPlatformLabel(platform)),
+        matching: find.byType(Card),
+      )
+      .first;
+
+  testWidgets('平台卡：停用平台后显示"已停用"，且最后一个启用平台不能关掉', (tester) async {
+    final controller = _controller();
+    await pumpPanel(tester, controller);
+
+    expect(find.text('已停用'), findsNothing);
+    expect(find.byType(Switch), findsNWidgets(MusicPlatform.values.length));
+
+    // 关掉酷狗（卡顺序 = MusicPlatform.values 顺序）。
+    await tester.tap(find.byType(Switch).at(2));
+    await tester.pumpAndSettle();
+    expect(controller.settings.isPlatformEnabled(MusicPlatform.kugou), isFalse);
+    expect(find.text('已停用'), findsOneWidget);
+
+    // 再关掉 QQ，只剩网易云。
+    await tester.tap(find.byType(Switch).at(1));
+    await tester.pumpAndSettle();
+    expect(controller.settings.isPlatformEnabled(MusicPlatform.qq), isFalse);
+    expect(find.text('已停用'), findsNWidgets(2));
+
+    // 空集只能表示"全部启用"，所以最后一个平台不允许被关掉。
+    expect(tester.widget<Switch>(find.byType(Switch).at(0)).onChanged, isNull);
+    expect(
+      MusicPlatform.values.where(controller.settings.isPlatformEnabled).length,
+      1,
+    );
+    controller.dispose();
+  });
+
+  testWidgets('平台卡：卡内为某能力指定 Provider 会写成该组合的显式候选', (tester) async {
+    final controller = _controller(
+      configured: OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'neA',
+            'contentPlatform': 'netease',
+            'auth': {'kind': 'none'},
+          },
+          {
+            'id': 'neB',
+            'contentPlatform': 'netease',
+            'auth': {'kind': 'none'},
+          },
+        ],
+      }),
+    );
+    await pumpPanel(tester, controller);
+
+    // 没有显式指定时显示"自动"，并说明自动会用哪个条目。
+    expect(find.textContaining('自动：按条目顺序使用 neA'), findsWidgets);
+
+    await tester.tap(
+      find
+          .descendant(
+            of: platformCard(MusicPlatform.netease),
+            matching: find.text('neB'),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      controller.settings.routing[MusicPlatform.netease]?[OnlineMusicCapability
+          .search],
+      ['neB'],
+    );
+    expect(find.text('已指定 neB'), findsOneWidget);
+
+    // 回到「自动」等于清除该组合的显式候选（D17:b 之后必须留这条路）。
+    await tester.tap(
+      find
+          .descendant(
+            of: platformCard(MusicPlatform.netease),
+            matching: find.text('自动'),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+    expect(controller.settings.routing[MusicPlatform.netease], isNull);
+    controller.dispose();
+  });
+
+  testWidgets('平台卡：该平台没有支持某能力的条目时显示"未配置"', (tester) async {
+    final controller = _controller();
+    await pumpPanel(tester, controller);
+
+    // 默认只有一个 netease 条目：QQ / 酷狗的四个能力都没有候选。
+    expect(find.text('未配置：该平台下没有支持此能力的条目'), findsNWidgets(8));
+    expect(
+      find.descendant(
+        of: platformCard(MusicPlatform.kugou),
+        matching: find.text('未配置：该平台下没有支持此能力的条目'),
+      ),
+      findsNWidgets(OnlineMusicCapability.values.length),
+    );
+    controller.dispose();
+  });
+
+  testWidgets('平台卡显示运行中能力集合给出的不可用原因（D3b:a）', (tester) async {
+    final settings = OnlineMusicSettings.fromJson({
+      'providers': [
+        {
+          'id': 'searchOnly',
+          'contentPlatform': 'netease',
+          'auth': {'kind': 'none'},
+          'capabilities': {
+            'search': {'kind': 'builtin', 'builtin': 'chksz'},
+          },
+        },
+      ],
+    });
+    final controller = _controller(configured: settings, active: settings);
+
+    await pumpPanel(tester, controller);
+
+    expect(find.text('缺少播放解析能力，因此不会参与搜索'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('编辑条目时"内容来源"创建后只读（D8b:b）', (tester) async {
+    final controller = _controller();
+    await pumpPanel(tester, controller);
+
+    await tester.tap(find.byTooltip('编辑'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('创建后不可修改'), findsWidgets);
+    final segmented = tester.widget<SegmentedButton<MusicPlatform>>(
+      find.byType(SegmentedButton<MusicPlatform>),
+    );
+    expect(segmented.onSelectionChanged, isNull);
     controller.dispose();
   });
 }

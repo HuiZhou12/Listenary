@@ -127,6 +127,21 @@ final class OnlineMusicProviderDefinition {
     return const OnlineMusicUnsupportedCapabilityBinding();
   }
 
+  /// 该条目在 `(platform, capability)` 上**实际**能服务的平台集合。
+  ///
+  /// 刻意与运行时注册的平台保持一致（`createOnlineMusicComposition` + 各 Provider 的
+  /// `platformsFor`），这样设置页的平台卡能如实回答"这个平台下谁能做这件事"：
+  /// - 内置实现就是 ChkSz（网易云），**即使**条目把 [contentPlatform] 写成别的平台；
+  /// - 声明式实现服务它自己声明的 [contentPlatform]；
+  /// - 未配置 / `unsupported` 的能力不服务任何平台。
+  Set<MusicPlatform> platformsFor(OnlineMusicCapability capability) {
+    return switch (bindingFor(capability)) {
+      OnlineMusicUnsupportedCapabilityBinding() => const {},
+      OnlineMusicBuiltinCapabilityBinding() => const {MusicPlatform.netease},
+      OnlineMusicDeclarativeCapabilityBinding() => {contentPlatform},
+    };
+  }
+
   /// 条目级 + 能力级配置校验；空列表表示可用。
   List<String> validationIssues() {
     final issues = <String>[];
@@ -433,6 +448,7 @@ final class OnlineMusicSettings {
     required this.defaultProviderId,
     required this.capabilityProviders,
     required this.routing,
+    this.enabledPlatforms = const {},
   });
 
   static const defaults = OnlineMusicSettings(
@@ -456,6 +472,63 @@ final class OnlineMusicSettings {
   /// 与 [capabilityProviders] **并存**而非互相派生：`routing` 优先，缺失时回落到旧的
   /// 单值映射（且仅当该 Provider 的 `contentPlatform` 等于查询平台时才生效）。
   final Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> routing;
+
+  /// 被**停用**的平台（D8:A 平台卡的启用开关）：停用的平台不参与搜索，其
+  /// `(platform, capability)` 候选一律按"空"处理（调用时报 `unavailable`）。
+  ///
+  /// 约定：**空集 = 全部启用**。这样默认配置与旧配置的落盘内容都不需要新键
+  /// （D13:A：不改写默认配置），`enabledPlatforms` 只在用户真的停用过某些平台时才写盘。
+  ///
+  /// 代价：无法用同一个表示表达"全部停用"。因此界面**不允许**停用最后一个启用的平台
+  /// （见 `withPlatformEnabled`），以免"全部停用"退化成"全部启用"。
+  final Set<MusicPlatform> enabledPlatforms;
+
+  /// 该平台当前是否启用（空集 = 全部启用，因此默认返回 true）。
+  bool isPlatformEnabled(MusicPlatform platform) =>
+      enabledPlatforms.isEmpty || enabledPlatforms.contains(platform);
+
+  /// 把平台列表归一化：覆盖全部平台时回到"空集 = 全部启用"。
+  static Set<MusicPlatform> _normalizeEnabledPlatforms(
+    Iterable<MusicPlatform> platforms,
+  ) {
+    final kept = {
+      for (final platform in platforms)
+        if (MusicPlatform.values.contains(platform)) platform,
+    };
+    return kept.length == MusicPlatform.values.length ? const {} : kept;
+  }
+
+  /// 开/关一个平台；返回新配置（不落盘，由控制器决定）。
+  ///
+  /// 不允许把**最后一个**启用的平台关掉（`enabledPlatforms` 用空集表示"全部启用"，
+  /// 两者会撞在一起）；此时原样返回，界面也会禁用该开关。
+  OnlineMusicSettings withPlatformEnabled(
+    MusicPlatform platform, {
+    required bool enabled,
+  }) {
+    final current = enabledPlatforms.isEmpty
+        ? {for (final value in MusicPlatform.values) value}
+        : {...enabledPlatforms};
+    if (enabled) {
+      current.add(platform);
+    } else {
+      if (!current.contains(platform)) return this;
+      if (current.length <= 1) return this;
+      current.remove(platform);
+    }
+    return _copyWith(enabledPlatforms: _normalizeEnabledPlatforms(current));
+  }
+
+  /// 只替换 [enabledPlatforms]；其余字段原样带过。
+  OnlineMusicSettings _copyWith({
+    required Set<MusicPlatform> enabledPlatforms,
+  }) => OnlineMusicSettings(
+    providers: providers,
+    defaultProviderId: defaultProviderId,
+    capabilityProviders: capabilityProviders,
+    routing: routing,
+    enabledPlatforms: enabledPlatforms,
+  );
 
   Set<String> get providerIds => {for (final p in providers) p.id};
 
@@ -501,6 +574,29 @@ final class OnlineMusicSettings {
         : providers.first.id;
   }
 
+  /// 该平台下**能够**服务某能力的条目 id（按条目顺序）—— 平台卡的候选项。
+  ///
+  /// 与路由层的判定一致（[OnlineMusicProviderDefinition.platformsFor]），因此卡片里
+  /// 能选的条目就是运行时真正会被选中的那些。
+  List<String> capableProviderIdsFor(
+    MusicPlatform platform,
+    OnlineMusicCapability capability,
+  ) => [
+    for (final provider in providers)
+      if (provider.platformsFor(capability).contains(platform)) provider.id,
+  ];
+
+  /// 平台卡当前要显示的选中项：显式候选的第一个；没有显式配置时返回 null（= 自动）。
+  ///
+  /// 返回 null 表示"按注册顺序自动"，界面据此显示「自动」而不是假装用户选过什么。
+  String? selectedProviderIdFor(
+    MusicPlatform platform,
+    OnlineMusicCapability capability,
+  ) {
+    final explicit = explicitCandidateIdsFor(platform, capability);
+    return explicit.isEmpty ? null : explicit.first;
+  }
+
   /// 新增一个条目；标识重复时返回原值（界面已先行校验）。
   OnlineMusicSettings withAddedProvider(
     OnlineMusicProviderDefinition provider,
@@ -511,6 +607,7 @@ final class OnlineMusicSettings {
       defaultProviderId: defaultProviderId,
       capabilityProviders: capabilityProviders,
       routing: routing,
+      enabledPlatforms: enabledPlatforms,
     );
   }
 
@@ -527,6 +624,7 @@ final class OnlineMusicSettings {
       defaultProviderId: defaultProviderId,
       capabilityProviders: capabilityProviders,
       routing: routing,
+      enabledPlatforms: enabledPlatforms,
     );
   }
 
@@ -549,6 +647,7 @@ final class OnlineMusicSettings {
           if (entry.value != providerId) entry.key: entry.value,
       }),
       routing: _routingWithoutProvider(routing, providerId),
+      enabledPlatforms: enabledPlatforms,
     );
   }
 
@@ -588,6 +687,7 @@ final class OnlineMusicSettings {
         capability: providerId,
       }),
       routing: routing,
+      enabledPlatforms: enabledPlatforms,
     );
   }
 
@@ -621,6 +721,7 @@ final class OnlineMusicSettings {
       defaultProviderId: defaultProviderId,
       capabilityProviders: capabilityProviders,
       routing: Map.unmodifiable(next),
+      enabledPlatforms: enabledPlatforms,
     );
   }
 
@@ -631,12 +732,14 @@ final class OnlineMusicSettings {
       defaultProviderId: providerId,
       capabilityProviders: capabilityProviders,
       routing: routing,
+      enabledPlatforms: enabledPlatforms,
     );
   }
 
   /// 写回 `app_preference.json` 的结构；键名与 [OnlineMusicSettings.fromJson] 一致。
   ///
   /// `routing` 为空时不写该键 —— 默认配置与旧配置的落盘内容保持不变（D13:A：不迁移）。
+  /// `enabledPlatforms` 同理：**全部平台都启用**（= 空集）时不写该键。
   Map<String, dynamic> toJson() => {
     'defaultProvider': defaultProviderId,
     'providers': [for (final provider in providers) provider.toJson()],
@@ -652,6 +755,11 @@ final class OnlineMusicSettings {
               entry.key.name: entry.value,
           },
       },
+    if (enabledPlatforms.isNotEmpty)
+      'enabledPlatforms': [
+        for (final platform in MusicPlatform.values)
+          if (enabledPlatforms.contains(platform)) platform.name,
+      ],
   };
 
   @override
@@ -663,7 +771,8 @@ final class OnlineMusicSettings {
         other.capabilityProviders,
         capabilityProviders,
       ) &&
-      _sameRouting(other.routing, routing);
+      _sameRouting(other.routing, routing) &&
+      _samePlatformSet(other.enabledPlatforms, enabledPlatforms);
 
   @override
   int get hashCode => Object.hash(
@@ -686,13 +795,15 @@ final class OnlineMusicSettings {
         ),
       ),
     ),
+    Object.hashAllUnordered(enabledPlatforms),
   );
 
   @override
   String toString() =>
       'OnlineMusicSettings(${providers.length} providers, '
       'default=$defaultProviderId, capabilities=${capabilityProviders.length}, '
-      'routing=${routing.length} platforms)';
+      'routing=${routing.length} platforms, '
+      'disabledPlatforms=${MusicPlatform.values.length - enabledPlatforms.length})';
 
   /// 解析 `onlineMusic` 配置；任何缺失、非法或未注册的内容逐项回落默认。
   ///
@@ -714,7 +825,20 @@ final class OnlineMusicSettings {
         ids,
       ),
       routing: _parseRouting(value['routing'], ids),
+      enabledPlatforms: _parseEnabledPlatforms(value['enabledPlatforms']),
     );
+  }
+
+  /// 解析 `enabledPlatforms`：无法识别的名字直接丢弃；解析结果覆盖全部平台时归一化为
+  /// 空集（= 全部启用，与 [toJson] 的"全启用不写键"对称）。
+  static Set<MusicPlatform> _parseEnabledPlatforms(Object? value) {
+    if (value is! List) return const {};
+    final platforms = <MusicPlatform>[];
+    for (final raw in value) {
+      final platform = _matchPlatform(raw);
+      if (platform != null) platforms.add(platform);
+    }
+    return _normalizeEnabledPlatforms(platforms);
   }
 
   /// 解析 `routing{platform → capability → [providerId]}`。
@@ -944,6 +1068,9 @@ bool _sameCapabilityProviders(
   }
   return true;
 }
+
+bool _samePlatformSet(Set<MusicPlatform> a, Set<MusicPlatform> b) =>
+    a.length == b.length && a.containsAll(b);
 
 bool _sameRouting(
   Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> a,

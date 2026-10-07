@@ -346,6 +346,113 @@ void main() {
     });
   });
 
+  group('平台启用开关（D8:A）', () {
+    test('默认全部启用，且不写盘', () {
+      const settings = OnlineMusicSettings.defaults;
+
+      for (final platform in MusicPlatform.values) {
+        expect(settings.isPlatformEnabled(platform), isTrue);
+      }
+      expect(
+        settings.toJson().containsKey('enabledPlatforms'),
+        isFalse,
+        reason: '全部启用 = 空集，不写该键（D13:A：默认配置落盘内容不变）',
+      );
+    });
+
+    test('停用平台会写盘，并可从 JSON 读回', () {
+      final settings = OnlineMusicSettings.defaults.withPlatformEnabled(
+        MusicPlatform.kugou,
+        enabled: false,
+      );
+
+      expect(settings.isPlatformEnabled(MusicPlatform.kugou), isFalse);
+      expect(settings.isPlatformEnabled(MusicPlatform.netease), isTrue);
+      expect(settings.toJson()['enabledPlatforms'], ['netease', 'qq']);
+
+      final restored = OnlineMusicSettings.fromJson(settings.toJson());
+      expect(restored, settings);
+      expect(restored.isPlatformEnabled(MusicPlatform.kugou), isFalse);
+    });
+
+    test('重新启用所有平台后回到空集（落盘不再带该键）', () {
+      final disabled = OnlineMusicSettings.defaults.withPlatformEnabled(
+        MusicPlatform.qq,
+        enabled: false,
+      );
+      final restored = disabled.withPlatformEnabled(
+        MusicPlatform.qq,
+        enabled: true,
+      );
+
+      expect(restored.enabledPlatforms, isEmpty);
+      expect(restored.toJson().containsKey('enabledPlatforms'), isFalse);
+    });
+
+    test('不允许停用最后一个启用的平台（空集只能表示"全部启用"）', () {
+      var settings = OnlineMusicSettings.defaults;
+      settings = settings.withPlatformEnabled(MusicPlatform.qq, enabled: false);
+      settings = settings.withPlatformEnabled(
+        MusicPlatform.kugou,
+        enabled: false,
+      );
+      expect(settings.enabledPlatforms, {MusicPlatform.netease});
+
+      final blocked = settings.withPlatformEnabled(
+        MusicPlatform.netease,
+        enabled: false,
+      );
+      expect(blocked, same(settings));
+      expect(blocked.isPlatformEnabled(MusicPlatform.netease), isTrue);
+    });
+
+    test('无法识别的平台名被忽略，覆盖全部平台时归一化为空集', () {
+      expect(
+        OnlineMusicSettings.fromJson({
+          'providers': [
+            {'id': 'chksz', 'protocol': 'chksz'},
+          ],
+          'enabledPlatforms': ['netease', 'qq', 'kugou', 'bilibili'],
+        }).enabledPlatforms,
+        isEmpty,
+      );
+      expect(
+        OnlineMusicSettings.fromJson({
+          'providers': [
+            {'id': 'chksz', 'protocol': 'chksz'},
+          ],
+          'enabledPlatforms': ['netease'],
+        }).enabledPlatforms,
+        {MusicPlatform.netease},
+      );
+    });
+
+    test('被停用的平台不进入组合出的可搜索集合', () {
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'full',
+            'contentPlatform': 'netease',
+            'auth': {'kind': 'none'},
+            'capabilities': {
+              'search': {'kind': 'builtin', 'builtin': 'chksz'},
+              'stream': {'kind': 'builtin', 'builtin': 'chksz'},
+            },
+          },
+        ],
+        'enabledPlatforms': ['qq'],
+      });
+      final composition = createOnlineMusicComposition(
+        settings: settings,
+        portableBuild: true,
+      );
+      addTearDown(composition.service.dispose);
+
+      // 条目代理的是 netease，而 netease 被停用 ⇒ 没有任何可搜索平台。
+      expect(composition.service.capabilities.searchablePlatforms, isEmpty);
+    });
+  });
+
   group('AppPreference onlineMusic key', () {
     test('reads the key and falls back to defaults when absent', () {
       final preference = AppPreference();

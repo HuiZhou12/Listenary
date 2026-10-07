@@ -26,8 +26,10 @@ final class OnlineMusicProviderRegistry {
     String? defaultProviderId,
     Map<OnlineMusicCapability, String> capabilityProviders = const {},
     OnlineMusicExplicitCandidates? explicitCandidates,
+    Iterable<MusicPlatform> enabledPlatforms = const {},
   }) : _explicitCapabilityProviders = Map.unmodifiable(capabilityProviders),
-       _explicitCandidates = explicitCandidates {
+       _explicitCandidates = explicitCandidates,
+       _enabledPlatforms = Set.unmodifiable(enabledPlatforms) {
     for (final provider in providers) {
       _providers.putIfAbsent(provider.providerId, () => provider);
     }
@@ -52,6 +54,9 @@ final class OnlineMusicProviderRegistry {
   final Map<String, OnlineMusicProvider> _providers = {};
   final Map<OnlineMusicCapability, String> _explicitCapabilityProviders;
   final OnlineMusicExplicitCandidates? _explicitCandidates;
+
+  /// 被停用的平台；**空集 = 全部启用**（与 `OnlineMusicSettings.enabledPlatforms` 同义）。
+  final Set<MusicPlatform> _enabledPlatforms;
   late final OnlineMusicProvider _defaultProvider;
   late final Map<OnlineMusicCapability, OnlineMusicProvider> _selectedProviders;
 
@@ -84,6 +89,11 @@ final class OnlineMusicProviderRegistry {
     MusicPlatform platform,
     OnlineMusicCapability capability,
   ) {
+    // 被用户停用的平台：候选一律按"空"处理 ⇒ 该平台的所有能力报 `unavailable`，
+    // 并且它不会出现在 `platformsFor` 推导出的能力集合里（含 searchablePlatforms，D8:A）。
+    if (_enabledPlatforms.isNotEmpty && !_enabledPlatforms.contains(platform)) {
+      return const [];
+    }
     final explicitIds = _explicitIdsFor(platform, capability);
     if (explicitIds.isNotEmpty) {
       final explicit = <OnlineMusicProvider>[];

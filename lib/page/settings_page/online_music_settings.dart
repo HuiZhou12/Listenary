@@ -33,12 +33,24 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   bool _loading = false;
   String? _error;
 
+  /// 当前**运行中**的能力集合（D3b:a）：平台卡据此解释"为什么这个平台不能搜"。
+  ///
+  /// 它来自启动时装配的 service，反映的是 `activeSettings`；用户刚改的配置要重启后
+  /// 才会体现在这里，因此卡片上的开关另有"下次启动生效"的提示。
+  OnlineMusicCapabilities? _capabilities;
+
   @override
   void initState() {
     super.initState();
     _controller = context.read<OnlineMusicProviderSettingsController>();
     _controller.addListener(_onSettingsChanged);
     if (widget.active) _load();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _capabilities = context.read<OnlineMusicService>().capabilities;
   }
 
   @override
@@ -311,26 +323,6 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     );
   }
 
-  /// 能力分配与默认提供商共用的选择控件。
-  Widget _buildProviderSelector({
-    required List<String> providerIds,
-    required String selected,
-    required ValueChanged<String> onChanged,
-  }) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: SegmentedButton<String>(
-        showSelectedIcon: false,
-        segments: [
-          for (final id in providerIds)
-            ButtonSegment(value: id, label: Text(id)),
-        ],
-        selected: {selected},
-        onSelectionChanged: (selection) => onChanged(selection.first),
-      ),
-    );
-  }
-
   /// 凭据读取**静默进行**，不为"读取中"做任何占位。
   ///
   /// 上一轮验收反馈：固定高度的空占位只留下一条没有意义的空白间距，而
@@ -371,7 +363,6 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   @override
   Widget build(BuildContext context) {
     final settings = _controller.settings;
-    final providerIds = settings.providers.map((p) => p.id).toList();
     return ListView(
       padding: const EdgeInsets.only(bottom: 96.0, right: 20),
       children: [
@@ -406,31 +397,35 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
           ),
         ),
         const SizedBox(height: 24),
-        const _SettingsSectionTitle('能力分配'),
-        for (final capability in OnlineMusicCapability.values) ...[
-          SettingsTile(
-            description: _capabilityLabel(capability),
-            subtitle: '当前使用 ${settings.resolvedProviderIdFor(capability)}',
-            action: _buildProviderSelector(
-              providerIds: providerIds,
-              selected: settings.resolvedProviderIdFor(capability),
-              onChanged: (id) =>
-                  _apply(_controller.assignCapability(capability, id)),
+        const _SettingsSectionTitle('平台'),
+        if (_controller.hasPendingRestart)
+          const _SettingsHint('平台与能力的改动将在下次启动时生效'),
+        for (final platform in MusicPlatform.values) ...[
+          _PlatformCard(
+            platform: platform,
+            settings: settings,
+            enabled: settings.isPlatformEnabled(platform),
+            // 空集 = 全部启用；不允许把最后一个启用的平台关掉（否则"全部停用"会退化成
+            // "全部启用"，见 `OnlineMusicSettings.enabledPlatforms` 的约定）。
+            canToggle:
+                !settings.isPlatformEnabled(platform) ||
+                _enabledPlatformCount(settings) > 1,
+            unavailableReason: _capabilities?.unavailableSearchReasonFor(
+              platform,
+            ),
+            onEnabledChanged: (value) => _apply(
+              _controller.setPlatformEnabled(platform, enabled: value),
+            ),
+            onCapabilityChanged: (capability, providerId) => _apply(
+              _controller.assignPlatformCapability(
+                platform,
+                capability,
+                providerId,
+              ),
             ),
           ),
           const SizedBox(height: 12),
         ],
-        const SizedBox(height: 12),
-        const _SettingsSectionTitle('默认提供商'),
-        SettingsTile(
-          description: '默认提供商',
-          subtitle: '能力没有单独指定时使用；也是能力分配回落的目标',
-          action: _buildProviderSelector(
-            providerIds: providerIds,
-            selected: settings.defaultProviderId,
-            onChanged: (id) => _apply(_controller.setDefaultProvider(id)),
-          ),
-        ),
         const SizedBox(height: 24),
         const _SettingsSectionTitle('播放音质'),
         const _DefaultQualityTile(),
@@ -439,6 +434,9 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   }
 }
 
+int _enabledPlatformCount(OnlineMusicSettings settings) =>
+    MusicPlatform.values.where(settings.isPlatformEnabled).length;
+
 String _capabilityLabel(OnlineMusicCapability capability) =>
     switch (capability) {
       OnlineMusicCapability.search => '搜索',
@@ -446,6 +444,142 @@ String _capabilityLabel(OnlineMusicCapability capability) =>
       OnlineMusicCapability.lyric => '歌词',
       OnlineMusicCapability.stream => '播放解析',
     };
+
+/// 选择"自动"时使用的哨兵值。
+///
+/// 真实 Provider 标识不可能为空（创建时校验非空），因此不会与条目冲突；
+/// 选它等价于清除该 `(platform, capability)` 的显式候选（D17:b 之后，
+/// "显式指定过"意味着隐式条目不再救场，所以必须给用户一条回到"自动"的路）。
+const _autoProviderValue = '';
+
+/// 一个平台一张卡（D8:A）：卡头 = 平台名 + 启用开关 + 不可用原因；
+/// 卡内每个能力一行，选择该平台下支持该能力的 Provider。
+class _PlatformCard extends StatelessWidget {
+  const _PlatformCard({
+    required this.platform,
+    required this.settings,
+    required this.enabled,
+    required this.canToggle,
+    required this.unavailableReason,
+    required this.onEnabledChanged,
+    required this.onCapabilityChanged,
+  });
+
+  final MusicPlatform platform;
+  final OnlineMusicSettings settings;
+  final bool enabled;
+
+  /// 是否允许切换启用状态（最后一个启用的平台不允许关掉）。
+  final bool canToggle;
+
+  /// 运行中的 service 给出的"为什么不能搜"；停用或未涉及时为 null。
+  final String? unavailableReason;
+
+  final ValueChanged<bool> onEnabledChanged;
+  final void Function(OnlineMusicCapability capability, String? providerId)
+  onCapabilityChanged;
+
+  /// 不可用原因的展示优先级：**运行中的能力集合**优先，其次才是"已停用"（用户口径）。
+  String? get _statusText {
+    final reason = unavailableReason;
+    if (reason != null && reason.isNotEmpty) return reason;
+    return enabled ? null : '已停用';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final status = _statusText;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        musicPlatformLabel(platform),
+                        style: const TextStyle(
+                          fontSize: AppType.body,
+                          fontWeight: AppType.weightSemibold,
+                        ),
+                      ),
+                      if (status != null)
+                        Text(
+                          status,
+                          style: TextStyle(
+                            fontSize: AppType.caption,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Tooltip(
+                  message: canToggle ? '启用 / 停用该平台' : '至少保留一个启用的平台',
+                  child: Switch(
+                    value: enabled,
+                    onChanged: canToggle
+                        ? (value) => onEnabledChanged(value)
+                        : null,
+                  ),
+                ),
+              ],
+            ),
+            for (final capability in OnlineMusicCapability.values)
+              _buildCapabilityRow(context, capability),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCapabilityRow(
+    BuildContext context,
+    OnlineMusicCapability capability,
+  ) {
+    final candidates = settings.capableProviderIdsFor(platform, capability);
+    if (candidates.isEmpty) {
+      return SettingsTile(
+        description: _capabilityLabel(capability),
+        subtitle: '未配置：该平台下没有支持此能力的条目',
+        action: const Text('未配置'),
+      );
+    }
+    final selected = settings.selectedProviderIdFor(platform, capability);
+    return SettingsTile(
+      description: _capabilityLabel(capability),
+      subtitle: selected == null
+          ? '自动：按条目顺序使用 ${candidates.first}'
+          : '已指定 $selected',
+      action: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SegmentedButton<String>(
+          showSelectedIcon: false,
+          segments: [
+            const ButtonSegment(value: _autoProviderValue, label: Text('自动')),
+            for (final id in candidates)
+              ButtonSegment(value: id, label: Text(id)),
+          ],
+          selected: {selected ?? _autoProviderValue},
+          onSelectionChanged: (selection) {
+            final value = selection.first;
+            onCapabilityChanged(
+              capability,
+              value == _autoProviderValue ? null : value,
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
 
 /// 设置分块标题：本页有多个设置项，用标题把它们分开。
 class _SettingsSectionTitle extends StatelessWidget {
@@ -698,7 +832,11 @@ class _ProviderDialogState extends State<_ProviderDialog> {
             const SizedBox(height: 16),
             SettingsTile(
               description: '内容来源',
-              subtitle: '该服务代理哪一家的内容；非网易云来源属于当前模型边界',
+              // D8b:b：平台已参与来源语义，改平台会让已有内容与 Provider 语义不一致，
+              // 所以创建后只读；需要别的平台请新建条目。
+              subtitle: _isEditing
+                  ? '创建后不可修改；需要其它平台请新建条目'
+                  : '该服务代理哪一家的内容；非网易云来源属于当前模型边界',
               action: SegmentedButton<MusicPlatform>(
                 showSelectedIcon: false,
                 segments: [
@@ -706,8 +844,10 @@ class _ProviderDialogState extends State<_ProviderDialog> {
                     ButtonSegment(value: platform, label: Text(platform.name)),
                 ],
                 selected: {_contentPlatform},
-                onSelectionChanged: (selection) =>
-                    setState(() => _contentPlatform = selection.first),
+                onSelectionChanged: _isEditing
+                    ? null
+                    : (selection) =>
+                          setState(() => _contentPlatform = selection.first),
               ),
             ),
             const SizedBox(height: 16),

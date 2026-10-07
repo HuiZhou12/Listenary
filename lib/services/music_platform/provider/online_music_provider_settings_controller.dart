@@ -181,6 +181,26 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   Future<bool> setDefaultProvider(String providerId) =>
       apply(_settings.withDefaultProvider(providerId));
 
+  /// 平台卡上的启用开关（D8:A）。
+  Future<bool> setPlatformEnabled(
+    MusicPlatform platform, {
+    required bool enabled,
+  }) => apply(_settings.withPlatformEnabled(platform, enabled: enabled));
+
+  /// 平台卡上为某个能力指定的条目；[providerId] 为 null 表示回到"自动"
+  /// （清除该 `(platform, capability)` 的显式候选）。
+  Future<bool> assignPlatformCapability(
+    MusicPlatform platform,
+    OnlineMusicCapability capability,
+    String? providerId,
+  ) => apply(
+    _settings.withRoutingCandidates(
+      platform,
+      capability,
+      providerId == null ? const [] : [providerId],
+    ),
+  );
+
   Future<bool> isCredentialConfigured(
     OnlineMusicProviderDefinition definition,
   ) async {

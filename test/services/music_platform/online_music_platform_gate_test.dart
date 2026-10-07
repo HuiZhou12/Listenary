@@ -119,6 +119,32 @@ void main() {
     expect(capabilities.searchablePlatforms, {netease});
     expect(capabilities.unavailableSearchReasons, isEmpty);
   });
+
+  test('被停用的平台不进任何能力集合，其能力也不可用（D8:A）', () {
+    final registry = OnlineMusicProviderRegistry(
+      providers: [
+        _FakeProvider('full', {
+          search: const {netease, qq},
+          stream: const {netease, qq},
+          playlist: const {netease, qq},
+          lyric: const {netease, qq},
+        }),
+      ],
+      enabledPlatforms: const {netease},
+    );
+    final service = CompositeOnlineMusicService(registry: registry);
+
+    expect(service.capabilities.searchablePlatforms, {netease});
+    expect(service.capabilities.resolvablePlatforms, {netease});
+    expect(service.capabilities.playlistPlatforms, {netease});
+    expect(service.capabilities.lyricPlatforms, {netease});
+    // 停用的平台：候选按"空"处理 ⇒ 调用时报 unavailable。
+    expect(registry.providersFor(qq, search), isEmpty);
+    expect(registry.providersFor(qq, stream), isEmpty);
+    expect(registry.providersFor(qq, playlist), isEmpty);
+    // "停用"不是能力门槛的结论，原因表里不出现它 —— 由设置页平台卡显示"已停用"。
+    expect(service.capabilities.unavailableSearchReasonFor(qq), isNull);
+  });
 }
 
 final class _FakeProvider extends UnsupportedOnlineMusicProvider {

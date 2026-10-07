@@ -144,6 +144,8 @@ OnlineMusicComposition createOnlineMusicComposition({
     // 平台感知路由（D4:A / D14）：候选由配置层的 (platform, capability) 查询决定，
     // 其中已包含旧单值映射的回落语义；不再使用平台无关的 defaultProvider 做路由。
     explicitCandidates: settings.explicitCandidateIdsFor,
+    // D8:A：平台卡上的启用开关。被停用的平台不参与搜索，其能力一律 `unavailable`。
+    enabledPlatforms: settings.enabledPlatforms,
   );
 
   return OnlineMusicComposition(

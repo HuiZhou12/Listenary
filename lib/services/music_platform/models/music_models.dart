@@ -2,6 +2,16 @@ import 'package:pure_music/lyric/lyric.dart';
 
 enum MusicPlatform { netease, qq, kugou }
 
+/// 平台的**展示名**（只用于界面文案）。
+///
+/// 身份、路由、持久化一律使用枚举本身（D1）：这里返回的中文名不参与任何映射，
+/// 也不得被当作请求参数或落库内容。
+String musicPlatformLabel(MusicPlatform platform) => switch (platform) {
+  MusicPlatform.netease => '网易云',
+  MusicPlatform.qq => 'QQ音乐',
+  MusicPlatform.kugou => '酷狗音乐',
+};
+
 enum TrackAvailability { playable, paid, unavailable, unknown }
 
 /// 在线歌曲音质档位；`level` 为网易云解析接口的请求参数，`label` 为展示文案。
