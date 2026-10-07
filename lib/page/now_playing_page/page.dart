@@ -768,25 +768,19 @@ class _RemoteQualityButton extends StatelessWidget {
     onSelected: (level) => _switchQuality(context, session, level),
   );
 
-  /// 切换档位：**写回的是内部偏好档位**（保持跨平台偏好语义），
-  /// 平台侧的实际取值仍由该平台的档位声明决定。
+  /// 切换档位：**只切换当前会话**，不改写全局偏好。
+  ///
+  /// Spec §19.1：S8-4 引入的"播放页写回 `AppPreference.defaultQuality`"已回退 ——
+  /// 播放页的一次临时切档不该改掉设置页里的长期偏好；改偏好请去设置页。
+  /// 传下去的是**内部偏好档位**（跨平台语义），平台取值由服务层按该 Track 的平台声明转换。
   Future<void> _switchQuality(
     BuildContext context,
     RemotePlaybackSessionController session,
     String level,
   ) async {
     final ok = await session.switchQuality(level);
-    if (!context.mounted) return;
-    if (!ok) {
+    if (!ok && context.mounted) {
       showTextOnSnackBar('音质切换失败，请重试', variant: ToastVariant.error);
-      return;
-    }
-    // 切换成功后才记下这条偏好；失败时不改写用户的既有偏好。
-    if (AppPreference.instance.defaultQuality == level) return;
-    AppPreference.instance.defaultQuality = level;
-    final saved = await AppPreference.instance.save();
-    if (!saved && context.mounted) {
-      showTextOnSnackBar('保存默认音质失败', variant: ToastVariant.error);
     }
   }
 }

@@ -41,6 +41,39 @@ final List<PlatformQualityTier> neteaseQualityTiers = List.unmodifiable([
     ),
 ]);
 
+/// QQ 音乐（`qq-music-api`）的档位声明。
+///
+/// **依据（真实源码，非编造；见 Spec §19.3）**：
+/// - `qq-music-api/getMusicPlay.ts`：`type AudioQuality = 'm4a' | '128' | '320' | 'ape' | 'flac'`，
+///   `DEFAULT_QUALITY = '128'`；
+/// - `qq-music-api/api-metadata.ts`：`quality.enumValues = ['m4a','128','320','ape','flac']`，
+///   `defaultValue = '128'`；
+/// - 播放解析参数形状：`{ songmid, quality, resType }`（`resType = 'play'`）。
+///
+/// **"内部档位 → QQ 取值"的映射是我们（Listenary）的抽象决定**，不是 QQ 的语义：
+/// `128 → standard`、`320 → exhigh`、`flac → lossless`。
+///
+/// `ape` / `m4a` **暂不暴露**：源码只给出取值集合，没有可靠的"它对应哪种音质"的口径
+/// （真实语义待确认），因此不为它们编造内部档位。
+/// 早先 Spec 草稿里的 `sq` 是编造的，**已作废**。
+final List<PlatformQualityTier> qqQualityTiers = List.unmodifiable([
+  const PlatformQualityTier(
+    internalLevel: 'standard',
+    displayLabel: '128',
+    requestValue: '128',
+  ),
+  const PlatformQualityTier(
+    internalLevel: 'exhigh',
+    displayLabel: '320',
+    requestValue: '320',
+  ),
+  const PlatformQualityTier(
+    internalLevel: 'lossless',
+    displayLabel: 'flac',
+    requestValue: 'flac',
+  ),
+]);
+
 /// 一次「内部偏好 → 平台档位」的解析结果。
 final class PlatformQualitySelection {
   const PlatformQualitySelection({
@@ -122,4 +155,52 @@ PlatformQualitySelection selectPlatformQuality({
     internalLevel: chosen.internalLevel,
     fellBack: true,
   );
+}
+
+/// 按**平台档位声明**生成降级链（返回内部偏好档位，从期望档一路降到下限）。
+///
+/// 为什么不能只用 [MusicQuality] 的下标：内部枚举只是我们的抽象，
+/// 平台真实档位可能少一档、多一档或顺序不同（QQ 只有 128/320/flac），
+/// 用下标推断"平台真实等级"会把网易云的语义强加到别的平台（Spec §19.7 缺陷 B）。
+///
+/// 规则与 [selectPlatformQuality] 一致：
+/// 1. 期望档优先按 `internalLevel` 命中（命中不了就按"不高于期望的最接近档"）；
+/// 2. 下限由 [fallbackQuality] 决定 —— 它可能是**平台请求值**（上一首平台实际返回的档位），
+///    也可能是内部档位，两者都认；找不到、或不低于期望时，下限 = 平台最低档。
+///
+/// 平台**没有**档位声明（[tiers] 为空）时返回 null，表示调用方应保持引入档位模型之前的行为
+/// （内部档位原样透传）。
+List<String>? platformQualityFallbackChain({
+  required List<PlatformQualityTier> tiers,
+  required String requestedQuality,
+  String? fallbackQuality,
+}) {
+  if (tiers.isEmpty) return null;
+  final ordered = [...tiers]
+    ..sort(
+      (a, b) => musicQualityRank(
+        a.internalLevel,
+      ).compareTo(musicQualityRank(b.internalLevel)),
+    );
+  final selection = selectPlatformQuality(
+    tiers: ordered,
+    preference: requestedQuality,
+  );
+  final startIndex = ordered.indexWhere(
+    (tier) => tier.internalLevel == selection.internalLevel,
+  );
+  if (startIndex < 0) return null;
+
+  var endIndex = 0;
+  final floor = fallbackQuality;
+  if (floor != null) {
+    final floorIndex = ordered.indexWhere(
+      (tier) => tier.requestValue == floor || tier.internalLevel == floor,
+    );
+    if (floorIndex >= 0 && floorIndex < startIndex) endIndex = floorIndex;
+  }
+  return [
+    for (var index = startIndex; index >= endIndex; index--)
+      ordered[index].internalLevel,
+  ];
 }

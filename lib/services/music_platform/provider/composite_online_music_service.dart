@@ -128,9 +128,16 @@ final class CompositeOnlineMusicService implements OnlineMusicService {
   }) => _dispatch(
     ref.platform,
     OnlineMusicCapability.stream,
+    // D2:A / D10:A + §19.7：`requestedQuality` 是**内部偏好档位**（跨平台语义），
+    // 发给平台之前必须按**该 Track 所属平台自己的档位声明**转换成平台请求值。
+    // 网易云的 requestValue 就是内部键，因此这条转换对既有行为零影响；
+    // QQ 这类平台则得到 `flac`/`320`/`128`，而不是 `lossless`/`exhigh`/`standard`。
     (provider) => provider.resolve(
       ref,
-      requestedQuality: requestedQuality,
+      requestedQuality: selectPlatformQuality(
+        tiers: provider.qualityTiersFor(ref.platform),
+        preference: requestedQuality,
+      ).requestValue,
       cancelToken: cancelToken,
     ),
     stamp: (stream, providerId) => stream.servedByProviderId == null
@@ -138,18 +145,17 @@ final class CompositeOnlineMusicService implements OnlineMusicService {
         : stream,
   );
 
+  /// 该平台**应请求的内部偏好档位**（**不是**平台请求值）。
+  ///
+  /// 返回内部档位而不是平台取值，是因为播放链路把它当"用户偏好"继续传递，
+  /// 真正的平台取值由 [resolve] 按该 Track 的平台声明转换一次。
+  /// 若这里就返回平台取值，[resolve] 会把它再解释一次（同一偏好被转换两次）。
   @override
   String defaultQualityFor(MusicPlatform platform) {
     // 同步查询：没有候选即不可用；不在此处回退（无异步空间，也没有请求可失败）。
     final candidates = _streamCandidates(platform);
     if (candidates.isEmpty) throw unsupportedCapability();
-    final provider = candidates.first;
-    // D2:A / D10:A：Provider 报的是**内部偏好档位**，这里按该平台自己的档位声明
-    // 解析成"实际传给它"的取值（含"不高于期望的最接近档位"的回落）。
-    return selectPlatformQuality(
-      tiers: provider.qualityTiersFor(platform),
-      preference: provider.defaultQualityFor(platform),
-    ).requestValue;
+    return candidates.first.defaultQualityFor(platform);
   }
 
   /// 该平台**可用的音质档位**（含平台自己的文案），供 UI 渲染选择菜单。

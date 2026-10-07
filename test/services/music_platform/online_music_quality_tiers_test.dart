@@ -150,18 +150,20 @@ void main() {
         tiers: const [
           PlatformQualityTier(
             internalLevel: 'lossless',
-            displayLabel: 'SQ',
-            requestValue: 'sq',
+            displayLabel: 'flac',
+            requestValue: 'flac',
           ),
         ],
       );
       final service = serviceWith([provider]);
 
-      expect(service.qualityTiersFor(qq).single.displayLabel, 'SQ');
-      expect(service.defaultQualityFor(qq), 'sq');
+      expect(service.qualityTiersFor(qq).single.displayLabel, 'flac');
+      // defaultQualityFor 返回的是**内部偏好档位**（调用方继续当"用户偏好"传递，
+      // 真正发给平台的取值由 resolve 按平台声明转换 —— 见 §19.7 缺陷 A）。
+      expect(service.defaultQualityFor(qq), 'lossless');
       expect(
         service.selectQualityFor(qq, preference: 'lossless').requestValue,
-        'sq',
+        'flac',
       );
     });
 

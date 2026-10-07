@@ -131,6 +131,10 @@ abstract interface class OnlineMusicService {
     required OnlineMusicCancelToken cancelToken,
   }) => throw UnsupportedError('Lyric reading is not supported');
 
+  /// 该平台**应请求的内部偏好档位**（不是平台请求值）。
+  ///
+  /// 调用方（播放链路）把它当"用户偏好"继续传递；真正发给平台的取值由 [resolve]
+  /// 按该 Track 所属平台的档位声明转换（D2:A / D10:A）。
   String defaultQualityFor(MusicPlatform platform);
 
   void dispose();
