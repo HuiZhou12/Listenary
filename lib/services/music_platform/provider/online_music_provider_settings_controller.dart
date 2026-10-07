@@ -291,7 +291,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
         (effectivePlaylistId == null || effectivePlaylistId.trim().isEmpty)) {
       return const DeclarativeCapabilityTestResult(
         ok: false,
-        failureReason: '试跑歌曲列表需要先填一个歌单 ID',
+        failureReason: '试跑歌单详情需要先填一个歌单 ID',
       );
     }
 
@@ -361,6 +361,25 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
           statusCode: response.statusCode,
           responsePreview: preview,
           mappedSummary: '歌单「${playlist.name}」· ${playlist.tracks.length} 首曲目',
+        );
+      }
+
+      if (capability == OnlineMusicCapability.playlistCollection) {
+        // 歌单集合不需要额外的 ID：一次请求就是一个列表。
+        final playlists = mapDeclarativePlaylistCollectionResponse(
+          spec: binding.response,
+          body: response.data,
+          platform: definition.contentPlatform,
+        );
+        final first = playlists.isEmpty ? null : playlists.first.name;
+        return DeclarativeCapabilityTestResult(
+          ok: playlists.isNotEmpty,
+          statusCode: response.statusCode,
+          responsePreview: preview,
+          mappedSummary: playlists.isEmpty
+              ? '解析成功，但没有歌单'
+              : '${playlists.length} 个歌单 · 第一个：$first',
+          failureReason: playlists.isEmpty ? '没有解析出歌单' : null,
         );
       }
 

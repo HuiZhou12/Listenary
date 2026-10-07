@@ -64,9 +64,13 @@ void main() {
     for (final platform in MusicPlatform.values) {
       expect(find.text(musicPlatformLabel(platform)), findsOneWidget);
     }
-    // 每个平台卡内四行能力。
-    for (final label in ['搜索', '歌曲列表', '歌词', '播放解析']) {
-      expect(find.text(label), findsNWidgets(MusicPlatform.values.length));
+    // 每个平台卡内五行能力（search / 歌单详情 / 歌单列表 / lyric / stream）。
+    for (final capability in OnlineMusicCapability.values) {
+      expect(
+        find.text(onlineMusicCapabilityLabel(capability)),
+        findsNWidgets(MusicPlatform.values.length),
+        reason: '${capability.name} 在每个平台卡里都要有一行',
+      );
     }
     expect(find.text('播放音质'), findsOneWidget);
     expect(find.text('默认音质'), findsOneWidget);
@@ -292,10 +296,17 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('能力配置 · '), findsOneWidget);
-      for (final label in ['搜索', '歌曲列表', '歌词', '播放解析']) {
-        expect(find.text(label), findsWidgets);
+      // 五个能力都要有配置入口（W4：缺少探测模板不是隐藏理由）。
+      for (final capability in OnlineMusicCapability.values) {
+        expect(
+          find.text(onlineMusicCapabilityLabel(capability)),
+          findsWidgets,
+          reason: '${capability.name} 必须有配置入口',
+        );
       }
-      // S7b-3：不再有"第二阶段" —— 四个能力都可以进配置。
+      expect(find.text('歌单详情'), findsWidgets);
+      expect(find.text('歌单列表'), findsWidgets);
+      // S7b-3：不再有"第二阶段" —— 全部能力都可以进配置。
       expect(find.text('第二阶段'), findsNothing);
       expect(find.text('配置'), findsWidgets);
 
@@ -304,11 +315,17 @@ void main() {
 
       final definition = controller.settings.providers.single;
       for (final capability in OnlineMusicCapability.values) {
+        if (capability == OnlineMusicCapability.playlistCollection) continue;
         expect(
           definition.bindingFor(capability),
           isA<OnlineMusicBuiltinCapabilityBinding>(),
         );
       }
+      // ChkSz 没有歌单集合接口 ⇒ 一键填充不会假装它支持。
+      expect(
+        definition.bindingFor(OnlineMusicCapability.playlistCollection),
+        isA<OnlineMusicUnsupportedCapabilityBinding>(),
+      );
       controller.dispose();
     },
   );
@@ -708,8 +725,11 @@ void main() {
     final controller = _controller();
     await pumpPanel(tester, controller);
 
-    // 默认只有一个 netease 条目：QQ / 酷狗的四个能力都没有候选。
-    expect(find.text('未配置：该平台下没有支持此能力的条目'), findsNWidgets(8));
+    // 默认只有一个 netease 条目：QQ / 酷狗的所有能力都没有候选。
+    expect(
+      find.text('未配置：该平台下没有支持此能力的条目'),
+      findsNWidgets(2 * OnlineMusicCapability.values.length),
+    );
     expect(
       find.descendant(
         of: platformCard(MusicPlatform.kugou),

@@ -328,7 +328,12 @@ final class OnlineMusicResponseSpec {
         // S7b：不再是"第二阶段"，改为**真实校验** —— 歌单元数据在 fieldsRootPath、
         // 曲目数组在 listPath，两者都没有就必然映射不出来。
         if (listPath == null && fieldsRootPath == null) {
-          issues.add('歌曲列表能力必须配置字段根路径或列表路径');
+          issues.add('歌单详情能力必须配置字段根路径或列表路径');
+        }
+      case OnlineMusicCapability.playlistCollection:
+        // 歌单集合只需要一个数组（每个元素是一个歌单摘要），元数据都在元素内部。
+        if (listPath == null) {
+          issues.add('歌单列表能力必须配置列表路径');
         }
       case OnlineMusicCapability.lyric:
         // 至少要有一个歌词字段，否则永远取不到歌词（配置错误，不是"这首没歌词"）。
@@ -413,6 +418,15 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.coverUri,
         OnlineMusicDomainField.duration,
       };
+    case OnlineMusicCapability.playlistCollection:
+      // 歌单集合只有歌单自身的字段，**没有任何曲目字段**（Spec §19.2）。
+      return const {
+        OnlineMusicDomainField.playlistId,
+        OnlineMusicDomainField.playlistName,
+        OnlineMusicDomainField.playlistCoverUri,
+        OnlineMusicDomainField.playlistCreator,
+        OnlineMusicDomainField.playlistTrackCount,
+      };
     case OnlineMusicCapability.lyric:
       return const {
         OnlineMusicDomainField.lyricOriginal,
@@ -435,6 +449,12 @@ Set<OnlineMusicDomainField> requiredFieldsFor(
     case OnlineMusicCapability.stream:
       return const {OnlineMusicDomainField.streamUrl};
     case OnlineMusicCapability.playlist:
+      return const {
+        OnlineMusicDomainField.playlistName,
+        OnlineMusicDomainField.playlistId,
+      };
+    case OnlineMusicCapability.playlistCollection:
+      // 每个歌单摘要至少要有 id 与名字，否则列表里出现空条目。
       return const {
         OnlineMusicDomainField.playlistId,
         OnlineMusicDomainField.playlistName,

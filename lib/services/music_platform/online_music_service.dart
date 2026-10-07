@@ -12,11 +12,15 @@ final class OnlineMusicCapabilities {
     required Iterable<MusicPlatform> searchablePlatforms,
     required Iterable<MusicPlatform> resolvablePlatforms,
     Iterable<MusicPlatform> playlistPlatforms = const [],
+    Iterable<MusicPlatform> playlistCollectionPlatforms = const [],
     Iterable<MusicPlatform> lyricPlatforms = const [],
     Map<MusicPlatform, String> unavailableSearchReasons = const {},
   }) : searchablePlatforms = Set.unmodifiable(searchablePlatforms),
        resolvablePlatforms = Set.unmodifiable(resolvablePlatforms),
        playlistPlatforms = Set.unmodifiable(playlistPlatforms),
+       playlistCollectionPlatforms = Set.unmodifiable(
+         playlistCollectionPlatforms,
+       ),
        lyricPlatforms = Set.unmodifiable(lyricPlatforms),
        unavailableSearchReasons = Map.unmodifiable(unavailableSearchReasons);
 
@@ -28,6 +32,10 @@ final class OnlineMusicCapabilities {
 
   final Set<MusicPlatform> playlistPlatforms;
   final Set<MusicPlatform> lyricPlatforms;
+
+  /// 能列出**歌单集合**的平台（Spec §19.2）。与 [playlistPlatforms] 各算各的：
+  /// 只实现"歌单详情"的 Provider 不该被当成能列歌单。
+  final Set<MusicPlatform> playlistCollectionPlatforms;
 
   /// 「有内容能力、但进不了搜索」的平台及其原因（D3b:a）。
   ///
@@ -125,6 +133,14 @@ abstract interface class OnlineMusicService {
     required String playlistId,
     required OnlineMusicCancelToken cancelToken,
   }) => throw UnsupportedError('Playlist reading is not supported');
+
+  /// **歌单集合**（歌单列表，Spec §19.2）：元数据列表，**不含曲目**。
+  Future<List<RemotePlaylistSummary>> fetchPlaylistCollection({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Playlist collection is not supported');
 
   Future<MusicLyrics> fetchLyrics(
     PlatformTrackRef ref, {

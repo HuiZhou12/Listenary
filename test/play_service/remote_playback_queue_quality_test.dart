@@ -99,7 +99,7 @@ void main() {
     );
     addTearDown(declaredController.dispose);
     addTearDown(legacyController.dispose);
-    final failure = const RemoteStreamPlaybackException(
+    const failure = RemoteStreamPlaybackException(
       kind: RemoteStreamPlaybackErrorKind.openFailed,
     );
     declared.error = failure;

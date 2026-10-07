@@ -155,12 +155,20 @@ void main() {
       );
 
       final filled = definition.withChkszCompatibleCapabilities();
+      // ChkSz 兼容模板只覆盖它**真的有实现**的四条链路；
+      // 歌单集合（playlistCollection）没有 ChkSz 接口，因此不会被一键填成 builtin
+      // —— 假装支持比留空更糟（Spec §19.2 / §19.5：不得把没有依据的能力标成可用）。
       for (final capability in OnlineMusicCapability.values) {
+        if (capability == OnlineMusicCapability.playlistCollection) continue;
         expect(
           filled.bindingFor(capability),
           isA<OnlineMusicBuiltinCapabilityBinding>(),
         );
       }
+      expect(
+        filled.bindingFor(OnlineMusicCapability.playlistCollection),
+        isA<OnlineMusicUnsupportedCapabilityBinding>(),
+      );
     });
   });
 

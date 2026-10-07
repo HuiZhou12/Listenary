@@ -175,6 +175,32 @@ final class RemotePlaylist {
   final List<MusicTrack> tracks;
 }
 
+/// 一个**歌单摘要**（歌单集合里的一项）：只有元数据，**没有曲目**。
+///
+/// 与 [RemotePlaylist]（歌单详情 + `tracks`）是两个业务语义：
+/// 「浏览有哪些歌单」与「打开某个歌单看它的曲目」是两条独立的请求链路，
+/// 因此是两个能力（`playlistCollection` / `playlist`），不是同一个能力的两个形态。
+/// 这也与 D12 不冲突：D12 说的是"歌单详情与其曲目列表不拆"。
+///
+/// 来源身份照旧：`(platform, id)`（I1）。
+final class RemotePlaylistSummary {
+  const RemotePlaylistSummary({
+    required this.platform,
+    required this.id,
+    required this.name,
+    this.coverUri,
+    this.creator,
+    this.trackCount,
+  });
+
+  final MusicPlatform platform;
+  final String id;
+  final String name;
+  final Uri? coverUri;
+  final String? creator;
+  final int? trackCount;
+}
+
 final class MusicSearchPage {
   MusicSearchPage({
     required this.platform,

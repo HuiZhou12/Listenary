@@ -196,6 +196,56 @@ RemotePlaylist mapDeclarativePlaylistResponse({
   );
 }
 
+/// 映射**歌单集合**响应（W3 / Spec §19.2）。
+///
+/// 与 [mapDeclarativePlaylistResponse] 的区别：这里每个元素都是**一个歌单的元数据**，
+/// 没有曲目字段（[OnlineMusicDomainFields] 的 playlist 字段集里不含 track*）。
+/// - `listPath` 指向歌单数组（必填，配置校验会拦住缺失）；
+/// - 元素内部的歌单字段由 `fields` 映射给出；
+/// - 没有字段根路径：一个数组元素就是一个歌单摘要。
+///
+/// 单个元素映射失败（缺必填字段）与搜索一致：抛 [DeclarativeMappingException]，
+/// 绝不"猜一半"——半个歌单列表比明确报错更难排查。
+List<RemotePlaylistSummary> mapDeclarativePlaylistCollectionResponse({
+  required OnlineMusicResponseSpec spec,
+  required Object? body,
+  required MusicPlatform platform,
+}) {
+  final listPath = spec.listPath;
+  if (listPath == null) {
+    throw const DeclarativeMappingException('未配置列表路径');
+  }
+  final rawList = listPath.read(body);
+  if (rawList is! List) {
+    throw const DeclarativeMappingException('列表路径没有取到数组');
+  }
+
+  return [
+    for (final element in rawList)
+      RemotePlaylistSummary(
+        platform: platform,
+        id: '${_readRequired(spec, OnlineMusicDomainField.playlistId, element)}',
+        name:
+            '${_readRequired(spec, OnlineMusicDomainField.playlistName, element)}',
+        coverUri: _readUri(
+          spec,
+          OnlineMusicDomainField.playlistCoverUri,
+          element,
+        ),
+        creator: _readString(
+          spec,
+          OnlineMusicDomainField.playlistCreator,
+          element,
+        ),
+        trackCount: _readIntField(
+          spec,
+          OnlineMusicDomainField.playlistTrackCount,
+          element,
+        ),
+      ),
+  ];
+}
+
 /// 映射歌词响应（S7a）。
 ///
 /// 与歌单/搜索不同，这里**不因为"取不到歌词"就报映射失败**：间奏曲、纯音乐本来

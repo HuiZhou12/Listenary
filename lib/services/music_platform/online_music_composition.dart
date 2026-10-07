@@ -216,6 +216,23 @@ final class _ConfiguredMusicProvider implements OnlineMusicProvider {
   }
 
   @override
+  Future<List<RemotePlaylistSummary>> fetchPlaylistCollection({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) {
+    final delegate = _delegate(OnlineMusicCapability.playlistCollection);
+    if (delegate == null) return Future.error(unsupportedCapability());
+    return delegate.fetchPlaylistCollection(
+      platform: platform,
+      limit: limit,
+      offset: offset,
+      cancelToken: cancelToken,
+    );
+  }
+
+  @override
   Future<MusicLyrics> fetchLyrics(
     PlatformTrackRef ref, {
     required OnlineMusicCancelToken cancelToken,

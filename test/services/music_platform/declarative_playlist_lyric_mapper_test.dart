@@ -5,11 +5,15 @@ import 'package:pure_music/services/music_platform/declarative/declarative_music
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_response_mapper.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/online_music_error.dart';
 import 'package:pure_music/services/music_platform/online_music_request.dart';
+import 'package:pure_music/services/music_platform/provider/composite_online_music_service.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_json_path.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_credentials.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_registry.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_request_spec.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_response_spec.dart';
 
@@ -254,6 +258,236 @@ void main() {
       );
     });
   });
+
+  group('歌单集合（playlistCollection，Spec §19.2）', () {
+    final spec = OnlineMusicResponseSpec(
+      listPath: p('data.list'),
+      fields: {
+        OnlineMusicDomainField.playlistId: OnlineMusicFieldSpec(
+          candidates: [p('id')],
+          transform: OnlineMusicFieldTransform.asString,
+          required: true,
+        ),
+        OnlineMusicDomainField.playlistName: OnlineMusicFieldSpec(
+          candidates: [p('name')],
+          transform: OnlineMusicFieldTransform.asString,
+          required: true,
+        ),
+        OnlineMusicDomainField.playlistCreator: OnlineMusicFieldSpec(
+          candidates: [p('creator')],
+          transform: OnlineMusicFieldTransform.asString,
+        ),
+        OnlineMusicDomainField.playlistTrackCount: OnlineMusicFieldSpec(
+          candidates: [p('count')],
+          transform: OnlineMusicFieldTransform.asInt,
+        ),
+      },
+    );
+
+    test('把数组映射成歌单摘要：来源身份完整、不含曲目', () {
+      final summaries = mapDeclarativePlaylistCollectionResponse(
+        spec: spec,
+        body: const {
+          'data': {
+            'list': [
+              {'id': 111, 'name': '歌单一', 'creator': '甲', 'count': 12},
+              {'id': '222', 'name': '歌单二'},
+            ],
+          },
+        },
+        platform: netease,
+      );
+
+      expect(summaries, hasLength(2));
+      expect(summaries.first.platform, netease);
+      expect(summaries.first.id, '111');
+      expect(summaries.first.name, '歌单一');
+      expect(summaries.first.creator, '甲');
+      expect(summaries.first.trackCount, 12);
+      expect(summaries.last.id, '222');
+      expect(summaries.last.creator, isNull);
+    });
+
+    test('缺必填字段 / 路径取不到数组 / 没配列表路径时明确失败', () {
+      expect(
+        () => mapDeclarativePlaylistCollectionResponse(
+          spec: spec,
+          body: const {
+            'data': {
+              'list': [
+                {'id': 1},
+              ],
+            },
+          },
+          platform: netease,
+        ),
+        throwsA(isA<DeclarativeMappingException>()),
+      );
+      expect(
+        () => mapDeclarativePlaylistCollectionResponse(
+          spec: spec,
+          body: const {
+            'data': {'list': 1},
+          },
+          platform: netease,
+        ),
+        throwsA(isA<DeclarativeMappingException>()),
+      );
+      expect(
+        () => mapDeclarativePlaylistCollectionResponse(
+          spec: const OnlineMusicResponseSpec(fields: {}),
+          body: const {},
+          platform: netease,
+        ),
+        throwsA(isA<DeclarativeMappingException>()),
+      );
+    });
+
+    test('歌单集合的字段集里**没有**曲目字段（与歌单详情是两个语义）', () {
+      final fields = domainFieldsFor(OnlineMusicCapability.playlistCollection);
+      expect(fields, contains(OnlineMusicDomainField.playlistId));
+      expect(fields, contains(OnlineMusicDomainField.playlistTrackCount));
+      expect(fields.contains(OnlineMusicDomainField.trackId), isFalse);
+      expect(fields.contains(OnlineMusicDomainField.title), isFalse);
+    });
+
+    test('接进 DeclarativeMusicProvider：请求带 limit/offset，结果带来源', () async {
+      final provider = DeclarativeMusicProvider(
+        providerId: 'collections',
+        bindings: {
+          OnlineMusicCapability.playlistCollection:
+              OnlineMusicDeclarativeCapabilityBinding(
+                request: const OnlineMusicRequestSpec(
+                  path: '/top/playlist',
+                  query: [
+                    OnlineMusicParamBinding(
+                      name: 'limit',
+                      source: OnlineMusicInputSource.limit,
+                    ),
+                    OnlineMusicParamBinding(
+                      name: 'offset',
+                      source: OnlineMusicInputSource.offset,
+                    ),
+                  ],
+                ),
+                response: OnlineMusicResponseSpec(
+                  listPath: p('playlists'),
+                  fields: {
+                    OnlineMusicDomainField.playlistId: OnlineMusicFieldSpec(
+                      candidates: [p('id')],
+                      transform: OnlineMusicFieldTransform.asString,
+                      required: true,
+                    ),
+                    OnlineMusicDomainField.playlistName: OnlineMusicFieldSpec(
+                      candidates: [p('name')],
+                      transform: OnlineMusicFieldTransform.asString,
+                      required: true,
+                    ),
+                  },
+                ),
+              ),
+        },
+        transport: _StubTransport(
+          const DeclarativeHttpResponse(
+            statusCode: 200,
+            data: {
+              'playlists': [
+                {'id': 1, 'name': '推荐一'},
+              ],
+            },
+          ),
+        ),
+        credentials: const _NoCredentialReader(),
+        contentPlatform: netease,
+      );
+
+      final summaries = await provider.fetchPlaylistCollection(
+        platform: netease,
+        limit: 10,
+        offset: 20,
+        cancelToken: OnlineMusicCancelToken(),
+      );
+
+      expect(provider.platformsFor(OnlineMusicCapability.playlistCollection), {
+        netease,
+      });
+      expect(summaries.single.name, '推荐一');
+      expect(summaries.single.platform, netease);
+    });
+
+    test('服务层按平台路由，且与歌单详情各算各的候选', () async {
+      final provider = _CollectionProvider(
+        'qqCollections',
+        platforms: const {MusicPlatform.qq},
+      );
+      final service = CompositeOnlineMusicService(
+        registry: OnlineMusicProviderRegistry(providers: [provider]),
+      );
+
+      expect(service.capabilities.playlistCollectionPlatforms, {
+        MusicPlatform.qq,
+      });
+      // 只声明了"歌单集合"⇒"歌单详情"仍然没有候选，两者不互相顶替。
+      expect(service.capabilities.playlistPlatforms, isEmpty);
+
+      final summaries = await service.fetchPlaylistCollection(
+        platform: MusicPlatform.qq,
+        limit: 10,
+        offset: 30,
+        cancelToken: OnlineMusicCancelToken(),
+      );
+      expect(summaries.single.id, 'p30');
+      expect(provider.offsets, [30]);
+
+      // 没有候选的平台：明确 unavailable，不静默换平台。
+      await expectLater(
+        service.fetchPlaylistCollection(
+          platform: netease,
+          cancelToken: OnlineMusicCancelToken(),
+        ),
+        throwsA(
+          isA<OnlineMusicException>().having(
+            (error) => error.kind,
+            'kind',
+            OnlineMusicErrorKind.unavailable,
+          ),
+        ),
+      );
+    });
+  });
+}
+
+final class _CollectionProvider extends UnsupportedOnlineMusicProvider {
+  _CollectionProvider(this.providerId, {required this.platforms});
+
+  @override
+  final String providerId;
+
+  final Set<MusicPlatform> platforms;
+  final List<int> offsets = [];
+
+  @override
+  Set<MusicPlatform> platformsFor(OnlineMusicCapability capability) =>
+      capability == OnlineMusicCapability.playlistCollection
+      ? platforms
+      : const {};
+
+  @override
+  Future<List<RemotePlaylistSummary>> fetchPlaylistCollection({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    offsets.add(offset);
+    return [
+      RemotePlaylistSummary(
+        platform: platform,
+        id: 'p$offset',
+        name: '歌单$offset',
+      ),
+    ];
+  }
 }
 
 final class _StubTransport implements DeclarativeHttpTransport {

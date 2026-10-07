@@ -437,13 +437,9 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
 int _enabledPlatformCount(OnlineMusicSettings settings) =>
     MusicPlatform.values.where(settings.isPlatformEnabled).length;
 
+/// 能力文案与能力编辑器共用 [onlineMusicCapabilityLabel]，避免两处走偏。
 String _capabilityLabel(OnlineMusicCapability capability) =>
-    switch (capability) {
-      OnlineMusicCapability.search => '搜索',
-      OnlineMusicCapability.playlist => '歌曲列表',
-      OnlineMusicCapability.lyric => '歌词',
-      OnlineMusicCapability.stream => '播放解析',
-    };
+    onlineMusicCapabilityLabel(capability);
 
 /// 选择"自动"时使用的哨兵值。
 ///

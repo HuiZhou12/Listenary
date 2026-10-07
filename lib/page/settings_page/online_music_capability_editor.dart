@@ -157,6 +157,10 @@ class _OnlineMusicCapabilityEditorDialogState
 
   bool get _isSearch => widget.capability == OnlineMusicCapability.search;
 
+  /// 歌单列表是"一次请求拿一个数组"，不需要曲目/歌单 ID。
+  bool get _isPlaylistCollection =>
+      widget.capability == OnlineMusicCapability.playlistCollection;
+
   @override
   void initState() {
     super.initState();
@@ -752,7 +756,13 @@ class _OnlineMusicCapabilityEditorDialogState
         if (!_isSearch) ...[
           const SizedBox(height: 12.0),
           const _SectionTitle('试跑'),
-          _textRow('试跑用的 ID（曲目 / 歌单）', _testTrackId),
+          if (_isPlaylistCollection)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8.0),
+              child: _Hint('歌单列表不需要额外 ID：试跑会直接请求一次列表。'),
+            )
+          else
+            _textRow('试跑用的 ID（曲目 / 歌单）', _testTrackId),
         ],
       ],
     );
@@ -1068,12 +1078,7 @@ String transformLabel(OnlineMusicFieldTransform transform) =>
     _transformLabels[transform] ?? transform.name;
 
 String capabilityLabel(OnlineMusicCapability capability) =>
-    switch (capability) {
-      OnlineMusicCapability.search => '搜索',
-      OnlineMusicCapability.playlist => '歌曲列表',
-      OnlineMusicCapability.lyric => '歌词',
-      OnlineMusicCapability.stream => '播放解析',
-    };
+    onlineMusicCapabilityLabel(capability);
 
 /// 对话框标题头：与项目其它设置对话框一致（标题 + 一行说明）。
 class _DialogHeader extends StatelessWidget {

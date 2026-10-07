@@ -32,6 +32,16 @@ abstract interface class OnlineMusicProvider {
     required OnlineMusicCancelToken cancelToken,
   });
 
+  /// **歌单集合**（歌单列表）：只回答"这个平台有哪些歌单"，**不带曲目**。
+  ///
+  /// 与 [fetchPlaylist] 是两个业务语义（Spec §19.2）：前者是浏览，后者是打开。
+  Future<List<RemotePlaylistSummary>> fetchPlaylistCollection({
+    required MusicPlatform platform,
+    int limit,
+    int offset,
+    required OnlineMusicCancelToken cancelToken,
+  });
+
   Future<MusicLyrics> fetchLyrics(
     PlatformTrackRef ref, {
     required OnlineMusicCancelToken cancelToken,
@@ -84,6 +94,14 @@ abstract class UnsupportedOnlineMusicProvider implements OnlineMusicProvider {
   Future<RemotePlaylist> fetchPlaylist({
     required MusicPlatform platform,
     required String playlistId,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => throw unsupportedCapability();
+
+  @override
+  Future<List<RemotePlaylistSummary>> fetchPlaylistCollection({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
     required OnlineMusicCancelToken cancelToken,
   }) async => throw unsupportedCapability();
 

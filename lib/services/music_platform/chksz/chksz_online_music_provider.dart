@@ -104,6 +104,18 @@ final class ChkszOnlineMusicProvider
     }
   }
 
+  /// ChkSz 这条链路在当前契约里**没有**歌单集合（歌单列表）接口。
+  ///
+  /// 这里刻意**不猜路径**：不声明该能力就是"不支持"，由平台卡与能力配置如实呈现；
+  /// 需要浏览歌单集合时，用户可以声明式配置一个真正支持它的服务。
+  @override
+  Future<List<RemotePlaylistSummary>> fetchPlaylistCollection({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => throw unsupportedCapability();
+
   @override
   Future<MusicLyrics> fetchLyrics(
     PlatformTrackRef ref, {

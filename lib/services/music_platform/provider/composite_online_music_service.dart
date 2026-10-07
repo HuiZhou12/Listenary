@@ -49,6 +49,9 @@ final class CompositeOnlineMusicService implements OnlineMusicService {
       searchablePlatforms: searchable,
       resolvablePlatforms: stream,
       playlistPlatforms: registry.platformsFor(OnlineMusicCapability.playlist),
+      playlistCollectionPlatforms: registry.platformsFor(
+        OnlineMusicCapability.playlistCollection,
+      ),
       lyricPlatforms: registry.platformsFor(OnlineMusicCapability.lyric),
       unavailableSearchReasons: reasons,
     );
@@ -103,6 +106,24 @@ final class CompositeOnlineMusicService implements OnlineMusicService {
     (provider) => provider.fetchPlaylist(
       platform: platform,
       playlistId: playlistId,
+      cancelToken: cancelToken,
+    ),
+  );
+
+  /// 歌单集合（Spec §19.2）：与歌单详情是两个能力、两条候选链。
+  @override
+  Future<List<RemotePlaylistSummary>> fetchPlaylistCollection({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => _dispatch(
+    platform,
+    OnlineMusicCapability.playlistCollection,
+    (provider) => provider.fetchPlaylistCollection(
+      platform: platform,
+      limit: limit,
+      offset: offset,
       cancelToken: cancelToken,
     ),
   );
