@@ -378,9 +378,9 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
         _buildLoadErrorRow(),
         for (final provider in settings.providers) ...[
           SettingsTile(
-            description: provider.id == settings.defaultProviderId
-                ? '${provider.label} · 默认'
-                : provider.label,
+            // W8：不再标「· 默认」—— D14 之后 defaultProvider 不参与任何路由，
+            // 留着这个标记只会让用户以为它还在决定什么（字段本身仍兼容可读）。
+            description: provider.label,
             subtitle:
                 '${_hostOf(provider.baseUrl)} · ${provider.contentPlatform.name} · ${_authDescription(provider)}',
             action: _buildProviderAction(provider),
@@ -627,7 +627,10 @@ class _SettingsHint extends StatelessWidget {
   }
 }
 
-/// 在线播放的默认音质：新建远程会话时使用（会话内手动切换的档位优先）。
+/// 在线播放的默认音质**偏好级别**（新建远程会话时使用；会话内手动切换优先）。
+///
+/// Spec §7.3（W7）：这里选的是**内部偏好级别**（跨平台语义），不是某个平台的档位名；
+/// 各平台实际会用哪一档由各平台的档位声明换算，因此下面同时给出**只读**的映射说明。
 class _DefaultQualityTile extends StatefulWidget {
   const _DefaultQualityTile();
 
@@ -653,12 +656,34 @@ class _DefaultQualityTileState extends State<_DefaultQualityTile> {
     }
   }
 
+  /// "各平台对应档位"的只读映射：只列**有档位声明**的平台，用平台自己的文案。
+  ///
+  /// 没有档位声明的平台（自建声明式 Provider）不列：它的 `quality` 取值由用户自己
+  /// 的接口决定，我们无从推断，硬编一个映射只会误导（补充口径④）。
+  List<String> _platformMappings(BuildContext context) {
+    final service = context.watch<OnlineMusicService?>();
+    if (service == null) return const [];
+    final mappings = <String>[];
+    for (final platform in MusicPlatform.values) {
+      final tiers = service.qualityTiersFor(platform);
+      if (tiers.isEmpty) continue;
+      final labels = tiers.map((tier) => tier.displayLabel).join(' / ');
+      mappings.add('${musicPlatformLabel(platform)}：$labels');
+    }
+    return mappings;
+  }
+
   @override
   Widget build(BuildContext context) {
     final current = _current;
+    final mappings = _platformMappings(context);
+    final subtitle = StringBuffer('在线播放未手动切换时使用；播放中手动选择的档位优先。');
+    if (mappings.isNotEmpty) {
+      subtitle.write('\n各平台对应档位（只读）：${mappings.join('；')}');
+    }
     return SettingsTile(
-      description: '默认音质',
-      subtitle: '在线播放未手动切换时使用；播放中手动选择的档位优先',
+      description: '偏好级别',
+      subtitle: subtitle.toString(),
       // 与其他多选设置项保持一致（同「顶部歌词切换动画」的 SegmentedButton 写法）。
       action: Row(
         mainAxisSize: MainAxisSize.min,

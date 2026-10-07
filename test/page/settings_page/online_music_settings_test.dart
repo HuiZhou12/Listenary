@@ -54,7 +54,9 @@ void main() {
     await pumpPanel(tester, controller);
 
     expect(find.text('服务提供商'), findsOneWidget);
-    expect(find.text('$defaultOnlineMusicProviderId · 默认'), findsOneWidget);
+    expect(find.text(defaultOnlineMusicProviderId), findsWidgets);
+    // W8：defaultProvider 已不参与路由，界面上不再有任何「· 默认」标记。
+    expect(find.textContaining('· 默认'), findsNothing);
     expect(find.text('修改将在下次启动时生效'), findsNothing);
     expect(find.text('添加提供商'), findsOneWidget);
     // S8：能力分配 / 默认提供商两块被每个平台一张卡取代。
@@ -73,7 +75,11 @@ void main() {
       );
     }
     expect(find.text('播放音质'), findsOneWidget);
-    expect(find.text('默认音质'), findsOneWidget);
+    // W7：默认音质一项改为**偏好级别**，并带各平台对应档位的只读映射。
+    expect(find.text('偏好级别'), findsOneWidget);
+    expect(find.text('默认音质'), findsNothing);
+    expect(find.textContaining('各平台对应档位（只读）'), findsOneWidget);
+    expect(find.textContaining('网易云：标准 / 高品'), findsOneWidget);
     // 只有一个条目时不提供删除。
     expect(find.byTooltip('删除'), findsNothing);
     controller.dispose();
@@ -94,7 +100,8 @@ void main() {
     await pumpPanel(tester, controller);
 
     expect(find.text('修改将在下次启动时生效'), findsOneWidget);
-    expect(find.text('selfData · 默认'), findsOneWidget);
+    expect(find.text('selfData'), findsWidgets);
+    expect(find.textContaining('· 默认'), findsNothing);
     expect(find.textContaining('不需要 API Key'), findsOneWidget);
     controller.dispose();
   });
