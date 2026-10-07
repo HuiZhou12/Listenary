@@ -202,11 +202,30 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     return null;
   }
 
-  /// 当前实际显示的平台分组（筛选后）。
+  /// 当前实际显示的平台分组（W6 之后 = 本次**真正请求过**的平台）。
+  ///
+  /// 筛选不再只是"隐藏别的分组"：切换平台会用该平台**重新发起一次搜索**
+  /// （单平台模式只请求这一个平台），因此 `_groups` 本身就只包含该平台。
   List<MusicPlatform> get _visiblePlatforms => [
-    for (final group in _groups)
-      if (_filter == null || group.platform == _filter) group.platform,
+    for (final group in _groups) group.platform,
   ];
+
+  /// 本次搜索要请求的平台：默认「全部」，选定了平台就只请求它。
+  List<MusicPlatform> _requestTargets(List<MusicPlatform> available) {
+    final filter = _filter;
+    if (filter == null) return available;
+    return available.contains(filter) ? [filter] : available;
+  }
+
+  /// 切换平台筛选（W6）：单平台模式**只请求该平台**，不再"先全搜再过滤"。
+  Future<void> _onFilterChanged(MusicPlatform? platform) async {
+    if (_filter == platform) return;
+    setState(() => _filter = platform);
+    // 还没有搜索过（idle 且没有任何分组）时只记住选择，等用户提交关键词。
+    if (_status == _OnlineSearchStatus.idle && _groups.isEmpty) return;
+    if (normalizedSearchQuery(_searchController.text).isEmpty) return;
+    await _submitSearch();
+  }
 
   void _onQueryChanged(String raw) {
     if (_status == _OnlineSearchStatus.idle &&
@@ -281,7 +300,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
       return;
     }
 
-    final platforms = _availablePlatforms(context);
+    final platforms = _requestTargets(_availablePlatforms(context));
     if (platforms.isEmpty) {
       _cancelAllTokens();
       _generation++;
@@ -549,7 +568,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
                 },
               ),
             ),
-            if (platforms.length >= 2) ...[
+            if (platforms.isNotEmpty) ...[
               const SizedBox(height: 8.0),
               _buildPlatformFilter(platforms),
             ],
@@ -569,8 +588,29 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     );
   }
 
-  /// 「全部 / 各平台」筛选（D6:A）；只有一个可搜索平台时不摆出这个控件。
+  /// 「全部 / 各平台」筛选（D6:A / W6）。
+  ///
+  /// - ≥2 个可用平台：可切换的「全部 / 各平台」，**切到某个平台就只搜索它**；
+  /// - 只有 1 个可用平台：不给假的选项，而是明确写出"当前平台：X" ——
+  ///   让用户看得懂现在搜的就是这一家，而不是以为筛选功能不存在。
   Widget _buildPlatformFilter(List<MusicPlatform> platforms) {
+    if (platforms.length < 2) {
+      final scheme = Theme.of(context).colorScheme;
+      return Row(
+        children: [
+          Icon(Symbols.public, size: 14, color: scheme.onSurfaceVariant),
+          const SizedBox(width: Spacing.xs),
+          Text(
+            '当前平台：${musicPlatformLabel(platforms.single)}',
+            key: const ValueKey('online-search-single-platform'),
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontSize: AppType.caption,
+            ),
+          ),
+        ],
+      );
+    }
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: SegmentedButton<MusicPlatform?>(
@@ -584,8 +624,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
             ),
         ],
         selected: {_filter},
-        onSelectionChanged: (selection) =>
-            setState(() => _filter = selection.first),
+        onSelectionChanged: (selection) => _onFilterChanged(selection.first),
       ),
     );
   }

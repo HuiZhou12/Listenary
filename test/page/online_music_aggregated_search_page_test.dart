@@ -188,14 +188,20 @@ void main() {
     expect(find.text('qq more'), findsOneWidget);
   });
 
-  testWidgets('平台筛选只改变显示，不重新发请求', (tester) async {
+  testWidgets('单平台模式只请求该平台（W6：不再是"先全搜再过滤"）', (tester) async {
     final service = _FakeAggregatedService(
       searchable: const {netease, qq},
       onSearch: (platforms, keyword, limit, offset) async =>
           AggregatedSearchResult(
             perPlatform: {
-              netease: _page(netease, [_track(netease, 'n1', 'Netease Song')]),
-              qq: _page(qq, [_track(qq, 'q1', 'QQ Song')]),
+              for (final platform in platforms)
+                platform: _page(platform, [
+                  _track(
+                    platform,
+                    '${platform.name}1',
+                    '${platform.name} Song',
+                  ),
+                ]),
             },
             failures: const {},
           ),
@@ -204,6 +210,7 @@ void main() {
     await _pumpPage(tester, service);
     await _submit(tester, 'song');
     expect(service.calls, hasLength(1));
+    expect(service.calls.single.platforms, [netease, qq]);
 
     await tester.tap(
       find.descendant(
@@ -213,10 +220,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('QQ Song'), findsOneWidget);
-    expect(find.text('Netease Song'), findsNothing);
-    // 已取回的结果只是被过滤显示，不会因此再发一次请求。
-    expect(service.calls, hasLength(1));
+    // 只请求 QQ：这是"单平台模式"，不是显示过滤。
+    expect(service.calls, hasLength(2));
+    expect(service.calls.last.platforms, [qq]);
+    expect(service.calls.last.offset, 0);
+    expect(find.text('qq Song'), findsOneWidget);
+    expect(find.text('netease Song'), findsNothing);
+    // 只剩一个平台时不摆分组表头（沿用单平台观感）。
+    expect(find.byKey(const ValueKey('online-search-group-qq')), findsNothing);
 
     await tester.tap(
       find.descendant(
@@ -225,11 +236,14 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Netease Song'), findsOneWidget);
-    expect(find.text('QQ Song'), findsOneWidget);
+    // 回到「全部」= 再并行请求所有可搜索平台。
+    expect(service.calls, hasLength(3));
+    expect(service.calls.last.platforms, [netease, qq]);
+    expect(find.text('netease Song'), findsOneWidget);
+    expect(find.text('qq Song'), findsOneWidget);
   });
 
-  testWidgets('只有一个可搜索平台时不摆筛选控件', (tester) async {
+  testWidgets('只有一个可搜索平台时明确写出当前平台', (tester) async {
     final service = _FakeAggregatedService(
       searchable: const {netease},
       onSearch: (platforms, keyword, limit, offset) async =>
@@ -243,6 +257,8 @@ void main() {
 
     await _pumpPage(tester, service);
     expect(find.byType(SegmentedButton<MusicPlatform?>), findsNothing);
+    // W6：单个平台不摆假选项，但要让人看懂现在搜的是哪一家。
+    expect(find.text('当前平台：网易云'), findsOneWidget);
 
     await _submit(tester, 'song');
     expect(find.text('Netease Song'), findsOneWidget);

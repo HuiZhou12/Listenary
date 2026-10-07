@@ -138,32 +138,53 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              if (widget.sourceLabel case final label?) ...[
-                                _SourceBadge(label: label),
-                                const SizedBox(width: Spacing.xs),
-                              ],
-                              Expanded(
-                                child: Text(
-                                  track.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: titleColor,
-                                    fontSize: AppType.subtitle,
-                                    fontWeight: AppType.weightMedium,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 2),
+                          // 标题独占一行：来源标记不在这里占位（W6：不得挤压标题）。
                           Text(
-                            widget.details,
+                            track.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: metadataColor),
+                            style: TextStyle(
+                              color: titleColor,
+                              fontSize: AppType.subtitle,
+                              fontWeight: AppType.weightMedium,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          // 副标题行：详情 + **轻量的来源标记**（W6）。
+                          // 来源不做成固定宽度的徽章（那会把详情挤成一小条），
+                          // 而是行尾的小圆点 + 小号低对比文字，详情用 Flexible 先省略。
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  widget.details,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: metadataColor),
+                                ),
+                              ),
+                              if (widget.sourceLabel case final label?) ...[
+                                const SizedBox(width: Spacing.sm),
+                                Container(
+                                  width: 4,
+                                  height: 4,
+                                  decoration: BoxDecoration(
+                                    color: metadataColor.withValues(alpha: 0.7),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: Spacing.xs),
+                                Text(
+                                  label,
+                                  key: const ValueKey('online-track-source'),
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: metadataColor.withValues(alpha: 0.8),
+                                    fontSize: AppType.caption,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ],
                       ),
@@ -236,34 +257,8 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
 
 /// 结果行的**来源标签**：告诉用户这一行来自哪个平台（D6 / I1）。
 ///
-/// 刻意做成小号中性徽章而不是彩色标识：平台差异不改写既有视觉体系，
-/// 也不把平台名混进标题文本。
-class _SourceBadge extends StatelessWidget {
-  const _SourceBadge({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: 1),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.7),
-        borderRadius: AppRadius.xsCircular,
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: scheme.onSurfaceVariant,
-          fontSize: AppType.caption,
-          fontWeight: AppType.weightMedium,
-        ),
-      ),
-    );
-  }
-}
-
+/// W6 之后不再是固定宽度的徽章：它改成副标题行尾的"小圆点 + 小号低对比文字"，
+/// 见 [_OnlineTrackRowState.build]；详情文本用 Flexible 先省略，标题行完全不受影响。
 class _OnlineTrackCover extends StatelessWidget {
   const _OnlineTrackCover({super.key, required this.coverUri});
 
