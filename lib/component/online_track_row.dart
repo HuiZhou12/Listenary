@@ -53,6 +53,7 @@ class OnlineTrackRow extends StatefulWidget {
     this.favorite = false,
     this.onToggleFavorite,
     this.isNowPlaying = false,
+    this.sourceLabel,
   });
 
   final MusicTrack track;
@@ -67,6 +68,11 @@ class OnlineTrackRow extends StatefulWidget {
 
   /// 本行是否为当前在线播放曲目；由调用方判定（见 [isOnlineTrackNowPlaying]）。
   final bool isNowPlaying;
+
+  /// **来源标签**（平台展示名，D6/D8）：多平台聚合结果里同一行必须能看出它来自哪个平台。
+  ///
+  /// 为 null 时不渲染任何标签（单平台列表沿用既有观感）。
+  final String? sourceLabel;
 
   @override
   State<OnlineTrackRow> createState() => _OnlineTrackRowState();
@@ -132,15 +138,25 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            track.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: titleColor,
-                              fontSize: AppType.subtitle,
-                              fontWeight: AppType.weightMedium,
-                            ),
+                          Row(
+                            children: [
+                              if (widget.sourceLabel case final label?) ...[
+                                _SourceBadge(label: label),
+                                const SizedBox(width: Spacing.xs),
+                              ],
+                              Expanded(
+                                child: Text(
+                                  track.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: titleColor,
+                                    fontSize: AppType.subtitle,
+                                    fontWeight: AppType.weightMedium,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 2),
                           Text(
@@ -212,6 +228,36 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 结果行的**来源标签**：告诉用户这一行来自哪个平台（D6 / I1）。
+///
+/// 刻意做成小号中性徽章而不是彩色标识：平台差异不改写既有视觉体系，
+/// 也不把平台名混进标题文本。
+class _SourceBadge extends StatelessWidget {
+  const _SourceBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: 1),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.7),
+        borderRadius: AppRadius.xsCircular,
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: scheme.onSurfaceVariant,
+          fontSize: AppType.caption,
+          fontWeight: AppType.weightMedium,
         ),
       ),
     );
