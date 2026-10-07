@@ -223,6 +223,68 @@ void main() {
     );
     expect(playlistService.requestedPlaylists.single.id, '7729596131');
   });
+
+  testWidgets('窄窗口下不溢出：平台卡与横滑歌单卡片都能收进宽度', (tester) async {
+    tester.view.physicalSize = const Size(420, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    repository.recordPlaybackStarted(_track('q1', MusicPlatform.qq));
+    final router = GoRouter(
+      initialLocation: app_paths.HOME_PAGE,
+      routes: [
+        GoRoute(
+          path: app_paths.HOME_PAGE,
+          builder: (context, state) => const HomePage(),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<OnlineHistoryController>.value(value: history),
+          ChangeNotifierProvider<PersonalOnlinePlaylistController>.value(
+            value: personal,
+          ),
+          ChangeNotifierProvider<OnlinePlaylistController>.value(
+            value: subscriptions,
+          ),
+          Provider<OnlineMusicService>.value(
+            value: _HomeService(
+              capabilities: OnlineMusicCapabilities(
+                searchablePlatforms: const [],
+                resolvablePlatforms: const [],
+                playlistCollectionPlatforms: const [MusicPlatform.netease],
+              ),
+              collections: const {
+                MusicPlatform.netease: [
+                  RemotePlaylistSummary(
+                    platform: MusicPlatform.netease,
+                    id: '1',
+                    name: '一个名字很长的平台歌单标题用来挤压布局',
+                    creator: '创作者名字也很长',
+                    trackCount: 1261,
+                  ),
+                ],
+              },
+            ),
+          ),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 窄窗口下不允许出现 RenderFlex overflow（溢出会以异常形式抛出）。
+    expect(tester.takeException(), isNull);
+    expect(find.text('平台状态'), findsOneWidget);
+
+    // 滚到「平台歌单」区：横滑卡片同样不能在窄窗口里溢出。
+    await tester.drag(find.byType(ListView).first, const Offset(0, -700));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('一个名字很长的平台歌单标题'), findsOneWidget);
+  });
 }
 
 MusicTrack _track(String id, MusicPlatform platform) => MusicTrack(
