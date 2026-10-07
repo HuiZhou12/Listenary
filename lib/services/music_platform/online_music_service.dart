@@ -1,6 +1,11 @@
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_error.dart';
 import 'package:pure_music/services/music_platform/online_music_request.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_quality_tiers.dart';
+
+// `qualityTiersFor` / `selectQualityFor` 的返回类型属于契约本身的一部分，
+// 因此从这里一并导出，调用方（含各测试替身）无需再单独 import 档位实现文件。
+export 'package:pure_music/services/music_platform/provider/online_music_quality_tiers.dart';
 
 final class OnlineMusicCapabilities {
   OnlineMusicCapabilities({
@@ -82,6 +87,31 @@ abstract interface class OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
+  });
+
+  /// 多平台聚合搜索（D6:A / D6b:a / D6c:a）。
+  ///
+  /// 只对 ∈ [OnlineMusicCapabilities.searchablePlatforms] 的平台发请求；各平台**并行**、
+  /// **各自分页**、**不做跨平台去重**；单平台的失败只进
+  /// [AggregatedSearchResult.failures]，不影响其它平台的结果。
+  Future<AggregatedSearchResult> searchAggregated({
+    required Iterable<MusicPlatform> platforms,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  });
+
+  /// 该平台**自己声明**的音质档位（含平台文案）。
+  ///
+  /// 空列表表示该平台没有档位声明（内部偏好原样透传）；UI 此时不得伪造平台档位名称
+  /// （D2:A / 补充口径④）。
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform);
+
+  /// 把内部偏好解析成该平台实际使用的档位（Spec §7.2 的确定式规则）。
+  PlatformQualitySelection selectQualityFor(
+    MusicPlatform platform, {
+    required String preference,
   });
 
   Future<ResolvedStream> resolve(

@@ -32,23 +32,29 @@ void main() {
     database.dispose();
   });
 
-  test('adds a playlist and returns a provider-neutral playback selection', () async {
-    service.nextPlaylist = _playlist();
+  test(
+    'adds a playlist and returns a provider-neutral playback selection',
+    () async {
+      service.nextPlaylist = _playlist();
 
-    final saved = await controller.addOrRefresh(
-      platform: MusicPlatform.netease,
-      remotePlaylistId: '500',
-    );
-    final selection = await controller.playbackSelection(
-      localId: saved!.localId,
-      selectedRef: _ref('200'),
-    );
+      final saved = await controller.addOrRefresh(
+        platform: MusicPlatform.netease,
+        remotePlaylistId: '500',
+      );
+      final selection = await controller.playbackSelection(
+        localId: saved!.localId,
+        selectedRef: _ref('200'),
+      );
 
-    expect(controller.snapshot.status, OnlinePlaylistLoadStatus.ready);
-    expect(controller.snapshot.subscriptions, hasLength(1));
-    expect(selection!.selectedIndex, 1);
-    expect(selection.tracks.map((track) => track.ref.trackId), ['100', '200']);
-  });
+      expect(controller.snapshot.status, OnlinePlaylistLoadStatus.ready);
+      expect(controller.snapshot.subscriptions, hasLength(1));
+      expect(selection!.selectedIndex, 1);
+      expect(selection.tracks.map((track) => track.ref.trackId), [
+        '100',
+        '200',
+      ]);
+    },
+  );
 
   test('keeps the previous snapshot when refresh fails', () async {
     service.nextPlaylist = _playlist();
@@ -143,19 +149,36 @@ final class _FakeOnlineMusicService implements OnlineMusicService {
   String defaultQualityFor(MusicPlatform platform) => 'lossless';
 
   @override
+  Future<AggregatedSearchResult> searchAggregated({
+    required Iterable<MusicPlatform> platforms,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => AggregatedSearchResult(perPlatform: const {}, failures: const {});
+
+  @override
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) => const [];
+
+  @override
+  PlatformQualitySelection selectQualityFor(
+    MusicPlatform platform, {
+    required String preference,
+  }) => PlatformQualitySelection(
+    requestValue: preference,
+    displayLabel: preference,
+    internalLevel: preference,
+  );
+
+  @override
   void dispose() {}
 }
 
-PlatformTrackRef _ref(String id) => PlatformTrackRef(
-  platform: MusicPlatform.netease,
-  trackId: id,
-);
+PlatformTrackRef _ref(String id) =>
+    PlatformTrackRef(platform: MusicPlatform.netease, trackId: id);
 
-MusicTrack _track(String id, String title) => MusicTrack(
-  ref: _ref(id),
-  title: title,
-  artists: const ['Artist'],
-);
+MusicTrack _track(String id, String title) =>
+    MusicTrack(ref: _ref(id), title: title, artists: const ['Artist']);
 
 RemotePlaylist _playlist({String name = 'Remote'}) => RemotePlaylist(
   platform: MusicPlatform.netease,

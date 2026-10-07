@@ -14,7 +14,6 @@ import 'package:pure_music/services/music_platform/provider/online_music_binding
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
-import 'package:pure_music/services/music_platform/provider/online_music_quality_tiers.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_registry.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 

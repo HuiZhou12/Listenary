@@ -182,5 +182,27 @@ final class _RemoteLyricService implements OnlineMusicService {
   String defaultQualityFor(MusicPlatform platform) => 'standard';
 
   @override
+  Future<AggregatedSearchResult> searchAggregated({
+    required Iterable<MusicPlatform> platforms,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => AggregatedSearchResult(perPlatform: const {}, failures: const {});
+
+  @override
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) => const [];
+
+  @override
+  PlatformQualitySelection selectQualityFor(
+    MusicPlatform platform, {
+    required String preference,
+  }) => PlatformQualitySelection(
+    requestValue: preference,
+    displayLabel: preference,
+    internalLevel: preference,
+  );
+
+  @override
   void dispose() {}
 }

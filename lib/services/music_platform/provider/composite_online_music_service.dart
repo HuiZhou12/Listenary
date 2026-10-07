@@ -5,7 +5,6 @@ import 'package:pure_music/services/music_platform/online_music_service.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_registry.dart';
-import 'package:pure_music/services/music_platform/provider/online_music_quality_tiers.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_route_diagnostics.dart';
 
 /// 应用层唯一消费的在线音乐入口：把每个能力分发给 `(platform, capability)` 的候选
@@ -157,6 +156,7 @@ final class CompositeOnlineMusicService implements OnlineMusicService {
   ///
   /// 空列表表示该 Provider 没有声明档位（内部偏好原样透传）；UI 此时只应展示内部
   /// 偏好本身，**不要伪造平台档位名称**（补充口径④）。
+  @override
   List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) {
     final candidates = _streamCandidates(platform);
     return candidates.isEmpty
@@ -168,6 +168,7 @@ final class CompositeOnlineMusicService implements OnlineMusicService {
   ///
   /// 用途：UI 用 `displayLabel` 展示该平台自己的档位名称；`fellBack == true` 时提示
   /// "已回落为 displayLabel"。
+  @override
   PlatformQualitySelection selectQualityFor(
     MusicPlatform platform, {
     required String preference,
@@ -188,6 +189,7 @@ final class CompositeOnlineMusicService implements OnlineMusicService {
   /// - **分页各自独立**：`limit` / `offset` 原样传给每个平台，调用方按平台分别
   ///   加载更多（D6c:a）。
   /// - **不去重**（D6b:a）：每项都保留自己的 `ref.platform` 与 `ref.trackId`。
+  @override
   Future<AggregatedSearchResult> searchAggregated({
     required Iterable<MusicPlatform> platforms,
     required String keyword,
