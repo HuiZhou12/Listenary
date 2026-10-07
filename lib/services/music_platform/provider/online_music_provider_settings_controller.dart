@@ -16,6 +16,45 @@ import 'package:pure_music/services/music_platform/provider/online_music_capabil
 import 'package:pure_music/services/music_platform/provider/online_music_provider_credentials.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 
+/// 试跑失败的**大类**（W5 / Spec §19.5）。
+///
+/// 用户口径：错误必须能区分"网络 / HTTP / 认证 / 业务 / 响应格式 / 映射失败"——
+/// 否则看到一句"试跑失败"根本不知道该去改哪里。
+enum DeclarativeTestFailureKind {
+  /// 请求没发出去或连不上：网络、超时、DNS、TLS。
+  network,
+
+  /// 拿到了 HTTP 响应但状态码不是成功（不含 401/403）。
+  http,
+
+  /// 401 / 403：认证或权限问题（凭据不对 / 没有权限）。
+  authentication,
+
+  /// HTTP 成功但业务判定不通过（业务 code / msg 表示失败）。
+  business,
+
+  /// 响应不是可读 JSON / 无法判定业务语义：接口定义与响应不匹配。
+  responseFormat,
+
+  /// 成功判定通过、但字段映射失败（缺必填字段、路径取不到值）。
+  mapping,
+
+  /// 配置不完整，请求根本没构造出来（缺路径、缺必填参数）。
+  config,
+}
+
+/// 试跑失败大类的界面文案。
+String declarativeTestFailureLabel(DeclarativeTestFailureKind kind) =>
+    switch (kind) {
+      DeclarativeTestFailureKind.network => '网络',
+      DeclarativeTestFailureKind.http => 'HTTP',
+      DeclarativeTestFailureKind.authentication => '认证',
+      DeclarativeTestFailureKind.business => '业务',
+      DeclarativeTestFailureKind.responseFormat => '响应格式',
+      DeclarativeTestFailureKind.mapping => '映射失败',
+      DeclarativeTestFailureKind.config => '配置',
+    };
+
 /// 单项试跑的结果：给界面同时看"HTTP 层发生了什么"和"映射成了什么"。
 final class DeclarativeCapabilityTestResult {
   const DeclarativeCapabilityTestResult({
@@ -23,7 +62,9 @@ final class DeclarativeCapabilityTestResult {
     this.statusCode,
     this.mappedSummary,
     this.failureReason,
+    this.failureKind,
     this.responsePreview,
+    this.requestSummary,
   });
 
   final bool ok;
@@ -34,8 +75,86 @@ final class DeclarativeCapabilityTestResult {
 
   final String? failureReason;
 
+  /// 失败的大类；成功时为 null（W5）。
+  final DeclarativeTestFailureKind? failureKind;
+
   /// 截断并脱敏后的响应片段，供用户判断字段名是否对得上。
   final String? responsePreview;
+
+  /// 实际发出的请求摘要（方法 + 路径 + 参数名与值，敏感值脱敏）。
+  ///
+  /// 未知服务无法自动探测时，"到底发了什么请求"是用户唯一的排查依据，
+  /// 因此失败时也要带上它。凭据类参数与请求头一律 `[redacted]`。
+  final String? requestSummary;
+
+  /// 补上请求摘要（结果是在不知道摘要的地方构造的）。
+  DeclarativeCapabilityTestResult withRequestSummary(String? summary) {
+    if (summary == null || requestSummary != null) return this;
+    return DeclarativeCapabilityTestResult(
+      ok: ok,
+      statusCode: statusCode,
+      mappedSummary: mappedSummary,
+      failureReason: failureReason,
+      failureKind: failureKind,
+      responsePreview: responsePreview,
+      requestSummary: summary,
+    );
+  }
+}
+
+/// 成功判定不通过时的**大类**（W5）。
+///
+/// - 401 / 403 → 认证；
+/// - 其它 4xx / 5xx → HTTP；
+/// - 2xx 但判定不通过：响应是可读的结构（Map/List）⇒ 业务判定问题；
+///   连结构都不是（HTML 错误页、纯文本）⇒ 响应格式与接口定义不匹配。
+DeclarativeTestFailureKind classifyUnsuccessfulTestResponse(
+  int statusCode,
+  Object? body,
+) {
+  if (statusCode == 401 || statusCode == 403) {
+    return DeclarativeTestFailureKind.authentication;
+  }
+  if (statusCode >= 400) return DeclarativeTestFailureKind.http;
+  if (body is Map || body is List) return DeclarativeTestFailureKind.business;
+  return DeclarativeTestFailureKind.responseFormat;
+}
+
+/// 敏感**参数名 / 请求头名**：这些名字的取值一律不进界面、不进日志。
+///
+/// 覆盖查询串、请求头（`Authorization` / `Cookie` / `Set-Cookie` / `X-Api-Key` …）
+/// 与 JSON 键值对（见 `_redactPreview`）。
+const sensitiveDiagnosticNamePattern =
+    r'apikey|api[-_]?key|x-api-key|authorization|cookie|set-cookie|token|'
+    r'access_token|refresh_token|secret|password|pwd|sign|signature|auth|key|'
+    r'csrf|xsrf|sid|h';
+
+bool isSensitiveDiagnosticName(String name) => RegExp(
+  '^($sensitiveDiagnosticNamePattern)\$',
+  caseSensitive: false,
+).hasMatch(name.trim());
+
+/// 试跑结果里展示的**请求摘要**：方法 + 路径 + 参数名与值（敏感值脱敏）。
+///
+/// 未知服务无法自动探测时，"到底发了什么请求"是唯一的排查依据（W5），
+/// 因此这里要把参数名与值都写出来 —— 只有凭据类参数会被替换成 `[redacted]`。
+String describeDeclarativeRequest(BuiltDeclarativeRequest request) {
+  String render(String name, Object? value) =>
+      isSensitiveDiagnosticName(name) ? '$name=[redacted]' : '$name=$value';
+
+  final parts = <String>[
+    for (final entry in request.query.entries) render(entry.key, entry.value),
+    for (final entry in request.headers.entries)
+      isSensitiveDiagnosticName(entry.key)
+          ? '${entry.key}: [redacted]'
+          : '${entry.key}: ${entry.value}',
+  ];
+  final buffer = StringBuffer('${request.method} ${request.path}');
+  if (parts.isNotEmpty) buffer.write(' · ${parts.join('&')}');
+  if (request.body != null) {
+    buffer.write(' · 请求体：已省略（可能含凭据）');
+  }
+  return buffer.toString();
 }
 
 /// 探测/试跑用的传输层工厂；默认按条目 baseUrl 建一个**不跟随重定向**的 Dio。
@@ -268,6 +387,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       return const DeclarativeCapabilityTestResult(
         ok: false,
         failureReason: '该能力不是声明式配置（内置实现，或尚未配置）',
+        failureKind: DeclarativeTestFailureKind.config,
       );
     }
     if (capability == OnlineMusicCapability.stream &&
@@ -275,6 +395,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       return const DeclarativeCapabilityTestResult(
         ok: false,
         failureReason: '试跑播放解析需要先填一个曲目 ID',
+        failureKind: DeclarativeTestFailureKind.config,
       );
     }
     if (capability == OnlineMusicCapability.lyric &&
@@ -282,6 +403,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       return const DeclarativeCapabilityTestResult(
         ok: false,
         failureReason: '试跑歌词需要先填一个曲目 ID',
+        failureKind: DeclarativeTestFailureKind.config,
       );
     }
     // 试跑面板只有一个 ID 输入框（一次只编辑一个能力）：playlist 用它当歌单 ID，
@@ -292,11 +414,13 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       return const DeclarativeCapabilityTestResult(
         ok: false,
         failureReason: '试跑歌单详情需要先填一个歌单 ID',
+        failureKind: DeclarativeTestFailureKind.config,
       );
     }
 
     final token = cancelToken ?? OnlineMusicCancelToken();
     String? preview;
+    String? requestSummary;
     try {
       final request = buildDeclarativeRequest(
         spec: binding.request,
@@ -311,134 +435,175 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
         ),
         credential: await _readCredential(definition),
       );
+      // 请求摘要在**发出去之前**就记下来：失败时它是唯一的排查依据。
+      requestSummary = describeDeclarativeRequest(request);
       final response = await _transportFor(
         definition,
       ).send(request, cancelToken: token);
       preview = _redactPreview(response.data);
 
-      if (!declarativeResponseIsSuccess(
-        spec: binding.response.success,
-        statusCode: response.statusCode,
-        body: response.data,
-      )) {
-        return DeclarativeCapabilityTestResult(
-          ok: false,
-          statusCode: response.statusCode,
-          responsePreview: preview,
-          failureReason: '成功判定未通过（HTTP ${response.statusCode}）',
-        );
-      }
-
-      if (capability == OnlineMusicCapability.search) {
-        final page = mapDeclarativeSearchResponse(
-          spec: binding.response,
-          body: response.data,
-          platform: definition.contentPlatform,
-          limit: 1,
-          offset: 0,
-        );
-        final first = page.items.isEmpty ? null : page.items.first.title;
-        return DeclarativeCapabilityTestResult(
-          ok: page.items.isNotEmpty,
-          statusCode: response.statusCode,
-          responsePreview: preview,
-          mappedSummary: page.items.isEmpty
-              ? '解析成功，但没有曲目'
-              : '${page.items.length} 首曲目 · 第 1 首：$first',
-          failureReason: page.items.isEmpty ? '没有解析出曲目' : null,
-        );
-      }
-
-      if (capability == OnlineMusicCapability.playlist) {
-        final playlist = mapDeclarativePlaylistResponse(
-          spec: binding.response,
-          body: response.data,
-          platform: definition.contentPlatform,
-          requestedPlaylistId: effectivePlaylistId!,
-        );
-        return DeclarativeCapabilityTestResult(
-          ok: true,
-          statusCode: response.statusCode,
-          responsePreview: preview,
-          mappedSummary: '歌单「${playlist.name}」· ${playlist.tracks.length} 首曲目',
-        );
-      }
-
-      if (capability == OnlineMusicCapability.playlistCollection) {
-        // 歌单集合不需要额外的 ID：一次请求就是一个列表。
-        final playlists = mapDeclarativePlaylistCollectionResponse(
-          spec: binding.response,
-          body: response.data,
-          platform: definition.contentPlatform,
-        );
-        final first = playlists.isEmpty ? null : playlists.first.name;
-        return DeclarativeCapabilityTestResult(
-          ok: playlists.isNotEmpty,
-          statusCode: response.statusCode,
-          responsePreview: preview,
-          mappedSummary: playlists.isEmpty
-              ? '解析成功，但没有歌单'
-              : '${playlists.length} 个歌单 · 第一个：$first',
-          failureReason: playlists.isEmpty ? '没有解析出歌单' : null,
-        );
-      }
-
-      if (capability == OnlineMusicCapability.lyric) {
-        final lyrics = mapDeclarativeLyricsResponse(
-          spec: binding.response,
-          body: response.data,
-          ref: PlatformTrackRef(
-            platform: definition.contentPlatform,
-            trackId: trackId!,
-          ),
-        );
-        // 空歌词**不是失败**：纯音乐/间奏本来就没有歌词，配置可能是对的。
-        return DeclarativeCapabilityTestResult(
-          ok: true,
-          statusCode: response.statusCode,
-          responsePreview: preview,
-          mappedSummary: lyrics.isEmpty
-              ? '解析成功，但这份响应里没有歌词（纯音乐？）'
-              : '歌词：原文${lyrics.original != null ? '有' : '无'}'
-                    '${lyrics.translation != null ? ' · 翻译有' : ''}',
-        );
-      }
-
-      final stream = mapDeclarativeResolveResponse(
-        spec: binding.response,
-        body: response.data,
-        expectedRef: PlatformTrackRef(
-          platform: definition.contentPlatform,
-          trackId: trackId!,
-        ),
-        requestedQuality: quality,
-        resolvedAt: DateTime.now(),
-      );
-      return DeclarativeCapabilityTestResult(
-        ok: true,
-        statusCode: response.statusCode,
-        responsePreview: preview,
-        // 只显示主机与路径：签名串留在 query 里，不进界面。
-        mappedSummary: '播放地址：${stream.uri.host}${stream.uri.path}',
-      );
+      return _evaluateCapabilityResponse(
+        definition: definition,
+        capability: capability,
+        binding: binding,
+        response: response,
+        preview: preview,
+        trackId: trackId,
+        requestedPlaylistId: effectivePlaylistId,
+        quality: quality,
+      ).withRequestSummary(requestSummary);
     } on DeclarativeRequestException catch (error) {
+      // 请求都没构造出来：这是**配置**问题，不是服务问题。
       return DeclarativeCapabilityTestResult(
         ok: false,
         failureReason: error.safeMessage,
+        failureKind: DeclarativeTestFailureKind.config,
+        requestSummary: requestSummary,
       );
     } on DeclarativeMappingException catch (error) {
       return DeclarativeCapabilityTestResult(
         ok: false,
         responsePreview: preview,
         failureReason: '映射失败：${error.reason}',
+        failureKind: DeclarativeTestFailureKind.mapping,
+        requestSummary: requestSummary,
       );
     } catch (_) {
       return DeclarativeCapabilityTestResult(
         ok: false,
         responsePreview: preview,
         failureReason: '请求失败（网络或服务不可达）',
+        failureKind: DeclarativeTestFailureKind.network,
+        requestSummary: requestSummary,
       );
     }
+  }
+
+  /// 对一次成功的 HTTP 往返做"成功判定 + 字段映射"，并在失败时给出大类。
+  DeclarativeCapabilityTestResult _evaluateCapabilityResponse({
+    required OnlineMusicProviderDefinition definition,
+    required OnlineMusicCapability capability,
+    required OnlineMusicDeclarativeCapabilityBinding binding,
+    required DeclarativeHttpResponse response,
+    required String? preview,
+    required String? trackId,
+    required String? requestedPlaylistId,
+    required String quality,
+  }) {
+    if (!declarativeResponseIsSuccess(
+      spec: binding.response.success,
+      statusCode: response.statusCode,
+      body: response.data,
+    )) {
+      return DeclarativeCapabilityTestResult(
+        ok: false,
+        statusCode: response.statusCode,
+        responsePreview: preview,
+        failureReason: '成功判定未通过（HTTP ${response.statusCode}）',
+        failureKind: classifyUnsuccessfulTestResponse(
+          response.statusCode,
+          response.data,
+        ),
+      );
+    }
+
+    if (capability == OnlineMusicCapability.search) {
+      final page = mapDeclarativeSearchResponse(
+        spec: binding.response,
+        body: response.data,
+        platform: definition.contentPlatform,
+        limit: 1,
+        offset: 0,
+      );
+      final first = page.items.isEmpty ? null : page.items.first.title;
+      return DeclarativeCapabilityTestResult(
+        ok: page.items.isNotEmpty,
+        statusCode: response.statusCode,
+        responsePreview: preview,
+        mappedSummary: page.items.isEmpty
+            ? '解析成功，但没有曲目'
+            : '${page.items.length} 首曲目 · 第 1 首：$first',
+        failureReason: page.items.isEmpty ? '没有解析出曲目' : null,
+        failureKind: page.items.isEmpty
+            ? DeclarativeTestFailureKind.mapping
+            : null,
+      );
+    }
+
+    if (capability == OnlineMusicCapability.playlist) {
+      final playlist = mapDeclarativePlaylistResponse(
+        spec: binding.response,
+        body: response.data,
+        platform: definition.contentPlatform,
+        requestedPlaylistId: requestedPlaylistId!,
+      );
+      return DeclarativeCapabilityTestResult(
+        ok: true,
+        statusCode: response.statusCode,
+        responsePreview: preview,
+        mappedSummary: '歌单「${playlist.name}」· ${playlist.tracks.length} 首曲目',
+      );
+    }
+
+    if (capability == OnlineMusicCapability.playlistCollection) {
+      final playlists = mapDeclarativePlaylistCollectionResponse(
+        spec: binding.response,
+        body: response.data,
+        platform: definition.contentPlatform,
+      );
+      final first = playlists.isEmpty ? null : playlists.first.name;
+      return DeclarativeCapabilityTestResult(
+        ok: playlists.isNotEmpty,
+        statusCode: response.statusCode,
+        responsePreview: preview,
+        mappedSummary: playlists.isEmpty
+            ? '解析成功，但没有歌单'
+            : '${playlists.length} 个歌单 · 第一个：$first',
+        failureReason: playlists.isEmpty ? '没有解析出歌单' : null,
+        failureKind: playlists.isEmpty
+            ? DeclarativeTestFailureKind.mapping
+            : null,
+      );
+    }
+
+    if (capability == OnlineMusicCapability.lyric) {
+      final lyrics = mapDeclarativeLyricsResponse(
+        spec: binding.response,
+        body: response.data,
+        ref: PlatformTrackRef(
+          platform: definition.contentPlatform,
+          trackId: trackId!,
+        ),
+      );
+      // 空歌词**不是失败**：纯音乐/间奏本来就没有歌词，配置可能是对的。
+      return DeclarativeCapabilityTestResult(
+        ok: true,
+        statusCode: response.statusCode,
+        responsePreview: preview,
+        mappedSummary: lyrics.isEmpty
+            ? '解析成功，但这份响应里没有歌词（纯音乐？）'
+            : '歌词：原文${lyrics.original != null ? '有' : '无'}'
+                  '${lyrics.translation != null ? ' · 翻译有' : ''}',
+      );
+    }
+
+    final stream = mapDeclarativeResolveResponse(
+      spec: binding.response,
+      body: response.data,
+      expectedRef: PlatformTrackRef(
+        platform: definition.contentPlatform,
+        trackId: trackId!,
+      ),
+      requestedQuality: quality,
+      resolvedAt: DateTime.now(),
+    );
+    return DeclarativeCapabilityTestResult(
+      ok: true,
+      statusCode: response.statusCode,
+      responsePreview: preview,
+      // 只显示主机与路径：签名串留在 query 里，不进界面。
+      mappedSummary: '播放地址：${stream.uri.host}${stream.uri.path}',
+    );
   }
 
   DeclarativeHttpTransport _transportFor(
@@ -476,7 +641,8 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   /// 结果区展示的响应片段：**先格式化，再脱敏，最后才考虑截断**。
   ///
   /// - 格式化：JSON 用 2 空格缩进，界面里才看得出层次（此前是压成一行的 `jsonEncode`）。
-  /// - 脱敏：同时覆盖查询串（`apikey=…`、`?h=…&sid=…`）与 JSON 键值对（`"token":"…"`）。
+  /// - 脱敏：同时覆盖查询串（`apikey=…`、`?h=…&sid=…`）、JSON 键值对（`"token":"…"`）
+  ///   与**敏感请求头**（`Authorization: …`、`Cookie: …`，W5 补充）。
   ///   宁可多脱敏，也不要把签名串渲染到界面上。
   /// - 截断：上限 [responsePreviewMaxChars]；超出时**明确写出完整长度**，
   ///   而不是让用户以为响应本来就只有这么长。
@@ -485,19 +651,26 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     var text = _prettyJson(data);
     text = text.replaceAllMapped(
       RegExp(
-        r'\b(apikey|api_key|key|token|access_token|refresh_token|secret|'
-        r'password|pwd|sign|signature|auth|sid|h)=[^&"\s,}]+',
+        '\\b($sensitiveDiagnosticNamePattern)=[^&"\\s,}]+',
         caseSensitive: false,
       ),
       (match) => '${match.group(1)}=[redacted]',
     );
     text = text.replaceAllMapped(
       RegExp(
-        r'"(apikey|api_key|key|token|access_token|refresh_token|secret|'
-        r'password|pwd|sign|signature|auth|sid)"\s*:\s*"[^"]*"',
+        '"($sensitiveDiagnosticNamePattern)"\\s*:\\s*"[^"]*"',
         caseSensitive: false,
       ),
       (match) => '"${match.group(1)}":"[redacted]"',
+    );
+    // 请求/响应头形态：`Authorization: Bearer …` / `Cookie: a=b`。
+    text = text.replaceAllMapped(
+      RegExp(
+        '^\\s*($sensitiveDiagnosticNamePattern)\\s*:\\s*.*\$',
+        caseSensitive: false,
+        multiLine: true,
+      ),
+      (match) => '${match.group(1)}: [redacted]',
     );
     if (text.length <= responsePreviewMaxChars) return text;
     return '${text.substring(0, responsePreviewMaxChars)}\n'

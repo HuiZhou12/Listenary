@@ -466,11 +466,19 @@ class _OnlineMusicCapabilityEditorDialogState
       );
       if (!mounted) return;
       final detail = StringBuffer();
+      // W5：先写"实际发了什么请求" —— 未知服务无法自动探测时，这是唯一的排查依据。
+      if (result.requestSummary != null) {
+        detail.writeln('请求：${result.requestSummary}');
+      }
       if (result.mappedSummary != null) {
         detail.writeln('映射结果：${result.mappedSummary}');
       }
       if (result.failureReason != null) {
-        detail.writeln('失败原因：${result.failureReason}');
+        final kind = result.failureKind;
+        detail.writeln(
+          '失败原因${kind == null ? '' : '（${declarativeTestFailureLabel(kind)}）'}：'
+          '${result.failureReason}',
+        );
       }
       if (result.responsePreview != null) {
         detail
@@ -480,8 +488,11 @@ class _OnlineMusicCapabilityEditorDialogState
       final suffix = result.statusCode == null
           ? ''
           : ' · HTTP ${result.statusCode}';
+      final kindSuffix = result.ok || result.failureKind == null
+          ? ''
+          : ' · ${declarativeTestFailureLabel(result.failureKind!)}';
       _setResult(
-        headline: '${result.ok ? '试跑成功' : '试跑失败'}$suffix',
+        headline: '${result.ok ? '试跑成功' : '试跑失败'}$suffix$kindSuffix',
         ok: result.ok,
         detail: detail.toString().trimRight(),
       );

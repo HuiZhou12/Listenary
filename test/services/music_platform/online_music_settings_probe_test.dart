@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
@@ -257,7 +258,433 @@ void main() {
     expect(result.responsePreview, isNot(contains('SECRET_SID')));
     expect(result.responsePreview, contains('"token":"[redacted]"'));
   });
+
+  // ------------------------------------------------------------------ W5
+  group('W5 试跑：请求信息 / 错误分类 / 配置隔离', () {
+    OnlineMusicProviderSettingsController controllerFor(
+      OnlineMusicSettings settings, {
+      String? credential,
+    }) {
+      reader.value = credential;
+      return OnlineMusicProviderSettingsController(
+        activeSettings: settings,
+        store: _MemorySettingsStore(settings),
+        fallbackCredentials: _FakeAccess(),
+        probeTransportFactory: (_) => transport,
+        credentialReader: reader,
+      );
+    }
+
+    test('请求摘要写出实际发了什么：参数名与值可见，凭据与敏感头脱敏', () async {
+      transport.responder = (request) async => _searchBody;
+      final settings = _searchOnlySettingsWithSecrets();
+
+      final result = await controllerFor(
+        settings,
+        credential: 'SECRET_API_KEY',
+      ).testCapability(settings.providers.single, OnlineMusicCapability.search);
+
+      expect(result.ok, isTrue);
+      final summary = result.requestSummary!;
+      expect(summary, startsWith('GET /search'));
+      expect(summary, contains('keywords=listenary'));
+      expect(summary, contains('limit=1'));
+      expect(summary, contains('X-Client: listenary'));
+      // 凭据类参数与请求头一律 [redacted]。
+      expect(summary, contains('apikey=[redacted]'));
+      expect(summary, contains('Cookie: [redacted]'));
+      expect(summary, isNot(contains('SECRET_API_KEY')));
+      expect(summary, isNot(contains('SECRET_COOKIE')));
+    });
+
+    test('失败时也带上请求摘要（失败时它才是唯一排查依据）', () async {
+      transport.error = StateError('offline');
+      final settings = _searchOnlySettingsWithSecrets();
+
+      final result = await controllerFor(
+        settings,
+        credential: 'SECRET_API_KEY',
+      ).testCapability(settings.providers.single, OnlineMusicCapability.search);
+
+      expect(result.ok, isFalse);
+      expect(result.requestSummary, contains('GET /search'));
+      expect(result.requestSummary, isNot(contains('SECRET_API_KEY')));
+    });
+
+    test('失败大类可区分：网络 / HTTP / 认证 / 业务 / 响应格式 / 映射 / 配置', () async {
+      Future<DeclarativeCapabilityTestResult> run({
+        int statusCode = 200,
+        Object? body,
+        Object? error,
+      }) async {
+        transport
+          ..statusCode = statusCode
+          ..error = error
+          ..responder = (request) async => body ?? _searchBody;
+        final settings = _searchOnlySettingsWithSecrets();
+        return controllerFor(
+          settings,
+          credential: 'SECRET_API_KEY',
+        ).testCapability(
+          settings.providers.single,
+          OnlineMusicCapability.search,
+        );
+      }
+
+      expect(
+        (await run(error: StateError('offline'))).failureKind,
+        DeclarativeTestFailureKind.network,
+      );
+      expect(
+        (await run(statusCode: 500)).failureKind,
+        DeclarativeTestFailureKind.http,
+      );
+      expect(
+        (await run(statusCode: 401)).failureKind,
+        DeclarativeTestFailureKind.authentication,
+      );
+      expect(
+        (await run(statusCode: 403)).failureKind,
+        DeclarativeTestFailureKind.authentication,
+      );
+      expect(
+        (await run(body: const {'code': 500, 'data': <Object?>[]})).failureKind,
+        DeclarativeTestFailureKind.business,
+      );
+      expect(
+        (await run(body: '<html>bad gateway</html>')).failureKind,
+        DeclarativeTestFailureKind.responseFormat,
+      );
+      expect(
+        (await run(
+          body: const {
+            'code': 200,
+            'data': [
+              {'id': 1},
+            ],
+          },
+        )).failureKind,
+        DeclarativeTestFailureKind.mapping,
+      );
+
+      // 配置问题：能力根本没配绑定。
+      final settings = _searchOnlySettingsWithSecrets();
+      final controller = controllerFor(settings, credential: 'SECRET_API_KEY');
+      expect(
+        (await controller.testCapability(
+          settings.providers.single,
+          OnlineMusicCapability.lyric,
+        )).failureKind,
+        DeclarativeTestFailureKind.config,
+      );
+
+      // 同一条目上配好的能力不受影响：仍然真的发请求并给出摘要。
+      transport
+        ..statusCode = 200
+        ..error = null
+        ..responder = (request) async => _searchBody;
+      final search = await controller.testCapability(
+        settings.providers.single,
+        OnlineMusicCapability.search,
+      );
+      expect(search.ok, isTrue);
+      expect(search.requestSummary, isNotNull);
+    });
+
+    test('五个能力都能用当前编辑中的配置试跑一次真请求', () async {
+      transport
+        ..statusCode = 200
+        ..error = null
+        ..responder = (request) async => _allCapabilitiesBody;
+      final settings = _allCapabilitiesSettings();
+      final controller = controllerFor(settings, credential: 'SECRET_API_KEY');
+      final definition = settings.providers.single;
+
+      for (final capability in OnlineMusicCapability.values) {
+        final result = await controller.testCapability(
+          definition,
+          capability,
+          trackId: 'track-1',
+          playlistId: 'playlist-1',
+        );
+        expect(
+          result.ok,
+          isTrue,
+          reason: '${capability.name} 必须能试跑：${result.failureReason}',
+        );
+        expect(result.requestSummary, isNotNull);
+      }
+      // 五次请求都真的发出去了（不是"跳过"或"守卫挡住"）。
+      expect(
+        transport.requests,
+        hasLength(OnlineMusicCapability.values.length),
+      );
+    });
+
+    test('试跑只读当前编辑中的配置：不改写配置、全局偏好或播放状态', () async {
+      transport
+        ..statusCode = 200
+        ..error = null
+        ..responder = (request) async => _allCapabilitiesBody;
+      final settings = _allCapabilitiesSettings();
+      final store = _MemorySettingsStore(settings);
+      reader.value = 'SECRET_API_KEY';
+      final controller = OnlineMusicProviderSettingsController(
+        activeSettings: settings,
+        store: store,
+        fallbackCredentials: _FakeAccess(),
+        probeTransportFactory: (_) => transport,
+        credentialReader: reader,
+      );
+
+      final qualityBefore = AppPreference.instance.defaultQuality;
+      final preferenceBefore = AppPreference.instance.onlineMusicSettings;
+      final definition = settings.providers.single;
+
+      for (final capability in OnlineMusicCapability.values) {
+        await controller.testCapability(
+          definition,
+          capability,
+          trackId: 'track-1',
+          playlistId: 'playlist-1',
+        );
+      }
+
+      // 试跑是"只读演练"：配置、落盘内容与全局偏好都不该被它改动。
+      expect(controller.settings, settings);
+      expect(store.value, settings);
+      expect(AppPreference.instance.defaultQuality, qualityBefore);
+      expect(AppPreference.instance.onlineMusicSettings, preferenceBefore);
+    });
+  });
 }
+
+/// 一次搜索试跑用的响应：过成功判定 + 能映射出一条曲目。
+const _searchBody = <String, Object?>{
+  'code': 200,
+  'data': [
+    {'id': 1, 'name': 'A'},
+  ],
+};
+
+/// 五能力共用的响应：每一段都刚好够该能力的映射器读出来。
+const _allCapabilitiesBody = <String, Object?>{
+  'code': 200,
+  'data': [
+    {'id': 1, 'name': 'A'},
+  ],
+  'detail': {
+    'name': 'P',
+    'tracks': [
+      {'id': 1, 'name': 'T'},
+    ],
+  },
+  'lrc': {'lyric': '[00:01.00]line'},
+  'stream': {'url': 'https://media.invalid/a.flac'},
+};
+
+OnlineMusicFieldSpec _stringField(JsonPath path, {bool required = false}) =>
+    OnlineMusicFieldSpec(
+      candidates: [path],
+      transform: OnlineMusicFieldTransform.asString,
+      required: required,
+    );
+
+/// 成功判定：业务 code ∈ {0, 200}。后面几种失败大类都要靠它区分。
+final _codeSuccess = OnlineMusicSuccessSpec(
+  allOf: [
+    OnlineMusicSuccessPredicate(
+      path: JsonPathForTest.anyCode,
+      op: OnlineMusicPredicateOp.inList,
+      value: const [0, 200],
+    ),
+  ],
+);
+
+/// 带凭据、敏感请求头与普通参数的 search 绑定（W5 的脱敏与请求摘要用）。
+OnlineMusicSettings _searchOnlySettingsWithSecrets() =>
+    OnlineMusicSettings.fromJson({
+      'providers': [
+        {
+          'id': 'selfData',
+          'baseUrl': 'https://self.invalid',
+          'auth': {'kind': 'apiKey', 'reference': 'PureMusic/Self/APIKey'},
+          'capabilities': {
+            'search': OnlineMusicDeclarativeCapabilityBinding(
+              request: const OnlineMusicRequestSpec(
+                path: '/search',
+                query: [
+                  OnlineMusicParamBinding(
+                    name: 'keywords',
+                    source: OnlineMusicInputSource.keyword,
+                    required: true,
+                  ),
+                  OnlineMusicParamBinding(
+                    name: 'limit',
+                    source: OnlineMusicInputSource.limit,
+                  ),
+                ],
+                headers: [
+                  OnlineMusicHeaderSpec(name: 'X-Client', value: 'listenary'),
+                  OnlineMusicHeaderSpec(
+                    name: 'Cookie',
+                    value: 'session=SECRET_COOKIE',
+                  ),
+                ],
+                auth: OnlineMusicQueryAuthPlacement(parameterName: 'apikey'),
+              ),
+              response: OnlineMusicResponseSpec(
+                success: _codeSuccess,
+                listPath: JsonPathForTest.data,
+                fields: {
+                  OnlineMusicDomainField.trackId: _stringField(
+                    JsonPathForTest.id,
+                    required: true,
+                  ),
+                  OnlineMusicDomainField.title: _stringField(
+                    JsonPathForTest.name,
+                    required: true,
+                  ),
+                },
+              ),
+            ).toJson(),
+          },
+        },
+      ],
+    });
+
+/// 五个能力各有一条声明式绑定：用来证明"每个能力都能试跑"。
+OnlineMusicSettings _allCapabilitiesSettings() => OnlineMusicSettings.fromJson({
+  'providers': [
+    {
+      'id': 'selfData',
+      'baseUrl': 'https://self.invalid',
+      'auth': {'kind': 'none'},
+      'capabilities': {
+        'search': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(
+            path: '/search',
+            query: [
+              OnlineMusicParamBinding(
+                name: 'keywords',
+                source: OnlineMusicInputSource.keyword,
+              ),
+            ],
+          ),
+          response: OnlineMusicResponseSpec(
+            success: _codeSuccess,
+            listPath: JsonPathForTest.data,
+            fields: {
+              OnlineMusicDomainField.trackId: _stringField(
+                JsonPathForTest.id,
+                required: true,
+              ),
+              OnlineMusicDomainField.title: _stringField(
+                JsonPathForTest.name,
+                required: true,
+              ),
+            },
+          ),
+        ).toJson(),
+        'playlistCollection': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(path: '/top/playlist'),
+          response: OnlineMusicResponseSpec(
+            success: _codeSuccess,
+            listPath: JsonPathForTest.data,
+            fields: {
+              OnlineMusicDomainField.playlistId: _stringField(
+                JsonPathForTest.id,
+                required: true,
+              ),
+              OnlineMusicDomainField.playlistName: _stringField(
+                JsonPathForTest.name,
+                required: true,
+              ),
+            },
+          ),
+        ).toJson(),
+        'playlist': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(
+            path: '/playlist/detail',
+            query: [
+              OnlineMusicParamBinding(
+                name: 'id',
+                source: OnlineMusicInputSource.playlistId,
+                required: true,
+              ),
+            ],
+          ),
+          response: OnlineMusicResponseSpec(
+            success: _codeSuccess,
+            fieldsRootPath: JsonPathForTest.detail,
+            listPath: JsonPathForTest.detailTracks,
+            fields: {
+              OnlineMusicDomainField.playlistName: _stringField(
+                JsonPathForTest.name,
+              ),
+              OnlineMusicDomainField.trackId: _stringField(
+                JsonPathForTest.id,
+                required: true,
+              ),
+              OnlineMusicDomainField.title: _stringField(
+                JsonPathForTest.name,
+                required: true,
+              ),
+            },
+          ),
+        ).toJson(),
+        'lyric': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(
+            path: '/lyric',
+            query: [
+              OnlineMusicParamBinding(
+                name: 'id',
+                source: OnlineMusicInputSource.trackId,
+                required: true,
+              ),
+            ],
+          ),
+          response: OnlineMusicResponseSpec(
+            success: _codeSuccess,
+            fieldsRootPath: JsonPathForTest.lrc,
+            fields: {
+              OnlineMusicDomainField.lyricOriginal: _stringField(
+                JsonPathForTest.lyric,
+              ),
+            },
+          ),
+        ).toJson(),
+        'stream': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(
+            path: '/song/url',
+            query: [
+              OnlineMusicParamBinding(
+                name: 'id',
+                source: OnlineMusicInputSource.trackId,
+                required: true,
+              ),
+              OnlineMusicParamBinding(
+                name: 'quality',
+                source: OnlineMusicInputSource.quality,
+              ),
+            ],
+          ),
+          response: OnlineMusicResponseSpec(
+            success: _codeSuccess,
+            fieldsRootPath: JsonPathForTest.stream,
+            fields: {
+              OnlineMusicDomainField.streamUrl: OnlineMusicFieldSpec(
+                candidates: [JsonPathForTest.url],
+                transform: OnlineMusicFieldTransform.asUri,
+                required: true,
+              ),
+            },
+          ),
+        ).toJson(),
+      },
+    },
+  ],
+});
 
 OnlineMusicSettings _declarativeSettings() => OnlineMusicSettings.fromJson({
   'providers': [
@@ -324,6 +751,12 @@ abstract final class JsonPathForTest {
   static final data = JsonPath.tryParse('data')!;
   static final url = JsonPath.tryParse('url')!;
   static final id = JsonPath.tryParse('id')!;
+  static final name = JsonPath.tryParse('name')!;
+  static final detail = JsonPath.tryParse('detail')!;
+  static final detailTracks = JsonPath.tryParse('detail.tracks')!;
+  static final lrc = JsonPath.tryParse('lrc')!;
+  static final lyric = JsonPath.tryParse('lyric')!;
+  static final stream = JsonPath.tryParse('stream')!;
 }
 
 const _chkszBody = <String, Object?>{
@@ -354,8 +787,14 @@ const _msapiBody = <String, Object?>{
 
 final class _FakeTransport implements DeclarativeHttpTransport {
   final List<BuiltDeclarativeRequest> requests = [];
-  Future<Map<String, Object?>> Function(BuiltDeclarativeRequest request)
-  responder = (request) async => <String, Object?>{};
+  Future<Object?> Function(BuiltDeclarativeRequest request) responder =
+      (request) async => <String, Object?>{};
+
+  /// 响应状态码；W5 的错误分类用例会改它。
+  int statusCode = 200;
+
+  /// 非空时直接抛出（模拟网络层失败）。
+  Object? error;
 
   @override
   Future<DeclarativeHttpResponse> send(
@@ -363,8 +802,10 @@ final class _FakeTransport implements DeclarativeHttpTransport {
     required OnlineMusicCancelToken cancelToken,
   }) async {
     requests.add(request);
+    final failure = error;
+    if (failure != null) throw failure;
     return DeclarativeHttpResponse(
-      statusCode: 200,
+      statusCode: statusCode,
       data: await responder(request),
     );
   }
