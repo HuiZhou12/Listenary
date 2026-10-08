@@ -157,6 +157,103 @@ PlatformQualitySelection selectPlatformQuality({
   );
 }
 
+/// 按内部偏好档的序排好的档位表（[musicQualityRank] 认不出的排在最后，保持稳定）。
+List<PlatformQualityTier> _orderedTiers(List<PlatformQualityTier> tiers) {
+  final ranked = <PlatformQualityTier>[];
+  final unknown = <PlatformQualityTier>[];
+  for (final tier in tiers) {
+    (musicQualityRank(tier.internalLevel) < 0 ? unknown : ranked).add(tier);
+  }
+  ranked.sort(
+    (a, b) => musicQualityRank(
+      a.internalLevel,
+    ).compareTo(musicQualityRank(b.internalLevel)),
+  );
+  return [...ranked, ...unknown];
+}
+
+/// 一次"平台实际返回的档位低于用户期望"的判定（Spec §19.7 方案 B）。
+final class PlatformQualityDowngrade {
+  const PlatformQualityDowngrade({
+    required this.displayLabel,
+    required this.internalLevel,
+  });
+
+  /// 要展示给用户的档位名：**平台自己的文案**（内部档位查不到时回落到内部档位的中文文案）。
+  final String displayLabel;
+
+  /// 命中的内部偏好档；平台档位表里没有对应项时为原始取值。
+  final String internalLevel;
+
+  @override
+  String toString() => '$displayLabel($internalLevel)';
+}
+
+/// **方案 B**：在**平台档位序**上判断平台实际返回的档位是否低于用户期望，并给出要展示的档位名。
+///
+/// 为什么必须按平台序：平台返回的是**它自己的取值**（QQ 是 `flac` / `128` / `320`），
+/// 拿内部 `MusicQuality` 枚举下标去查会得到 -1 ⇒ 非网易云平台的降级提示**永远不触发**
+/// （这正是 Spec §19.7 记录的已知限制）。这里改为在该平台的档位表里定位实际取值，
+/// 再与"期望档在该平台上的实际落点"比较。
+///
+/// 返回 `null` 表示**不应提示**，三种情形：
+/// 1. 没有降权（实际 ≥ 期望）；
+/// 2. **认不出**该取值 —— 宁可不提示，也绝不误报；
+/// 3. 与"上一次的实际档位"相同或回升（避免重复提示 / 回升提示）。
+///
+/// 平台**没有**档位声明（[tiers] 为空，例如声明式 pass-through）时，
+/// 完全回落到引入档位模型之前的行为：按内部枚举序比较、展示内部档位的中文文案。
+PlatformQualityDowngrade? resolveQualityDowngrade({
+  required List<PlatformQualityTier> tiers,
+  required String requested,
+  required String actual,
+  String? previousActual,
+}) {
+  if (actual == requested && tiers.isEmpty) return null;
+
+  final byPlatform = tiers.isNotEmpty;
+  final ordered = byPlatform
+      ? _orderedTiers(tiers)
+      : const <PlatformQualityTier>[];
+
+  int? rankOf(String value) {
+    if (byPlatform) {
+      final index = ordered.indexWhere(
+        (tier) => tier.requestValue == value || tier.internalLevel == value,
+      );
+      return index < 0 ? null : index;
+    }
+    final index = musicQualityRank(value);
+    return index < 0 ? null : index;
+  }
+
+  final actualRank = rankOf(actual);
+  if (actualRank == null) return null;
+
+  // 期望档在该平台上的**实际落点**：平台可能没有同名档位，
+  // 那时服务层本来就已按"不高于期望的最接近档"发过请求，菜单也已提示过回落。
+  final expectedValue = byPlatform
+      ? selectPlatformQuality(
+          tiers: ordered,
+          preference: requested,
+        ).requestValue
+      : requested;
+  final expectedRank = rankOf(expectedValue);
+  if (expectedRank == null || actualRank >= expectedRank) return null;
+
+  if (previousActual != null) {
+    final previousRank = rankOf(previousActual);
+    if (previousRank != null && actualRank >= previousRank) return null;
+  }
+
+  return PlatformQualityDowngrade(
+    displayLabel: byPlatform
+        ? ordered[actualRank].displayLabel
+        : MusicQuality.values[actualRank].label,
+    internalLevel: byPlatform ? ordered[actualRank].internalLevel : actual,
+  );
+}
+
 /// 按**平台档位声明**生成降级链（返回内部偏好档位，从期望档一路降到下限）。
 ///
 /// 为什么不能只用 [MusicQuality] 的下标：内部枚举只是我们的抽象，

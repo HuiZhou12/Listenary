@@ -183,15 +183,26 @@ class _EntryState extends State<Entry>
         };
         showTextOnSnackBar(message, variant: ToastVariant.error);
       },
-      onQualityDowngraded: (quality) {
-        final label = MusicQuality.values
-            .firstWhere(
-              (entry) => entry.level == quality,
-              orElse: () => MusicQuality.standard,
-            )
-            .label;
+      // **方案 B**：会话层已经在**平台档位序**上判定过降权，这里拿到的就是**要展示的档位名**
+      // （平台自己的文案；平台没声明档位时是内部档位的中文文案）。
+      // 不要再拿内部枚举去反查 —— 否则 QQ 的 `flac` 会落回"标准"文案（Spec §19.7）。
+      onQualityDowngraded: (label) {
         showTextOnSnackBar('当前音源不支持所选音质，已降至$label');
       },
+      // 方案 B 的判定放在档位模块的纯函数里；play_service 不依赖 provider 层类型，
+      // 所以这里用"核心类型签名"的回调把两者接起来（entry 是组合根，允许引用契约）。
+      qualityDowngradeLabelFor:
+          ({
+            required MusicPlatform platform,
+            required String requested,
+            required String actual,
+            String? previousActual,
+          }) => resolveQualityDowngrade(
+            tiers: widget.onlineMusicService.qualityTiersFor(platform),
+            requested: requested,
+            actual: actual,
+            previousActual: previousActual,
+          )?.displayLabel,
     );
     _remotePlaybackTimeline = RemotePlaybackTimelineController(
       readPosition: _remotePlaybackBackend.readPosition,

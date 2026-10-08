@@ -8,6 +8,7 @@ import 'package:pure_music/play_service/remote_playback_session_controller.dart'
 import 'package:pure_music/services/music_platform/chksz/chksz_request.dart';
 import 'package:pure_music/services/music_platform/chksz/remote_stream_coordinator.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_quality_tiers.dart';
 
 void main() {
   late RemotePlaybackQueue queue;
@@ -38,6 +39,21 @@ void main() {
       backend: backend,
       onFailure: failures.add,
       onQualityDowngraded: qualityDowngrades.add,
+      // 方案 B：降权判定已移到档位模块的纯函数（`online_music_quality_downgrade_test`
+      // 覆盖它本身）。这里负责验证**控制器会把判定结果转发一次**、并把上一次的实际档位
+      // 交给判定函数用于去重。
+      qualityDowngradeLabelFor:
+          ({
+            required MusicPlatform platform,
+            required String requested,
+            required String actual,
+            String? previousActual,
+          }) => resolveQualityDowngrade(
+            tiers: neteaseQualityTiers,
+            requested: requested,
+            actual: actual,
+            previousActual: previousActual,
+          )?.displayLabel,
     );
   });
 
@@ -78,44 +94,53 @@ void main() {
     },
   );
 
-  test('switch selects immediately and waits for stop before opening', () async {
-    await sessionController.play(0, requestedQuality: 'lossless');
-    backend.emit(PlaybackBackendState.playing);
-    final stopGate = Completer<void>();
-    backend.pendingStops.add(stopGate.future);
+  test(
+    'switch selects immediately and waits for stop before opening',
+    () async {
+      await sessionController.play(0, requestedQuality: 'lossless');
+      backend.emit(PlaybackBackendState.playing);
+      final stopGate = Completer<void>();
+      backend.pendingStops.add(stopGate.future);
 
-    final switching = sessionController.play(1, requestedQuality: 'lossless');
-    await pumpEventQueue();
+      final switching = sessionController.play(1, requestedQuality: 'lossless');
+      await pumpEventQueue();
 
-    expect(backend.stopCount, 1);
-    expect(queue.value.currentIndex, 1);
-    expect(sessionController.controlState.state, PlaybackBackendState.opening);
-    expect(gateway.refs.map((ref) => ref.trackId), ['1']);
+      expect(backend.stopCount, 1);
+      expect(queue.value.currentIndex, 1);
+      expect(
+        sessionController.controlState.state,
+        PlaybackBackendState.opening,
+      );
+      expect(gateway.refs.map((ref) => ref.trackId), ['1']);
 
-    stopGate.complete();
-    await switching;
-    expect(gateway.refs.map((ref) => ref.trackId), ['1', '2']);
-  });
+      stopGate.complete();
+      await switching;
+      expect(gateway.refs.map((ref) => ref.trackId), ['1', '2']);
+    },
+  );
 
-  test('repeated opening playing and paused selections do not reopen', () async {
-    final openGate = Completer<void>();
-    gateway.pending.add(openGate.future);
-    final firstPlay = sessionController.play(0, requestedQuality: 'lossless');
-    await pumpEventQueue();
+  test(
+    'repeated opening playing and paused selections do not reopen',
+    () async {
+      final openGate = Completer<void>();
+      gateway.pending.add(openGate.future);
+      final firstPlay = sessionController.play(0, requestedQuality: 'lossless');
+      await pumpEventQueue();
 
-    await sessionController.play(0, requestedQuality: 'lossless');
-    expect(gateway.refs, hasLength(1));
-    openGate.complete();
-    await firstPlay;
+      await sessionController.play(0, requestedQuality: 'lossless');
+      expect(gateway.refs, hasLength(1));
+      openGate.complete();
+      await firstPlay;
 
-    backend.emit(PlaybackBackendState.playing);
-    await sessionController.play(0, requestedQuality: 'lossless');
-    backend.emit(PlaybackBackendState.paused);
-    await sessionController.play(0, requestedQuality: 'lossless');
+      backend.emit(PlaybackBackendState.playing);
+      await sessionController.play(0, requestedQuality: 'lossless');
+      backend.emit(PlaybackBackendState.paused);
+      await sessionController.play(0, requestedQuality: 'lossless');
 
-    expect(gateway.refs, hasLength(1));
-    expect(backend.stopCount, 0);
-  });
+      expect(gateway.refs, hasLength(1));
+      expect(backend.stopCount, 0);
+    },
+  );
 
   test('failed current selection can retry', () async {
     gateway.error = StateError('open failed');
@@ -179,35 +204,40 @@ void main() {
     expect(gateway.qualities, isEmpty);
   });
 
-  test('switching quality failure keeps the current stream and reverts', () async {
-    await sessionController.play(0, requestedQuality: 'lossless');
-    gateway.error = Exception('unavailable');
+  test(
+    'switching quality failure keeps the current stream and reverts',
+    () async {
+      await sessionController.play(0, requestedQuality: 'lossless');
+      gateway.error = Exception('unavailable');
 
-    final ok = await sessionController.switchQuality('hires');
-    expect(ok, isFalse);
-    expect(sessionController.requestedQuality, 'lossless');
-  });
+      final ok = await sessionController.switchQuality('hires');
+      expect(ok, isFalse);
+      expect(sessionController.requestedQuality, 'lossless');
+    },
+  );
 
-  test('notifies one downgrade when the platform returns a lower level',
-      () async {
-    gateway.results.add(
-      const RemoteQueuePlaybackResult(actualQuality: 'standard'),
-    );
+  test(
+    'notifies one downgrade when the platform returns a lower level',
+    () async {
+      gateway.results.add(
+        const RemoteQueuePlaybackResult(actualQuality: 'standard'),
+      );
 
-    await sessionController.play(0, requestedQuality: 'hires');
+      await sessionController.play(0, requestedQuality: 'hires');
 
-    expect(sessionController.requestedQuality, 'hires');
-    expect(sessionController.currentQuality, 'standard');
-    expect(qualityDowngrades, ['standard']);
+      expect(sessionController.requestedQuality, 'hires');
+      expect(sessionController.currentQuality, 'standard');
+      expect(qualityDowngrades, [MusicQuality.standard.label]);
 
-    // 档位没有进一步下降时不重复提示。
-    gateway.results.add(
-      const RemoteQueuePlaybackResult(actualQuality: 'standard'),
-    );
-    await sessionController.play(1, requestedQuality: 'hires');
+      // 档位没有进一步下降时不重复提示。
+      gateway.results.add(
+        const RemoteQueuePlaybackResult(actualQuality: 'standard'),
+      );
+      await sessionController.play(1, requestedQuality: 'hires');
 
-    expect(qualityDowngrades, ['standard']);
-  });
+      expect(qualityDowngrades, [MusicQuality.standard.label]);
+    },
+  );
 
   test('retries the user quality on song change and stays playable', () async {
     gateway.results.add(
@@ -225,7 +255,7 @@ void main() {
     // 切歌时先尝试用户所选档位；拿到更高档位属于回升，不提示。
     expect(gateway.qualities.first, 'hires');
     expect(sessionController.currentQuality, 'lossless');
-    expect(qualityDowngrades, ['standard']);
+    expect(qualityDowngrades, [MusicQuality.standard.label]);
   });
 
   test('publishes remote control state and returns to inactive', () async {
@@ -411,15 +441,18 @@ void main() {
     expect(localBridge.restored, isEmpty);
   });
 
-  test('removing a non-current item updates the queue without reopening', () async {
-    await sessionController.play(0, requestedQuality: 'lossless');
+  test(
+    'removing a non-current item updates the queue without reopening',
+    () async {
+      await sessionController.play(0, requestedQuality: 'lossless');
 
-    await sessionController.removeFromQueue(1);
+      await sessionController.removeFromQueue(1);
 
-    expect(queue.value.items.map((e) => e.ref.trackId), ['1']);
-    expect(queue.value.currentIndex, 0);
-    expect(gateway.refs.map((ref) => ref.trackId), ['1']);
-  });
+      expect(queue.value.items.map((e) => e.ref.trackId), ['1']);
+      expect(queue.value.currentIndex, 0);
+      expect(gateway.refs.map((ref) => ref.trackId), ['1']);
+    },
+  );
 
   test('removing the current item plays the next in place', () async {
     await sessionController.play(0, requestedQuality: 'lossless');
@@ -431,18 +464,21 @@ void main() {
     expect(gateway.refs.map((ref) => ref.trackId), ['1', '2']);
   });
 
-  test('removing the last remaining item clears the session and restores local', () async {
-    final resumePoint = _FakeResumePoint();
-    localBridge.resumePoint = resumePoint;
-    queue.replace([_item('1')]);
-    await sessionController.play(0, requestedQuality: 'lossless');
+  test(
+    'removing the last remaining item clears the session and restores local',
+    () async {
+      final resumePoint = _FakeResumePoint();
+      localBridge.resumePoint = resumePoint;
+      queue.replace([_item('1')]);
+      await sessionController.play(0, requestedQuality: 'lossless');
 
-    await sessionController.removeFromQueue(0);
+      await sessionController.removeFromQueue(0);
 
-    expect(queue.value.isEmpty, isTrue);
-    expect(sessionController.localResumePoint, isNull);
-    expect(localBridge.restored, [same(resumePoint)]);
-  });
+      expect(queue.value.isEmpty, isTrue);
+      expect(sessionController.localResumePoint, isNull);
+      expect(localBridge.restored, [same(resumePoint)]);
+    },
+  );
 
   test('clearing the queue restores the local session once', () async {
     final resumePoint = _FakeResumePoint();

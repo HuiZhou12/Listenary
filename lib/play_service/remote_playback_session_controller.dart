@@ -149,12 +149,27 @@ final class RemotePlaybackSessionController {
     required ControllablePlaybackBackend backend,
     void Function(RemotePlaybackSessionFailure failure)? onFailure,
     void Function(String quality)? onQualityDowngraded,
+
+    /// **方案 B** 的降权判定入口：把"平台实际返回的取值"判成**要展示的档位名**；
+    /// 没降权 / 认不出该取值时返回 null。由组合根注入（见 `entry.dart`）。
+    ///
+    /// 签名**只用核心类型**：`lib/play_service` 不得依赖 provider 层类型
+    /// （`online_music_dependency_boundary_test` 守住这条边界）。
+    /// 真正的判定是 `resolveQualityDowngrade`（档位模块里的纯函数，有独立测试）。
+    String? Function({
+      required MusicPlatform platform,
+      required String requested,
+      required String actual,
+      String? previousActual,
+    })?
+    qualityDowngradeLabelFor,
   }) : _queue = queue,
        _remoteController = remoteController,
        _localBridge = localBridge,
        _backend = backend,
        _onFailure = onFailure,
-       _onQualityDowngraded = onQualityDowngraded {
+       _onQualityDowngraded = onQualityDowngraded,
+       _qualityDowngradeLabelFor = qualityDowngradeLabelFor {
     _backendStateSubscription = backend.stateStream.listen(_onBackendState);
     _localBridge.addLocalPlaybackRequestListener(_onLocalPlaybackRequested);
   }
@@ -164,7 +179,18 @@ final class RemotePlaybackSessionController {
   final LocalPlaybackSessionBridge _localBridge;
   final ControllablePlaybackBackend _backend;
   final void Function(RemotePlaybackSessionFailure failure)? _onFailure;
+
+  /// 收到的是**要展示的档位名**（平台自己的文案；平台没声明档位时是内部档位的中文文案）。
   final void Function(String quality)? _onQualityDowngraded;
+
+  /// 降权判定（**方案 B**）：返回要展示的档位名；null = 不提示。
+  final String? Function({
+    required MusicPlatform platform,
+    required String requested,
+    required String actual,
+    String? previousActual,
+  })?
+  _qualityDowngradeLabelFor;
   final _controlStateController =
       StreamController<RemotePlaybackControlSnapshot>.broadcast(sync: true);
   late final StreamSubscription<PlaybackBackendState> _backendStateSubscription;
@@ -194,20 +220,38 @@ final class RemotePlaybackSessionController {
   /// 当前实际播放档位（平台返回的 `level`）；无远程会话时为 null。
   String? get currentQuality => _currentQuality;
 
-  static int _qualityIndex(String quality) =>
-      MusicQuality.values.indexWhere((entry) => entry.level == quality);
+  /// 队列中某一项的来源平台；越界 / 空队列返回 null（此时不提示，避免误报）。
+  MusicPlatform? _platformOf(int? index) {
+    final snapshot = _queue.value;
+    if (index == null || index < 0 || index >= snapshot.items.length) {
+      return null;
+    }
+    return snapshot.items[index].ref.platform;
+  }
 
   /// 记录本次解析的真实档位；仅在**实际降权**时提示一次，回升不提示、不重复提示。
-  void _applyResolvedQuality(String requested, String? actual) {
+  ///
+  /// **[platform] 是方案 B 的关键**：平台返回的是它自己的取值（QQ 是 `flac`/`128`），
+  /// 用内部枚举下标查不到 ⇒ 非网易云平台的降级提示永远不触发。
+  /// 这里只负责"取值 → 展示名"的委托，判定本身是 [resolveQualityDowngrade]。
+  void _applyResolvedQuality(
+    String requested,
+    String? actual, {
+    MusicPlatform? platform,
+  }) {
     final previous = _currentQuality;
     final resolved = actual ?? requested;
     _currentQuality = resolved;
-    if (resolved == requested) return;
-    final resolvedIndex = _qualityIndex(resolved);
-    if (resolvedIndex < 0) return;
-    final previousIndex = previous == null ? -1 : _qualityIndex(previous);
-    if (previousIndex >= 0 && resolvedIndex >= previousIndex) return;
-    _onQualityDowngraded?.call(resolved);
+    final resolver = _qualityDowngradeLabelFor;
+    if (resolver == null || platform == null) return;
+    final label = resolver(
+      platform: platform,
+      requested: requested,
+      actual: resolved,
+      previousActual: previous,
+    );
+    if (label == null) return;
+    _onQualityDowngraded?.call(label);
   }
 
   void cycleMode() => _queue.cycleMode();
@@ -291,7 +335,11 @@ final class RemotePlaybackSessionController {
         requestedQuality: newQuality,
         fallbackQuality: previousActualQuality,
       );
-      _applyResolvedQuality(newQuality, actual);
+      _applyResolvedQuality(
+        newQuality,
+        actual,
+        platform: _platformOf(currentIndex),
+      );
       return true;
     } catch (_) {
       _requestedQuality = previousQuality;
@@ -394,7 +442,11 @@ final class RemotePlaybackSessionController {
         requestedQuality: requestedQuality,
         fallbackQuality: stopCurrent ? _currentQuality : null,
       );
-      _applyResolvedQuality(requestedQuality, actual);
+      _applyResolvedQuality(
+        requestedQuality,
+        actual,
+        platform: _platformOf(index),
+      );
     } catch (_) {
       if (!_disposed && revision == _revision) {
         _setControlState(
