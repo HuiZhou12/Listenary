@@ -133,6 +133,13 @@ class _OnlineMusicCapabilityEditorDialogState
   late TextEditingController _nextCursor;
   late TextEditingController _statusCodes;
   final _queryRows = <_ParamRow>[];
+  /// 请求体字段（P-21）；与查询参数共用 [_ParamRow]（模型里就是同一个类型）。
+  final _bodyRows = <_ParamRow>[];
+  /// 是否带请求体。显式表达"有 body 但字段为空"（POST 会发 `{}`）与"没有 body"
+  /// （不发 body）这两种**线上行为不同**的形状，不靠"有没有行"去猜。
+  bool _bodyPresent = false;
+  /// 请求体是 JSON 还是 form-urlencoded。
+  bool _bodyIsForm = false;
   final _headerRows = <_HeaderRow>[];
   final _predicateRows = <_PredicateRow>[];
   final Map<OnlineMusicDomainField, _FieldRow> _fieldRows = {};
@@ -203,6 +210,9 @@ class _OnlineMusicCapabilityEditorDialogState
     _resultController.dispose();
     _testTrackId.dispose();
     for (final row in _queryRows) {
+      row.dispose();
+    }
+    for (final row in _bodyRows) {
       row.dispose();
     }
     for (final row in _headerRows) {
@@ -282,6 +292,17 @@ class _OnlineMusicCapabilityEditorDialogState
     _queryRows
       ..clear()
       ..addAll(binding.request.query.map(_ParamRow.from));
+    // 请求体（P-21）：以前整块都不可编辑（`body: _binding.request.body` 原样抄），
+    // POST 类能力只能走 JSON 视图。这里把"有没有请求体 / JSON 还是表单 / 字段"都做成控件。
+    final body = binding.request.body;
+    _bodyPresent = body != null;
+    _bodyIsForm = body?.isForm ?? false;
+    for (final row in _bodyRows) {
+      row.dispose();
+    }
+    _bodyRows
+      ..clear()
+      ..addAll(body?.fields.map(_ParamRow.from) ?? const []);
     for (final row in _headerRows) {
       row.dispose();
     }
@@ -337,16 +358,20 @@ class _OnlineMusicCapabilityEditorDialogState
   OnlineMusicDeclarativeCapabilityBinding _collect() {
     final query = [
       for (final row in _queryRows)
-        if (row.name.text.trim().isNotEmpty)
-          OnlineMusicParamBinding(
-            name: row.name.text.trim(),
-            source: row.source,
-            required: row.required,
-            defaultValue: row.defaultValue.text.trim().isEmpty
-                ? null
-                : row.defaultValue.text.trim(),
-          ),
+        if (row.name.text.trim().isNotEmpty) _paramBindingOf(row),
     ];
+    // 请求体（P-21）：有行 ⇒ 按表单重建；一行都没有 ⇒ **保留原有形状**
+    // （"没有 body" 与 "有 body 但字段为空" 在 POST 上是两条不同的线上行为：
+    // 前者不发 body、后者发 `{}`），所以用 [_bodyPresent] 显式表达，不靠"有没有行"猜。
+    final body = !_bodyPresent
+        ? null
+        : OnlineMusicRequestBodySpec(
+            isForm: _bodyIsForm,
+            fields: [
+              for (final row in _bodyRows)
+                if (row.name.text.trim().isNotEmpty) _paramBindingOf(row),
+            ],
+          );
     final headers = [
       for (final row in _headerRows)
         if (row.name.text.trim().isNotEmpty) _headerSpecOf(row),
@@ -412,7 +437,8 @@ class _OnlineMusicCapabilityEditorDialogState
         path: _path.text.trim(),
         query: query,
         headers: headers,
-        body: _binding.request.body,
+        // P-21：请求体以前是 `_binding.request.body` 原样抄（表单改不了）。
+        body: body,
         auth: auth,
       ),
       response: OnlineMusicResponseSpec(
@@ -462,6 +488,32 @@ class _OnlineMusicCapabilityEditorDialogState
   String _referenceOf(_HeaderRow row) {
     final typed = row.reference.text.trim();
     return typed.isEmpty ? _derivedReferenceFor(row.name.text.trim()) : typed;
+  }
+
+  /// 把一行参数收成 [OnlineMusicParamBinding]（**查询参数与请求体字段共用**）。
+  ///
+  /// `defaultValue` 的**类型**要保住（P-21）：以前统一按字符串回写，
+  /// 于是 `default: 30` 保存一次就变成 `"30"`。线上取值不受影响
+  /// （`_stringify` 把两者都渲染成 `30`），但配置该保持它原来的样子。
+  /// 还原顺序：整数 → 小数 → 布尔 → 字符串（与成功判定里 `_coerce` 的口径一致）。
+  OnlineMusicParamBinding _paramBindingOf(_ParamRow row) =>
+      OnlineMusicParamBinding(
+        name: row.name.text.trim(),
+        source: row.source,
+        required: row.required,
+        defaultValue: _coerceDefaultValue(row.defaultValue.text),
+      );
+
+  Object? _coerceDefaultValue(String raw) {
+    final text = raw.trim();
+    if (text.isEmpty) return null;
+    final asInt = int.tryParse(text);
+    if (asInt != null) return asInt;
+    final asDouble = double.tryParse(text);
+    if (asDouble != null) return asDouble;
+    if (text == 'true') return true;
+    if (text == 'false') return false;
+    return text;
   }
 
   /// 把一行表单收集成请求头声明。
@@ -815,6 +867,52 @@ class _OnlineMusicCapabilityEditorDialogState
             ),
           ),
         ),
+        const SizedBox(height: 16),
+        // 请求体（P-21）：这条链路以前完全不可编辑（整块 `body` 原样抄），
+        // POST 类能力只能走 JSON 视图。现在三段都可控：有没有请求体 / JSON 还是表单 / 字段。
+        const _SectionTitle('请求体'),
+        SettingsTile(
+          description: '带请求体',
+          subtitle: _verb == OnlineMusicHttpVerb.post
+              ? 'POST 请求会带上下面这些字段'
+              : '当前是 GET：只有切换到 POST 才能带请求体（保存时会被校验拦下）',
+          action: Checkbox(
+            value: _bodyPresent,
+            visualDensity: VisualDensity.compact,
+            onChanged: (value) =>
+                setState(() => _bodyPresent = value ?? false),
+          ),
+        ),
+        if (_bodyPresent) ...[
+          const SizedBox(height: 8),
+          SettingsTile(
+            description: '请求体格式',
+            subtitle: _bodyIsForm
+                ? 'form-urlencoded：字段以键值对表单提交'
+                : 'JSON：字段以 JSON 对象提交',
+            action: SegmentedButton<bool>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: false, label: Text('JSON')),
+                ButtonSegment(value: true, label: Text('表单')),
+              ],
+              selected: {_bodyIsForm},
+              onSelectionChanged: (selection) =>
+                  setState(() => _bodyIsForm = selection.first),
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (var index = 0; index < _bodyRows.length; index++)
+            _paramRow(index, _bodyRows),
+          _addRowButton(
+            '加请求体字段',
+            () => setState(
+              () => _bodyRows.add(
+                _ParamRow.empty(defaultInputSourceFor(widget.capability)),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 8),
         SettingsTile(
           description: '认证方式',
@@ -900,6 +998,17 @@ class _OnlineMusicCapabilityEditorDialogState
           _textRow('字段根路径（如 data）', _fieldsRoot),
         _textRow('总数路径（可选）', _totalPath),
         _textRow('游标路径（可选）', _nextCursor),
+        // P-21 的"分页"半：**刻意不给控件**。`pagination.kind` / `defaultLimit`
+        // 现在**没有任何消费方**（请求构造与映射都不读它，只有模型自己的校验用得到），
+        // 做成可编辑项就是一个"无效果选项"（反模式 7）。这里如实说明，
+        // 并把"分页真正生效"留给后续阶段（P-11/F4）。
+        const Padding(
+          padding: EdgeInsets.only(bottom: 8.0),
+          child: _Hint(
+            '分页：目前不参与请求构造（配置里的「分页类型 / 默认每页数量」会被原样保留，'
+            '但当前版本还不生效）。需要用「游标路径」时，程序仍会按它读取下一页游标。',
+          ),
+        ),
         const SizedBox(height: 16),
         const _SectionTitle('字段映射'),
         const Padding(
@@ -950,8 +1059,16 @@ class _OnlineMusicCapabilityEditorDialogState
     ),
   );
 
-  Widget _queryRow(int index) {
-    final row = _queryRows[index];
+  /// 一行查询参数。
+  Widget _queryRow(int index) => _paramRow(index, _queryRows);
+
+  /// 一行参数（**查询参数与请求体字段共用**，模型里就是同一个类型）。
+  ///
+  /// P-21：以前这里只有"名字 + 取值来源"，`required` 与 `default` 虽然被模型带进带出，
+  /// 却**没有任何控件**（用户在界面里根本改不了，且 `default` 保存一次还会丢类型）。
+  /// 现在每一项都有一行控件：必填勾选框 + 默认值。
+  Widget _paramRow(int index, List<_ParamRow> rows) {
+    final row = rows[index];
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
       child: LayoutBuilder(
@@ -963,37 +1080,73 @@ class _OnlineMusicCapabilityEditorDialogState
             value: row.source,
             options: OnlineMusicInputSource.values,
             labelOf: inputSourceLabel,
+            // 英文枚举名作为副标题保留（与 JSON 视图对照用）；是否收敛属 F1-g（P-64）。
             sublabelOf: (source) => source.name,
             onChanged: (value) => setState(() => row.source = value),
           );
           final removeButton = IconButton(
             tooltip: '删除这一行',
-            onPressed: () =>
-                setState(() => _queryRows.removeAt(index).dispose()),
+            onPressed: () => setState(() => rows.removeAt(index).dispose()),
             icon: const Icon(Symbols.remove_circle),
           );
-          if (compact) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                nameField,
-                const SizedBox(height: 8.0),
-                Row(
+          final requiredToggle = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Checkbox(
+                value: row.required,
+                visualDensity: VisualDensity.compact,
+                onChanged: (value) =>
+                    setState(() => row.required = value ?? false),
+              ),
+              const Text('必填'),
+            ],
+          );
+          final defaultField = _field(row.defaultValue, '默认值（可留空）');
+          final extras = compact
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(child: sourceField),
+                    const SizedBox(height: 8.0),
+                    defaultField,
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: requiredToggle,
+                    ),
+                  ],
+                )
+              : Row(
+                  children: [
+                    const SizedBox(width: 44.0),
+                    requiredToggle,
+                    const SizedBox(width: 12.0),
+                    Expanded(child: defaultField),
+                  ],
+                );
+          final head = compact
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    nameField,
+                    const SizedBox(height: 8.0),
+                    Row(
+                      children: [
+                        Expanded(child: sourceField),
+                        removeButton,
+                      ],
+                    ),
+                  ],
+                )
+              : Row(
+                  children: [
+                    Expanded(flex: 3, child: nameField),
+                    const SizedBox(width: 12.0),
+                    Expanded(flex: 3, child: sourceField),
                     removeButton,
                   ],
-                ),
-              ],
-            );
-          }
-          return Row(
-            children: [
-              Expanded(flex: 3, child: nameField),
-              const SizedBox(width: 12.0),
-              Expanded(flex: 3, child: sourceField),
-              removeButton,
-            ],
+                );
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [head, extras],
           );
         },
       ),
@@ -1857,7 +2010,9 @@ class _ParamRow {
 
   final TextEditingController name;
   OnlineMusicInputSource source;
-  final bool required;
+
+  /// 必填（P-21 起有控件，因此可变）。
+  bool required;
   final TextEditingController defaultValue;
 
   void dispose() {

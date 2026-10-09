@@ -49,6 +49,41 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 把能力表单滚到指定文案出现为止。
+  ///
+  /// 表单是 `ListView`（**惰性构建**）⇒ 视口外的控件根本没进 widget 树；
+  /// 不先滚动就断言"找不到"，会把"没构建"误当成"不存在"（假绿）。
+  /// 用最朴素的 `drag` 循环：不依赖 `scrollUntilVisible` 的 scrollable 解析
+  /// （本对话框里有多个可滚动区域）。
+  Future<void> scrollCapabilityFormTo(
+    WidgetTester tester,
+    String label, {
+    int maxAttempts = 12,
+  }) async {
+    expect(
+      find.byKey(capabilityFormKey),
+      findsOneWidget,
+      reason: '能力表单（带 capabilityFormKey 的列表）应当存在',
+    );
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      if (find.text(label).evaluate().isNotEmpty) break;
+      await tester.drag(find.byKey(capabilityFormKey), const Offset(0, -320));
+      await tester.pumpAndSettle();
+    }
+    expect(
+      find.text(label),
+      findsOneWidget,
+      reason: '把「$label」滚进视口后应当能找到它',
+    );
+  }
+
+  /// 滚到某个控件再点它（避免"视口外 = 找不到"的假失败）。
+  Future<void> tapInCapabilityForm(WidgetTester tester, String label) async {
+    await scrollCapabilityFormTo(tester, label);
+    await tester.tap(find.text(label));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('renders the confirmed default configuration', (tester) async {
     final controller = _controller();
 
@@ -369,7 +404,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('请求'), findsOneWidget);
-    expect(find.text('响应'), findsOneWidget);
     expect(find.text('探测该服务'), findsOneWidget);
 
     // 清空请求路径后保存：结果区给出明确报错，且对话框不关闭。
@@ -383,11 +417,16 @@ void main() {
       '',
     );
     await tester.pumpAndSettle();
+    // F1-d 起表单多了「请求体」区块 ⇒ 表单变长，而它是**惰性 ListView**：
+    // 视口外的控件根本没进 widget 树，要断言下面的区块就得先滚过去。
+    await scrollCapabilityFormTo(tester, '响应');
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('请求路径不能为空'), findsOneWidget);
-    expect(find.text('请求'), findsOneWidget);
+    // 对话框**没有关闭** —— 用"表单还在"判断，而不是用顶部区块标题：
+    // 上一步为断言「响应」已经把表单滚下去，视口外的控件（惰性 ListView）不在树里。
+    expect(find.byKey(capabilityFormKey), findsOneWidget);
     controller.dispose();
   });
 
@@ -849,7 +888,11 @@ void main() {
   }
 
   /// 加一行请求头并填名称。
+  ///
+  /// ⚠️ 表单是**惰性 `ListView`**：F1-d 加了「请求体」区块之后，「加请求头」落到视口之外
+  /// （没进 widget 树）⇒ 必须先滚到位再点，否则会报"找不到"。
   Future<void> addHeaderRow(WidgetTester tester, String name) async {
+    await scrollCapabilityFormTo(tester, '加请求头');
     await tester.tap(find.text('加请求头'));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -1297,43 +1340,6 @@ void main() {
     );
   }
 
-  /// 表单是 `ListView`（**惰性构建**）⇒ 视口外的控件根本没进 widget 树，
-  /// 必须先滚动到位再断言/点击。
-  /// 表单是 `ListView`（**惰性构建**）⇒ 视口外的控件根本没进 widget 树，
-  /// 必须先把它滚进视口再断言/点击。用最朴素的 `drag` 循环：不依赖
-  /// `scrollUntilVisible` 的 scrollable 解析（本对话框里有多个可滚动区域）。
-  /// 把能力表单滚到指定文案出现为止。
-  ///
-  /// 表单是 `ListView`（**惰性构建**）⇒ 视口外的控件根本没进 widget 树；
-  /// 不先滚动就断言"找不到"，会把"没构建"误当成"不存在"（假绿）。
-  Future<void> scrollCapabilityFormTo(
-    WidgetTester tester,
-    String label, {
-    int maxAttempts = 12,
-  }) async {
-    expect(
-      find.byKey(capabilityFormKey),
-      findsOneWidget,
-      reason: '能力表单（带 capabilityFormKey 的列表）应当存在',
-    );
-    for (var attempt = 0; attempt < maxAttempts; attempt++) {
-      if (find.text(label).evaluate().isNotEmpty) break;
-      await tester.drag(find.byKey(capabilityFormKey), const Offset(0, -320));
-      await tester.pumpAndSettle();
-    }
-    expect(
-      find.text(label),
-      findsOneWidget,
-      reason: '把「$label」滚进视口后应当能找到它',
-    );
-  }
-
-  Future<void> tapInCapabilityForm(WidgetTester tester, String label) async {
-    await scrollCapabilityFormTo(tester, label);
-    await tester.tap(find.text(label));
-    await tester.pumpAndSettle();
-  }
-
   testWidgets('F1 P-23 播放解析里「加查询参数」不再默认「搜索关键词」', (tester) async {
     final controller = _controller();
     await pumpPanel(tester, controller);
@@ -1647,6 +1653,199 @@ void main() {
       reason: 'P-20：已配好的歌单列表不得被一键填充丢掉',
     );
   });
+
+  // ------------------------------------------------------------------ F1-d（P-21）
+
+  /// 打开编辑器 → 直接保存 → 返回落盘后的绑定（用于"往返不丢东西"的断言）。
+  Future<OnlineMusicDeclarativeCapabilityBinding> saveRoundTrip(
+    WidgetTester tester,
+    OnlineMusicDeclarativeCapabilityBinding fixture, {
+    OnlineMusicCapability capability = OnlineMusicCapability.search,
+  }) async {
+    final settings = settingsWithBinding(capability, fixture);
+    final controller = _controller(configured: settings, active: settings);
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+    await openCapabilityEditorFor(tester, capability);
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('无法保存'), findsNothing);
+    return controller.settings.providers.single.bindingFor(capability)
+        as OnlineMusicDeclarativeCapabilityBinding;
+  }
+
+  group('F1 P-21 参数行可编辑 required/default，且 default 不丢类型', () {
+    Future<OnlineMusicDeclarativeCapabilityBinding> savedAfterOpen(
+      WidgetTester tester,
+      OnlineMusicDeclarativeCapabilityBinding fixture, {
+      OnlineMusicCapability capability = OnlineMusicCapability.search,
+    }) => saveRoundTrip(tester, fixture, capability: capability);
+
+    testWidgets('★ 默认值的**类型**在保存后仍然正确', (tester) async {
+      // 以前统一按字符串回写 ⇒ `default: 30` 保存一次变成 `"30"`（P-21）。
+      for (final entry in const <String, Object>{
+        'int': 30,
+        'bool': false,
+        'string': 'abc',
+      }.entries) {
+        final saved = await savedAfterOpen(
+          tester,
+          bindingWithParamExtras(defaultValue: entry.value),
+        );
+        expect(
+          saved.request.query.single.defaultValue,
+          entry.value,
+          reason: '${entry.key} 类型的默认值不得被改成字符串',
+        );
+      }
+    });
+
+    testWidgets('★ 「必填」勾选框真的写进配置', (tester) async {
+      final fixture = bindingWithParamExtras(
+        required: false,
+        defaultValue: 30,
+      );
+      final settings = settingsWithBinding(
+        OnlineMusicCapability.search,
+        fixture,
+      );
+      final controller = _controller(configured: settings, active: settings);
+      addTearDown(controller.dispose);
+      await pumpPanel(tester, controller);
+      await openCapabilityEditorFor(tester, OnlineMusicCapability.search);
+
+      expect(fixture.request.query.single.required, isFalse, reason: '夹具起点');
+      await scrollCapabilityFormTo(tester, '必填');
+      final requiredRow = find
+          .ancestor(of: find.text('必填'), matching: find.byType(Row))
+          .first;
+      await tester.tap(
+        find.descendant(of: requiredRow, matching: find.byType(Checkbox)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      final saved =
+          controller.settings.providers.single.bindingFor(
+                OnlineMusicCapability.search,
+              )
+              as OnlineMusicDeclarativeCapabilityBinding;
+      expect(saved.request.query.single.required, isTrue, reason: '勾了要写进去');
+      expect(saved.request.query.single.defaultValue, 30, reason: '顺带不丢类型');
+    });
+  });
+
+  group('F1 P-21 请求体可编辑（POST 类能力不再只能走 JSON）', () {
+    testWidgets('★ 请求体的存在性 / 格式 / 字段都能配并且往返不变', (tester) async {
+      // 有请求体 + JSON + 一个字段（含必填与默认值）。
+      final fixture = bindingWithBody();
+      final settings = settingsWithBinding(
+        OnlineMusicCapability.search,
+        fixture,
+      );
+      final controller = _controller(configured: settings, active: settings);
+      addTearDown(controller.dispose);
+      await pumpPanel(tester, controller);
+      await openCapabilityEditorFor(tester, OnlineMusicCapability.search);
+
+      // 界面确实给了这些控件（滚到请求体区块）。
+      await scrollCapabilityFormTo(tester, '请求体格式');
+
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      final saved =
+          controller.settings.providers.single.bindingFor(
+                OnlineMusicCapability.search,
+              )
+              as OnlineMusicDeclarativeCapabilityBinding;
+      expect(saved.request.body, isNotNull);
+      expect(saved.request.body!.isForm, isFalse, reason: '夹具是 JSON');
+      expect(saved.request.body!.fields.single.name, 'kw');
+      expect(
+        saved.request.body!.fields.single.defaultValue,
+        7,
+        reason: '请求体字段的默认值也要保住类型',
+      );
+      expect(saved.request.body!.fields.single.required, isTrue);
+    });
+
+    testWidgets('★ 切到「表单」后保存 ⇒ isForm 变真（请求体真的可编辑）', (tester) async {
+      final fixture = bindingWithBody();
+      final settings = settingsWithBinding(
+        OnlineMusicCapability.search,
+        fixture,
+      );
+      final controller = _controller(configured: settings, active: settings);
+      addTearDown(controller.dispose);
+      await pumpPanel(tester, controller);
+      await openCapabilityEditorFor(tester, OnlineMusicCapability.search);
+      await scrollCapabilityFormTo(tester, '请求体格式');
+
+      await tester.tap(find.text('表单'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      final saved =
+          controller.settings.providers.single.bindingFor(
+                OnlineMusicCapability.search,
+              )
+              as OnlineMusicDeclarativeCapabilityBinding;
+      expect(saved.request.body!.isForm, isTrue);
+    });
+
+    testWidgets('★ 两种"没有字段"的形状不被悄悄改写', (tester) async {
+      // "有 body 但字段为空"（POST 会发 `{}`）与"没有 body"（不发 body）
+      // 是两条**不同的线上行为**，界面不得把它们混成一个。
+      final emptyBody = await saveRoundTrip(
+        tester,
+        bindingWithBody(includeFields: false),
+      );
+      expect(emptyBody.request.body, isNotNull, reason: '有 body 就得保留 body');
+      expect(emptyBody.request.body!.fields, isEmpty);
+
+      final noBody = await saveRoundTrip(
+        tester,
+        bindingWithBody(includeBody: false),
+      );
+      expect(noBody.request.body, isNull, reason: '没有 body 不得凭空造一个');
+    });
+
+    testWidgets('GET 时提示"只有 POST 才能带请求体"（模型校验的界面口径）', (tester) async {
+      final fixture = bindingWithBody(verb: OnlineMusicHttpVerb.get);
+      final settings = settingsWithBinding(
+        OnlineMusicCapability.search,
+        fixture,
+      );
+      final controller = _controller(configured: settings, active: settings);
+      addTearDown(controller.dispose);
+      await pumpPanel(tester, controller);
+      await openCapabilityEditorFor(tester, OnlineMusicCapability.search);
+
+      await scrollCapabilityFormTo(tester, '带请求体');
+      expect(find.textContaining('只有切换到 POST 才能带请求体'), findsOneWidget);
+    });
+  });
+
+  testWidgets('F1 P-21 分页刻意不给控件，但如实说明它当前不生效', (tester) async {
+    final controller = _controller();
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+    await openCapabilityEditorFor(tester, OnlineMusicCapability.search);
+
+    // 分页字段没有任何消费方 ⇒ 做成可编辑项就是"无效果选项"（反模式 7）。
+    // 这里断言的是"**说明**存在、**控件**不存在"。
+    await scrollCapabilityFormTo(tester, '游标路径（可选）');
+    expect(
+      find.textContaining('分页：目前不参与请求构造'),
+      findsOneWidget,
+      reason: '必须如实告知，而不是让用户以为改了就有用',
+    );
+    expect(find.text('分页类型'), findsNothing);
+    expect(find.text('默认每页数量'), findsNothing);
+  });
 }
 
 /// 各能力的**校验通过**夹具：路径与字段名都取自真实配方（`docs/dev/netease-bindings/`）。
@@ -1760,6 +1959,54 @@ OnlineMusicDeclarativeCapabilityBinding validBindingFor(
     ),
   };
 }
+
+/// F1-d 用：带"必填 / 默认值"的查询参数夹具（search 的响应部分复用 [validBindingFor]）。
+OnlineMusicDeclarativeCapabilityBinding bindingWithParamExtras({
+  bool required = false,
+  Object? defaultValue,
+}) => OnlineMusicDeclarativeCapabilityBinding(
+  request: OnlineMusicRequestSpec(
+    path: '/search',
+    query: [
+      OnlineMusicParamBinding(
+        name: 'limit',
+        source: OnlineMusicInputSource.limit,
+        required: required,
+        defaultValue: defaultValue,
+      ),
+    ],
+  ),
+  response: validBindingFor(OnlineMusicCapability.search).response,
+);
+
+/// F1-d 用：带请求体的夹具（POST 默认；可切换 GET / 有无字段）。
+OnlineMusicDeclarativeCapabilityBinding bindingWithBody({
+  OnlineMusicHttpVerb verb = OnlineMusicHttpVerb.post,
+  bool includeBody = true,
+  bool includeFields = true,
+  bool isForm = false,
+}) => OnlineMusicDeclarativeCapabilityBinding(
+  request: OnlineMusicRequestSpec(
+    verb: verb,
+    path: '/search',
+    body: includeBody
+        ? OnlineMusicRequestBodySpec(
+            isForm: isForm,
+            fields: includeFields
+                ? const [
+                    OnlineMusicParamBinding(
+                      name: 'kw',
+                      source: OnlineMusicInputSource.keyword,
+                      required: true,
+                      defaultValue: 7,
+                    ),
+                  ]
+                : const [],
+          )
+        : null,
+  ),
+  response: validBindingFor(OnlineMusicCapability.search).response,
+);
 
 /// 一个只配了某个能力的条目（用于驱动能力编辑器）。
 OnlineMusicSettings settingsWithBinding(
