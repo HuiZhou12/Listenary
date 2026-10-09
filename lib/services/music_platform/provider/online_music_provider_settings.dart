@@ -59,6 +59,25 @@ String? _nonEmptyString(Object? value) {
   return normalized.isEmpty ? null : normalized;
 }
 
+/// 解析 `capabilities` 时发现的一个**损坏项**（P-32）。
+///
+/// 只描述"哪里坏了"，**不含配置里的原始值**（[reason] 会进界面文案）。
+final class OnlineMusicCapabilityConfigIssue {
+  const OnlineMusicCapabilityConfigIssue({
+    this.capability,
+    required this.reason,
+  });
+
+  /// 受影响的单个能力；`null` 表示整块 `capabilities` 都不是对象（影响全部能力）。
+  final OnlineMusicCapability? capability;
+
+  /// 原因描述（中文、无原始值）。
+  final String reason;
+
+  String get message =>
+      capability == null ? reason : '${capability!.name}：$reason';
+}
+
 /// 一个 Provider 条目的配置；不包含任何凭据值，只包含凭据槽位名。
 final class OnlineMusicProviderDefinition {
   const OnlineMusicProviderDefinition({
@@ -75,6 +94,8 @@ final class OnlineMusicProviderDefinition {
     this.capabilities,
     this.contentPlatform = MusicPlatform.netease,
     this.displayName = '',
+    // P-32：解析期的损坏项，默认空；只有 `fromJson` 会填。
+    this.capabilityConfigIssues = const [],
   });
 
   static const defaultCredentialReference = 'PureMusic/ChKSz/APIKey';
@@ -144,6 +165,17 @@ final class OnlineMusicProviderDefinition {
   /// 这个「key 是否存在」的判别式就是 §5.3 定义的唯一优先级规则。
   final Map<OnlineMusicCapability, OnlineMusicCapabilityBinding>? capabilities;
 
+  /// 解析 `capabilities` 时发现的**损坏项**（P-32）。
+  ///
+  /// 这不是用户配置的一部分，只是**解析期的事实**：
+  /// - **不落盘**（`toJson` 不写）、**不参与相等性**（两份只差"哪一项坏了"的配置在
+  ///   语义上是同一份配置，且相等性是既向往返/去重逻辑的基础）；
+  /// - 由 `fromJson` 在解析时填充，程序化编辑（`_copyWith` 系列）会**清空**它 ——
+  ///   用户从编辑器重新保存过这一项之后，它就不再是"损坏的旧数据"了；
+  /// - 唯一用途是让 [validationIssues] 如实报出"这一项坏了"，从而把
+  ///   **"配置损坏"与"从未配置"**区分开（两者运行期都是"不支持"，但该去哪儿改完全不同）。
+  final List<OnlineMusicCapabilityConfigIssue> capabilityConfigIssues;
+
   /// 该能力最终生效的绑定（含旧条目的兼容解释）。
   ///
   /// 旧条目（配置里没有 `capabilities` 键、`protocol=chksz`）按内置实现解释，
@@ -183,7 +215,17 @@ final class OnlineMusicProviderDefinition {
 
   /// 条目级 + 能力级配置校验；空列表表示可用。
   List<String> validationIssues() {
-    final issues = <String>[];
+    // P-32：**解析期**就坏掉的能力项（JSON 写坏、kind 无效、整块不是对象）。
+    // 它们以前被静默降级成"不支持"，与"从未配置"在界面上完全同形 ——
+    // 用户只会看到"这个能力就是不支持"，无从知道是自己的配置坏了。
+    // 注意：运行期语义**没有**放宽（仍然是"不支持"、仍然不发请求）。
+    final corrupt = <OnlineMusicCapability>{
+      for (final issue in capabilityConfigIssues)
+        if (issue.capability != null) issue.capability!,
+    };
+    final issues = <String>[
+      for (final issue in capabilityConfigIssues) issue.message,
+    ];
     final idError = validateOnlineMusicProviderId(
       id,
       existingIds: const {},
@@ -198,6 +240,10 @@ final class OnlineMusicProviderDefinition {
     final explicit = capabilities;
     if (explicit != null) {
       for (final entry in explicit.entries) {
+        // P-32：解析期坏掉的能力只报"损坏"那一句就够。它的绑定被降级成
+        // `unsupported`，会再报一句「尚未配置」—— 而对**配过、但写坏了**的项来说，
+        // 那句话恰恰是误导（用户明明配过，只是坏了）。
+        if (corrupt.contains(entry.key)) continue;
         for (final issue in entry.value.validationIssues(entry.key)) {
           issues.add('${entry.key.name}：$issue');
         }
@@ -1020,7 +1066,6 @@ final class OnlineMusicSettings {
     final parsedCapabilities = hasCapabilities
         ? _parseCapabilities(value['capabilities'])
         : null;
-
     final auth = value['auth'];
     final authMap = auth is Map ? auth : const <Object?, Object?>{};
     // 只识别 `none` 与 `apiKey`；缺失或无法识别的 kind 一律按默认的 `apiKey`
@@ -1045,7 +1090,11 @@ final class OnlineMusicSettings {
       protocol: protocol,
       contentPlatform: _parseContentPlatform(value['contentPlatform']),
       displayName: _nonEmptyString(value['displayName']) ?? '',
-      capabilities: parsedCapabilities,
+      // P-32：绑定与"解析期损坏项"分开带上（后者不落盘、不参与相等性）。
+      capabilityConfigIssues:
+          parsedCapabilities?.issues ??
+          const <OnlineMusicCapabilityConfigIssue>[],
+      capabilities: parsedCapabilities?.bindings,
       // 只保存"显式提供"的原值：缺失（含非字符串 / 空串）一律留空 ⇒ 走默认地址。
       // **绝不替换非法值**（P-18），是否可用交给 baseUrlIssue 判定。
       baseUrl: explicitOnlineMusicBaseUrl(value['baseUrl']) ?? '',
@@ -1120,10 +1169,29 @@ final class OnlineMusicSettings {
   ///
   /// 单个能力解析失败只影响该能力（标记为不支持），不影响同一条目的其它能力；
   /// 未写出的能力同样视为「不支持」，不回落 `protocol`。
-  static Map<OnlineMusicCapability, OnlineMusicCapabilityBinding>
+  ///
+  /// P-32：返回值里多带一份 **issues** —— "坏了"必须能被报出来，
+  /// 否则它和"从未配置"在界面上完全同形。
+  static ({
+    Map<OnlineMusicCapability, OnlineMusicCapabilityBinding> bindings,
+    List<OnlineMusicCapabilityConfigIssue> issues,
+  })
   _parseCapabilities(Object? value) {
-    if (value is! Map) return const {};
+    if (value is! Map) {
+      // 第二处静默降级（P-32）：整块 `capabilities` 不是对象时，旧实现直接返回空表
+      // ⇒ 该条目变成"全部能力都不支持"，同样不报错。
+      return (
+        bindings:
+            const <OnlineMusicCapability, OnlineMusicCapabilityBinding>{},
+        issues: const [
+          OnlineMusicCapabilityConfigIssue(
+            reason: '能力配置不是一个对象 ⇒ 该条目的全部能力都按「不支持」处理，请重新配置',
+          ),
+        ],
+      );
+    }
     final result = <OnlineMusicCapability, OnlineMusicCapabilityBinding>{};
+    final issues = <OnlineMusicCapabilityConfigIssue>[];
     for (final capability in OnlineMusicCapability.values) {
       final raw = value[capability.name];
       if (raw == null) continue;
@@ -1131,9 +1199,21 @@ final class OnlineMusicSettings {
         result[capability] = OnlineMusicCapabilityBinding.fromJson(raw);
       } on FormatException {
         result[capability] = const OnlineMusicUnsupportedCapabilityBinding();
+        // **不回显异常文案**：`FormatException` 里可能带着配置里的原始值
+        // （例如「能力绑定类型无效：<原值>」），而这些文案会进界面 / 日志。
+        // 只说清"哪一项坏了 + 怎么修"，需要看原值时去 JSON 视图。
+        issues.add(
+          OnlineMusicCapabilityConfigIssue(
+            capability: capability,
+            reason: '能力配置已损坏（无法解析）⇒ 该能力按「不支持」处理，请重新配置',
+          ),
+        );
       }
     }
-    return Map.unmodifiable(result);
+    return (
+      bindings: Map.unmodifiable(result),
+      issues: List.unmodifiable(issues),
+    );
   }
 
   /// D1：内容来源只支持既有闭集；无法识别的值回落 netease（默认内容来源）。

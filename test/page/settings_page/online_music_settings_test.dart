@@ -2034,6 +2034,42 @@ void main() {
       reason: '非必填字段不得被写上必填',
     );
   });
+
+  testWidgets('★ F2 P-32 面板如实显示条目的配置问题（能力 JSON 损坏）', (tester) async {
+    // 损坏的能力以前被静默降级成"不支持"，与"从未配置"在界面上完全同形：
+    // 用户只看到"这个能力就是不支持"，不知道是自己的配置坏了。
+    final settings = OnlineMusicSettings.fromJson({
+      'providers': [
+        {
+          'id': 'selfData',
+          'baseUrl': 'https://self.invalid',
+          'auth': {'kind': 'none'},
+          'capabilities': {
+            'search': {'kind': 'script'},
+          },
+        },
+      ],
+    });
+    final controller = _controller(configured: settings, active: settings);
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    expect(find.textContaining('配置问题：'), findsOneWidget);
+    expect(find.textContaining('已损坏'), findsOneWidget);
+    expect(
+      find.textContaining('script'),
+      findsNothing,
+      reason: '配置里的原始值不得回显到界面',
+    );
+  });
+
+  testWidgets('★ F2 P-32 干净的条目**不**显示配置问题', (tester) async {
+    final controller = _controller();
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    expect(find.textContaining('配置问题：'), findsNothing);
+  });
 }
 
 /// 各能力的**校验通过**夹具：路径与字段名都取自真实配方（`docs/dev/netease-bindings/`）。

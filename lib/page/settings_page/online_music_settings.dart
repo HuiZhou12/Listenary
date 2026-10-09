@@ -479,6 +479,15 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
                 '${_authDescription(provider)}',
             action: _buildProviderAction(provider),
           ),
+          // P-32：这个条目有**配置问题**（能力 JSON 损坏 / 服务地址非法 / 标识非法）时
+          // 如实列出来。以前"能力配置写坏了"会被静默当成"这个能力就是不支持"，
+          // 用户完全看不出是自己的配置坏了 —— 与"从未配置"长得一模一样。
+          if (provider.validationIssues().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            _SettingsHint(
+              '配置问题：${provider.validationIssues().join('；')}',
+            ),
+          ],
           const SizedBox(height: 12),
         ],
         SettingsTile(

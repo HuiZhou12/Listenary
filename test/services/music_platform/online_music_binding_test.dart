@@ -353,7 +353,12 @@ void main() {
       );
     });
 
-    test('a single broken capability does not break the whole entry', () {
+    test('★ P-32 单个能力写坏：仍然只影响该能力，但**必须能被报出来**', () {
+      // ⚠️ 这条用例原来叫 `a single broken capability does not break the whole entry`，
+      // 只断言"坏的变 unsupported、好的不受影响" —— 那部分是**正确语义**（fail-closed，保留）。
+      // 但它**不完整**：写坏的项与"从未配置"在界面上完全同形，
+      // 用户只看到"这个能力就是不支持"，无从知道是自己的配置坏了（P-32）。
+      // 因此在不改动原断言的前提下**补上可见性断言**。
       final settings = OnlineMusicSettings.fromJson({
         'providers': [
           {
@@ -370,11 +375,101 @@ void main() {
       expect(
         definition.bindingFor(OnlineMusicCapability.search),
         isA<OnlineMusicUnsupportedCapabilityBinding>(),
+        reason: '仍然 fail-closed：坏配置不当作可用（运行期语义不放宽）',
       );
       expect(
         definition.bindingFor(OnlineMusicCapability.stream),
         isA<OnlineMusicBuiltinCapabilityBinding>(),
+        reason: '同条目其它能力不受影响',
       );
+      final issues = definition.validationIssues();
+      expect(issues, hasLength(1), reason: '坏掉的那一项要被报出来');
+      expect(issues.single, contains('search'));
+      expect(issues.single, contains('损坏'));
+      expect(
+        issues.single,
+        isNot(contains('script')),
+        reason: '配置里的原始值不得回显进界面文案',
+      );
+    });
+
+    test('★ P-32 整块 capabilities 不是对象：全部按不支持，并报出来', () {
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {'id': 'selfData', 'capabilities': 'not-an-object'},
+        ],
+      });
+
+      final definition = settings.providers.single;
+      expect(
+        definition.bindingFor(OnlineMusicCapability.search),
+        isA<OnlineMusicUnsupportedCapabilityBinding>(),
+      );
+      expect(
+        definition.validationIssues().join('\n'),
+        contains('不是一个对象'),
+      );
+    });
+
+    test('★ P-32 损坏项只是解析期事实：不落盘、不影响相等性、编辑后即清空', () {
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'selfData',
+            'capabilities': {
+              'search': {'kind': 'script'},
+            },
+          },
+        ],
+      });
+      final definition = settings.providers.single;
+
+      // 不落盘：损坏标记不得写进用户配置。
+      expect(definition.toJson().toString(), isNot(contains('capabilityConfigIssues')));
+      expect(definition.toJson().toString(), isNot(contains('损坏')));
+      // 往返：损坏项**不会被写回去**（`toJson` 写的是降级后的 `unsupported`）⇒
+      // 再次解析时它已是"显式 unsupported"，只剩「尚未配置」那一句。
+      // 这是**规范化**（保存一次配置就干净了），不是信息丢失 —— 如实断言。
+      final again = OnlineMusicSettings.fromJson({
+        'providers': [definition.toJson()],
+      });
+      expect(
+        again.providers.single.id,
+        definition.id,
+        reason: '往返后仍是同一个条目',
+      );
+      expect(
+        again.providers.single.validationIssues().join('\n'),
+        isNot(contains('损坏')),
+        reason: '损坏项不会被写回去（保存即规范化为显式 unsupported）',
+      );
+      expect(
+        again.providers.single.validationIssues().join('\n'),
+        contains('尚未配置'),
+        reason: '规范化之后它回到"显式不支持"这一事实',
+      );
+      // 相等性：只差"哪一项坏了"的两份配置在语义上是同一份（否则会破坏既有往返/去重逻辑）。
+      final clean = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'selfData',
+            'capabilities': {
+              'search': const OnlineMusicUnsupportedCapabilityBinding().toJson(),
+            },
+          },
+        ],
+      });
+      expect(
+        clean.providers.single,
+        definition,
+        reason: '损坏项与显式 unsupported 的绑定结果相同 ⇒ 语义相同',
+      );
+      // 程序化编辑（用户从编辑器重新保存）之后，这一项不再是"损坏的旧数据"。
+      final edited = definition.withCapabilityBinding(
+        OnlineMusicCapability.search,
+        const OnlineMusicBuiltinCapabilityBinding(),
+      );
+      expect(edited.validationIssues(), isEmpty);
     });
   });
 
