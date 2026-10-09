@@ -783,7 +783,13 @@ class _OnlineMusicCapabilityEditorDialogState
           _queryRow(index),
         _addRowButton(
           '加查询参数',
-          () => setState(() => _queryRows.add(_ParamRow.empty())),
+          () => setState(
+            // 默认来源按**当前能力**决定（P-23）：在歌单详情里新增的参数默认是
+            // 「歌单 ID」而不是「搜索关键词」。
+            () => _queryRows.add(
+              _ParamRow.empty(defaultInputSourceFor(widget.capability)),
+            ),
+          ),
         ),
         const SizedBox(height: 8),
         SettingsTile(
@@ -1313,6 +1319,30 @@ String domainFieldLabel(OnlineMusicDomainField field, {bool required = false}) {
   return required ? '$base（必填）' : base;
 }
 
+/// 新增**参数行**的默认取值来源（P-23）。
+///
+/// 为什么要按能力区分：同一个「加参数」按钮在 8 个能力下语义完全不同 ——
+/// 播放解析 / 歌词最可能要填曲目 ID，歌单详情要歌单 ID，搜索才是关键词；
+/// 集合类能力（歌单列表 / 分类 / 榜单 / 新歌）最可能要填 `limit`（见真实配方
+/// `docs/dev/netease-bindings/playlistCollection.json` 的 `cat/limit/offset`）。
+///
+/// 此前一律默认「搜索关键词」⇒ 在歌单详情里新增的参数会**静默把搜索关键词
+/// 当成歌单 ID 发出去**（值来源错了却没有任何提示）。
+///
+/// 用**穷举 switch**（漏掉能力 ⇒ 编译失败），不用 if 链、不查表。
+OnlineMusicInputSource defaultInputSourceFor(
+  OnlineMusicCapability capability,
+) => switch (capability) {
+  OnlineMusicCapability.search => OnlineMusicInputSource.keyword,
+  OnlineMusicCapability.playlist => OnlineMusicInputSource.playlistId,
+  OnlineMusicCapability.lyric ||
+  OnlineMusicCapability.stream => OnlineMusicInputSource.trackId,
+  OnlineMusicCapability.playlistCollection ||
+  OnlineMusicCapability.playlistCategories ||
+  OnlineMusicCapability.chartList ||
+  OnlineMusicCapability.newSongs => OnlineMusicInputSource.limit,
+};
+
 /// 查询参数取值来源的界面标签。
 const _inputSourceLabels = <OnlineMusicInputSource, String>{
   OnlineMusicInputSource.keyword: '搜索关键词',
@@ -1755,9 +1785,11 @@ class _ParamRow {
     TextEditingController(text: binding.defaultValue?.toString() ?? ''),
   );
 
-  factory _ParamRow.empty() => _ParamRow(
+  /// 空行必须**显式**给出取值来源（由 [defaultInputSourceFor] 按当前能力决定），
+  /// 不再有"默认就是搜索关键词"这种与能力无关的兜底（P-23）。
+  factory _ParamRow.empty(OnlineMusicInputSource source) => _ParamRow(
     TextEditingController(),
-    OnlineMusicInputSource.keyword,
+    source,
     false,
     TextEditingController(),
   );

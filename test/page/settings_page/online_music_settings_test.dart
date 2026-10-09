@@ -1190,6 +1190,137 @@ void main() {
     expect(find.text('迁移完成'), findsOneWidget);
     expect(credentials.saved.keys.single, contains('cookie'));
   });
+
+  // ------------------------------------------------------------------ F1-e（P-23）
+
+  group('F1 P-23 新增参数行的默认取值来源（按能力，穷举）', () {
+    test('★ 只有 search 的默认是「搜索关键词」', () {
+      final defaults = {
+        for (final capability in OnlineMusicCapability.values)
+          capability: defaultInputSourceFor(capability),
+      };
+
+      // 每个能力都有明确默认，且都在合法值域内。
+      expect(defaults, hasLength(OnlineMusicCapability.values.length));
+      expect(
+        defaults.values.every(OnlineMusicInputSource.values.contains),
+        isTrue,
+      );
+      // 逐条点名（漏改能力会编译失败，这里钉住语义）。
+      expect(
+        defaults[OnlineMusicCapability.search],
+        OnlineMusicInputSource.keyword,
+      );
+      expect(
+        defaults[OnlineMusicCapability.playlist],
+        OnlineMusicInputSource.playlistId,
+      );
+      expect(
+        defaults[OnlineMusicCapability.lyric],
+        OnlineMusicInputSource.trackId,
+      );
+      expect(
+        defaults[OnlineMusicCapability.stream],
+        OnlineMusicInputSource.trackId,
+      );
+      for (final capability in const [
+        OnlineMusicCapability.playlistCollection,
+        OnlineMusicCapability.playlistCategories,
+        OnlineMusicCapability.chartList,
+        OnlineMusicCapability.newSongs,
+      ]) {
+        expect(defaults[capability], OnlineMusicInputSource.limit);
+      }
+      // **缺陷本体**：修复前"一律 keyword"，于是歌单详情里新增的参数会把
+      // 搜索关键词当成歌单 ID 发出去。现在 keyword 只属于 search。
+      expect(
+        defaults.entries
+            .where((entry) => entry.value == OnlineMusicInputSource.keyword)
+            .map((entry) => entry.key)
+            .toList(),
+        [OnlineMusicCapability.search],
+      );
+    });
+  });
+
+  /// 打开**指定能力**的编辑器（能力列表按枚举顺序渲染，索引即枚举下标）。
+  Future<void> openCapabilityEditorFor(
+    WidgetTester tester,
+    OnlineMusicCapability capability,
+  ) async {
+    await tester.tap(find.byTooltip('能力配置'));
+    await tester.pumpAndSettle();
+    final buttons = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.text('配置'),
+    );
+    expect(
+      buttons,
+      findsNWidgets(OnlineMusicCapability.values.length),
+      reason: '能力列表应当每个能力一行（索引才能对应枚举下标）',
+    );
+    await tester.tap(
+      buttons.at(OnlineMusicCapability.values.indexOf(capability)),
+    );
+    await tester.pumpAndSettle();
+    // 确认真的进了编辑器（标题形如「播放解析 · chksz」）：
+    // 否则后面"找不到某个控件"的断言会指向错误的原因。
+    expect(
+      find.textContaining('${onlineMusicCapabilityLabel(capability)} · '),
+      findsOneWidget,
+      reason: '${capability.name} 的能力编辑器没有打开',
+    );
+  }
+
+  /// 表单是 `ListView`（**惰性构建**）⇒ 视口外的控件根本没进 widget 树，
+  /// 必须先滚动到位再断言/点击。
+  /// 表单是 `ListView`（**惰性构建**）⇒ 视口外的控件根本没进 widget 树，
+  /// 必须先把它滚进视口再断言/点击。用最朴素的 `drag` 循环：不依赖
+  /// `scrollUntilVisible` 的 scrollable 解析（本对话框里有多个可滚动区域）。
+  Future<void> tapInCapabilityForm(WidgetTester tester, String label) async {
+    expect(
+      find.byKey(capabilityFormKey),
+      findsOneWidget,
+      reason: '能力表单（带 capabilityFormKey 的列表）应当存在',
+    );
+    for (var attempt = 0; attempt < 12; attempt++) {
+      if (find.text(label).evaluate().isNotEmpty) break;
+      await tester.drag(find.byKey(capabilityFormKey), const Offset(0, -320));
+      await tester.pumpAndSettle();
+    }
+    expect(
+      find.text(label),
+      findsOneWidget,
+      reason: '把「$label」滚进视口后应当能找到它',
+    );
+    await tester.tap(find.text(label));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('F1 P-23 播放解析里「加查询参数」不再默认「搜索关键词」', (tester) async {
+    final controller = _controller();
+    await pumpPanel(tester, controller);
+    await openCapabilityEditorFor(tester, OnlineMusicCapability.stream);
+
+    await tapInCapabilityForm(tester, '加查询参数');
+
+    // 决定性断言：修复前新行的取值来源就是「搜索关键词」。
+    expect(find.text('搜索关键词'), findsNothing);
+    // 该能力的默认是曲目 ID（字段映射里也有一个同名标签，故用 findsWidgets）。
+    expect(find.text('曲目 ID'), findsWidgets);
+    controller.dispose();
+  });
+
+  testWidgets('F1 P-23 搜索里「加查询参数」仍然默认「搜索关键词」', (tester) async {
+    final controller = _controller();
+    await pumpPanel(tester, controller);
+    await openCapabilityEditorFor(tester, OnlineMusicCapability.search);
+
+    await tapInCapabilityForm(tester, '加查询参数');
+
+    expect(find.text('搜索关键词'), findsOneWidget);
+    controller.dispose();
+  });
 }
 
 /// F0-4 用的**校验通过**的声明式 search 绑定（字段映射齐全）。
