@@ -16,6 +16,12 @@ enum OnlineMusicInputSource {
   cursor,
   trackId,
   playlistId,
+
+  /// 歌单分类（`playlistCollection` 的可选筛选条件）。
+  ///
+  /// 取值是**该平台自己的分类标识**：网易云实测用分类名（`/top/playlist?cat=华语`），
+  /// 所以界面必须把平台返回的分类 id 原样回传，不能自己拼。
+  categoryId,
   quality,
 }
 

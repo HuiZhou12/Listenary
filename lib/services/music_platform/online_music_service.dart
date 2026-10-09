@@ -13,6 +13,9 @@ final class OnlineMusicCapabilities {
     required Iterable<MusicPlatform> resolvablePlatforms,
     Iterable<MusicPlatform> playlistPlatforms = const [],
     Iterable<MusicPlatform> playlistCollectionPlatforms = const [],
+    Iterable<MusicPlatform> playlistCategoryPlatforms = const [],
+    Iterable<MusicPlatform> chartPlatforms = const [],
+    Iterable<MusicPlatform> newSongPlatforms = const [],
     Iterable<MusicPlatform> lyricPlatforms = const [],
     Map<MusicPlatform, String> unavailableSearchReasons = const {},
   }) : searchablePlatforms = Set.unmodifiable(searchablePlatforms),
@@ -21,6 +24,11 @@ final class OnlineMusicCapabilities {
        playlistCollectionPlatforms = Set.unmodifiable(
          playlistCollectionPlatforms,
        ),
+       playlistCategoryPlatforms = Set.unmodifiable(
+         playlistCategoryPlatforms,
+       ),
+       chartPlatforms = Set.unmodifiable(chartPlatforms),
+       newSongPlatforms = Set.unmodifiable(newSongPlatforms),
        lyricPlatforms = Set.unmodifiable(lyricPlatforms),
        unavailableSearchReasons = Map.unmodifiable(unavailableSearchReasons);
 
@@ -36,6 +44,47 @@ final class OnlineMusicCapabilities {
   /// 能列出**歌单集合**的平台（Spec §19.2）。与 [playlistPlatforms] 各算各的：
   /// 只实现"歌单详情"的 Provider 不该被当成能列歌单。
   final Set<MusicPlatform> playlistCollectionPlatforms;
+
+  /// 能列出**歌单分类**的平台。
+  ///
+  /// 只有当某平台同时具备本能力与 [playlistCollectionPlatforms] 时，按分类浏览才真的
+  /// 可用 —— 只能列分类、取不到分类下歌单的平台，chip 墙上会是一排点不动的空 chip。
+  /// 界面用 [browsableCategoryPlatforms] 判断。
+  final Set<MusicPlatform> playlistCategoryPlatforms;
+
+  /// 分类浏览**真的可用**的平台：必须同时具备分类索引与歌单列表能力。
+  Set<MusicPlatform> get browsableCategoryPlatforms => {
+    for (final platform in playlistCategoryPlatforms)
+      if (playlistCollectionPlatforms.contains(platform)) platform,
+  };
+
+  /// 能列出**榜单索引**的平台。
+  ///
+  /// 榜单的曲目走既有的 [playlistPlatforms] 链路，所以"能列榜单"与"能打开榜单"
+  /// 是两件事，见 [openableChartPlatforms]。
+  final Set<MusicPlatform> chartPlatforms;
+
+  /// 榜单**真的点得开**的平台：必须同时具备榜单索引与歌单详情能力。
+  ///
+  /// 为什么需要这条推导：榜单曲目复用歌单详情链路（网易云实测 `/toplist` 的 id
+  /// 可直接用于 `/playlist/detail`）。若某平台只能列榜、不能取歌单详情，
+  /// 它的榜单就是**死链**——界面必须把它排除，而不是让用户点进去看到失败。
+  Set<MusicPlatform> get openableChartPlatforms => {
+    for (final platform in chartPlatforms)
+      if (playlistPlatforms.contains(platform)) platform,
+  };
+
+  /// 能列出**新歌**的平台。
+  final Set<MusicPlatform> newSongPlatforms;
+
+  /// 新歌**真的点得动**的平台：必须同时具备新歌与播放解析能力。
+  ///
+  /// 理由与搜索的 Stream 硬门槛（D3）一致：列表里放一批点不响的曲目，比不显示更糟。
+  /// 曲目的 `availability` 在映射层拿不到可靠取值，所以只能在平台粒度上把这道门关住。
+  Set<MusicPlatform> get playableNewSongPlatforms => {
+    for (final platform in newSongPlatforms)
+      if (resolvablePlatforms.contains(platform)) platform,
+  };
 
   /// 「有内容能力、但进不了搜索」的平台及其原因（D3b:a）。
   ///
@@ -135,12 +184,53 @@ abstract interface class OnlineMusicService {
   }) => throw UnsupportedError('Playlist reading is not supported');
 
   /// **歌单集合**（歌单列表，Spec §19.2）：元数据列表，**不含曲目**。
+  ///
+  /// [categoryId] 可选：给了就只取该分类下的歌单（取值必须是平台自己返回的分类标识，
+  /// 见 [fetchPlaylistCategories]）。刻意**不**为它另开能力 —— 同一内容加一个筛选条件
+  /// 不是新语义。
   Future<List<RemotePlaylistSummary>> fetchPlaylistCollection({
     required MusicPlatform platform,
     int limit = 30,
     int offset = 0,
+    String? categoryId,
     required OnlineMusicCancelToken cancelToken,
   }) => throw UnsupportedError('Playlist collection is not supported');
+
+  /// **歌单分类索引**：平台把歌单分成了哪些类，用于按分类浏览。
+  ///
+  /// 返回项的 `id` 必须**原样**回传给 `fetchPlaylistCollection(categoryId:)`：
+  /// 各平台的分类标识形态不同（网易云实测用分类名）。
+  Future<List<RemotePlaylistCategory>> fetchPlaylistCategories({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Playlist categories are not supported');
+
+  /// **榜单索引**：该平台发布了哪些名次集合，**不含曲目**。
+  ///
+  /// 返回的每一项的 `id` 就是后续用来打开它的 id（在榜单以歌单形态存在的平台上即歌单 id）。
+  /// `limit` / `offset` 只是给能分页的平台用的**建议**：真实服务可能一次返回全部并忽略它们
+  /// （例如网易云 `/toplist` 不接受任何分页参数）。**调用方不得据此刻画"分页"**，
+  /// 只能按实际返回条数展示。
+  Future<List<RemotePlaylistSummary>> fetchChartList({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Chart listing is not supported');
+
+  /// **新歌**：该平台最近发布的曲目。
+  ///
+  /// `limit` / `offset` 只是**建议**：真实服务未必支持分页（网易云 `/personalized/newsong`
+  /// 实测 `offset` 被忽略、只认 `limit`）。**调用方不得据此刻画"分页"**，只能按实际
+  /// 返回条数展示。
+  Future<List<MusicTrack>> fetchNewSongs({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('New songs are not supported');
 
   Future<MusicLyrics> fetchLyrics(
     PlatformTrackRef ref, {

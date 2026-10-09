@@ -170,6 +170,92 @@ void main() {
     },
   );
 
+  testWidgets('★ 订阅歌单详情里点「添加到歌单」→ 曲目真的进自建歌单', (tester) async {
+    final saved = repository.replaceSubscriptionSnapshot(_playlist());
+    await controller.loadSubscriptions();
+    final targetId = repository.createPersonalPlaylist('目标歌单');
+
+    await _pump(
+      tester,
+      controller,
+      personalController,
+      OnlinePlaylistDetailPage(localId: saved.localId),
+    );
+    await _pumpUntilFound(tester, find.text('Remote Track'));
+
+    final hover = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await hover.addPointer(location: Offset.zero);
+    await hover.moveTo(tester.getCenter(find.text('Remote Track')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('添加到歌单'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('收藏到歌单'), findsOneWidget);
+    await tester.tap(find.text('目标歌单'));
+    await tester.pumpAndSettle();
+
+    // 只断言"弹窗出现"不够：回调没接上时用户看到的过程一模一样。
+    // 断言**用户点的那一行**（按标题）真的进了目标歌单，而不是记一个魔法 id。
+    final added = repository.readPersonalPlaylist(targetId)!.tracks;
+    expect(added.map((item) => item.title), contains('Remote Track'));
+    expect(added, hasLength(1));
+    // 本 harness 没接应用根部的全局 key，因此不断言 Toast（见 R12 报告 §3）。
+    expect(tester.takeException(), isNull);
+    await hover.removePointer();
+  });
+
+  testWidgets('★ 已加载页上的「刷新」要真的去平台重新拉（不是只重读本地快照）', (tester) async {
+    final service = _FakeOnlineMusicService();
+    final localController = OnlinePlaylistController(
+      repository: SynchronousFuture(repository),
+      service: service,
+    );
+    addTearDown(localController.dispose);
+
+    final saved = repository.replaceSubscriptionSnapshot(_playlist());
+    await localController.loadSubscriptions();
+
+    await _pump(
+      tester,
+      localController,
+      personalController,
+      OnlinePlaylistDetailPage(localId: saved.localId),
+    );
+    await _pumpUntilFound(tester, find.text('Remote Track'));
+    expect(find.text('平台上新增的歌'), findsNothing);
+
+    // 平台那边多了一首（用户去平台网页上加了歌，回来点刷新）。
+    service.playlistBuilder = () => RemotePlaylist(
+      platform: MusicPlatform.netease,
+      id: '500',
+      name: 'Remote Playlist',
+      creator: 'Remote Creator',
+      trackCount: 2,
+      tracks: [
+        ..._playlist().tracks,
+        MusicTrack(
+          ref: const PlatformTrackRef(
+            platform: MusicPlatform.netease,
+            trackId: '200',
+          ),
+          title: '平台上新增的歌',
+          artists: const ['Remote Artist'],
+          album: 'Remote Album',
+        ),
+      ],
+    );
+
+    await tester.tap(find.text('刷新'));
+    await tester.pumpAndSettle();
+
+    // 只断言"按钮点了没报错"是不够的：**刷新必须把平台的新内容带回来**。
+    expect(
+      find.text('平台上新增的歌'),
+      findsOneWidget,
+      reason: '「刷新」必须真的去平台重新拉，否则它对用户就是个空按钮',
+    );
+  });
+
   testWidgets('unified playlist entry opens the online detail page', (
     tester,
   ) async {
@@ -368,6 +454,10 @@ final class _FakeOnlineMusicService implements OnlineMusicService {
   /// 记录真实发出去的 `(platform, playlistId)`：用来证明 UI 把来源身份传对了（I1）。
   final requestedPlaylists = <({MusicPlatform platform, String id})>[];
 
+  /// 平台那边返回的歌单内容。测试可以中途换掉它，用来模拟
+  /// **"平台上新增了曲目"** —— 这是"刷新到底有没有去平台重新拉"的唯一判别方式。
+  RemotePlaylist Function() playlistBuilder = _playlist;
+
   @override
   Future<MusicSearchPage> search({
     required MusicPlatform platform,
@@ -391,7 +481,7 @@ final class _FakeOnlineMusicService implements OnlineMusicService {
     required OnlineMusicCancelToken cancelToken,
   }) async {
     requestedPlaylists.add((platform: platform, id: playlistId));
-    return _playlist();
+    return playlistBuilder();
   }
 
   @override
@@ -399,8 +489,33 @@ final class _FakeOnlineMusicService implements OnlineMusicService {
     required MusicPlatform platform,
     int limit = 30,
     int offset = 0,
+    String? categoryId,
     required OnlineMusicCancelToken cancelToken,
   }) async => const [];
+
+  @override
+  Future<List<RemotePlaylistCategory>> fetchPlaylistCategories({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('categories');
+
+  @override
+  Future<List<RemotePlaylistSummary>> fetchChartList({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('charts');
+
+  @override
+  Future<List<MusicTrack>> fetchNewSongs({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('new songs');
 
   @override
   Future<MusicLyrics> fetchLyrics(

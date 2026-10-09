@@ -155,20 +155,30 @@ void main() {
       );
 
       final filled = definition.withChkszCompatibleCapabilities();
-      // ChkSz 兼容模板只覆盖它**真的有实现**的四条链路；
-      // 歌单集合（playlistCollection）没有 ChkSz 接口，因此不会被一键填成 builtin
-      // —— 假装支持比留空更糟（Spec §19.2 / §19.5：不得把没有依据的能力标成可用）。
-      for (final capability in OnlineMusicCapability.values) {
-        if (capability == OnlineMusicCapability.playlistCollection) continue;
+      // ChkSz 兼容模板只覆盖它**真的有实现**的四条链路。这里用**显式白名单**而不是
+      // "遍历所有能力再跳过几个"：后者每新增一个能力就会错误地要求它也被填成 builtin，
+      // 而假装支持比留空更糟（Spec §19.2 / §19.5：不得把没有依据的能力标成可用）。
+      const chkszCapabilities = {
+        OnlineMusicCapability.search,
+        OnlineMusicCapability.playlist,
+        OnlineMusicCapability.lyric,
+        OnlineMusicCapability.stream,
+      };
+      for (final capability in chkszCapabilities) {
         expect(
           filled.bindingFor(capability),
           isA<OnlineMusicBuiltinCapabilityBinding>(),
+          reason: '$capability 应当被一键填充为内置实现',
         );
       }
-      expect(
-        filled.bindingFor(OnlineMusicCapability.playlistCollection),
-        isA<OnlineMusicUnsupportedCapabilityBinding>(),
-      );
+      for (final capability in OnlineMusicCapability.values) {
+        if (chkszCapabilities.contains(capability)) continue;
+        expect(
+          filled.bindingFor(capability),
+          isA<OnlineMusicUnsupportedCapabilityBinding>(),
+          reason: '$capability 没有 ChkSz 接口，一键填充不得假装它支持',
+        );
+      }
     });
   });
 

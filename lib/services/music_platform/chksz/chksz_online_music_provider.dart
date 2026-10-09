@@ -113,6 +113,35 @@ final class ChkszOnlineMusicProvider
     required MusicPlatform platform,
     int limit = 30,
     int offset = 0,
+    String? categoryId,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => throw unsupportedCapability();
+
+  /// 同理：ChkSz 这条链路也没有分类索引接口，不猜路径。
+  @override
+  Future<List<RemotePlaylistCategory>> fetchPlaylistCategories({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => throw unsupportedCapability();
+
+  /// ChkSz 这条链路在当前契约里同样**没有**榜单索引接口。
+  ///
+  /// 与歌单集合一样刻意**不猜路径**：不声明该能力就是"不支持"。
+  @override
+  Future<List<RemotePlaylistSummary>> fetchChartList({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => throw unsupportedCapability();
+
+  @override
+  Future<List<MusicTrack>> fetchNewSongs({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
     required OnlineMusicCancelToken cancelToken,
   }) async => throw unsupportedCapability();
 

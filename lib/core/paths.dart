@@ -31,6 +31,12 @@ const String SETTINGS_ISSUE_PAGE = '/settings/issue';
 /// 聚合主页：多平台内容与各平台状态的统一入口。
 const String HOME_PAGE = '/home';
 
+/// 探索：目录式的多平台内容浏览入口（与主页并列的一级页面）。
+const String EXPLORE_PAGE = '/explore';
+
+/// 探索 · 榜单全量页（货架上的「查看全部」落地到网格）。
+const String EXPLORE_CHART_LIST_PAGE = '/explore/charts';
+
 const String WELCOMING_PAGE = '/welcoming';
 
 const String UPDATING_DIALOG = '/updating';

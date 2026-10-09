@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:pure_music/component/content_section.dart';
+import 'package:pure_music/component/horizontal_shelf.dart';
 import 'package:pure_music/component/online_track_row.dart';
+import 'package:pure_music/component/remote_media_card.dart';
 import 'package:pure_music/core/database.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/page/home_page.dart';
@@ -14,8 +17,19 @@ import 'package:pure_music/services/music_platform/online_library/online_playlis
 import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-/// 聚合主页：数据按**已启用平台 + 真实可用能力**生成，来源始终可见，
-/// 单平台失败不影响整页（Spec 第三段）。
+/// 聚合主页：**你自己的内容在前、平台内容在后、配置诊断收进底部**；
+/// 来源始终可见，单平台失败不影响整页。
+///
+/// 本文件由旧版主页测试改写而来。旧断言编码的 6 条业务保证**逐条保留**，只是
+/// 换了查询方式（页面结构变了，保证没变）：
+/// | 旧断言 | 现在 |
+/// |---|---|
+/// | 空数据给出可读空状态 | 保留（第 1 条） |
+/// | 平台能力按真实能力显示 + 不可用原因 | 保留（第 2 条，改为展开「平台能力」后断言） |
+/// | 最近播放/收藏逐行标注来源 | 保留（第 3 条） |
+/// | 平台歌单按平台分组 + 单平台失败隔离 | 保留（第 4 条） |
+/// | 订阅把 (平台, ID) 交出去 | 保留（第 5 条） |
+/// | 窄窗口不溢出 | 保留（第 6 条） |
 void main() {
   late Database database;
   late OnlineLibraryRepository repository;
@@ -63,6 +77,7 @@ void main() {
         // 主页里的跳转目标：用轻量占位页，避免拉进整棵设置/统计树。
         for (final path in [
           app_paths.ONLINE_MUSIC_PAGE,
+          app_paths.EXPLORE_PAGE,
           app_paths.FAVORITES_PAGE,
           app_paths.STATS_PAGE,
           app_paths.SETTINGS_PAGE,
@@ -70,7 +85,11 @@ void main() {
         ])
           GoRoute(
             path: path,
-            builder: (context, state) => Scaffold(body: Text('stub:$path')),
+            // 连 query 一起暴露：`/stats?source=online` 这类跳转的语义全在 query 上，
+            // 只断言路径会让"query 丢了"这种问题一路溜过去。
+            builder: (context, state) => Scaffold(
+              body: Text('stub:$path|${state.uri.query}'),
+            ),
           ),
       ],
     );
@@ -94,11 +113,17 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('空数据时给出可读的空状态与"未配置"平台说明', (tester) async {
-    await pumpHome(tester, service: _HomeService());
+  /// 「平台能力」默认收起（它是诊断信息，不该占据首屏）——断言其内容前要先展开。
+  Future<void> expandCapabilities(WidgetTester tester) async {
+    await tester.tap(find.text('平台能力'));
+    await tester.pumpAndSettle();
+  }
 
-    // 五个区块都在。
-    for (final title in ['平台状态', '最近播放', '我的收藏', '我的在线歌单', '平台歌单']) {
+  testWidgets('保证 1：空数据时给出可读的空状态，且配置说明可用', (tester) async {    await pumpHome(tester, service: _HomeService());
+
+    // 五个区块都在，且顺序是"你的内容 → 平台内容 → 配置诊断"。
+    final titles = ['继续听', '我的收藏', '我的在线歌单', '来自平台的歌单', '平台能力'];
+    for (final title in titles) {
       expect(find.text(title), findsOneWidget, reason: '$title 区块必须存在');
     }
     expect(find.textContaining('还没有在线播放记录'), findsOneWidget);
@@ -106,14 +131,17 @@ void main() {
     expect(find.textContaining('还没有自建歌单'), findsOneWidget);
     // 没有任何平台具备歌单列表能力 ⇒ 明确说明"怎么才会有"，而不是假装有内容。
     expect(find.textContaining('当前没有可用的「歌单列表」服务'), findsOneWidget);
-    // 三个平台都在状态区列出，且都显示未配置。
+
+    // 「平台能力」是诊断信息：默认收起，展开后三个平台都在且都显示未配置。
+    expect(find.text('未配置'), findsNothing, reason: '收起时不应渲染平台行');
+    await expandCapabilities(tester);
     for (final platform in MusicPlatform.values) {
       expect(find.text(musicPlatformLabel(platform)), findsWidgets);
     }
     expect(find.text('未配置'), findsNWidgets(MusicPlatform.values.length));
   });
 
-  testWidgets('平台状态按真实能力显示，并给出不可用原因', (tester) async {
+  testWidgets('保证 2：平台能力按真实能力显示，并给出不可用原因', (tester) async {
     await pumpHome(
       tester,
       service: _HomeService(
@@ -127,16 +155,17 @@ void main() {
         ),
       ),
     );
+    await expandCapabilities(tester);
 
     expect(find.text('缺少播放解析能力，因此不会参与搜索'), findsOneWidget);
-    // 网易云可用：它的"搜索/歌单详情/歌单列表/歌词/播放解析"能力标签都在。
+    // 网易云可用：它的能力标签都在。
     expect(find.text('搜索'), findsWidgets);
-    // QQ/酷狗没有可用候选，酷狗完全没有配置 ⇒ 只有它显示"未配置"；
-    // QQ 有服务但被门槛挡下，显示的是**原因**而不是"未配置"。
+    // 酷狗完全没有配置 ⇒ 只有它显示"未配置"；QQ 有服务但被门槛挡下，
+    // 显示的是**原因**而不是"未配置"。
     expect(find.text('未配置'), findsOneWidget);
   });
 
-  testWidgets('最近播放与收藏逐行标注来源（跨平台）', (tester) async {
+  testWidgets('保证 3：继续听与收藏逐行标注来源（跨平台）', (tester) async {
     repository.recordPlaybackStarted(_track('n1', MusicPlatform.netease));
     repository.recordPlaybackStarted(_track('q1', MusicPlatform.qq));
     repository.toggleFavorite(_track('q1', MusicPlatform.qq));
@@ -154,7 +183,7 @@ void main() {
     expect(labels.where((label) => label == 'QQ音乐'), hasLength(2));
   });
 
-  testWidgets('平台歌单：按平台分组，单平台失败不影响其它平台', (tester) async {
+  testWidgets('保证 4：平台歌单按平台分组，单平台失败不影响其它平台', (tester) async {
     await pumpHome(
       tester,
       service: _HomeService(
@@ -182,13 +211,16 @@ void main() {
     );
 
     expect(find.text('网易云歌单'), findsOneWidget);
-    expect(find.textContaining('网易云 · 甲'), findsOneWidget);
-    // QQ 分组显示自己的错误，不影响网易云的结果。
+    // 来源与详情都在卡片上（详情行 + 轻量来源标记），且来源取自曲目/歌单自己的 platform。
+    final card = tester.widget<RemoteMediaCard>(find.byType(RemoteMediaCard));
+    expect(card.details, '甲');
+    expect(card.sourceLabel, '网易云');
+    // QQ 分组显示自己的错误（失败文案），不影响网易云的结果。
     expect(find.textContaining('平台歌单读取失败'), findsOneWidget);
     expect(find.text('订阅'), findsOneWidget);
   });
 
-  testWidgets('订阅平台歌单会把 (平台, ID) 交出去', (tester) async {
+  testWidgets('保证 5：订阅平台歌单会把 (平台, ID) 交出去', (tester) async {
     final service = _HomeService(
       capabilities: OnlineMusicCapabilities(
         searchablePlatforms: const [],
@@ -224,7 +256,7 @@ void main() {
     expect(playlistService.requestedPlaylists.single.id, '7729596131');
   });
 
-  testWidgets('窄窗口下不溢出：平台卡与横滑歌单卡片都能收进宽度', (tester) async {
+  testWidgets('保证 6：窄窗口下不溢出：平台能力与横滑歌单卡片都能收进宽度', (tester) async {
     tester.view.physicalSize = const Size(420, 720);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -277,13 +309,147 @@ void main() {
 
     // 窄窗口下不允许出现 RenderFlex overflow（溢出会以异常形式抛出）。
     expect(tester.takeException(), isNull);
-    expect(find.text('平台状态'), findsOneWidget);
+    expect(find.text('继续听'), findsOneWidget);
 
-    // 滚到「平台歌单」区：横滑卡片同样不能在窄窗口里溢出。
+    // 滚到「来自平台的歌单」区：横滑卡片同样不能在窄窗口里溢出。
     await tester.drag(find.byType(ListView).first, const Offset(0, -700));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+    expect(find.text('来自平台的歌单'), findsOneWidget);
     expect(find.textContaining('一个名字很长的平台歌单标题'), findsOneWidget);
+
+    // 货架高度必须等于卡片自己声明的高度（防止两处各算一次后漂移并溢出）。
+    final shelf = tester.widget<HorizontalShelf>(
+      find.byType(HorizontalShelf).first,
+    );
+    expect(shelf.itemCount, 1);
+    expect(
+      shelf.itemHeight,
+      RemoteMediaCard.extentFor(width: shelf.itemWidth, hasFooter: true),
+    );
+  });
+
+  // ------------------------------------------------------------- 查看全部
+
+  /// 「查看全部」按钮存在于区块标题行，与区块是否有内容无关，因此空数据也能测。
+  Finder seeAllOf(String sectionTitle) => find.descendant(
+    of: find.ancestor(
+      of: find.text(sectionTitle),
+      matching: find.byType(ContentSection),
+    ),
+    matching: find.text('查看全部'),
+  );
+
+  testWidgets('★ 继续听「查看全部」→ 统计页的**在线**来源（query 不能丢）', (tester) async {
+    await pumpHome(tester, service: _HomeService());
+
+    await tester.tap(seeAllOf('继续听'));
+    await tester.pumpAndSettle();
+
+    // 只断言路径会让"query 丢了"溜过去：这个跳转的语义**全在 source=online 上**，
+    // 丢了就会落到统计页的"本地"标签，与用户点击的"在线播放历史"不是一回事。
+    expect(find.text('stub:${app_paths.STATS_PAGE}|source=online'), findsOneWidget);
+  });
+
+  testWidgets('★ 我的收藏「查看全部」→ 在线收藏页', (tester) async {
+    await pumpHome(tester, service: _HomeService());
+
+    await tester.tap(seeAllOf('我的收藏'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('stub:${app_paths.FAVORITES_PAGE}|'), findsOneWidget);
+  });
+
+  testWidgets('★ 来自平台的歌单「查看全部」→ 探索页（那里可以一直翻到底）', (tester) async {
+    await pumpHome(
+      tester,
+      service: _HomeService(
+        capabilities: OnlineMusicCapabilities(
+          searchablePlatforms: const [],
+          resolvablePlatforms: const [],
+          playlistCollectionPlatforms: const [MusicPlatform.netease],
+        ),
+      ),
+    );
+
+    await tester.tap(seeAllOf('来自平台的歌单'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('stub:${app_paths.EXPLORE_PAGE}|'), findsOneWidget);
+  });
+
+  testWidgets('★ 没有平台具备「歌单列表」能力时：给「去配置」而不是一个点开是空的「查看全部」', (
+    tester,
+  ) async {
+    await pumpHome(tester, service: _HomeService());
+
+    // 「查看全部」只有在**真有内容可看**时才该出现。
+    expect(seeAllOf('来自平台的歌单'), findsNothing);
+    expect(find.text('去配置'), findsWidgets);
+
+    final section = find.byType(ContentSection).at(
+      tester
+              .widgetList<ContentSection>(find.byType(ContentSection))
+              .toList()
+              .indexWhere((item) => item.title == '来自平台的歌单'),
+    );
+    await tester.tap(
+      find.descendant(of: section, matching: find.text('去配置')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('stub:${app_paths.SETTINGS_PAGE}|'), findsOneWidget);
+  });
+
+  testWidgets('★ 我的在线歌单「管理歌单」→ 歌单页', (tester) async {
+    await pumpHome(tester, service: _HomeService());
+
+    await tester.tap(find.text('管理歌单'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('stub:${app_paths.PLAYLISTS_PAGE}|'), findsOneWidget);
+  });
+
+  testWidgets('★ 服务不可用（完全没有在线音乐服务）：平台能力区说明"尚未就绪"，且页面不崩', (
+    tester,
+  ) async {
+    await pumpHome(tester); // 刻意不注册 OnlineMusicService
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('继续听'), findsOneWidget);
+
+    await expandCapabilities(tester);
+    // 与"配了服务但没有能力"时的"未配置"**不是同一句话** —— 这里连服务都没有。
+    expect(find.text('在线音乐服务尚未就绪，平台能力暂时不可用。'), findsOneWidget);
+    expect(find.text('去配置'), findsWidgets);
+  });
+
+  testWidgets('★ 刷新主页：真的重新拉取（不是只重画一遍）', (tester) async {
+    final service = _HomeService(
+      capabilities: OnlineMusicCapabilities(
+        searchablePlatforms: const [],
+        resolvablePlatforms: const [],
+        playlistCollectionPlatforms: const [MusicPlatform.netease],
+      ),
+      collections: const {
+        MusicPlatform.netease: [
+          RemotePlaylistSummary(
+            platform: MusicPlatform.netease,
+            id: '1',
+            name: '网易云歌单',
+          ),
+        ],
+      },
+    );
+    await pumpHome(tester, service: service);
+    expect(service.collectionCalls, 1, reason: '首次加载拉一次');
+
+    await tester.tap(find.byTooltip('刷新主页'));
+    await tester.pumpAndSettle();
+
+    // 只断言"按钮存在"是不够的：接了空回调的按钮看起来一模一样。
+    expect(service.collectionCalls, 2, reason: '刷新必须真的再请求一次');
+    expect(find.text('网易云歌单'), findsOneWidget);
   });
 }
 
@@ -311,6 +477,9 @@ final class _HomeService implements OnlineMusicService {
 
   final Map<MusicPlatform, List<RemotePlaylistSummary>> collections;
 
+  /// 「平台歌单」被请求了几次。用来验证**刷新真的重新拉取**，而不是只重画一遍。
+  int collectionCalls = 0;
+
   /// 这些平台的歌单列表会抛错（用来验证单平台失败隔离）。
   final Set<MusicPlatform> failingCollections;
 
@@ -328,8 +497,10 @@ final class _HomeService implements OnlineMusicService {
     required MusicPlatform platform,
     int limit = 30,
     int offset = 0,
+    String? categoryId,
     required OnlineMusicCancelToken cancelToken,
   }) async {
+    collectionCalls++;
     if (failingCollections.contains(platform)) {
       throw OnlineMusicException(
         kind: OnlineMusicErrorKind.unavailable,
@@ -361,6 +532,30 @@ final class _HomeService implements OnlineMusicService {
     required String playlistId,
     required OnlineMusicCancelToken cancelToken,
   }) => throw UnsupportedError('playlist');
+
+  @override
+  Future<List<RemotePlaylistCategory>> fetchPlaylistCategories({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('categories');
+
+  @override
+  Future<List<RemotePlaylistSummary>> fetchChartList({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('charts');
+
+  @override
+  Future<List<MusicTrack>> fetchNewSongs({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('new songs');
 
   @override
   Future<MusicLyrics> fetchLyrics(
@@ -429,6 +624,7 @@ final class _PlaylistRecordingService implements OnlineMusicService {
     required MusicPlatform platform,
     int limit = 30,
     int offset = 0,
+    String? categoryId,
     required OnlineMusicCancelToken cancelToken,
   }) async => const [];
 
@@ -447,6 +643,30 @@ final class _PlaylistRecordingService implements OnlineMusicService {
     required String requestedQuality,
     required OnlineMusicCancelToken cancelToken,
   }) => throw UnsupportedError('resolve');
+
+  @override
+  Future<List<RemotePlaylistCategory>> fetchPlaylistCategories({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('categories');
+
+  @override
+  Future<List<RemotePlaylistSummary>> fetchChartList({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('charts');
+
+  @override
+  Future<List<MusicTrack>> fetchNewSongs({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('new songs');
 
   @override
   Future<MusicLyrics> fetchLyrics(

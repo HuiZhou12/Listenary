@@ -36,6 +36,10 @@ const destinations = <DestinationDesc>[
     // 因此用 paths.HOME_START_PAGE_INDEX（改动 START_PAGES 时要同步）。
     startPageIndex: app_paths.HOME_START_PAGE_INDEX,
   ),
+  // 探索紧随主页：两者是并列的一级入口（主页="与你有关"，探索="按目录浏览"）。
+  // **刻意不给 startPageIndex**：与在线音乐/收藏/统计/设置一致，避免新增一个
+  // 会改写用户启动页偏好的目的地，也避免再动 START_PAGES 的下标语义。
+  DestinationDesc(Symbols.explore, '探索', app_paths.EXPLORE_PAGE),
   DestinationDesc(Symbols.cloud, '在线音乐', app_paths.ONLINE_MUSIC_PAGE),
   DestinationDesc(Symbols.favorite, '我的收藏', app_paths.FAVORITES_PAGE),
   DestinationDesc(
@@ -80,12 +84,12 @@ class DestinationGroupDesc {
 }
 
 const destinationGroups = <DestinationGroupDesc>[
-  // 主页与在线内容同组：它们都是"聚合/在线"入口；分组数量与各下标之前的
-  // 分组头数量刻意保持不变（侧边栏几何与缓存依赖它）。
-  DestinationGroupDesc('聚合', [0, 1, 2]),
-  DestinationGroupDesc('本地曲库', [3, 4, 5, 6]),
-  DestinationGroupDesc('收藏与回顾', [7, 8]),
-  DestinationGroupDesc('系统', [9]),
+  // 四个分组**数量不变**（几何按"组头数量"计算，见下面的 extent 函数）；
+  // 探索归入「聚合」组：它与主页/在线音乐/收藏都是聚合入口。
+  DestinationGroupDesc('聚合', [0, 1, 2, 3]),
+  DestinationGroupDesc('本地曲库', [4, 5, 6, 7]),
+  DestinationGroupDesc('收藏与回顾', [8, 9]),
+  DestinationGroupDesc('系统', [10]),
 ];
 
 const double sideNavItemHeight = 54.0;

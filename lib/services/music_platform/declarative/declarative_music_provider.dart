@@ -157,6 +157,7 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
     required MusicPlatform platform,
     int limit = 30,
     int offset = 0,
+    String? categoryId,
     required OnlineMusicCancelToken cancelToken,
   }) async {
     final binding = _requireBinding(
@@ -166,12 +167,89 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
     return _run(
       binding: binding,
       cancelToken: cancelToken,
-      inputs: DeclarativeInputs(limit: limit, offset: offset, page: 1),
+      inputs: DeclarativeInputs(
+        limit: limit,
+        offset: offset,
+        page: 1,
+        // 不给分类时它是 null：绑定里若把 `cat` 声明为 required，请求层会明确报
+        // "缺少必填输入"，而不是悄悄发出一个没有分类的请求。
+        categoryId: categoryId,
+      ),
       map: (body) => mapDeclarativePlaylistCollectionResponse(
         spec: binding.response,
         body: body,
         platform: platform,
       ),
+    );
+  }
+
+  @override
+  Future<List<RemotePlaylistCategory>> fetchPlaylistCategories({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    final binding = _requireBinding(
+      OnlineMusicCapability.playlistCategories,
+      platform,
+    );
+    return _run(
+      binding: binding,
+      cancelToken: cancelToken,
+      inputs: DeclarativeInputs(limit: limit, offset: offset, page: 1),
+      map: (body) => mapDeclarativePlaylistCategoriesResponse(
+        spec: binding.response,
+        body: body,
+        platform: platform,
+      ),
+    );
+  }
+
+  @override
+  Future<List<RemotePlaylistSummary>> fetchChartList({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    final binding = _requireBinding(
+      OnlineMusicCapability.chartList,
+      platform,
+    );
+    return _run(
+      binding: binding,
+      cancelToken: cancelToken,
+      inputs: DeclarativeInputs(limit: limit, offset: offset, page: 1),
+      // 榜单索引与歌单集合同构，共用同一个映射（见映射函数的说明）。
+      map: (body) => mapDeclarativePlaylistCollectionResponse(
+        spec: binding.response,
+        body: body,
+        platform: platform,
+      ),
+    );
+  }
+
+  @override
+  Future<List<MusicTrack>> fetchNewSongs({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    final binding = _requireBinding(OnlineMusicCapability.newSongs, platform);
+    return _run(
+      binding: binding,
+      cancelToken: cancelToken,
+      inputs: DeclarativeInputs(limit: limit, offset: offset, page: 1),
+      // 新歌与搜索同构（都是曲目数组），因此**共用同一个映射**，只取其中的曲目部分。
+      map: (body) => mapDeclarativeSearchResponse(
+        spec: binding.response,
+        body: body,
+        platform: platform,
+        limit: limit,
+        offset: offset,
+      ).items,
     );
   }
 

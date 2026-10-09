@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:pure_music/component/online_source_label.dart';
 import 'package:pure_music/page/now_playing_page/component/remote_current_playlist_view.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/remote_playback_queue.dart';
@@ -33,6 +34,49 @@ void main() {
       expect(find.text('Second title'), findsOneWidget);
       expect(find.text('Second artist'), findsOneWidget);
       expect(find.text('Second artist - '), findsNothing);
+    });
+
+    testWidgets('★ 带 sourceLabel 的行渲染来源标记（在线队列的"来自哪个平台"）', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _testApp(
+          queue: const [
+            ActivePlaybackSessionItem(
+              title: 'First title',
+              artist: 'First artist',
+              sourceLabel: '网易云',
+            ),
+            ActivePlaybackSessionItem(
+              title: 'Second title',
+              artist: 'Second artist',
+              sourceLabel: 'QQ音乐',
+            ),
+          ],
+        ),
+      );
+
+      expect(find.byType(OnlineSourceLabel), findsNWidgets(2));
+      expect(find.text('网易云'), findsOneWidget);
+      expect(find.text('QQ音乐'), findsOneWidget);
+      // 来源标记不占标题行：标题仍然完整。
+      expect(find.text('First title'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('★ 不带 sourceLabel 的行不渲染来源标记（本地队列观感不变）', (
+      tester,
+    ) async {
+      // _testApp 的默认队列不带 sourceLabel —— 与本地曲目的构造方式一致
+      // （本地没有"平台"这个概念，因此这个字段一律不填）。
+      await tester.pumpWidget(_testApp());
+
+      expect(find.text('Title 0'), findsOneWidget);
+      expect(
+        find.byType(OnlineSourceLabel),
+        findsNothing,
+        reason: '可空字段为空时必须什么都不渲染，否则本地队列会被在线语义污染',
+      );
     });
 
     testWidgets('highlights current item and only selects another item', (

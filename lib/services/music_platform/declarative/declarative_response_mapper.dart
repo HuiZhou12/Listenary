@@ -204,6 +204,11 @@ RemotePlaylist mapDeclarativePlaylistResponse({
 /// - 元素内部的歌单字段由 `fields` 映射给出；
 /// - 没有字段根路径：一个数组元素就是一个歌单摘要。
 ///
+/// **歌单列表（playlistCollection）与榜单索引（chartList）共用这一个映射**：两者都是
+/// "一组集合的元数据"，真实响应形状同构（网易云 `/top/playlist` 与 `/toplist` 都是
+/// `{code, <array>}`，元素含 id/name/cover/数量/更新节奏）。共用一个映射是有意的 ——
+/// 复制一份只会在两处各自走偏。
+///
 /// 单个元素映射失败（缺必填字段）与搜索一致：抛 [DeclarativeMappingException]，
 /// 绝不"猜一半"——半个歌单列表比明确报错更难排查。
 List<RemotePlaylistSummary> mapDeclarativePlaylistCollectionResponse({
@@ -240,6 +245,46 @@ List<RemotePlaylistSummary> mapDeclarativePlaylistCollectionResponse({
         trackCount: _readIntField(
           spec,
           OnlineMusicDomainField.playlistTrackCount,
+          element,
+        ),
+        updateFrequency: _readString(
+          spec,
+          OnlineMusicDomainField.playlistUpdateFrequency,
+          element,
+        ),
+      ),
+  ];
+}
+
+/// 映射**歌单分类**响应。
+///
+/// 与歌单列表同构（一个数组，每个元素是一个分类），因此只是字段集不同。
+/// 单个元素缺必填字段时同样抛 [DeclarativeMappingException]：半个分类索引会让
+/// chip 墙上出现点不动的空 chip，比明确报错更难排查。
+List<RemotePlaylistCategory> mapDeclarativePlaylistCategoriesResponse({
+  required OnlineMusicResponseSpec spec,
+  required Object? body,
+  required MusicPlatform platform,
+}) {
+  final listPath = spec.listPath;
+  if (listPath == null) {
+    throw const DeclarativeMappingException('未配置列表路径');
+  }
+  final rawList = listPath.read(body);
+  if (rawList is! List) {
+    throw const DeclarativeMappingException('列表路径没有取到数组');
+  }
+
+  return [
+    for (final element in rawList)
+      RemotePlaylistCategory(
+        platform: platform,
+        id: '${_readRequired(spec, OnlineMusicDomainField.categoryId, element)}',
+        name:
+            '${_readRequired(spec, OnlineMusicDomainField.categoryName, element)}',
+        count: _readIntField(
+          spec,
+          OnlineMusicDomainField.categoryCount,
           element,
         ),
       ),

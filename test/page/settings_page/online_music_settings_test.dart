@@ -321,18 +321,29 @@ void main() {
       await tester.pumpAndSettle();
 
       final definition = controller.settings.providers.single;
-      for (final capability in OnlineMusicCapability.values) {
-        if (capability == OnlineMusicCapability.playlistCollection) continue;
+      // 用显式白名单而不是"遍历所有能力再跳过几个"：新增能力时后者会错误地要求它
+      // 也被填成内置实现（见 online_music_binding_test 的同款说明）。
+      const chkszCapabilities = {
+        OnlineMusicCapability.search,
+        OnlineMusicCapability.playlist,
+        OnlineMusicCapability.lyric,
+        OnlineMusicCapability.stream,
+      };
+      for (final capability in chkszCapabilities) {
         expect(
           definition.bindingFor(capability),
           isA<OnlineMusicBuiltinCapabilityBinding>(),
         );
       }
-      // ChkSz 没有歌单集合接口 ⇒ 一键填充不会假装它支持。
-      expect(
-        definition.bindingFor(OnlineMusicCapability.playlistCollection),
-        isA<OnlineMusicUnsupportedCapabilityBinding>(),
-      );
+      // ChkSz 没有歌单列表 / 榜单接口 ⇒ 一键填充不会假装它支持。
+      for (final capability in OnlineMusicCapability.values) {
+        if (chkszCapabilities.contains(capability)) continue;
+        expect(
+          definition.bindingFor(capability),
+          isA<OnlineMusicUnsupportedCapabilityBinding>(),
+          reason: '$capability 没有 ChkSz 接口，不得被填成 builtin',
+        );
+      }
       controller.dispose();
     },
   );

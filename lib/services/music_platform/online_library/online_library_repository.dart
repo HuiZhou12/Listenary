@@ -940,7 +940,12 @@ String _requiredTrackId(String value) {
 
 String _requiredRemotePlaylistId(String value) {
   final normalized = value.trim();
-  if (!RegExp(r'^[1-9][0-9]*$').hasMatch(normalized)) {
+  // **只要求非空**：远端 id 的形状由 Provider 决定（网易云是纯数字，
+  // 别的服务可以是字母数字混排）。这里原先只接受 `^[1-9][0-9]*$`，
+  // 于是"用字母数字 id 的 Provider"**能取回歌单却存不进去** ——
+  // 而且它和上面那层（`OnlinePlaylistController`）的校验是**两处独立的假设**，
+  // 只改一处会漏（本项目的这条缺陷就是这么漏过去的）。
+  if (normalized.isEmpty) {
     throw ArgumentError.value(value, 'remotePlaylistId');
   }
   return normalized;

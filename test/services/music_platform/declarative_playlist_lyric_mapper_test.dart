@@ -83,6 +83,55 @@ void main() {
       expect(playlist.tracks[1].title, '最佳损友');
     });
 
+    test('★ 歌单 id 在 JSON 里是**数字**时也能用（转换结果会被字符串化，不是崩）', () {
+      // 域模型要的是 String，而很多服务把 id 给成数字。
+      // 映射层对"字符串域字段 + 非字符串转换"是**宽松**的：结果用 `'${…}'` 取用。
+      // 这条测试把这个宽松行为钉住 —— 免得将来有人"顺手收紧"成强制类型转换，
+      // 把**本来能用的配置**弄坏。
+      final numericIdSpec = OnlineMusicResponseSpec(
+        fieldsRootPath: p('playlist'),
+        listPath: p('playlist.tracks'),
+        fields: {
+          OnlineMusicDomainField.playlistId: OnlineMusicFieldSpec(
+            candidates: [p('id')],
+            transform: OnlineMusicFieldTransform.asInt,
+          ),
+          OnlineMusicDomainField.playlistName: OnlineMusicFieldSpec(
+            candidates: [p('name')],
+            transform: OnlineMusicFieldTransform.asString,
+          ),
+          OnlineMusicDomainField.trackId: OnlineMusicFieldSpec(
+            candidates: [p('id')],
+            transform: OnlineMusicFieldTransform.asString,
+            required: true,
+          ),
+          OnlineMusicDomainField.title: OnlineMusicFieldSpec(
+            candidates: [p('name')],
+            transform: OnlineMusicFieldTransform.asString,
+            required: true,
+          ),
+        },
+      );
+
+      final playlist = mapDeclarativePlaylistResponse(
+        spec: numericIdSpec,
+        body: const {
+          'playlist': {
+            'id': 24381616,
+            'name': '数字 id 的歌单',
+            'tracks': [
+              {'id': 347230, 'name': '海阔天空'},
+            ],
+          },
+        },
+        platform: netease,
+        requestedPlaylistId: 'fallback',
+      );
+
+      expect(playlist.id, '24381616', reason: '数字 id 必须变成字符串 id，而不是抛错/变成空');
+      expect(playlist.name, '数字 id 的歌单');
+    });
+
     test('歌单 id 映射取不到时回落到请求里的 id（不算映射失败）', () {
       final playlist = mapDeclarativePlaylistResponse(
         spec: OnlineMusicResponseSpec(
@@ -477,6 +526,7 @@ final class _CollectionProvider extends UnsupportedOnlineMusicProvider {
     required MusicPlatform platform,
     int limit = 30,
     int offset = 0,
+    String? categoryId,
     required OnlineMusicCancelToken cancelToken,
   }) async {
     offsets.add(offset);

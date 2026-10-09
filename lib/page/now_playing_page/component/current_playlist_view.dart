@@ -128,6 +128,9 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
                 title: item.title,
                 artist: item.artistDisplay,
                 album: item.album,
+                // 来源标记（I1）：在线队列每一行都要能看出它来自哪个平台。
+                // 本地队列不填这个字段，因此本地观感完全不变。
+                sourceLabel: musicPlatformLabel(item.ref.platform),
               ),
             )
             .toList(growable: false),

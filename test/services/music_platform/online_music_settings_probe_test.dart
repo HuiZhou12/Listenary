@@ -391,7 +391,7 @@ void main() {
       expect(search.requestSummary, isNotNull);
     });
 
-    test('五个能力都能用当前编辑中的配置试跑一次真请求', () async {
+    test('每个能力都能用当前编辑中的配置试跑一次真请求', () async {
       transport
         ..statusCode = 200
         ..error = null
@@ -553,7 +553,8 @@ OnlineMusicSettings _searchOnlySettingsWithSecrets() =>
       ],
     });
 
-/// 五个能力各有一条声明式绑定：用来证明"每个能力都能试跑"。
+/// **每个**能力各有一条声明式绑定：用来证明"每个能力都能试跑"。
+/// （新增能力时必须同步补一条，否则 `OnlineMusicCapability.values` 的遍历会暴露缺口。）
 OnlineMusicSettings _allCapabilitiesSettings() => OnlineMusicSettings.fromJson({
   'providers': [
     {
@@ -597,6 +598,63 @@ OnlineMusicSettings _allCapabilitiesSettings() => OnlineMusicSettings.fromJson({
                 required: true,
               ),
               OnlineMusicDomainField.playlistName: _stringField(
+                JsonPathForTest.name,
+                required: true,
+              ),
+            },
+          ),
+        ).toJson(),
+        'chartList': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(path: '/toplist'),
+          response: OnlineMusicResponseSpec(
+            success: _codeSuccess,
+            listPath: JsonPathForTest.data,
+            fields: {
+              OnlineMusicDomainField.playlistId: _stringField(
+                JsonPathForTest.id,
+                required: true,
+              ),
+              OnlineMusicDomainField.playlistName: _stringField(
+                JsonPathForTest.name,
+                required: true,
+              ),
+              OnlineMusicDomainField.playlistUpdateFrequency: _stringField(
+                JsonPathForTest.name,
+              ),
+            },
+          ),
+        ).toJson(),
+        'playlistCategories': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(path: '/playlist/catlist'),
+          response: OnlineMusicResponseSpec(
+            success: _codeSuccess,
+            listPath: JsonPathForTest.data,
+            fields: {
+              OnlineMusicDomainField.categoryId: _stringField(
+                JsonPathForTest.id,
+                required: true,
+              ),
+              OnlineMusicDomainField.categoryName: _stringField(
+                JsonPathForTest.name,
+                required: true,
+              ),
+              OnlineMusicDomainField.categoryCount: _stringField(
+                JsonPathForTest.name,
+              ),
+            },
+          ),
+        ).toJson(),
+        'newSongs': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(path: '/personalized/newsong'),
+          response: OnlineMusicResponseSpec(
+            success: _codeSuccess,
+            listPath: JsonPathForTest.data,
+            fields: {
+              OnlineMusicDomainField.trackId: _stringField(
+                JsonPathForTest.id,
+                required: true,
+              ),
+              OnlineMusicDomainField.title: _stringField(
                 JsonPathForTest.name,
                 required: true,
               ),

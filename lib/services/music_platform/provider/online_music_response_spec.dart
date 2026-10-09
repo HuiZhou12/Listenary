@@ -24,6 +24,14 @@ enum OnlineMusicDomainField {
   playlistCreator,
   playlistTrackCount,
 
+  /// 集合的**更新节奏**（平台自己的文案）。榜单这类名次集合靠它说明多久变一次。
+  playlistUpdateFrequency,
+
+  // 歌单分类（playlistCategories）
+  categoryId,
+  categoryName,
+  categoryCount,
+
   // lyric
   lyricOriginal,
   lyricTranslation,
@@ -335,6 +343,21 @@ final class OnlineMusicResponseSpec {
         if (listPath == null) {
           issues.add('歌单列表能力必须配置列表路径');
         }
+      case OnlineMusicCapability.chartList:
+        // 榜单索引与歌单列表同构：一个数组，每个元素是一个名次集合的元数据。
+        if (listPath == null) {
+          issues.add('榜单能力必须配置列表路径');
+        }
+      case OnlineMusicCapability.playlistCategories:
+        // 分类索引同样只是一个数组，每个元素是一个分类。
+        if (listPath == null) {
+          issues.add('歌单分类能力必须配置列表路径');
+        }
+      case OnlineMusicCapability.newSongs:
+        // 新歌就是一个曲目数组，与搜索同构。
+        if (listPath == null) {
+          issues.add('新歌能力必须配置列表路径');
+        }
       case OnlineMusicCapability.lyric:
         // 至少要有一个歌词字段，否则永远取不到歌词（配置错误，不是"这首没歌词"）。
         if (!const [
@@ -426,6 +449,36 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.playlistCoverUri,
         OnlineMusicDomainField.playlistCreator,
         OnlineMusicDomainField.playlistTrackCount,
+        OnlineMusicDomainField.playlistUpdateFrequency,
+      };
+    case OnlineMusicCapability.chartList:
+      // 榜单索引与歌单集合同构：只有集合自身的字段，没有曲目字段。
+      return const {
+        OnlineMusicDomainField.playlistId,
+        OnlineMusicDomainField.playlistName,
+        OnlineMusicDomainField.playlistCoverUri,
+        OnlineMusicDomainField.playlistCreator,
+        OnlineMusicDomainField.playlistTrackCount,
+        OnlineMusicDomainField.playlistUpdateFrequency,
+      };
+    case OnlineMusicCapability.playlistCategories:
+      // 分类只有分类自身：标识、名字、数量。**没有分组的字段** ——
+      // 分组名在真实服务里是"以分组 id 为键的另一张表"，拼接它属于逻辑而非映射
+      // （见能力枚举的说明）。
+      return const {
+        OnlineMusicDomainField.categoryId,
+        OnlineMusicDomainField.categoryName,
+        OnlineMusicDomainField.categoryCount,
+      };
+    case OnlineMusicCapability.newSongs:
+      // 新歌就是一个曲目数组：字段集与搜索**完全相同**（不新增领域字段）。
+      return const {
+        OnlineMusicDomainField.trackId,
+        OnlineMusicDomainField.title,
+        OnlineMusicDomainField.artists,
+        OnlineMusicDomainField.album,
+        OnlineMusicDomainField.coverUri,
+        OnlineMusicDomainField.duration,
       };
     case OnlineMusicCapability.lyric:
       return const {
@@ -459,6 +512,24 @@ Set<OnlineMusicDomainField> requiredFieldsFor(
         OnlineMusicDomainField.playlistId,
         OnlineMusicDomainField.playlistName,
       };
+    case OnlineMusicCapability.chartList:
+      // 同理：榜单摘要至少要有 id 与名字，否则列表里出现空条目。
+      return const {
+        OnlineMusicDomainField.playlistId,
+        OnlineMusicDomainField.playlistName,
+      };
+    case OnlineMusicCapability.playlistCategories:
+      // 分类至少要有 id 与名字，否则 chip 墙上出现空 chip。
+      return const {
+        OnlineMusicDomainField.categoryId,
+        OnlineMusicDomainField.categoryName,
+      };
+    case OnlineMusicCapability.newSongs:
+      // 与搜索同样的最低要求：至少能确定"是哪首歌、叫什么"。
+      return const {
+        OnlineMusicDomainField.trackId,
+        OnlineMusicDomainField.title,
+      };
     case OnlineMusicCapability.lyric:
       return const {};
   }
@@ -486,6 +557,13 @@ expectedFieldKinds = {
     OnlineMusicFieldTransform.asDurationSeconds,
   },
   OnlineMusicDomainField.playlistTrackCount: {
+    OnlineMusicFieldTransform.asInt,
+    OnlineMusicFieldTransform.asString,
+  },
+  OnlineMusicDomainField.playlistUpdateFrequency: {
+    OnlineMusicFieldTransform.asString,
+  },
+  OnlineMusicDomainField.categoryCount: {
     OnlineMusicFieldTransform.asInt,
     OnlineMusicFieldTransform.asString,
   },

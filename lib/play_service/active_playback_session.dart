@@ -20,6 +20,7 @@ final class ActivePlaybackSessionItem {
     this.album = '',
     this.coverUri,
     this.duration = Duration.zero,
+    this.sourceLabel,
   });
 
   final String title;
@@ -27,6 +28,13 @@ final class ActivePlaybackSessionItem {
   final String album;
   final Uri? coverUri;
   final Duration duration;
+
+  /// **来源标记**（一般是在线内容所属平台的展示名）。
+  ///
+  /// **可空且默认 null**：本地曲目没有"平台"这个概念，因此本地来源一律不填，
+  /// 界面也只在非空时才渲染标记 —— 加这个字段不会把在线语义渗进本地。
+  /// 这是 Spec §20.2 记下的既定扩展路径（"若将来要给队列加来源标签，应加**可空** sourceLabel"）。
+  final String? sourceLabel;
 
   @override
   bool operator ==(Object other) =>
@@ -36,10 +44,12 @@ final class ActivePlaybackSessionItem {
           artist == other.artist &&
           album == other.album &&
           coverUri == other.coverUri &&
-          duration == other.duration;
+          duration == other.duration &&
+          sourceLabel == other.sourceLabel;
 
   @override
-  int get hashCode => Object.hash(title, artist, album, coverUri, duration);
+  int get hashCode =>
+      Object.hash(title, artist, album, coverUri, duration, sourceLabel);
 }
 
 @immutable

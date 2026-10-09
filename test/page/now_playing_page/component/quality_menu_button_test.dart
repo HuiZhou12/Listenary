@@ -121,6 +121,62 @@ void main() {
     expect(find.textContaining('已回落为'), findsNothing);
   });
 
+  testWidgets('★ 给出 platformLabel 时，菜单顶部写明这是哪个平台的档位', (tester) async {
+    final selected = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PlatformQualityMenuButton(
+            tiers: qqTiers,
+            selection: selectPlatformQuality(
+              tiers: qqTiers,
+              preference: 'lossless',
+            ),
+            iconColor: Colors.white,
+            platformLabel: 'QQ音乐',
+            onSelected: selected.add,
+          ),
+        ),
+      ),
+    );
+
+    await openMenu(tester);
+
+    // 档位文案（SQ / Hi-Res）本身是平台专有的，不写平台名就无法判断是哪一家。
+    expect(find.text('QQ音乐'), findsOneWidget);
+    expect(find.text('SQ'), findsOneWidget);
+
+    // 表头只是说明，**不可选**：点它不会回传任何档位。
+    await tester.tap(find.text('QQ音乐'));
+    await tester.pumpAndSettle();
+    expect(selected, isEmpty);
+  });
+
+  testWidgets('不给 platformLabel 时不渲染表头（既有观感不变）', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PlatformQualityMenuButton(
+            tiers: qqTiers,
+            selection: selectPlatformQuality(
+              tiers: qqTiers,
+              preference: 'lossless',
+            ),
+            iconColor: Colors.white,
+            onSelected: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    await openMenu(tester);
+
+    expect(find.text('QQ音乐'), findsNothing);
+    expect(find.text('网易云'), findsNothing);
+    // 档位照常都在。
+    expect(find.text('SQ'), findsOneWidget);
+  });
+
   testWidgets('平台没有档位声明时，菜单回到内部档位列表（既有行为不变）', (tester) async {
     final selected = <String>[];
     await tester.pumpWidget(

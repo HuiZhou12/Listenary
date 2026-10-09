@@ -46,6 +46,7 @@ import 'package:pure_music/play_service/remote_playback_timeline.dart';
 import 'package:pure_music/play_service/remote_media_artwork.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
+import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -746,6 +747,8 @@ class _RemoteQualityButton extends StatelessWidget {
       tiers: tiers,
       selection: selection,
       iconColor: color,
+      // 档位文案是平台专有的，因此菜单顶部必须写出这些档位属于哪个平台。
+      platformLabel: musicPlatformLabel(platform),
       onOpened: () {
         // D10:A：回落必须给出明确提示；提示里只说平台自己的档位名，
         // 不把内部偏好键（如 `jymaster`）暴露给用户（I4 / 补充口径④）。

@@ -216,6 +216,42 @@ void main() {
     );
     expect(session.value, same(before));
   });
+
+  group('来源标记（sourceLabel，Spec §20.2 的既定扩展路径）', () {
+    test('默认是 null：本地曲目不填它，因此本地语义不受影响', () {
+      expect(_item('Local').sourceLabel, isNull);
+    });
+
+    test('★ 相等性把 sourceLabel 算进去（否则只改来源的队列更新会被漏掉）', () {
+      const netease = ActivePlaybackSessionItem(
+        title: 'Same',
+        artist: 'Same artist',
+        sourceLabel: '网易云',
+      );
+      const qq = ActivePlaybackSessionItem(
+        title: 'Same',
+        artist: 'Same artist',
+        sourceLabel: 'QQ音乐',
+      );
+      const none = ActivePlaybackSessionItem(
+        title: 'Same',
+        artist: 'Same artist',
+      );
+
+      expect(netease, isNot(qq));
+      expect(netease, isNot(none));
+      expect(netease.hashCode, isNot(qq.hashCode));
+      // 同值仍然相等。
+      expect(
+        netease,
+        const ActivePlaybackSessionItem(
+          title: 'Same',
+          artist: 'Same artist',
+          sourceLabel: '网易云',
+        ),
+      );
+    });
+  });
 }
 
 const _localCapabilities = ActivePlaybackSessionCapabilities(

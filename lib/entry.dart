@@ -17,6 +17,8 @@ import 'package:pure_music/page/folders_page.dart';
 import 'package:pure_music/page/now_playing_page/page.dart';
 import 'package:pure_music/page/online_music_page.dart';
 import 'package:pure_music/page/home_page.dart';
+import 'package:pure_music/page/explore_page.dart';
+import 'package:pure_music/page/chart_list_page.dart';
 import 'package:pure_music/page/playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
 import 'package:pure_music/page/online_playlists_page.dart';
@@ -766,6 +768,25 @@ class _EntryState extends State<Entry>
               GoRoute(
                 path: app_paths.HOME_PAGE,
                 builder: (context, state) => const HomePage(),
+              ),
+            ],
+          ),
+          // branch 顺序**必须与侧边栏 `destinations` 一致**（导航壳按下标切分支）。
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: app_paths.EXPLORE_PAGE,
+                builder: (context, state) => const ExplorePage(),
+                routes: [
+                  // 探索页货架上的「查看全部」落地：榜单全量网格。
+                  GoRoute(
+                    path: 'charts',
+                    pageBuilder: (context, state) => SlideTransitionPage(
+                      key: state.pageKey,
+                      child: const ChartListPage(),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

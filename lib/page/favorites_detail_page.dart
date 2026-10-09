@@ -3,9 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
-import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
-import 'package:pure_music/component/online_track_row.dart';
+import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_cover_cache.dart';
 import 'package:pure_music/core/enums.dart';
@@ -33,20 +32,25 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
   String _searchQuery = '';
   Future<ImageProvider?> _primaryPicFuture = Future.value(null);
 
+  /// 记住控制器实例：**`dispose` 里不能再 `context.read`**（那时 element 已 deactivated，
+  /// 框架会直接断言失败）。从前这里在 dispose 里查 provider，导致每次离开本页都会报断言。
+  PersonalOnlinePlaylistController? _favorites;
+
   @override
   void initState() {
     super.initState();
     _load();
-    context.read<PersonalOnlinePlaylistController>().addListener(
-      _onFavoritesChanged,
-    );
+    final controller = context.read<PersonalOnlinePlaylistController>();
+    _favorites = controller;
+    // 让控制器**先把收藏态读进内存**：否则每行的爱心会因为"不知道是否已收藏"
+    // 而显示成未收藏（从前这里靠硬编码 `favorite: true` 绕过，等于放弃了状态判断）。
+    unawaited(controller.loadFavorites());
+    controller.addListener(_onFavoritesChanged);
   }
 
   @override
   void dispose() {
-    context.read<PersonalOnlinePlaylistController>().removeListener(
-      _onFavoritesChanged,
-    );
+    _favorites?.removeListener(_onFavoritesChanged);
     super.dispose();
   }
 
@@ -109,39 +113,15 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
     );
   }
 
-  Future<void> _unfavorite(PlatformTrackRef ref) async {
-    final snapshot = _snapshot;
-    if (snapshot == null) return;
-    await context.read<PersonalOnlinePlaylistController>().removeTrack(
-      snapshot.localId,
-      ref,
-    );
-  }
-
-  Widget _buildTrackRow(MusicTrack track, Iterable<MusicTrack> playbackTracks) {
-    final playable =
-        track.availability != TrackAvailability.unavailable &&
-        track.availability != TrackAvailability.paid;
-    final details = [
-      if (track.artistDisplay.isNotEmpty) track.artistDisplay,
-      if (track.album.isNotEmpty) track.album,
-    ].join(' · ');
-    return DirectionalListItemEntrance(
-      identity: track.ref,
-      child: OnlineTrackRow(
+  /// 一行收藏曲目。
+  ///
+  /// 组装、来源标记、收藏切换与"加入歌单"都收敛在 [OnlineTrackEntry] 里。
+  /// 收藏是**跨平台**的（任何平台的曲目都能被收藏）⇒ 每行必须标明来源（I1）。
+  Widget _buildTrackRow(MusicTrack track, Iterable<MusicTrack> playbackTracks) =>
+      OnlineTrackEntry(
         track: track,
-        details: details,
-        enabled: playable,
-        // 收藏是**跨平台**的（任何平台的曲目都能被收藏）⇒ 每行必须标明来源（I1）。
-        sourceLabel: musicPlatformLabel(track.ref.platform),
-        onTap: playable ? () => _play(playbackTracks, track) : null,
-        showFavorite: true,
-        favorite: true,
-        onToggleFavorite: () => _unfavorite(track.ref),
-        isNowPlaying: isOnlineTrackNowPlaying(context, track.ref),
-      ),
-    );
-  }
+        onTap: () => _play(playbackTracks, track),
+      );
 
   @override
   Widget build(BuildContext context) {

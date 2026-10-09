@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_service.dart';
 
@@ -10,6 +11,10 @@ import 'package:pure_music/services/music_platform/online_music_service.dart';
 /// 由档位声明决定。发生回落时，菜单里明确写出"已回落为 X"，同时回调 [onOpened]
 /// 供调用方给出更显眼的提示。
 ///
+/// [platformLabel] 非空时，菜单顶部给出**这是哪个平台的档位**：档位文案本身是平台专有的
+/// （QQ 是 `flac/320/128`、网易云是"无损/Hi-Res"），不写出平台名的话用户无法判断
+/// 自己看到的是哪一家的档位 —— 而"音质选择"必须能回答"来源是谁"。
+///
 /// 与播放会话解耦（只吃 `tiers` + `selection`），因此可以单独做 widget 测试。
 class PlatformQualityMenuButton extends StatelessWidget {
   const PlatformQualityMenuButton({
@@ -18,6 +23,7 @@ class PlatformQualityMenuButton extends StatelessWidget {
     required this.selection,
     required this.onSelected,
     required this.iconColor,
+    this.platformLabel,
     this.onOpened,
     this.iconSize = 28.0,
   });
@@ -31,6 +37,9 @@ class PlatformQualityMenuButton extends StatelessWidget {
   /// 选中回调，参数是**内部偏好档位**（保持跨平台偏好语义）。
   final ValueChanged<String> onSelected;
 
+  /// 这些档位属于哪个平台（平台展示名）。为空时不渲染表头（保持既有观感）。
+  final String? platformLabel;
+
   final Color iconColor;
   final VoidCallback? onOpened;
   final double iconSize;
@@ -43,6 +52,20 @@ class PlatformQualityMenuButton extends StatelessWidget {
       onOpened: onOpened,
       onSelected: onSelected,
       itemBuilder: (context) => [
+        // 表头：只是说明"这些是哪个平台的档位"，不可选。
+        if (platformLabel case final label?)
+          PopupMenuItem<String>(
+            enabled: false,
+            height: 32,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: AppType.caption,
+                fontWeight: AppType.weightSemibold,
+              ),
+            ),
+          ),
         if (selection.fellBack)
           PopupMenuItem<String>(
             enabled: false,

@@ -7,10 +7,43 @@
 /// **两个业务语义**，各有自己的请求与响应形状；D12 说的"歌单详情与其曲目列表不拆"
 /// 指的是后者内部不再拆。拆开是因为"浏览有哪些歌单"与"打开某个歌单"在真实服务里
 /// 就是两个接口（Spec §19.2 方案 A）。
+///
+/// [chartList]（**榜单索引**）同样是一个独立语义：它回答"这个平台发布了哪些名次集合"，
+/// 与 [playlistCollection]（"有哪些歌单"）是不同内容类型，真实服务里也是不同接口
+/// （例如网易云 `/toplist` 对 `/top/playlist`）。
+///
+/// **榜单的曲目刻意不新开能力**：在榜单以歌单形态存在的平台上（网易云实测：
+/// `/toplist` 给出的 id 直接可用于 `/playlist/detail`，返回完整曲目且不截断），
+/// 打开榜单走的仍然是既有的 [playlist] 链路。因此：
+/// - [chartList] 返回的摘要里，`id` 就是该平台后续要用的 id；
+/// - **只有当该平台同时具备 [playlist] 能力时，榜单才可被打开**，否则会形成死链
+///   （实测 QQ 的 `topId` 不适用于 `/getSongListDetail`，所以 QQ 的榜单曲目需要
+///   另一条链路，在决定"一个能力是否允许由多个请求组成"之前不接入）。
+///
+/// [playlistCategories]（**歌单分类**）回答"平台把歌单分成了哪些类"，用于按分类浏览。
+/// **"取某分类下的歌单"不新开能力**：那与 [playlistCollection] 是同一种内容、只是多了
+/// 一个筛选条件，因此做成 [playlistCollection] 的一个可选输入（`categoryId`）而不是
+/// 第七个能力。
+///
+/// ⚠️ **分类的分组名刻意不在领域模型里**：网易云 `/playlist/catlist` 的分类项只有
+/// 数字分组 id（`category`），分组名（语种/风格/场景/情感/主题）在**另一个以该数字为键的
+/// 映射**里（`categories`）。要把两者拼起来需要"按同级的另一个字段取值去查表"——
+/// 那是**逻辑**而不是映射，与本 DSL "只做映射、不做逻辑"的原则冲突。因此分类在界面上
+/// 是**扁平 chip 墙**。将来若确实需要分组，应当作为一次显式的 DSL 能力扩展来设计，
+/// 而不是在映射层偷偷加表达式。
+///
+/// [newSongs]（**新歌**）与前几种不同：它返回的就是**曲目数组**，因此
+/// **不新增领域字段**（复用 trackId/title/artists/album/coverUri/duration），
+/// 也**不需要新的映射函数**（与搜索同构）。它仍然是一个独立能力，因为它回答的是
+/// "这个平台最近发布了什么"，与关键词搜索是两种语义。
+/// **界面上它还要求该平台具备 [stream]**：列表里的曲目点不动比不显示更糟。
 enum OnlineMusicCapability {
   search,
   playlist,
   playlistCollection,
+  playlistCategories,
+  chartList,
+  newSongs,
   lyric,
   stream,
 }
@@ -22,6 +55,9 @@ String onlineMusicCapabilityLabel(OnlineMusicCapability capability) =>
       // 旧文案「歌曲列表」有歧义：它其实是"某个歌单的详情（含曲目）"。
       OnlineMusicCapability.playlist => '歌单详情',
       OnlineMusicCapability.playlistCollection => '歌单列表',
+      OnlineMusicCapability.playlistCategories => '歌单分类',
+      OnlineMusicCapability.chartList => '榜单',
+      OnlineMusicCapability.newSongs => '新歌',
       OnlineMusicCapability.lyric => '歌词',
       OnlineMusicCapability.stream => '播放解析',
     };

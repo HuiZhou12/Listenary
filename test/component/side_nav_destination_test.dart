@@ -32,6 +32,7 @@ void main() {
 
   test('non-start destinations do not map to a local start page', () {
     for (final path in [
+      app_paths.EXPLORE_PAGE,
       app_paths.ONLINE_MUSIC_PAGE,
       app_paths.FAVORITES_PAGE,
       app_paths.STATS_PAGE,
@@ -42,8 +43,17 @@ void main() {
             .singleWhere((destination) => destination.desPath == path)
             .startPageIndex,
         isNull,
+        reason: '$path 不该改写用户的启动页偏好',
       );
     }
+  });
+
+  test('explore sits right after home and is reachable as its own branch', () {
+    // 主页与探索是并列的一级入口：主页="与你有关"，探索="按目录浏览"。
+    expect(destinations[1].label, '探索');
+    expect(destinations[1].desPath, app_paths.EXPLORE_PAGE);
+    // 与路由壳的分支顺序一致（AppShell 按下标切分支）。
+    expect(destinations[0].desPath, app_paths.HOME_PAGE);
   });
 
   test('start pages are unique and every destination path is distinct', () {

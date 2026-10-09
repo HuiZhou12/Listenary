@@ -566,6 +566,73 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       );
     }
 
+    if (capability == OnlineMusicCapability.chartList) {
+      // 榜单索引与歌单集合同构，试跑用同一个映射（见映射函数的说明）。
+      final charts = mapDeclarativePlaylistCollectionResponse(
+        spec: binding.response,
+        body: response.data,
+        platform: definition.contentPlatform,
+      );
+      final first = charts.isEmpty ? null : charts.first.name;
+      return DeclarativeCapabilityTestResult(
+        ok: charts.isNotEmpty,
+        statusCode: response.statusCode,
+        responsePreview: preview,
+        mappedSummary: charts.isEmpty
+            ? '解析成功，但没有榜单'
+            : '${charts.length} 个榜单 · 第一个：$first',
+        failureReason: charts.isEmpty ? '没有解析出榜单' : null,
+        failureKind: charts.isEmpty
+            ? DeclarativeTestFailureKind.mapping
+            : null,
+      );
+    }
+
+    if (capability == OnlineMusicCapability.playlistCategories) {
+      final categories = mapDeclarativePlaylistCategoriesResponse(
+        spec: binding.response,
+        body: response.data,
+        platform: definition.contentPlatform,
+      );
+      final first = categories.isEmpty ? null : categories.first.name;
+      return DeclarativeCapabilityTestResult(
+        ok: categories.isNotEmpty,
+        statusCode: response.statusCode,
+        responsePreview: preview,
+        mappedSummary: categories.isEmpty
+            ? '解析成功，但没有分类'
+            : '${categories.length} 个分类 · 第一个：$first',
+        failureReason: categories.isEmpty ? '没有解析出分类' : null,
+        failureKind: categories.isEmpty
+            ? DeclarativeTestFailureKind.mapping
+            : null,
+      );
+    }
+
+    if (capability == OnlineMusicCapability.newSongs) {
+      // 新歌与搜索同构（都是曲目数组），试跑复用同一个映射。
+      final tracks = mapDeclarativeSearchResponse(
+        spec: binding.response,
+        body: response.data,
+        platform: definition.contentPlatform,
+        limit: 30,
+        offset: 0,
+      ).items;
+      final first = tracks.isEmpty ? null : tracks.first.title;
+      return DeclarativeCapabilityTestResult(
+        ok: tracks.isNotEmpty,
+        statusCode: response.statusCode,
+        responsePreview: preview,
+        mappedSummary: tracks.isEmpty
+            ? '解析成功，但没有新歌'
+            : '${tracks.length} 首曲目 · 第一首：$first',
+        failureReason: tracks.isEmpty ? '没有解析出曲目' : null,
+        failureKind: tracks.isEmpty
+            ? DeclarativeTestFailureKind.mapping
+            : null,
+      );
+    }
+
     if (capability == OnlineMusicCapability.lyric) {
       final lyrics = mapDeclarativeLyricsResponse(
         spec: binding.response,

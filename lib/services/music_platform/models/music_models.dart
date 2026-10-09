@@ -191,6 +191,7 @@ final class RemotePlaylistSummary {
     this.coverUri,
     this.creator,
     this.trackCount,
+    this.updateFrequency,
   });
 
   final MusicPlatform platform;
@@ -199,6 +200,33 @@ final class RemotePlaylistSummary {
   final Uri? coverUri;
   final String? creator;
   final int? trackCount;
+
+  /// 该集合的**更新节奏**（平台自己的文案，例如"每天更新"）；null 表示平台没有给。
+  ///
+  /// 用途：榜单这类"给人看的名次集合"必须能说明它多久变一次。它是纯展示元信息，
+  /// **不参与身份、不落库**（摘要本身只存在于内存里）。
+  final String? updateFrequency;
+}
+
+/// 一个**分类**（歌单分类 / 曲风 / 场景）：用于"按分类浏览歌单"。
+///
+/// 来源身份照旧：`(platform, id)`（I1）。注意 `id` 是**给该平台自己用的取值** ——
+/// 网易云实测分类是以**名字**作为请求值（`/top/playlist?cat=华语`），因此那里
+/// `id == name`。界面不要假设它是数字。
+final class RemotePlaylistCategory {
+  const RemotePlaylistCategory({
+    required this.platform,
+    required this.id,
+    required this.name,
+    this.count,
+  });
+
+  final MusicPlatform platform;
+  final String id;
+  final String name;
+
+  /// 该分类下的歌单数量（平台给的时候才有）。
+  final int? count;
 }
 
 final class MusicSearchPage {

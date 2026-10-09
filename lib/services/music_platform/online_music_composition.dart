@@ -220,11 +220,64 @@ final class _ConfiguredMusicProvider implements OnlineMusicProvider {
     required MusicPlatform platform,
     int limit = 30,
     int offset = 0,
+    String? categoryId,
     required OnlineMusicCancelToken cancelToken,
   }) {
     final delegate = _delegate(OnlineMusicCapability.playlistCollection);
     if (delegate == null) return Future.error(unsupportedCapability());
     return delegate.fetchPlaylistCollection(
+      platform: platform,
+      limit: limit,
+      offset: offset,
+      categoryId: categoryId,
+      cancelToken: cancelToken,
+    );
+  }
+
+  @override
+  Future<List<RemotePlaylistCategory>> fetchPlaylistCategories({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) {
+    final delegate = _delegate(OnlineMusicCapability.playlistCategories);
+    if (delegate == null) return Future.error(unsupportedCapability());
+    return delegate.fetchPlaylistCategories(
+      platform: platform,
+      limit: limit,
+      offset: offset,
+      cancelToken: cancelToken,
+    );
+  }
+
+  @override
+  Future<List<RemotePlaylistSummary>> fetchChartList({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) {
+    final delegate = _delegate(OnlineMusicCapability.chartList);
+    if (delegate == null) return Future.error(unsupportedCapability());
+    return delegate.fetchChartList(
+      platform: platform,
+      limit: limit,
+      offset: offset,
+      cancelToken: cancelToken,
+    );
+  }
+
+  @override
+  Future<List<MusicTrack>> fetchNewSongs({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) {
+    final delegate = _delegate(OnlineMusicCapability.newSongs);
+    if (delegate == null) return Future.error(unsupportedCapability());
+    return delegate.fetchNewSongs(
       platform: platform,
       limit: limit,
       offset: offset,

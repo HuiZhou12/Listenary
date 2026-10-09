@@ -142,11 +142,13 @@ void main() {
   ) async {
     final database = sqlite3.openInMemory();
     initializeAppDatabase(database);
+    final repository = OnlineLibraryRepository(database);
     final controller = PersonalOnlinePlaylistController(
-      repository: Future.value(OnlineLibraryRepository(database)),
+      repository: Future.value(repository),
     );
     addTearDown(controller.dispose);
     addTearDown(database.dispose);
+    final targetId = repository.createPersonalPlaylist('目标歌单');
 
     tester.view.physicalSize = const Size(1200, 900);
     tester.view.devicePixelRatio = 1;
@@ -187,9 +189,19 @@ void main() {
     await tester.pump();
     await tester.tap(find.byTooltip('添加到歌单'));
     await tester.pumpAndSettle();
-    await hover.removePointer();
 
     expect(find.text('收藏到歌单'), findsOneWidget);
+
+    // **这条断言是本轮补上的**：原先只断言弹窗出现，可这条测试的名字承诺的是
+    // "adds a track to a personal playlist"。弹窗出现而回调没接上时，
+    // 用户看到的过程完全一样 —— 名字承诺的事必须真被验证。
+    await tester.tap(find.text('目标歌单'));
+    await tester.pumpAndSettle();
+    expect(
+      repository.readPersonalPlaylist(targetId)!.tracks.map((t) => t.title),
+      contains('Explicit Result'),
+    );
+    await hover.removePointer();
   });
 
   testWidgets('renders result cover without a music-note placeholder', (

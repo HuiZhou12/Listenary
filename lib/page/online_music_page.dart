@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
-import 'package:pure_music/component/motion.dart';
-import 'package:pure_music/component/online_track_row.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
-import 'package:pure_music/component/personal_playlist_picker.dart';
+import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
@@ -709,7 +707,6 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
   }
 
   Widget _buildResultList() {
-    final favorites = context.watch<PersonalOnlinePlaylistController>();
     final entries = _buildEntries();
     return ListView.builder(
       // 底部留白：迷你播放器浮在底部（64 高 + 32 边距），否则「加载更多」会被它挡住。
@@ -717,11 +714,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
       itemCount: entries.length,
       itemBuilder: (context, index) => switch (entries[index]) {
         _GroupHeaderEntry(:final platform) => _buildGroupHeader(platform),
-        _TrackEntry(:final group, :final track) => _buildTrackRow(
-          group,
-          track,
-          favorites,
-        ),
+        _TrackEntry(:final group, :final track) => _buildTrackRow(group, track),
         _FailureEntry(:final group) => _buildFailureRow(group),
         _EmptyGroupEntry(:final platform) => _buildEmptyGroupRow(platform),
         _FooterEntry(:final group) => _buildLoadMoreFooter(group),
@@ -745,36 +738,15 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     );
   }
 
-  Widget _buildTrackRow(
-    _PlatformSearchState group,
-    MusicTrack track,
-    PersonalOnlinePlaylistController favorites,
-  ) {
-    final canPlay =
-        track.availability != TrackAvailability.unavailable &&
-        track.availability != TrackAvailability.paid;
-    final details = [
-      if (track.artistDisplay.isNotEmpty) track.artistDisplay,
-      if (track.album.isNotEmpty) track.album,
-    ].join(' · ');
-    return DirectionalListItemEntrance(
-      identity: track.ref,
-      child: OnlineTrackRow(
+  /// 一行搜索结果。
+  ///
+  /// 组装、来源标记、收藏与"加入歌单"都收敛在 [OnlineTrackEntry] 里；
+  /// 来源取自**曲目自己的 ref**（与其它在线列表同一条规则），而不是搜索分组。
+  Widget _buildTrackRow(_PlatformSearchState group, MusicTrack track) =>
+      OnlineTrackEntry(
         track: track,
-        details: details,
-        enabled: canPlay,
-        // 来源标签（D6/I1）：多平台聚合里"这行来自哪个平台"必须可见。
-        sourceLabel: musicPlatformLabel(group.platform),
-        onTap: canPlay ? () => _selectTrack(group, track) : null,
-        onAddToPlaylist: () =>
-            showPersonalPlaylistPicker(context, track: track),
-        showFavorite: true,
-        favorite: favorites.isFavorite(track.ref),
-        onToggleFavorite: () => favorites.toggleFavorite(track),
-        isNowPlaying: isOnlineTrackNowPlaying(context, track.ref),
-      ),
-    );
-  }
+        onTap: () => _selectTrack(group, track),
+      );
 
   /// 单平台失败：只影响这个分组，其它平台的结果照常显示（D6 / §8）。
   Widget _buildFailureRow(_PlatformSearchState group) {

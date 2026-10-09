@@ -1046,8 +1046,13 @@ const _domainFieldLabels = <OnlineMusicDomainField, String>{
   OnlineMusicDomainField.lyricRomanization: '罗马音歌词',
   OnlineMusicDomainField.streamUrl: '播放地址',
   OnlineMusicDomainField.streamQuality: '音质',
-  OnlineMusicDomainField.streamBitrate: '码率',
-  OnlineMusicDomainField.streamExpiresAt: '有效期',
+  // 这两个字段**必须把单位写进标签**（与"时长（毫秒）"/"时长（秒）"同一套口径）：
+  // 实测同一件事在不同平台上是不同的量 ——
+  // `streamBitrate`：网易云 `br` 是 **bps**（实测 128008 ≈ 128 kbps）；
+  // `streamExpiresAt`：映射层按**绝对时间戳·秒**解析，而网易云的 `expi` 是
+  // **"还有多少秒"（实测 1200）**，不是时间戳 —— 直接映射会得到 1970 年 ⇒ **误判为"已过期"**。
+  OnlineMusicDomainField.streamBitrate: '码率（bps，如 128000）',
+  OnlineMusicDomainField.streamExpiresAt: '有效期（绝对时间戳·秒，如 1765000000）',
 };
 
 /// 字段的界面标签。「必填」标记由**该能力真实的校验集合**决定，

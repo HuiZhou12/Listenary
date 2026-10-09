@@ -52,6 +52,11 @@ final class CompositeOnlineMusicService implements OnlineMusicService {
       playlistCollectionPlatforms: registry.platformsFor(
         OnlineMusicCapability.playlistCollection,
       ),
+      playlistCategoryPlatforms: registry.platformsFor(
+        OnlineMusicCapability.playlistCategories,
+      ),
+      chartPlatforms: registry.platformsFor(OnlineMusicCapability.chartList),
+      newSongPlatforms: registry.platformsFor(OnlineMusicCapability.newSongs),
       lyricPlatforms: registry.platformsFor(OnlineMusicCapability.lyric),
       unavailableSearchReasons: reasons,
     );
@@ -116,11 +121,67 @@ final class CompositeOnlineMusicService implements OnlineMusicService {
     required MusicPlatform platform,
     int limit = 30,
     int offset = 0,
+    String? categoryId,
     required OnlineMusicCancelToken cancelToken,
   }) => _dispatch(
     platform,
     OnlineMusicCapability.playlistCollection,
     (provider) => provider.fetchPlaylistCollection(
+      platform: platform,
+      limit: limit,
+      offset: offset,
+      categoryId: categoryId,
+      cancelToken: cancelToken,
+    ),
+  );
+
+  /// 歌单分类索引：与歌单列表各自一条候选链（一个平台可以只有其中之一）。
+  @override
+  Future<List<RemotePlaylistCategory>> fetchPlaylistCategories({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => _dispatch(
+    platform,
+    OnlineMusicCapability.playlistCategories,
+    (provider) => provider.fetchPlaylistCategories(
+      platform: platform,
+      limit: limit,
+      offset: offset,
+      cancelToken: cancelToken,
+    ),
+  );
+
+  /// 榜单索引（与歌单集合同构）：各自一条候选链。
+  @override
+  Future<List<RemotePlaylistSummary>> fetchChartList({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => _dispatch(
+    platform,
+    OnlineMusicCapability.chartList,
+    (provider) => provider.fetchChartList(
+      platform: platform,
+      limit: limit,
+      offset: offset,
+      cancelToken: cancelToken,
+    ),
+  );
+
+  /// 新歌（与搜索同构，但语义是"平台最近发布了什么"）。
+  @override
+  Future<List<MusicTrack>> fetchNewSongs({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => _dispatch(
+    platform,
+    OnlineMusicCapability.newSongs,
+    (provider) => provider.fetchNewSongs(
       platform: platform,
       limit: limit,
       offset: offset,

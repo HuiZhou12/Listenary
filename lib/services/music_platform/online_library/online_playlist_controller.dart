@@ -189,8 +189,22 @@ final class OnlinePlaylistController extends ChangeNotifier {
   }) async {
     if (_disposed) return null;
     final normalizedId = remotePlaylistId.trim();
-    if (!RegExp(r'^[1-9][0-9]*$').hasMatch(normalizedId)) {
-      throw ArgumentError.value(remotePlaylistId, 'remotePlaylistId');
+    // 远端 id 的**形状由 Provider 决定**，不是这一层能规定的：
+    // 网易云是纯数字，而别的服务可以是字母数字混排。这里原先只接受 `^[1-9][0-9]*$`，
+    // 于是"用字母数字 id 的 Provider"**根本无法订阅**；而且那句校验写在 try 之外，
+    // 抛出的 `ArgumentError` **不会被下面的 catch 转成失败**，会直接冲到界面上的点击回调里
+    // （用户看到的是"点了没反应"，而不是一条错误提示）。
+    //
+    // 现在只要求**非空**；id 对不对由 Provider 的请求去判定，失败会走下面的 catch
+    // 变成"带错误信息的失败"。**不会有脏数据落库**：写库发生在请求成功之后。
+    if (normalizedId.isEmpty) {
+      _setSnapshot(
+        _snapshot.withStatus(
+          OnlinePlaylistLoadStatus.failed,
+          errorMessage: '歌单 ID 不能为空',
+        ),
+      );
+      return null;
     }
     final operation = ++_operation;
     _activeToken?.cancel();
