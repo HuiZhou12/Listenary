@@ -785,11 +785,25 @@ final class OnlineMusicSettings {
     final legacy = capabilityProviders[capability];
     if (legacy == null) return const [];
     final provider = providerById(legacy);
-    if (provider == null || provider.contentPlatform != platform) {
+    if (provider == null || !_legacyAffects(provider, platform)) {
       return const [];
     }
     return [legacy];
   }
+
+  /// 旧单值 `capabilityProviders[capability]` 是否**影响**这一格。
+  ///
+  /// **唯一**判据，被两处共用（P-22 的教训：两处判据不同源时，"点自动"清不掉
+  /// 界面上真正在生效的那个旧值）：
+  /// - `explicitCandidateIdsFor` 的**回落**（决定界面上显示「已指定 X」还是「自动」）；
+  /// - `withRoutingCandidates` 的**清除**（用户点「自动」时该清哪个旧值）。
+  ///
+  /// 判据是"该条目声明的**内容来源**"——旧单值是平台无关的，只允许在同一平台内回落。
+  /// （P-59 会把它换成运行期同一判据 `platformsFor`，届时两处会**一起**变。）
+  static bool _legacyAffects(
+    OnlineMusicProviderDefinition provider,
+    MusicPlatform platform,
+  ) => provider.contentPlatform == platform;
 
   /// 某个能力实际会用到的 Provider id（缺失/未注册时回落默认）。
   String resolvedProviderIdFor(OnlineMusicCapability capability) {
@@ -942,10 +956,32 @@ final class OnlineMusicSettings {
     };
     // 空列表 = 清除该组合的显式配置：把从 `...routing` 带过来的旧项删掉。
     if (platformRouting.isEmpty) next.remove(platform);
+    // P-22：**「自动」必须真的清空**。
+    //
+    // 以前这里只清 `routing`，而候选解析紧接着回落到旧的 `capabilityProviders`
+    // ⇒ 该行**立刻又显示「已指定 X」**，用户的操作看起来无效（旧值也没有任何入口可清）。
+    // 现在：用户点「自动」（空列表）时，把**这一格**涉及的旧单值也清掉。
+    //
+    // 边界（D13:A：不擅自改写旧配置）：
+    // - 只清**用户点过的这一格**：判据是"该条目运行时**实际服务**的平台集合"
+    //   （`platformsFor`，与运行期同一条规则），因此清掉的正是真正在影响这一格的旧值；
+    // - 其它能力 / 其它平台上的旧值**原样保留**。
+    final Map<OnlineMusicCapability, String> nextCapabilityProviders = {
+      ...capabilityProviders,
+    };
+    if (kept.isEmpty) {
+      final legacyId = capabilityProviders[capability];
+      final legacy = legacyId == null ? null : providerById(legacyId);
+      // ⚠️ 判据必须与 `explicitCandidateIdsFor` 的**回落判据同源**（`_legacyAffects`），
+      // 否则"点自动"清不掉界面上真正在生效的那个旧值（P-22 就是这种不同源造成的）。
+      if (legacy != null && _legacyAffects(legacy, platform)) {
+        nextCapabilityProviders.remove(capability);
+      }
+    }
     return OnlineMusicSettings(
       providers: providers,
       defaultProviderId: defaultProviderId,
-      capabilityProviders: capabilityProviders,
+      capabilityProviders: Map.unmodifiable(nextCapabilityProviders),
       routing: Map.unmodifiable(next),
       enabledPlatforms: enabledPlatforms,
     );

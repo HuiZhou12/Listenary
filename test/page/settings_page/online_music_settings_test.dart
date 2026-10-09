@@ -2192,6 +2192,46 @@ void main() {
     expect(find.textContaining('该平台的改动尚未生效'), findsOneWidget);
   });
 
+  // ------------------------------------------------------------------ F2（P-22）
+
+  testWidgets('★ F2 P-22 旧单值配置下点「自动」⇒ 该行真的回到「自动」', (tester) async {
+    // P-22 的可复现症状：旧配置里 `capabilities: {search: 'chksz'}` 会被渲染成
+    // 「已指定 chksz」；点「自动」只清了 `routing`，回落立刻又把它拉回来 ⇒ 操作看似无效。
+    final settings = OnlineMusicSettings.fromJson({
+      'providers': [
+        {'id': 'chksz', 'protocol': 'chksz'},
+        {
+          'id': 'selfData',
+          'baseUrl': 'https://self.invalid',
+          'auth': {'kind': 'none'},
+        },
+      ],
+      'capabilities': {'search': 'chksz'},
+    });
+    final controller = _controller(configured: settings, active: settings);
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    expect(find.text('已指定 chksz'), findsOneWidget);
+
+    // 精确定位到**那一行**：只有它把 'chksz' 作为选中值。
+    final target = find.byWidgetPredicate(
+      (widget) =>
+          widget is SegmentedButton<String> &&
+          widget.selected.contains('chksz'),
+    );
+    expect(target, findsOneWidget, reason: '被旧单值指定的那一行');
+    await tester.tap(find.descendant(of: target, matching: find.text('自动')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('已指定 chksz'),
+      findsNothing,
+      reason: 'P-22：点「自动」必须真的清空，而不是马上又被回落填回来',
+    );
+    expect(find.textContaining('自动：按条目顺序使用'), findsWidgets);
+  });
+
   testWidgets('★ F2 P-37 配置停用、运行中仍可用 ⇒ **两个事实都显示**且各自标注来源', (tester) async {
     // 让运行中的 service **确实**服务 qq：声明式条目 + search/stream 两条绑定
     //（D3 硬门槛要求可搜索 = 有 search 且有 stream）。

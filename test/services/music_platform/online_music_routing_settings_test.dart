@@ -99,6 +99,75 @@ void main() {
       );
     });
 
+    test('★ P-22 点「自动」（清空）真的清掉**这一格**的旧单值', () {
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {'id': 'neA', 'contentPlatform': 'netease'},
+          {'id': 'neB', 'contentPlatform': 'netease'},
+        ],
+        'capabilities': {'search': 'neA', 'lyric': 'neA'},
+      });
+      expect(settings.explicitCandidateIdsFor(MusicPlatform.netease, search), [
+        'neA',
+      ]);
+      expect(
+        settings.selectedProviderIdFor(MusicPlatform.netease, search),
+        'neA',
+      );
+
+      final cleared = settings.withRoutingCandidates(
+        MusicPlatform.netease,
+        search,
+        const [],
+      );
+
+      // 起点症状（P-22）：以前只清 `routing`，回落立刻把「已指定 neA」又拉回来。
+      expect(
+        cleared.explicitCandidateIdsFor(MusicPlatform.netease, search),
+        isEmpty,
+      );
+      expect(
+        cleared.selectedProviderIdFor(MusicPlatform.netease, search),
+        isNull,
+        reason: '界面必须真的回到「自动」',
+      );
+      // 只清**点过的那一格**：别的能力上的旧值原样保留（D13:A）。
+      expect(
+        cleared.explicitCandidateIdsFor(
+          MusicPlatform.netease,
+          OnlineMusicCapability.lyric,
+        ),
+        ['neA'],
+      );
+      expect(cleared.toJson().toString(), contains('lyric'));
+    });
+
+    test('★ P-22 点「自动」不会碰**别的平台**上的旧值', () {
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {'id': 'neA', 'contentPlatform': 'netease'},
+          {'id': 'qqA', 'contentPlatform': 'qq'},
+        ],
+        'capabilities': {'search': 'qqA'},
+      });
+
+      // 旧值指 qq：在 netease 这一格上本来就不生效（不跨平台回落）⇒ 清 netease 不该动它。
+      final cleared = settings.withRoutingCandidates(
+        MusicPlatform.netease,
+        search,
+        const [],
+      );
+
+      expect(
+        cleared.capabilityProviders[search],
+        'qqA',
+        reason: '别的平台上的旧值不该被牵连',
+      );
+      expect(cleared.explicitCandidateIdsFor(MusicPlatform.qq, search), [
+        'qqA',
+      ]);
+    });
+
     test('routing 优先于旧 capabilities', () {
       final settings = OnlineMusicSettings.fromJson({
         'providers': [
