@@ -232,6 +232,28 @@ void main() {
       expect(summary, contains('X-Mystery: [redacted]'));
     });
 
+    test('★ 值可疑但名字没命中的请求头（needs-user 类）在摘要里也被遮蔽', () {
+      // 这一条是 F0 §7.3 边界 2 的裁定结果：名字白名单对"还不知道是不是秘密"
+      // 的请求头必然漏，而漏掉的后果是摘要里直接显示那个值。
+      final request = buildDeclarativeRequest(
+        spec: const OnlineMusicRequestSpec(
+          path: '/search',
+          headers: [
+            OnlineMusicHeaderSpec(name: 'X-Weird', value: 'Ab3Kd9Zx7Qm2Pl5R'),
+            OnlineMusicHeaderSpec(name: 'X-Page', value: '2'),
+          ],
+        ),
+        inputs: const DeclarativeInputs(),
+      );
+
+      final summary = describeDeclarativeRequest(request);
+      expect(summary, contains('X-Weird'), reason: '名字仍要可见，否则没法排查');
+      expect(summary, isNot(contains('Ab3Kd9Zx7Qm2Pl5R')));
+      expect(summary, contains('X-Weird: [redacted]'));
+      // 形态不可疑的照常显示（不能把诊断价值一起毁掉）。
+      expect(summary, contains('X-Page: 2'));
+    });
+
     test('普通请求（无凭据来源、名字也不敏感）不会被过度遮蔽', () {
       final request = buildDeclarativeRequest(
         spec: const OnlineMusicRequestSpec(

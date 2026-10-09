@@ -144,13 +144,20 @@ bool isSensitiveDiagnosticName(String name) => RegExp(
 /// 试跑结果里展示的**请求摘要**：方法 + 路径 + 参数名与值（敏感值脱敏）。
 ///
 /// 未知服务无法自动探测时，"到底发了什么请求"是唯一的排查依据（W5），
-/// 因此这里要把参数名与值都写出来。遮蔽判据有两条，**按来源优先**：
-/// 1. 值来自凭据（认证放置 / 敏感请求头的凭据引用）⇒ 一律 `[redacted]`；
-/// 2. 名字落在兜底名单里 ⇒ 也 `[redacted]`（覆盖"明文写死在配置里"的旧配置）。
+/// 因此这里要把参数名与值都写出来。遮蔽判据有三条，**按可靠性排序**：
+/// 1. **值来自凭据**（认证放置 / 敏感请求头的凭据引用）⇒ 一律 `[redacted]`（最可靠）；
+/// 2. **值形态可疑**（`needs-user` 类：名字没命中、但值看起来像秘密）⇒ 也 `[redacted]`
+///    （名字白名单对它们必然漏，而漏掉的后果是直接显示这个值）；
+/// 3. 名字落在兜底名单里 ⇒ 也 `[redacted]`（覆盖"明文写死在配置里"的旧配置）。
 String describeDeclarativeRequest(BuiltDeclarativeRequest request) {
-  bool headerIsCredential(String name) =>
-      request.credentialHeaderNames.contains(name) ||
-      isSensitiveDiagnosticName(name);
+  bool headerIsCredential(String name) {
+    if (request.credentialHeaderNames.contains(name)) return true;
+    if (isSensitiveDiagnosticName(name)) return true;
+    // 只对**请求头**做形状判据：query 参数来自闭集输入（keyword/limit/…），
+    // 按形状遮蔽会把用户自己搜的关键词也糊掉，得不偿失。
+    return looksLikeSensitiveHeaderValue(request.headers[name] ?? '');
+  }
+
   bool queryIsCredential(String name) =>
       request.credentialQueryNames.contains(name) ||
       isSensitiveDiagnosticName(name);
