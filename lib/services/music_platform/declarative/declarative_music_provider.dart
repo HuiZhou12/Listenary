@@ -301,6 +301,10 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
         spec: binding.request,
         inputs: inputs,
         credential: credential,
+        headerCredentials: await readHeaderCredentialValues(
+          spec: binding.request,
+          reader: _credentials,
+        ),
       );
       final response = await _transport.send(request, cancelToken: cancelToken);
       if (cancelToken.isCancelled) {
@@ -338,6 +342,13 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
             OnlineMusicErrorKind.notConfigured,
           DeclarativeRequestErrorKind.missingRequiredInput =>
             OnlineMusicErrorKind.badRequest,
+          // F0：敏感头**仍是明文** ⇒ 配置错误（要用户去改配置），因此**不是**
+          // notConfigured —— 后者会被路由当成"换个 Provider 试试"，把真正该修的错误盖掉。
+          DeclarativeRequestErrorKind.sensitiveHeaderPlaintext =>
+            OnlineMusicErrorKind.badRequest,
+          // 声明了引用但没有可用凭据 ⇒ 与"没配凭据"同类（换 Provider 是合理出路）。
+          DeclarativeRequestErrorKind.sensitiveHeaderCredentialMissing =>
+            OnlineMusicErrorKind.notConfigured,
         },
         safeMessage: error.safeMessage,
       );

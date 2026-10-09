@@ -5,6 +5,8 @@
 /// 因此这套配置永远长不成一门脚本语言。
 library;
 
+import 'package:pure_music/services/music_platform/provider/online_music_header_slot.dart';
+
 enum OnlineMusicHttpVerb { get, post }
 
 /// 业务输入来源（闭集）。这是能力的输入契约，用户不能发明新的来源。
@@ -85,6 +87,7 @@ final class OnlineMusicHeaderSpec {
     required this.name,
     required this.value,
     this.sensitive = false,
+    this.credentialReference,
   });
 
   final String name;
@@ -99,10 +102,33 @@ final class OnlineMusicHeaderSpec {
   /// **缺省 `false`，且为 `false` 时不写盘** ⇒ 旧配置往返后语义与字节都不变。
   final bool sensitive;
 
+  /// 安全凭据**槽位名**（只是引用，不是值）；`null` 表示该头不走安全存储。
+  ///
+  /// 由 [onlineMusicHeaderSlotName] 派生（`<providerId>/<capability>/<归一化名>`），
+  /// 也可被用户显式改成别的槽位 —— 那是"多个能力共享同一凭据"的**唯一**合法方式
+  /// （Spec §3：不得按值相同自动合并）。
+  ///
+  /// 有引用时 [value] **必须为空**：引用是值的**替代**，不是补充。
+  final String? credentialReference;
+
+  /// 是否**必须**从安全凭据槽位取值（运行期据此拒绝明文发送）。
+  bool get requiresCredentialReference => sensitive || credentialReference != null;
+
+  /// 引用形式（迁移成功后写入配置的形态）。
+  OnlineMusicHeaderSpec asCredentialReference(String reference) =>
+      OnlineMusicHeaderSpec(
+        name: name,
+        value: '',
+        sensitive: true,
+        credentialReference: reference,
+      );
+
   Map<String, dynamic> toJson() => {
     'name': name,
     'value': value,
     if (sensitive) 'sensitive': true,
+    // 缺省不写盘 ⇒ 旧配置往返后语义与字节都不变。
+    if (credentialReference != null) 'reference': credentialReference,
   };
 
   static OnlineMusicHeaderSpec fromJson(Object? value) {
@@ -111,6 +137,7 @@ final class OnlineMusicHeaderSpec {
       name: _requireText(map['name'], '请求头名称'),
       value: map['value'] == null ? '' : '${map['value']}',
       sensitive: map['sensitive'] == true,
+      credentialReference: _optionalText(map['reference']),
     );
   }
 
@@ -119,10 +146,11 @@ final class OnlineMusicHeaderSpec {
       other is OnlineMusicHeaderSpec &&
       other.name == name &&
       other.value == value &&
-      other.sensitive == sensitive;
+      other.sensitive == sensitive &&
+      other.credentialReference == credentialReference;
 
   @override
-  int get hashCode => Object.hash(name, value, sensitive);
+  int get hashCode => Object.hash(name, value, sensitive, credentialReference);
 }
 
 /// 请求体：扁平 JSON 或 form-urlencoded，字段同样来自闭集输入。
@@ -329,15 +357,35 @@ final class OnlineMusicRequestSpec {
       }
     }
     for (final header in headers) {
-      if (header.name.trim().isEmpty) issues.add('请求头名称不能为空');
-      // F0 / 决策 A（用户 2026-10-09 裁定"保存时拒绝"）：
-      // 明确标记为敏感的请求头**不得**以明文值保存；它必须改走安全凭据引用。
-      if (header.sensitive && header.value.trim().isNotEmpty) {
+      if (header.name.trim().isEmpty) {
+        issues.add('请求头名称不能为空');
+        continue;
+      }
+      final reference = header.credentialReference;
+      if (reference != null) {
+        // 引用是值的**替代**：有引用还留着明文 ⇒ 迁移没做完，必须拦住，
+        // 否则"旧配置里不再有明文"这条不变式无法成立（Spec §4.5）。
+        if (header.value.trim().isNotEmpty) {
+          issues.add('请求头 ${header.name} 已有凭据引用，明文值必须清空');
+        }
+        if (!header.sensitive) {
+          issues.add('请求头 ${header.name} 使用了凭据引用，但没有标记为敏感');
+        }
+      } else if (header.sensitive && header.value.trim().isNotEmpty) {
+        // F0 / 决策 A（用户 2026-10-09 裁定"保存时拒绝"）：
+        // 明确标记为敏感的请求头**不得**以明文值保存；它必须改走安全凭据引用。
         issues.add(
           '请求头 ${header.name} 已标记为敏感，不能以明文值保存；'
           '请改用安全凭据引用',
         );
       }
+    }
+    // Spec §11.3：header 名归一化后碰撞（`X-Token` 与 `x_token`）必须失败并报告，
+    // 否则两者会派生同一个凭据槽位、互相覆盖。
+    for (final collision in onlineMusicHeaderNameCollisions(
+      headers.map((header) => header.name),
+    )) {
+      issues.add('请求头 ${collision.join(' 与 ')} 归一化后同名，会互相覆盖');
     }
     if (body != null) {
       if (verb != OnlineMusicHttpVerb.post) {
@@ -423,6 +471,13 @@ String _requireText(Object? value, String label) {
     throw FormatException('$label 必须是非空字符串');
   }
   return value.trim();
+}
+
+/// 可选文本：缺失 / 非字符串 / 仅空白一律视为**没有**。
+String? _optionalText(Object? value) {
+  if (value == null) return null;
+  final text = '$value'.trim();
+  return text.isEmpty ? null : text;
 }
 
 T _requireEnum<T extends Enum>(Object? value, List<T> values, String label) {

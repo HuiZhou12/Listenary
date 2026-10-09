@@ -120,14 +120,19 @@ DeclarativeTestFailureKind classifyUnsuccessfulTestResponse(
   return DeclarativeTestFailureKind.responseFormat;
 }
 
-/// 敏感**参数名 / 请求头名**：这些名字的取值一律不进界面、不进日志。
+/// 敏感**参数名 / 请求头名 / JSON 键名**：这些名字的取值一律不进界面、不进日志。
 ///
-/// 覆盖查询串、请求头（`Authorization` / `Cookie` / `Set-Cookie` / `X-Api-Key` …）
-/// 与 JSON 键值对（见 `_redactPreview`）。
+/// ⚠️ 这只是一个**兜底白名单**（P-35 的教训）：白名单一定会漏（用户可以把认证参数
+/// 起成任何名字），所以真正的判据是**值来源** —— 凭据来源的值由
+/// [BuiltDeclarativeRequest.credentialHeaderNames] 与
+/// [BuiltDeclarativeRequest.credentialQueryNames] 精确标出，
+/// 不看名字就一律遮蔽。本名单只用于处理"来源未知"的响应体。
 const sensitiveDiagnosticNamePattern =
-    r'apikey|api[-_]?key|x-api-key|authorization|cookie|set-cookie|token|'
-    r'access_token|refresh_token|secret|password|pwd|sign|signature|auth|key|'
-    r'csrf|xsrf|sid|h';
+    r'apikey|api[-_]?key|x-api-key|authorization|proxy-authorization|cookie|'
+    r'set-cookie|token|access[-_]?token|refresh[-_]?token|id[-_]?token|x-token|'
+    r'secret|appsecret|app[-_]?secret|appkey|app[-_]?key|password|passwd|pwd|'
+    r'sign|signature|x-signature|x-sign|auth|key|csrf|xsrf|sid|session|sessionid|'
+    r'jwt|qskey|pskey|qm_keyst|credential|h';
 
 bool isSensitiveDiagnosticName(String name) => RegExp(
   '^($sensitiveDiagnosticNamePattern)\$',
@@ -137,15 +142,24 @@ bool isSensitiveDiagnosticName(String name) => RegExp(
 /// 试跑结果里展示的**请求摘要**：方法 + 路径 + 参数名与值（敏感值脱敏）。
 ///
 /// 未知服务无法自动探测时，"到底发了什么请求"是唯一的排查依据（W5），
-/// 因此这里要把参数名与值都写出来 —— 只有凭据类参数会被替换成 `[redacted]`。
+/// 因此这里要把参数名与值都写出来。遮蔽判据有两条，**按来源优先**：
+/// 1. 值来自凭据（认证放置 / 敏感请求头的凭据引用）⇒ 一律 `[redacted]`；
+/// 2. 名字落在兜底名单里 ⇒ 也 `[redacted]`（覆盖"明文写死在配置里"的旧配置）。
 String describeDeclarativeRequest(BuiltDeclarativeRequest request) {
-  String render(String name, Object? value) =>
-      isSensitiveDiagnosticName(name) ? '$name=[redacted]' : '$name=$value';
+  bool headerIsCredential(String name) =>
+      request.credentialHeaderNames.contains(name) ||
+      isSensitiveDiagnosticName(name);
+  bool queryIsCredential(String name) =>
+      request.credentialQueryNames.contains(name) ||
+      isSensitiveDiagnosticName(name);
 
   final parts = <String>[
-    for (final entry in request.query.entries) render(entry.key, entry.value),
+    for (final entry in request.query.entries)
+      queryIsCredential(entry.key)
+          ? '${entry.key}=[redacted]'
+          : '${entry.key}=${entry.value}',
     for (final entry in request.headers.entries)
-      isSensitiveDiagnosticName(entry.key)
+      headerIsCredential(entry.key)
           ? '${entry.key}: [redacted]'
           : '${entry.key}: ${entry.value}',
   ];
@@ -419,6 +433,24 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     }
 
     final token = cancelToken ?? OnlineMusicCancelToken();
+    // F0：敏感请求头的值同样来自安全槽位；试跑必须与运行期走同一条路，
+    // 否则"试跑成功、运行期报错"就成了两份说法（反模式 4/8）。
+    //
+    // 存储读取失败**不当成**"试试网络"（那会把配置/存储问题误报成网络问题）：
+    // 这里单独收敛成配置大类，并且**不发任何请求**。
+    final Map<String, String> headerCredentials;
+    try {
+      headerCredentials = await readHeaderCredentialValues(
+        spec: binding.request,
+        reader: _headerCredentialReader,
+      );
+    } catch (_) {
+      return const DeclarativeCapabilityTestResult(
+        ok: false,
+        failureReason: '无法读取该请求头引用的安全凭据（凭据存储读取失败）',
+        failureKind: DeclarativeTestFailureKind.config,
+      );
+    }
     String? preview;
     String? requestSummary;
     try {
@@ -434,6 +466,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
           quality: quality,
         ),
         credential: await _readCredential(definition),
+        headerCredentials: headerCredentials,
       );
       // 请求摘要在**发出去之前**就记下来：失败时它是唯一的排查依据。
       requestSummary = describeDeclarativeRequest(request);
@@ -705,17 +738,27 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     }
   }
 
-  /// 结果区展示的响应片段：**先格式化，再脱敏，最后才考虑截断**。
+  /// 逐请求头引入的凭据值要用的读取口。
   ///
+  /// 没有注入读取口时回落到"一律读不到"：敏感头会因此报"没有可用凭据"，
+  /// 而不是**假装成功**（这类假阳性正是反模式 3）。
+  OnlineMusicCredentialReader get _headerCredentialReader =>
+      _credentialReader ?? const _UnavailableCredentialReader();
+
+  /// 结果区展示的响应片段：**先按结构脱敏，再格式化，再补文本脱敏，最后才考虑截断**。
+  ///
+  /// - 结构脱敏（P-35）：解码后的 JSON 逐层走一遍，把敏感键的**值**换成 `[redacted]`。
+  ///   这覆盖了正则做不到的部分：**非字符串值**（`"token": 12345`）、
+  ///   **嵌套 JSON**、**数组元素**。上一步之后文本正则只是补刀。
   /// - 格式化：JSON 用 2 空格缩进，界面里才看得出层次（此前是压成一行的 `jsonEncode`）。
-  /// - 脱敏：同时覆盖查询串（`apikey=…`、`?h=…&sid=…`）、JSON 键值对（`"token":"…"`）
+  /// - 文本脱敏：同时覆盖查询串（`apikey=…`、`?h=…&sid=…`）、JSON 键值对（`"token":"…"`）
   ///   与**敏感请求头**（`Authorization: …`、`Cookie: …`，W5 补充）。
   ///   宁可多脱敏，也不要把签名串渲染到界面上。
   /// - 截断：上限 [responsePreviewMaxChars]；超出时**明确写出完整长度**，
   ///   而不是让用户以为响应本来就只有这么长。
   String? _redactPreview(Object? data) {
     if (data == null) return null;
-    var text = _prettyJson(data);
+    var text = _prettyJson(_redactStructured(data, 0));
     text = text.replaceAllMapped(
       RegExp(
         '\\b($sensitiveDiagnosticNamePattern)=[^&"\\s,}]+',
@@ -723,9 +766,11 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       ),
       (match) => '${match.group(1)}=[redacted]',
     );
+    // JSON 键值对：**字符串与非字符串值都要挡**（`"token": 123` / `"jwt": null`）。
     text = text.replaceAllMapped(
       RegExp(
-        '"($sensitiveDiagnosticNamePattern)"\\s*:\\s*"[^"]*"',
+        '"($sensitiveDiagnosticNamePattern)"\\s*:\\s*'
+        '(?:"[^"]*"|[^,}\\]\\s][^,}\\]]*)',
         caseSensitive: false,
       ),
       (match) => '"${match.group(1)}":"[redacted]"',
@@ -742,6 +787,27 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     if (text.length <= responsePreviewMaxChars) return text;
     return '${text.substring(0, responsePreviewMaxChars)}\n'
         '…（已截断展示：完整响应共 ${text.length} 字符）';
+  }
+
+  /// 逐层把敏感键的**值**换成 `[redacted]`。
+  ///
+  /// [depth] 只是防御性上限：解码后的 JSON 不会有环，但预览不该被刻意做深的响应拖垮。
+  static Object? _redactStructured(Object? data, int depth) {
+    if (depth > 32) return '[redacted：层级过深]';
+    if (data is Map) {
+      return <String, Object?>{
+        for (final entry in data.entries)
+          '${entry.key}': isSensitiveDiagnosticName('${entry.key}')
+              ? '[redacted]'
+              : _redactStructured(entry.value, depth + 1),
+      };
+    }
+    if (data is List) {
+      return [
+        for (final item in data) _redactStructured(item, depth + 1),
+      ];
+    }
+    return data;
   }
 
   String _prettyJson(Object? data) {
@@ -768,4 +834,14 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   String toString() =>
       'OnlineMusicProviderSettingsController(providers=${providerIds.length}, '
       'pendingRestart=$hasPendingRestart)';
+}
+
+/// 没有注入凭据读取口时的占位实现：一律"读不到"。
+///
+/// 合法的失败，而不是静默通过 —— 敏感请求头缺凭据时**必须**明确报错。
+final class _UnavailableCredentialReader implements OnlineMusicCredentialReader {
+  const _UnavailableCredentialReader();
+
+  @override
+  Future<String?> readCredential(String reference) async => null;
 }

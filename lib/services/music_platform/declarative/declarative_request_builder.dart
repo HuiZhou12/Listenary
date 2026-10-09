@@ -64,6 +64,8 @@ final class BuiltDeclarativeRequest {
     required this.headers,
     this.body,
     this.isForm = false,
+    this.credentialHeaderNames = const {},
+    this.credentialQueryNames = const {},
   });
 
   /// `GET` / `POST`。
@@ -79,6 +81,18 @@ final class BuiltDeclarativeRequest {
   final Object? body;
   final bool isForm;
 
+  /// 值**来自安全凭据槽位**的请求头名（F0）。
+  ///
+  /// 诊断/试跑摘要据此遮蔽 —— 判据是**值来源**而不是名字白名单（P-35）：
+  /// 凭据值永远不进界面，哪怕它的 header 名不在任何"敏感名单"里。
+  final Set<String> credentialHeaderNames;
+
+  /// 值**来自凭据**的查询参数名（认证放在 query 时）。
+  ///
+  /// 同 [credentialHeaderNames]：参数名由用户自己起（可能叫 `sig`、`k`），
+  /// 名字白名单一定漏，只有"值来源"是可靠判据。
+  final Set<String> credentialQueryNames;
+
   @override
   String toString() =>
       'BuiltDeclarativeRequest($method $path, query=${query.length}, '
@@ -87,12 +101,17 @@ final class BuiltDeclarativeRequest {
 
 /// 构造请求。
 ///
-/// [credential] 为该条目凭据槽位的当前值；请求声明了认证却没有凭据时抛
-/// [DeclarativeRequestExceptionKind.missingCredential]，由上层映射成"未配置"。
+/// [credential] 为该条目**认证放置**（auth placement）所用凭据槽位的当前值；
+/// 请求声明了认证却没有凭据时抛 [DeclarativeRequestErrorKind.missingCredential]，
+/// 由上层映射成"未配置"。
+///
+/// [headerCredentials] 是**逐请求头**的凭据值，键为 [OnlineMusicHeaderSpec.credentialReference]。
+/// 敏感请求头只允许从这里取值：缺值即明确失败，**绝不退回明文或空值**（F0 / §11.2）。
 BuiltDeclarativeRequest buildDeclarativeRequest({
   required OnlineMusicRequestSpec spec,
   required DeclarativeInputs inputs,
   String? credential,
+  Map<String, String> headerCredentials = const {},
 }) {
   final auth = spec.auth;
   final needsCredential = auth is! OnlineMusicNoAuthPlacement;
@@ -112,9 +131,43 @@ BuiltDeclarativeRequest buildDeclarativeRequest({
     query[binding.name] = _stringify(value);
   }
 
-  final headers = <String, String>{
-    for (final header in spec.headers) header.name: header.value,
-  };
+  final headers = <String, String>{};
+  final credentialHeaderNames = <String>{};
+  final credentialQueryNames = <String>{};
+  for (final header in spec.headers) {
+    final reference = header.credentialReference;
+    if (reference != null) {
+      // 有引用 ⇒ 值只能来自安全凭据槽位。
+      final secret = headerCredentials[reference];
+      if (secret == null || secret.isEmpty) {
+        throw DeclarativeRequestException(
+          DeclarativeRequestErrorKind.sensitiveHeaderCredentialMissing,
+          '请求头 ${header.name} 使用安全凭据引用，但该槽位没有可用凭据：'
+          '请先在设置页填写该凭据',
+        );
+      }
+      headers[header.name] = secret;
+      credentialHeaderNames.add(header.name);
+      continue;
+    }
+    if (header.sensitive) {
+      // 已标记敏感但没有引用：
+      // - 带明文值 ⇒ 未迁移（保存时本该被拒，此处是防御性再校验）；
+      // - 空值 ⇒ "待填凭据"的中间态。
+      // 两种都**不发送**，且错误必须与"没配凭据"可区分。
+      throw DeclarativeRequestException(
+        header.value.trim().isEmpty
+            ? DeclarativeRequestErrorKind.sensitiveHeaderCredentialMissing
+            : DeclarativeRequestErrorKind.sensitiveHeaderPlaintext,
+        header.value.trim().isEmpty
+            ? '请求头 ${header.name} 已标记为敏感，但没有可用的安全凭据引用：'
+                  '请先在设置页填写该凭据'
+            : '请求头 ${header.name} 已标记为敏感，但仍以明文保存：'
+                  '请改用安全凭据引用（本次不会发送任何请求）',
+      );
+    }
+    headers[header.name] = header.value;
+  }
 
   Map<String, Object?>? jsonBody;
   Map<String, String>? formBody;
@@ -135,8 +188,10 @@ BuiltDeclarativeRequest buildDeclarativeRequest({
       break;
     case OnlineMusicQueryAuthPlacement(:final parameterName):
       query[parameterName] = credential!;
+      credentialQueryNames.add(parameterName);
     case OnlineMusicHeaderAuthPlacement(:final headerName, :final prefix):
       headers[headerName] = '${prefix ?? ''}$credential';
+      credentialHeaderNames.add(headerName);
     case OnlineMusicBodyAuthPlacement(:final fieldName):
       if (spec.body != null && spec.body!.isForm) {
         (formBody ??= <String, String>{})[fieldName] = credential!;
@@ -154,6 +209,8 @@ BuiltDeclarativeRequest buildDeclarativeRequest({
         ? null
         : (spec.body!.isForm ? formBody : jsonBody) ?? const {},
     isForm: spec.body?.isForm ?? false,
+    credentialHeaderNames: Set.unmodifiable(credentialHeaderNames),
+    credentialQueryNames: Set.unmodifiable(credentialQueryNames),
   );
 }
 
