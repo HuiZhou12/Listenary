@@ -543,6 +543,18 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       );
     }
 
+    // P-30（Spec D4:A）：**不支持的字段转换必须在保存或试跑时明确报错**，
+    // 不得放行之后在映射层静默返回 null。保存路径早就有这道闸门，试跑以前**没有** ——
+    // 于是"校验放行、映射恒 null"的配置在这里照样报**成功**（字段其实一个都没读出来）。
+    final configIssues = binding.validationIssues(capability);
+    if (configIssues.isNotEmpty) {
+      return DeclarativeCapabilityTestResult(
+        ok: false,
+        failureReason: configIssues.join('\n'),
+        failureKind: DeclarativeTestFailureKind.config,
+      );
+    }
+
     final token = cancelToken ?? OnlineMusicCancelToken();
     // F0：敏感请求头的值同样来自安全槽位；试跑**与运行期共用**同一条请求构造与凭据
     // 读取路径，因此同一个配置在两边会得到同一个结论（"试跑成功、运行期报错"那种

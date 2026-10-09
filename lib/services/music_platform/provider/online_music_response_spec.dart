@@ -63,6 +63,121 @@ enum OnlineMusicFieldTransform {
   asBool,
 }
 
+/// 领域字段**由映射层的哪一类读取器消费**（P-30 的唯一契约来源）。
+///
+/// 为什么要有它：此前 `expectedFieldKinds` 是一张**手写清单**，与映射层真正的读取器
+/// 各自维护 ⇒ 出现两类静默失败：
+/// - **清单里没有的字段**（`playlistCoverUri`/`playlistCreator`/`playlistId`/
+///   `playlistName`/`categoryId`/`categoryName`/lyric 三字段）⇒ 任何转换都放行，
+///   而编辑器默认给 `asString`，读取器却要求 `Uri`/`String` ⇒ **字段恒 null**；
+/// - **清单比读取器宽**（`playlistTrackCount`/`categoryCount`/`streamExpiresAt`
+///   允许 `asString`，读取器只要 `int`）⇒ 同上。
+/// 现在改为"**读取器 → 允许的转换**"派生，校验与映射不可能再各说各话。
+enum OnlineMusicFieldReader {
+  /// `'$v'` 插值成身份/标题字符串：只接受能产出 String/int 的转换 ——
+  /// `asBool`/`asDuration*`/`asStringList` 虽然也产出非 null 值，但会写成
+  /// `'true'`/`'0:03:00.000000'`/`'[a, b]'` 这类**垃圾身份**（违反 I1）。
+  scalar,
+
+  /// 要求非空 `String`。
+  text,
+
+  /// 要求 `List<String>`。
+  textList,
+
+  /// 要求 http(s) `Uri`。
+  uri,
+
+  /// 要求 `int`。
+  integer,
+
+  /// 要求 `Duration`。
+  duration,
+
+  /// 要求 `int`（秒级时间戳）。
+  epochSeconds,
+}
+
+/// 每类读取器**真正能消费**的转换集合（P-30 的契约本体）。
+const _transformsForReader = <OnlineMusicFieldReader, Set<OnlineMusicFieldTransform>>{
+  OnlineMusicFieldReader.scalar: {
+    OnlineMusicFieldTransform.asString,
+    OnlineMusicFieldTransform.asInt,
+  },
+  OnlineMusicFieldReader.text: {OnlineMusicFieldTransform.asString},
+  OnlineMusicFieldReader.textList: {
+    OnlineMusicFieldTransform.asSingleStringList,
+    OnlineMusicFieldTransform.asStringList,
+  },
+  OnlineMusicFieldReader.uri: {
+    OnlineMusicFieldTransform.asUri,
+    OnlineMusicFieldTransform.asHttpsUri,
+  },
+  OnlineMusicFieldReader.integer: {OnlineMusicFieldTransform.asInt},
+  OnlineMusicFieldReader.duration: {
+    OnlineMusicFieldTransform.asDurationMs,
+    OnlineMusicFieldTransform.asDurationSeconds,
+  },
+  OnlineMusicFieldReader.epochSeconds: {OnlineMusicFieldTransform.asInt},
+};
+
+/// 每个领域字段用哪一类读取器（**穷举 switch**：新增字段漏声明即编译失败）。
+///
+/// 依据是 `lib/services/music_platform/declarative/declarative_response_mapper.dart`
+/// 里各字段实际的读取调用（行号见 `docs/history/f2-admission-review.md` §1.1 P-30）。
+OnlineMusicFieldReader fieldReaderOf(OnlineMusicDomainField field) =>
+    switch (field) {
+      OnlineMusicDomainField.trackId ||
+      OnlineMusicDomainField.title ||
+      OnlineMusicDomainField.playlistId ||
+      OnlineMusicDomainField.categoryId ||
+      OnlineMusicDomainField.categoryName => OnlineMusicFieldReader.scalar,
+      OnlineMusicDomainField.album ||
+      // 歌单名在"详情"路径由 `_readString` 读、在"集合"路径由 `_readRequired` 插值读
+      // ⇒ 取**交集**（只要 `asString`），两条路径都安全。
+      OnlineMusicDomainField.playlistName ||
+      OnlineMusicDomainField.playlistCreator ||
+      OnlineMusicDomainField.playlistUpdateFrequency ||
+      OnlineMusicDomainField.streamQuality ||
+      OnlineMusicDomainField.lyricOriginal ||
+      OnlineMusicDomainField.lyricTranslation ||
+      OnlineMusicDomainField.lyricRomanization => OnlineMusicFieldReader.text,
+      OnlineMusicDomainField.artists => OnlineMusicFieldReader.textList,
+      OnlineMusicDomainField.coverUri ||
+      OnlineMusicDomainField.playlistCoverUri ||
+      OnlineMusicDomainField.streamUrl => OnlineMusicFieldReader.uri,
+      OnlineMusicDomainField.playlistTrackCount ||
+      OnlineMusicDomainField.categoryCount ||
+      OnlineMusicDomainField.streamBitrate => OnlineMusicFieldReader.integer,
+      OnlineMusicDomainField.duration => OnlineMusicFieldReader.duration,
+      OnlineMusicDomainField.streamExpiresAt =>
+        OnlineMusicFieldReader.epochSeconds,
+    };
+
+/// 少数**有意的收紧**：读取器本身也接受，但业务上不该允许。
+///
+/// 每条都必须给出理由 —— 这是"派生"之外唯一的例外清单。
+const _fieldTransformOverrides =
+    <OnlineMusicDomainField, Set<OnlineMusicFieldTransform>>{
+      OnlineMusicDomainField.streamUrl: {
+        // 播放地址**只允许原样解析**：`asHttpsUri` 会把 http 源改写成 https，
+        // 对不支持 https 的源直接把"本来能播"变成"播不了"。
+        OnlineMusicFieldTransform.asUri,
+      },
+    };
+
+/// 领域字段可接受的类型转换：**由读取器契约派生**（不再是手写清单）。
+///
+/// 语义（Spec D4:A）：不支持的转换必须在**保存/试跑**时明确报错，
+/// 不得放行后在映射层静默返回 null。
+final Map<OnlineMusicDomainField, Set<OnlineMusicFieldTransform>>
+expectedFieldKinds = Map.unmodifiable({
+  for (final field in OnlineMusicDomainField.values)
+    field:
+        _fieldTransformOverrides[field] ??
+        _transformsForReader[fieldReaderOf(field)]!,
+});
+
 enum OnlineMusicPredicateOp { eq, inList, exists }
 
 final class OnlineMusicSuccessPredicate {
@@ -315,6 +430,7 @@ final class OnlineMusicResponseSpec {
       if (entry.value.candidates.isEmpty) {
         issues.add('${entry.key.name} 至少要有一个字段路径');
       }
+      // P-30：表是**派生**的，必然覆盖全部字段 ⇒ 不再有"未列出 ⇒ 不限制"的放行口。
       final expected = expectedFieldKinds[entry.key];
       if (expected != null && !expected.contains(entry.value.transform)) {
         issues.add('${entry.key.name} 的类型转换 ${entry.value.transform.name} 不合适');
@@ -534,47 +650,6 @@ Set<OnlineMusicDomainField> requiredFieldsFor(
       return const {};
   }
 }
-
-/// 领域字段可接受的类型转换；未列出的字段表示不限制。
-const Map<OnlineMusicDomainField, Set<OnlineMusicFieldTransform>>
-expectedFieldKinds = {
-  OnlineMusicDomainField.trackId: {
-    OnlineMusicFieldTransform.asString,
-    OnlineMusicFieldTransform.asInt,
-  },
-  OnlineMusicDomainField.title: {OnlineMusicFieldTransform.asString},
-  OnlineMusicDomainField.artists: {
-    OnlineMusicFieldTransform.asSingleStringList,
-    OnlineMusicFieldTransform.asStringList,
-  },
-  OnlineMusicDomainField.album: {OnlineMusicFieldTransform.asString},
-  OnlineMusicDomainField.coverUri: {
-    OnlineMusicFieldTransform.asUri,
-    OnlineMusicFieldTransform.asHttpsUri,
-  },
-  OnlineMusicDomainField.duration: {
-    OnlineMusicFieldTransform.asDurationMs,
-    OnlineMusicFieldTransform.asDurationSeconds,
-  },
-  OnlineMusicDomainField.playlistTrackCount: {
-    OnlineMusicFieldTransform.asInt,
-    OnlineMusicFieldTransform.asString,
-  },
-  OnlineMusicDomainField.playlistUpdateFrequency: {
-    OnlineMusicFieldTransform.asString,
-  },
-  OnlineMusicDomainField.categoryCount: {
-    OnlineMusicFieldTransform.asInt,
-    OnlineMusicFieldTransform.asString,
-  },
-  OnlineMusicDomainField.streamUrl: {OnlineMusicFieldTransform.asUri},
-  OnlineMusicDomainField.streamQuality: {OnlineMusicFieldTransform.asString},
-  OnlineMusicDomainField.streamBitrate: {OnlineMusicFieldTransform.asInt},
-  OnlineMusicDomainField.streamExpiresAt: {
-    OnlineMusicFieldTransform.asInt,
-    OnlineMusicFieldTransform.asString,
-  },
-};
 
 Map<Object?, Object?> _requireMap(Object? value, String label) {
   if (value is Map) return value;

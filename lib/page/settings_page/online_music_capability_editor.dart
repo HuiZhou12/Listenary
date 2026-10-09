@@ -1462,9 +1462,14 @@ class _OnlineMusicCapabilityEditorDialogState
     );
   }
 
+  /// 该字段**可选的**类型转换。
+  ///
+  /// P-30：表由映射层的读取器契约**派生**、必然覆盖全部字段 ⇒ 以前那个
+  /// "未列出就给出全部 9 项"的兜底是**缺陷通道**（例如封面字段被兜底成 `asString`，
+  /// 而映射只认 `Uri` ⇒ 封面恒 null）。这里直接取派生表，不再有兜底。
   List<OnlineMusicFieldTransform> _transformChoicesFor(
     OnlineMusicDomainField field,
-  ) => expectedFieldKinds[field]?.toList() ?? OnlineMusicFieldTransform.values;
+  ) => expectedFieldKinds[field]!.toList();
 }
 
 enum OnlineMusicAuthKind { none, query, header, body }
@@ -2161,5 +2166,10 @@ class _FieldRow {
   void dispose() => paths.dispose();
 }
 
+/// 该字段的**默认**类型转换（P-30）。
+///
+/// 取派生表的**第一项**，因此默认值总是"读取器真能消费"的那一个：
+/// 封面/播放地址 ⇒ `asUri`、数量/时长 ⇒ `asInt`/`asDurationMs`、文本 ⇒ `asString`。
+/// 以前对"未列出"的字段兜底成 `asString`（封面即因此**恒为 null**）。
 OnlineMusicFieldTransform _defaultTransformFor(OnlineMusicDomainField field) =>
-    expectedFieldKinds[field]?.first ?? OnlineMusicFieldTransform.asString;
+    expectedFieldKinds[field]!.first;

@@ -275,6 +275,59 @@ void main() {
       );
     }
 
+    test('试跑先按配置校验拦下"放行但映射必然 null"的转换（P-30，且不发请求）', () async {
+      transport.responder = (request) async => _allCapabilitiesBody;
+      // 这份配置在**保存**时早就被拒（categoryCount 读取器只认 int），
+      // 但试跑以前不校验配置 ⇒ 会发请求并报"成功"，而 count 其实是 null。
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'selfData',
+            'baseUrl': 'https://self.invalid',
+            'auth': {'kind': 'none'},
+            'capabilities': {
+              'playlistCategories': OnlineMusicDeclarativeCapabilityBinding(
+                request: const OnlineMusicRequestSpec(
+                  path: '/playlist/catlist',
+                ),
+                response: OnlineMusicResponseSpec(
+                  success: _codeSuccess,
+                  listPath: JsonPathForTest.data,
+                  fields: {
+                    OnlineMusicDomainField.categoryId: _stringField(
+                      JsonPathForTest.id,
+                      required: true,
+                    ),
+                    OnlineMusicDomainField.categoryName: _stringField(
+                      JsonPathForTest.name,
+                      required: true,
+                    ),
+                    OnlineMusicDomainField.categoryCount: _stringField(
+                      JsonPathForTest.count,
+                    ),
+                  },
+                ),
+              ).toJson(),
+            },
+          },
+        ],
+      });
+
+      final result = await controllerFor(settings).testCapability(
+        settings.providers.single,
+        OnlineMusicCapability.playlistCategories,
+      );
+
+      expect(result.ok, isFalse);
+      expect(result.failureKind, DeclarativeTestFailureKind.config);
+      expect(result.failureReason, contains('categoryCount'));
+      expect(
+        transport.requests,
+        isEmpty,
+        reason: '配置不合法 ⇒ 一个请求都不该发出去',
+      );
+    });
+
     test('请求摘要写出实际发了什么：参数名与值可见，凭据与敏感头脱敏', () async {
       transport.responder = (request) async => _searchBody;
       final settings = _searchOnlySettingsWithSecrets();
@@ -471,9 +524,10 @@ const _searchBody = <String, Object?>{
 const _allCapabilitiesBody = <String, Object?>{
   'code': 200,
   'data': [
-    {'id': 1, 'name': 'A'},
+    {'id': 1, 'name': 'A', 'count': 7},
   ],
   'detail': {
+    'id': 9,
     'name': 'P',
     'tracks': [
       {'id': 1, 'name': 'T'},
@@ -487,6 +541,15 @@ OnlineMusicFieldSpec _stringField(JsonPath path, {bool required = false}) =>
     OnlineMusicFieldSpec(
       candidates: [path],
       transform: OnlineMusicFieldTransform.asString,
+      required: required,
+    );
+
+/// 数量类字段必须用**整数**转换：读取器（`_readIntField`）只认 `int`，
+/// 配成 `asString` 会被校验拦下（P-30），放行时也会静默变 null。
+OnlineMusicFieldSpec _intField(JsonPath path, {bool required = false}) =>
+    OnlineMusicFieldSpec(
+      candidates: [path],
+      transform: OnlineMusicFieldTransform.asInt,
       required: required,
     );
 
@@ -638,8 +701,8 @@ OnlineMusicSettings _allCapabilitiesSettings() => OnlineMusicSettings.fromJson({
                 JsonPathForTest.name,
                 required: true,
               ),
-              OnlineMusicDomainField.categoryCount: _stringField(
-                JsonPathForTest.name,
+              OnlineMusicDomainField.categoryCount: _intField(
+                JsonPathForTest.count,
               ),
             },
           ),
@@ -677,6 +740,13 @@ OnlineMusicSettings _allCapabilitiesSettings() => OnlineMusicSettings.fromJson({
             fieldsRootPath: JsonPathForTest.detail,
             listPath: JsonPathForTest.detailTracks,
             fields: {
+              // P-30 连带修正：歌单详情的**必填**字段是 playlistId + playlistName，
+              // 这个夹具以前只有 name ⇒ 保存路径会拒绝它，而试跑（当时不校验配置）
+              // 照样报成功。补齐后夹具才是"每个能力都能试跑"的有效配置。
+              OnlineMusicDomainField.playlistId: _stringField(
+                JsonPathForTest.id,
+                required: true,
+              ),
               OnlineMusicDomainField.playlistName: _stringField(
                 JsonPathForTest.name,
               ),
@@ -810,6 +880,7 @@ abstract final class JsonPathForTest {
   static final url = JsonPath.tryParse('url')!;
   static final id = JsonPath.tryParse('id')!;
   static final name = JsonPath.tryParse('name')!;
+  static final count = JsonPath.tryParse('count')!;
   static final detail = JsonPath.tryParse('detail')!;
   static final detailTracks = JsonPath.tryParse('detail.tracks')!;
   static final lrc = JsonPath.tryParse('lrc')!;
