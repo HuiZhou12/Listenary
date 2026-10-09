@@ -371,6 +371,20 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     return _fallbackCredentials.clear(reference);
   }
 
+  /// **逐请求头引用**的凭据是否已配置（F0-4）。
+  ///
+  /// 与条目级 API Key 共用同一个凭据出口：main 里注入的就是运行时装配用的那一个，
+  /// 因此在设置页写入后，运行中的 Provider 立刻读得到（不需要重启）。
+  Future<bool> isReferencedCredentialConfigured(String reference) =>
+      _fallbackCredentials.isConfigured(reference);
+
+  /// 把凭据值写进指定槽位（F0-4）。
+  ///
+  /// 这里是**用户主动更新**，属于合法轮换 ⇒ 允许覆盖既有值
+  /// （Spec §11.3 的"不得覆盖"只约束**迁移路径**）。
+  Future<void> saveReferencedCredential(String reference, String value) =>
+      _fallbackCredentials.save(reference, value);
+
   /// 探测该条目的 search 能力（Spec §4 的 P1–P10）。
   ///
   /// 已经配置好的凭据会被使用；没有凭据也照样探测（记「需要认证」）。

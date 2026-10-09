@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -6,8 +7,10 @@ import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
+import 'package:pure_music/services/music_platform/online_music_credentials.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_header_slot.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_json_path.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings_controller.dart';
@@ -89,6 +92,8 @@ class OnlineMusicCapabilityEditorDialog extends StatefulWidget {
     required this.initialBinding,
     required this.onProbe,
     required this.onTest,
+    required this.onIsCredentialConfigured,
+    required this.onSaveCredential,
   });
 
   final OnlineMusicProviderDefinition definition;
@@ -104,6 +109,14 @@ class OnlineMusicCapabilityEditorDialog extends StatefulWidget {
     String? trackId,
   )
   onTest;
+
+  /// 某个凭据槽位当前是否已有凭据（只回答"有/没有"，绝不返回值）。
+  final Future<bool> Function(String reference) onIsCredentialConfigured;
+
+  /// 把凭据值写进安全槽位。
+  ///
+  /// 界面**只**通过它写入秘密：值不会进入绑定/草稿，也不会出现在 JSON 视图里。
+  final Future<void> Function(String reference, String value) onSaveCredential;
 
   @override
   State<OnlineMusicCapabilityEditorDialog> createState() =>
@@ -170,6 +183,10 @@ class _OnlineMusicCapabilityEditorDialogState
         : _emptyBinding();
     _loadFromBinding(_binding);
     _json = TextEditingController(text: _jsonPreview());
+    // 首帧之后再查凭据槽位状态（读取是异步的，且不阻塞对话框弹出）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshHeaderCredentialStates();
+    });
   }
 
   @override
@@ -250,7 +267,16 @@ class _OnlineMusicCapabilityEditorDialogState
     }
     _headerRows
       ..clear()
-      ..addAll(binding.request.headers.map(_HeaderRow.from));
+      ..addAll(
+        binding.request.headers.map(
+          (header) => _HeaderRow.from(
+            header,
+            // 敏感头的槽位名**默认派生**（`<标识>/<能力>/<归一化头名>`），
+            // 用户仍可在行内改成别的槽位以实现显式共享。
+            derivedReference: _derivedReferenceFor(header.name),
+          ),
+        ),
+      );
     for (final row in _predicateRows) {
       row.dispose();
     }
@@ -303,11 +329,7 @@ class _OnlineMusicCapabilityEditorDialogState
     ];
     final headers = [
       for (final row in _headerRows)
-        if (row.name.text.trim().isNotEmpty)
-          OnlineMusicHeaderSpec(
-            name: row.name.text.trim(),
-            value: row.value.text,
-          ),
+        if (row.name.text.trim().isNotEmpty) _headerSpecOf(row),
     ];
     final predicates = <OnlineMusicSuccessPredicate>[];
     _collectErrors.clear();
@@ -394,6 +416,71 @@ class _OnlineMusicCapabilityEditorDialogState
     );
   }
 
+  /// 该请求头默认的凭据槽位名（F0 / Spec §3，稳定可重放）。
+  String _derivedReferenceFor(String headerName) => onlineMusicHeaderSlotName(
+    providerId: widget.definition.id,
+    capability: widget.capability,
+    headerName: headerName,
+  );
+
+  /// 切换「敏感」；首次标记时补一个派生槽位名，避免留下"没有引用的敏感头"。
+  void _toggleSensitive(_HeaderRow row) {
+    setState(() {
+      row.sensitive = !row.sensitive;
+      if (row.sensitive && row.reference.text.trim().isEmpty) {
+        row.reference.text = _derivedReferenceFor(row.name.text.trim());
+      }
+      row.referenceConfigured = null;
+    });
+    if (row.sensitive) unawaited(_refreshHeaderCredentialStates());
+  }
+
+  /// 行内引用框为空时回落到派生槽位名，避免用户留下一个"没有引用的敏感头"。
+  String _referenceOf(_HeaderRow row) {
+    final typed = row.reference.text.trim();
+    return typed.isEmpty ? _derivedReferenceFor(row.name.text.trim()) : typed;
+  }
+
+  /// 把一行表单收集成请求头声明。
+  ///
+  /// **敏感头绝不把明文写进配置**：明文要么已被迁移进槽位，要么保留在行里等待
+  /// 用户处理（此时保存会被校验拦下，而不是悄悄丢掉值）。
+  OnlineMusicHeaderSpec _headerSpecOf(_HeaderRow row) {
+    final name = row.name.text.trim();
+    if (!row.sensitive) {
+      return OnlineMusicHeaderSpec(name: name, value: row.value.text);
+    }
+    return OnlineMusicHeaderSpec(
+      name: name,
+      value: row.value.text,
+      sensitive: true,
+      credentialReference: _referenceOf(row),
+    );
+  }
+
+  /// 查询每个敏感头引用的槽位当前是否已有凭据（只用于显示"已配置/未配置"）。
+  Future<void> _refreshHeaderCredentialStates() async {
+    final rows = [
+      for (final row in _headerRows)
+        if (row.sensitive) row,
+    ];
+    if (rows.isEmpty) return;
+    final states = <_HeaderRow, bool>{};
+    for (final row in rows) {
+      try {
+        states[row] = await widget.onIsCredentialConfigured(_referenceOf(row));
+      } catch (_) {
+        // 读不出来就显示"未知"，不假装"已配置"。
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      for (final entry in states.entries) {
+        entry.key.referenceConfigured = entry.value;
+      }
+    });
+  }
+
   Object _coerce(String raw) {
     final asInt = int.tryParse(raw);
     if (asInt != null) return asInt;
@@ -449,6 +536,7 @@ class _OnlineMusicCapabilityEditorDialogState
           _json.text = _jsonPreview();
         }
       });
+      if (report.hasDraft) unawaited(_refreshHeaderCredentialStates());
     } catch (_) {
       _setResult(headline: '探测失败（网络或服务不可达）', ok: false);
     }
@@ -528,6 +616,7 @@ class _OnlineMusicCapabilityEditorDialogState
         _loadFromBinding(parsed);
         _json.text = _jsonPreview();
       });
+      unawaited(_refreshHeaderCredentialStates());
       _setResult(
         headline: issues.isEmpty ? '已应用 JSON' : '已应用 JSON，但有配置问题',
         ok: issues.isEmpty,
@@ -868,43 +957,191 @@ class _OnlineMusicCapabilityEditorDialogState
     );
   }
 
+  /// 一行请求头。标记敏感后，「值」入口换成**凭据引用**（F0-4 / Spec §11.1）：
+  /// 秘密由「填写凭据」写进系统凭据管理器，配置里只留引用，界面一律遮蔽。
   Widget _headerRow(int index) {
     final row = _headerRows[index];
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 560.0;
-          final nameField = _field(row.name, '请求头名');
-          final valueField = _field(row.value, '值');
-          final removeButton = IconButton(
-            tooltip: '删除这一行',
-            onPressed: () =>
-                setState(() => _headerRows.removeAt(index).dispose()),
-            icon: const Icon(Symbols.remove_circle),
-          );
-          if (compact) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                nameField,
-                const SizedBox(height: 8.0),
-                valueField,
-                Align(alignment: Alignment.centerRight, child: removeButton),
-              ],
-            );
-          }
-          return Row(
-            children: [
-              Expanded(child: nameField),
-              const SizedBox(width: 12.0),
-              Expanded(child: valueField),
-              removeButton,
-            ],
-          );
-        },
+    final scheme = Theme.of(context).colorScheme;
+    final nameField = _field(row.name, '请求头名');
+    final valueField = _field(row.value, '值');
+    final referenceField = _field(row.reference, '凭据引用（槽位名）');
+    final removeButton = IconButton(
+      tooltip: '删除这一行',
+      onPressed: () => setState(() => _headerRows.removeAt(index).dispose()),
+      icon: const Icon(Symbols.remove_circle),
+    );
+    final sensitiveToggle = InkWell(
+      onTap: () => _toggleSensitive(row),
+      borderRadius: BorderRadius.circular(6.0),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 勾选框本身不接收点击：整个标签区（含文字）一起切换，
+            // 免得出现"点文字没反应、只有点小方块才行"这种只有开发者知道的差异。
+            IgnorePointer(
+              child: Checkbox(
+                value: row.sensitive,
+                visualDensity: VisualDensity.compact,
+                onChanged: (_) {},
+              ),
+            ),
+            const Text('敏感'),
+          ],
+        ),
       ),
     );
+
+    if (!row.sensitive) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8.0),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 560.0) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  nameField,
+                  const SizedBox(height: 8.0),
+                  valueField,
+                  Row(
+                    children: [
+                      sensitiveToggle,
+                      const Spacer(),
+                      removeButton,
+                    ],
+                  ),
+                ],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(child: nameField),
+                const SizedBox(width: 12.0),
+                Expanded(child: valueField),
+                const SizedBox(width: 4.0),
+                sensitiveToggle,
+                removeButton,
+              ],
+            );
+          },
+        ),
+      );
+    }
+
+    // 敏感：值入口改为凭据引用 + 状态 + 填写入口；明文（若有）绝不静默丢弃。
+    final configured = row.referenceConfigured;
+    final statusText = switch (configured) {
+      true => '凭据已配置',
+      false => '凭据未配置：需先填写凭据',
+      null => '凭据状态读取中…',
+    };
+    final statusColor = configured == false
+        ? scheme.error
+        : scheme.onSurfaceVariant;
+    final credentialActions = Row(
+      children: [
+        Icon(
+          configured == true ? Symbols.check_circle : Symbols.key,
+          size: 16.0,
+          color: statusColor,
+        ),
+        const SizedBox(width: 6.0),
+        Expanded(
+          child: Text(
+            statusText,
+            style: TextStyle(fontSize: AppType.caption, color: statusColor),
+          ),
+        ),
+        TextButton(
+          onPressed: () => _editHeaderCredential(row),
+          child: Text(configured == true ? '更新凭据' : '填写凭据'),
+        ),
+      ],
+    );
+    final plaintextWarning = row.value.text.trim().isEmpty
+        ? null
+        : Row(
+            children: [
+              Icon(Symbols.error, size: 16.0, color: scheme.error),
+              const SizedBox(width: 6.0),
+              Expanded(
+                child: Text(
+                  '这一行仍有明文值，保存会被拒绝：请先用「检查并迁移」把它写进安全凭据，'
+                  '或显式清空它。',
+                  style: TextStyle(fontSize: AppType.caption, color: scheme.error),
+                ),
+              ),
+              TextButton(
+                onPressed: () => setState(() => row.value.clear()),
+                child: const Text('清空明文值'),
+              ),
+            ],
+          );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _Hint(
+            '敏感请求头不写进配置：值保存在系统凭据管理器，配置里只留一个「凭据引用」；'
+            '引用默认按 标识/能力/请求头名 派生，也可以手改成别的槽位（多个能力共享同一凭据）。',
+          ),
+          const SizedBox(height: 8.0),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 560.0) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    nameField,
+                    const SizedBox(height: 8.0),
+                    referenceField,
+                    Row(
+                      children: [
+                        sensitiveToggle,
+                        const Spacer(),
+                        removeButton,
+                      ],
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: nameField),
+                  const SizedBox(width: 12.0),
+                  Expanded(child: referenceField),
+                  const SizedBox(width: 4.0),
+                  sensitiveToggle,
+                  removeButton,
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 4.0),
+          credentialActions,
+          ?plaintextWarning,
+        ],
+      ),
+    );
+  }
+
+  /// 打开"填写凭据"对话框；值只进安全槽位，绝不进入绑定/草稿/JSON 视图。
+  Future<void> _editHeaderCredential(_HeaderRow row) async {
+    final reference = _referenceOf(row);
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => _HeaderCredentialDialog(
+        reference: reference,
+        headerName: row.name.text.trim(),
+        onSubmit: (value) => widget.onSaveCredential(reference, value),
+      ),
+    );
+    if (saved != true || !mounted) return;
+    await _refreshHeaderCredentialStates();
   }
 
   Widget _predicateRow(int index) {
@@ -1375,6 +1612,121 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
+/// 「填写凭据」对话框：把秘密**只**写进安全槽位。
+///
+/// 它不返回、也不保存输入的值：值只经由 [onSubmit] 交给凭据访问层，
+/// 因此不会进入能力绑定、编辑草稿或 JSON 视图（反模式 6：按值来源隔离）。
+class _HeaderCredentialDialog extends StatefulWidget {
+  const _HeaderCredentialDialog({
+    required this.reference,
+    required this.headerName,
+    required this.onSubmit,
+  });
+
+  /// 目标槽位名（只是引用）。
+  final String reference;
+
+  /// 该凭据服务的请求头名，仅用于文案。
+  final String headerName;
+
+  final Future<void> Function(String value) onSubmit;
+
+  @override
+  State<_HeaderCredentialDialog> createState() =>
+      _HeaderCredentialDialogState();
+}
+
+class _HeaderCredentialDialogState extends State<_HeaderCredentialDialog> {
+  final _controller = TextEditingController();
+  bool _obscure = true;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_saving || _controller.text.trim().isEmpty) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.onSubmit(_controller.text);
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (error) {
+      // 保存失败必须**明确报错**：绝不能静默回退成明文（Spec §11.1 规则 3）。
+      if (mounted) {
+        setState(() => _error = error is OnlineMusicCredentialException
+            ? error.safeMessage
+            : '无法把凭据写入安全存储');
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('填写 ${widget.headerName} 的凭据'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _Hint('值会写入系统凭据管理器，本机其余位置（配置、日志、界面）都不会保留它。'),
+            const SizedBox(height: 12.0),
+            Focus(
+              onFocusChange: HotkeysHelper.onFocusChanges,
+              child: TextField(
+                controller: _controller,
+                autofocus: true,
+                enabled: !_saving,
+                obscureText: _obscure,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _submit(),
+                onChanged: (_) => setState(() => _error = null),
+                decoration: InputDecoration(
+                  labelText: '凭据值',
+                  // 槽位名不是秘密，可以显示，方便用户确认写到了哪一格。
+                  helperText: '槽位：${widget.reference}',
+                  errorText: _error,
+                  suffixIcon: IconButton(
+                    tooltip: _obscure ? '显示' : '隐藏',
+                    onPressed: _saving
+                        ? null
+                        : () => setState(() => _obscure = !_obscure),
+                    icon: Icon(
+                      _obscure ? Symbols.visibility : Symbols.visibility_off,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _saving || _controller.text.trim().isEmpty
+              ? null
+              : _submit,
+          child: Text(_saving ? '保存中' : '保存'),
+        ),
+      ],
+    );
+  }
+}
+
 /// 表单里的说明文字。
 class _Hint extends StatelessWidget {
   const _Hint(this.text);
@@ -1420,22 +1772,48 @@ class _ParamRow {
 }
 
 class _HeaderRow {
-  _HeaderRow(this.name, this.value);
+  _HeaderRow(
+    this.name,
+    this.value, {
+    this.sensitive = false,
+    String reference = '',
+  }) : reference = TextEditingController(text: reference);
 
-  factory _HeaderRow.from(OnlineMusicHeaderSpec header) => _HeaderRow(
+  /// [derivedReference] 只在**已标记敏感**时参与：它是该请求头按
+  /// `<标识>/<能力>/<归一化头名>` 派生出的槽位名（F0 / Spec §3）。
+  factory _HeaderRow.from(
+    OnlineMusicHeaderSpec header, {
+    required String derivedReference,
+  }) => _HeaderRow(
     TextEditingController(text: header.name),
     TextEditingController(text: header.value),
+    sensitive: header.sensitive,
+    reference: header.credentialReference ??
+        (header.sensitive ? derivedReference : ''),
   );
 
   factory _HeaderRow.empty() =>
       _HeaderRow(TextEditingController(), TextEditingController());
 
   final TextEditingController name;
+
+  /// 明文值。标记敏感后它**不再写进配置**，但仍留在界面上 ——
+  /// 绝不静默丢弃用户已经填好的秘密（要么迁移，要么由用户显式清空）。
   final TextEditingController value;
+
+  /// 是否明确标记为敏感（F0-4 / 决策 A）。
+  bool sensitive;
+
+  /// 安全凭据**槽位名**（只是引用，不是值）；可编辑，以便多个能力显式共享凭据。
+  final TextEditingController reference;
+
+  /// 该引用对应的槽位当前是否有凭据（`null` = 还没查出来）。
+  bool? referenceConfigured;
 
   void dispose() {
     name.dispose();
     value.dispose();
+    reference.dispose();
   }
 }
 

@@ -211,6 +211,9 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
           capability,
           trackId: trackId,
         ),
+        // F0-4：敏感请求头的凭据按**槽位名**读写，与条目级 API Key 同一个出口。
+        onIsCredentialConfigured: _controller.isReferencedCredentialConfigured,
+        onSaveCredential: _controller.saveReferencedCredential,
       ),
     );
     if (result == null || !mounted) return;

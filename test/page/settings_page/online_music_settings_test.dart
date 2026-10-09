@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -793,7 +794,258 @@ void main() {
     expect(segmented.onSelectionChanged, isNull);
     controller.dispose();
   });
+
+  // ------------------------------------------------------------------ F0-4
+
+  /// 一个**校验通过**的声明式 search 条目：编辑器的保存路径本身还有别的必填项，
+  /// 用空绑定测"保存成功"会被那些必填项挡住，测不到本片的行为。
+  OnlineMusicSettings declarativeSearchSettings() =>
+      OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'selfData',
+            'baseUrl': 'https://self.invalid',
+            'auth': {'kind': 'none'},
+            'capabilities': {'search': f04SearchBindingJson()},
+          },
+        ],
+      });
+
+  /// 打开某个能力的编辑器（列表里的第一个「配置」= search）。
+  Future<void> openCapabilityEditor(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('能力配置'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .descendant(of: find.byType(AlertDialog), matching: find.text('配置'))
+          .first,
+    );
+    await tester.pumpAndSettle();
+  }
+
+  /// 加一行请求头并填名称。
+  Future<void> addHeaderRow(WidgetTester tester, String name) async {
+    await tester.tap(find.text('加请求头'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find
+          .ancestor(
+            of: find.text('请求头名'),
+            matching: find.byType(TextField),
+          )
+          .first,
+      name,
+    );
+    await tester.pumpAndSettle();
+  }
+
+  Finder headerField(String label) => find
+      .ancestor(of: find.text(label), matching: find.byType(TextField))
+      .first;
+
+  /// 对话框内容是可滚动的；目标按钮可能在可视区之外。
+  Future<void> tapVisible(WidgetTester tester, Finder finder) async {
+    await tester.ensureVisible(finder);
+    await tester.pumpAndSettle();
+    await tester.tap(finder);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('F0-4 勾选「敏感」后值入口变成凭据引用，并立刻提示需先填写凭据', (tester) async {
+    final settings = declarativeSearchSettings();
+    final controller = _controller(configured: settings, active: settings);
+    await pumpPanel(tester, controller);
+    await openCapabilityEditor(tester);
+    await addHeaderRow(tester, 'Cookie');
+
+    // 未勾选时：仍是普通的「值」入口，没有任何敏感相关提示。
+    expect(find.text('值'), findsOneWidget);
+    expect(find.text('敏感'), findsOneWidget);
+    expect(find.textContaining('需先填写凭据'), findsNothing);
+
+    await tapVisible(tester, find.text('敏感'));
+
+    // 值入口换成凭据引用 —— 明文输入框不再存在。
+    expect(find.text('凭据引用（槽位名）'), findsOneWidget);
+    expect(find.text('值'), findsNothing);
+    // 勾选后**立刻**提示需要先填写凭据（而不是等保存才说）。
+    expect(find.textContaining('凭据未配置：需先填写凭据'), findsOneWidget);
+    expect(find.textContaining('值保存在系统凭据管理器'), findsOneWidget);
+
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    final definition = controller.settings.providers.single;
+    final binding =
+        definition.bindingFor(OnlineMusicCapability.search)
+            as OnlineMusicDeclarativeCapabilityBinding;
+    final header = binding.request.headers.single;
+    expect(header.name, 'Cookie');
+    expect(header.sensitive, isTrue, reason: '勾选必须落进配置');
+    expect(header.value, isEmpty, reason: '敏感头绝不写明文值');
+    expect(
+      header.credentialReference,
+      onlineMusicHeaderSlotName(
+        providerId: definition.id,
+        capability: OnlineMusicCapability.search,
+        headerName: 'Cookie',
+      ),
+      reason: '默认派生稳定槽位名',
+    );
+    controller.dispose();
+  });
+
+  testWidgets('F0-4 填写凭据只写进安全槽位，配置与 JSON 视图都不留秘密', (tester) async {
+    const secret = 'SECRET_COOKIE_UI_TEST_ONLY';
+    final settings = declarativeSearchSettings();
+    final credentials = _FakeCredentialAccess();
+    final controller = _controller(
+      configured: settings,
+      active: settings,
+      credentials: credentials,
+    );
+    await pumpPanel(tester, controller);
+    await openCapabilityEditor(tester);
+    await addHeaderRow(tester, 'Cookie');
+    await tapVisible(tester, find.text('敏感'));
+
+    await tapVisible(tester, find.text('填写凭据'));
+
+    // 输入框是遮蔽的（界面不得明文回显秘密）。
+    final secretField = tester.widget<TextField>(
+      find
+          .descendant(
+            of: find.byType(AlertDialog),
+            matching: find.byType(TextField),
+          )
+          .last,
+    );
+    expect(secretField.obscureText, isTrue);
+
+    await tester.enterText(
+      find
+          .descendant(
+            of: find.byType(AlertDialog),
+            matching: find.byType(TextField),
+          )
+          .last,
+      secret,
+    );
+    await tester.pumpAndSettle();
+    // 只点凭据对话框里的「保存」（编辑器自己也有一个同名按钮）。
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text('保存'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final definition = controller.settings.providers.single;
+    final slot = onlineMusicHeaderSlotName(
+      providerId: definition.id,
+      capability: OnlineMusicCapability.search,
+      headerName: 'Cookie',
+    );
+    // 秘密进了槽位……
+    expect(credentials.saved[slot], secret);
+    // ……状态随之变成已配置。
+    expect(find.textContaining('凭据已配置'), findsOneWidget);
+    // 界面上没有任何地方明文回显它。
+    expect(find.text(secret), findsNothing);
+    expect(find.textContaining(secret), findsNothing);
+
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    // 配置里**只有引用**：序列化结果里不得出现秘密。
+    final binding =
+        controller.settings.providers.single.bindingFor(
+              OnlineMusicCapability.search,
+            )
+            as OnlineMusicDeclarativeCapabilityBinding;
+    expect(binding.request.headers.single.credentialReference, slot);
+    expect(binding.request.headers.single.value, isEmpty);
+    final serialized = jsonEncode(controller.settings.toJson());
+    expect(serialized, isNot(contains(secret)));
+    expect(serialized, contains(slot));
+    controller.dispose();
+  });
+
+  testWidgets('F0-4 敏感 + 明文 ⇒ 保存被拒，且明文值不被静默丢弃', (tester) async {
+    const plaintext = 'PLAINTEXT_COOKIE_UI_TEST_ONLY';
+    final settings = declarativeSearchSettings();
+    final credentials = _FakeCredentialAccess();
+    final controller = _controller(
+      configured: settings,
+      active: settings,
+      credentials: credentials,
+    );
+    await pumpPanel(tester, controller);
+    await openCapabilityEditor(tester);
+    await addHeaderRow(tester, 'Cookie');
+
+    await tester.enterText(headerField('值'), plaintext);
+    await tester.pumpAndSettle();
+    await tapVisible(tester, find.text('敏感'));
+
+    // 值**没有被悄悄清掉**：界面明确说它还在、且保存会被拒。
+    expect(find.textContaining('这一行仍有明文值'), findsOneWidget);
+
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    // 保存被拦下（对话框不关闭），并给出精确原因。
+    expect(find.textContaining('明文值必须清空'), findsOneWidget);
+    expect(find.text('凭据引用（槽位名）'), findsOneWidget);
+    // 配置没有被改写，也没有任何凭据被写进槽位。
+    final binding =
+        controller.settings.providers.single.bindingFor(
+              OnlineMusicCapability.search,
+            )
+            as OnlineMusicDeclarativeCapabilityBinding;
+    expect(
+      binding.request.headers,
+      isEmpty,
+      reason: '保存失败就不该改动配置',
+    );
+    expect(credentials.saved, isEmpty);
+    controller.dispose();
+  });
 }
+
+/// F0-4 用的**校验通过**的声明式 search 绑定（字段映射齐全）。
+Map<String, Object?> f04SearchBindingJson() => OnlineMusicDeclarativeCapabilityBinding(
+  request: const OnlineMusicRequestSpec(
+    path: '/search',
+    query: [
+      OnlineMusicParamBinding(
+        name: 'keywords',
+        source: OnlineMusicInputSource.keyword,
+        required: true,
+      ),
+    ],
+  ),
+  response: OnlineMusicResponseSpec(
+    listPath: JsonPath.tryParse('result.songs'),
+    fields: {
+      OnlineMusicDomainField.trackId: OnlineMusicFieldSpec(
+        candidates: [JsonPath.tryParse('id')!],
+        transform: OnlineMusicFieldTransform.asInt,
+        required: true,
+      ),
+      OnlineMusicDomainField.title: OnlineMusicFieldSpec(
+        candidates: [JsonPath.tryParse('name')!],
+        transform: OnlineMusicFieldTransform.asString,
+        required: true,
+      ),
+      OnlineMusicDomainField.artists: OnlineMusicFieldSpec(
+        candidates: [JsonPath.tryParse('artists[*].name')!],
+        transform: OnlineMusicFieldTransform.asStringList,
+      ),
+    },
+  ),
+).toJson();
 
 final class _StubTransport implements DeclarativeHttpTransport {
   int probeCalls = 0;

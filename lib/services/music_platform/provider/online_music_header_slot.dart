@@ -38,22 +38,18 @@ String normalizeOnlineMusicHeaderSlotSegment(String headerName) {
       .replaceAll(RegExp(r'^-+|-+$'), '');
 }
 
-/// `providerId` 与能力段同样归一化：能力枚举名是 camelCase
-/// （`playlistCollection` / `newSongs` …），**并不全小写**，
-/// 槽位名保持全小写才与 Spec §3 的取值域一致，也避免大小写混用带来的歧义。
-String _normalizeSlotSegment(String value) => value.trim().toLowerCase();
-
-/// 敏感请求头的默认凭据槽位名。
+/// `providerId` **保持原样**（Spec §3）：只有原样保留，两个只差大小写的条目才不会被
+/// 合并到同一个槽位上。
 ///
-/// 结果**稳定**：同样的 `(providerId, capability, headerName)` 永远得到同一个槽位名，
-/// 因此迁移可以重放、可以幂等。
+/// 能力段统一转小写：能力枚举名是 camelCase（`playlistCollection` / `newSongs` …），
+/// 并不像 Spec §3 的括注那样"已小写"；统一小写才让槽位名稳定、可读、可重放。
 String onlineMusicHeaderSlotName({
   required String providerId,
   required OnlineMusicCapability capability,
   required String headerName,
 }) =>
-    '${_normalizeSlotSegment(providerId)}/'
-    '${_normalizeSlotSegment(capability.name)}/'
+    '${providerId.trim()}/'
+    '${capability.name.toLowerCase()}/'
     '${normalizeOnlineMusicHeaderSlotSegment(headerName)}';
 
 /// 同一请求内**归一化后同名**的请求头分组（每组至少两个名字）。

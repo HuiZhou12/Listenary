@@ -339,6 +339,30 @@ void main() {
           headerName: 'x_token',
         ),
       );
+      // providerId **保持原样**（Spec §3）：只差大小写的两个条目不得被合并到同一槽位。
+      expect(
+        onlineMusicHeaderSlotName(
+          providerId: 'SelfData',
+          capability: OnlineMusicCapability.search,
+          headerName: 'Cookie',
+        ),
+        isNot(
+          onlineMusicHeaderSlotName(
+            providerId: 'selfData',
+            capability: OnlineMusicCapability.search,
+            headerName: 'Cookie',
+          ),
+        ),
+      );
+      // 能力段统一小写（枚举名实际是 camelCase）。
+      expect(
+        onlineMusicHeaderSlotName(
+          providerId: 'p',
+          capability: OnlineMusicCapability.playlistCollection,
+          headerName: 'Cookie',
+        ),
+        'p/playlistcollection/cookie',
+      );
     });
   });
 }
