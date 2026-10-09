@@ -321,6 +321,12 @@ void main() {
       await tester.tap(find.text('一键按 ChkSz 兼容方式填充'));
       await tester.pumpAndSettle();
 
+      // F1 P-20：现在是**先确认再动手**（旧实现点了就改，无确认无撤销）。
+      expect(find.text('按 ChkSz 兼容方式填充？'), findsOneWidget);
+      expect(find.textContaining('当前的配置会被覆盖'), findsOneWidget);
+      await tester.tap(find.text('填充'));
+      await tester.pumpAndSettle();
+
       final definition = controller.settings.providers.single;
       // 用显式白名单而不是"遍历所有能力再跳过几个"：新增能力时后者会错误地要求它
       // 也被填成内置实现（见 online_music_binding_test 的同款说明）。
@@ -1540,6 +1546,87 @@ void main() {
 
     expect(result.ok, isFalse, reason: '曲目数组路径没配就不该报"试跑成功"');
     expect(result.failureReason, contains('列表路径'));
+  });
+
+  // ------------------------------------------------------------------ F1-b（P-20）
+
+  Future<void> openFillConfirm(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('能力配置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('一键按 ChkSz 兼容方式填充'));
+    await tester.pumpAndSettle();
+    expect(find.text('按 ChkSz 兼容方式填充？'), findsOneWidget);
+  }
+
+  testWidgets('★ F1 P-20 确认框里点取消 ⇒ 一个字节都不改', (tester) async {
+    final playlistCollection = validBindingFor(
+      OnlineMusicCapability.playlistCollection,
+    );
+    final settings = settingsWithBinding(
+      OnlineMusicCapability.playlistCollection,
+      playlistCollection,
+    );
+    final controller = _controller(configured: settings, active: settings);
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+    await openFillConfirm(tester);
+
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+
+    final definition = controller.settings.providers.single;
+    expect(
+      definition.bindingFor(OnlineMusicCapability.playlistCollection),
+      playlistCollection,
+      reason: '取消后既不能被覆盖、也不能被丢掉',
+    );
+    expect(
+      definition.bindingFor(OnlineMusicCapability.search),
+      isA<OnlineMusicUnsupportedCapabilityBinding>(),
+      reason: '取消后不该发生任何填充',
+    );
+  });
+
+  testWidgets('★ F1 P-20 确认框说明"哪些保持不变"，确认后真正的合并生效', (tester) async {
+    final playlistCollection = validBindingFor(
+      OnlineMusicCapability.playlistCollection,
+    );
+    final settings = settingsWithBinding(
+      OnlineMusicCapability.playlistCollection,
+      playlistCollection,
+    );
+    final controller = _controller(configured: settings, active: settings);
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+    await openFillConfirm(tester);
+
+    // 确认文案必须逐项说清：哪几项会被覆盖 / 哪几项保持不变。
+    expect(find.textContaining('当前的配置会被覆盖'), findsOneWidget);
+    expect(
+      find.textContaining('其它已配置的能力（歌单列表）保持不变'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('填充'));
+    await tester.pumpAndSettle();
+
+    final definition = controller.settings.providers.single;
+    for (final capability in const [
+      OnlineMusicCapability.search,
+      OnlineMusicCapability.playlist,
+      OnlineMusicCapability.lyric,
+      OnlineMusicCapability.stream,
+    ]) {
+      expect(
+        definition.bindingFor(capability),
+        isA<OnlineMusicBuiltinCapabilityBinding>(),
+      );
+    }
+    expect(
+      definition.bindingFor(OnlineMusicCapability.playlistCollection),
+      playlistCollection,
+      reason: 'P-20：已配好的歌单列表不得被一键填充丢掉',
+    );
   });
 }
 

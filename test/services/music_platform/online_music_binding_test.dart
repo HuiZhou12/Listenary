@@ -180,6 +180,70 @@ void main() {
         );
       }
     });
+
+    test('★ P-20 一键填充是**合并**：已配好的其它能力一个字节都不动', () {
+      final declarative = _searchBinding();
+      final definition = OnlineMusicProviderDefinition.custom(
+        id: 'selfData',
+        baseUrl: 'https://self.invalid',
+        requiresCredential: false,
+      ).withCapabilityBinding(
+        OnlineMusicCapability.playlistCollection,
+        declarative,
+      ).withCapabilityBinding(OnlineMusicCapability.chartList, declarative);
+
+      // 界面确认框要说的两句话先在这里钉住（由模型回答，不靠界面自己猜）。
+      expect(
+        definition.chkszFillOverwrites().toSet(),
+        const {
+          OnlineMusicCapability.search,
+          OnlineMusicCapability.playlist,
+          OnlineMusicCapability.lyric,
+          OnlineMusicCapability.stream,
+        },
+      );
+      expect(
+        definition.chkszFillKeeps().toSet(),
+        const {
+          OnlineMusicCapability.playlistCollection,
+          OnlineMusicCapability.chartList,
+        },
+      );
+
+      final filled = definition.withChkszCompatibleCapabilities();
+
+      // 四条 ChkSz 链路被填成内置实现……
+      for (final capability in const {
+        OnlineMusicCapability.search,
+        OnlineMusicCapability.playlist,
+        OnlineMusicCapability.lyric,
+        OnlineMusicCapability.stream,
+      }) {
+        expect(
+          filled.bindingFor(capability),
+          isA<OnlineMusicBuiltinCapabilityBinding>(),
+        );
+      }
+      // ……而**其它已配置的能力原样保留**。旧实现是整表替换 ⇒ 这两条会变成"不支持"，
+      // 且没有任何确认与撤销（这就是 P-20 的静默数据丢失）。
+      expect(
+        filled.bindingFor(OnlineMusicCapability.playlistCollection),
+        declarative,
+        reason: '已配好的歌单列表不得被一键填充丢掉',
+      );
+      expect(
+        filled.bindingFor(OnlineMusicCapability.chartList),
+        declarative,
+        reason: '已配好的榜单不得被一键填充丢掉',
+      );
+      // 已经填过 ⇒ 再点一次什么都不变（幂等），"会被覆盖"的集合也只剩真正不同的项。
+      expect(filled.chkszFillKeeps().toSet(), {
+        OnlineMusicCapability.playlistCollection,
+        OnlineMusicCapability.chartList,
+      });
+      expect(filled.chkszFillOverwrites(), isEmpty);
+      expect(filled.withChkszCompatibleCapabilities(), filled);
+    });
   });
 
   group('binding serialization', () {

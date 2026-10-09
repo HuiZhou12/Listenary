@@ -188,15 +188,43 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
         },
         onFillChkszCompatible: () {
           Navigator.of(dialogContext).pop();
-          _apply(
-            _controller.updateProvider(
-              provider.withChkszCompatibleCapabilities(),
-            ),
-          );
+          _fillChkszCompatible(provider);
         },
       ),
     );
   }
+
+  /// 「一键按 ChkSz 兼容方式填充」（P-20）。
+  ///
+  /// 两件事必须同时做到：
+  /// 1. **动手前确认**，并在确认框里逐项说清"哪几个会被覆盖、哪几个保持不变"
+  ///    （旧实现直接改配置：无确认、无撤销）；
+  /// 2. 填充是**合并**（见 `withChkszCompatibleCapabilities`），
+  ///    不再把用户已经配好的其它能力整表丢掉。
+  Future<void> _fillChkszCompatible(
+    OnlineMusicProviderDefinition provider,
+  ) async {
+    final overwrites = provider.chkszFillOverwrites();
+    final keeps = provider.chkszFillKeeps();
+    final confirmed = await showDangerConfirmDialog(
+      context: context,
+      title: '按 ChkSz 兼容方式填充？',
+      message:
+          '会把「${_capabilityNames(overwrites)}」改成内置 ChkSz 实现'
+          '（这四项当前的配置会被覆盖）。'
+          '${keeps.isEmpty ? '' : '其它已配置的能力（${_capabilityNames(keeps)}）保持不变。'}'
+          '改动在重启后生效。',
+      confirmLabel: '填充',
+    );
+    if (!confirmed || !mounted) return;
+    final saved = await _apply(
+      _controller.updateProvider(provider.withChkszCompatibleCapabilities()),
+    );
+    if (saved && mounted) showTextOnSnackBar('已按 ChkSz 兼容方式填充；重启后生效');
+  }
+
+  String _capabilityNames(List<OnlineMusicCapability> capabilities) =>
+      capabilities.map(onlineMusicCapabilityLabel).join('、');
 
   Future<void> _openCapabilityEditor(
     OnlineMusicProviderDefinition provider,

@@ -295,8 +295,22 @@ final class OnlineMusicProviderDefinition {
     );
   }
 
-  /// 一键按 ChkSz 兼容方式填充（D5）：四能力全部走内置实现，兼容 ChkSz mirror。
+  /// 一键按 ChkSz 兼容方式填充（D5）：**只把 ChkSz 真有实现的四条链路**改成内置实现，
+  /// **其余能力（歌单列表 / 分类 / 榜单 / 新歌）原样保留**。
+  ///
+  /// P-20：旧实现写成 `capabilities: const {四条}` —— 那是**整表替换**，
+  /// 用户已经配好的另外四项会被**静默丢弃**（无确认、无撤销）。
+  ///
+  /// 现在以**该条目现有的 capabilities 为基底**合并：
+  /// - 新条目（`capabilities` 为空 Map）⇒ 结果就是"四条内置 + 其余不支持"，
+  ///   与旧行为一致（它本来就没东西可丢）；
+  /// - 已配好其它能力的条目 ⇒ 那些能力**一个字节都不动**。
+  ///
+  /// 注意**不**用 `bindingFor` 当基底：对旧条目（`capabilities == null`）它会对
+  /// **任意**能力都返回内置实现，拿它当基底会凭空把"不支持"变成"内置"
+  /// （那正是 P-19 要修的问题）。
   OnlineMusicProviderDefinition withChkszCompatibleCapabilities() {
+    final kept = capabilities ?? const {};
     return OnlineMusicProviderDefinition(
       id: id,
       protocol: protocol,
@@ -308,15 +322,56 @@ final class OnlineMusicProviderDefinition {
       requiresCredential: requiresCredential,
       parameterName: parameterName,
       capabilityAuth: capabilityAuth,
-      capabilities: const {
-        OnlineMusicCapability.search: OnlineMusicBuiltinCapabilityBinding(),
-        OnlineMusicCapability.playlist: OnlineMusicBuiltinCapabilityBinding(),
-        OnlineMusicCapability.lyric: OnlineMusicBuiltinCapabilityBinding(),
-        OnlineMusicCapability.stream: OnlineMusicBuiltinCapabilityBinding(),
-      },
+      capabilities: Map.unmodifiable({
+        ...kept,
+        OnlineMusicCapability.search:
+            const OnlineMusicBuiltinCapabilityBinding(),
+        OnlineMusicCapability.playlist:
+            const OnlineMusicBuiltinCapabilityBinding(),
+        OnlineMusicCapability.lyric: const OnlineMusicBuiltinCapabilityBinding(),
+        OnlineMusicCapability.stream:
+            const OnlineMusicBuiltinCapabilityBinding(),
+      }),
       contentPlatform: contentPlatform,
       displayName: displayName,
     );
+  }
+
+  /// 一键填充会**覆盖**哪几个能力当前的配置（用于界面确认框逐项说明）。
+  ///
+  /// 已经是内置实现的四项不算"会被覆盖"（它们本来就是这个值）。
+  List<OnlineMusicCapability> chkszFillOverwrites() {
+    const chkszCapabilities = {
+      OnlineMusicCapability.search,
+      OnlineMusicCapability.playlist,
+      OnlineMusicCapability.lyric,
+      OnlineMusicCapability.stream,
+    };
+    final explicit = capabilities;
+    if (explicit == null) return const [];
+    return [
+      for (final capability in chkszCapabilities)
+        if (explicit[capability] is! OnlineMusicBuiltinCapabilityBinding)
+          capability,
+    ];
+  }
+
+  /// 一键填充**不会动**的、且当前已配置的能力（用于界面确认框说明"哪些保持不变"）。
+  List<OnlineMusicCapability> chkszFillKeeps() {
+    const chkszCapabilities = {
+      OnlineMusicCapability.search,
+      OnlineMusicCapability.playlist,
+      OnlineMusicCapability.lyric,
+      OnlineMusicCapability.stream,
+    };
+    final explicit = capabilities;
+    if (explicit == null) return const [];
+    return [
+      for (final entry in explicit.entries)
+        if (!chkszCapabilities.contains(entry.key) &&
+            entry.value is! OnlineMusicUnsupportedCapabilityBinding)
+          entry.key,
+    ];
   }
 
   Map<String, dynamic> toJson() => {
