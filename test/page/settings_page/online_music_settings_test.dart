@@ -1846,6 +1846,151 @@ void main() {
     expect(find.text('分页类型'), findsNothing);
     expect(find.text('默认每页数量'), findsNothing);
   });
+
+  // ------------------------------------------------------------------ F1-g（P-64）
+
+  test('★ F1 P-64 标签表必须覆盖全部枚举值', () {
+    // 兜底是 `?? 枚举名` ⇒ 漏一个就会把**英文枚举名**渲染到界面上
+    //（字段行标题、取值来源菜单、类型转换菜单）。逐值断言，新增枚举值也不会漏。
+    for (final field in OnlineMusicDomainField.values) {
+      expect(
+        domainFieldLabel(field),
+        isNot(field.name),
+        reason: '${field.name} 缺中文标签（会以英文枚举名显示在字段行标题上）',
+      );
+    }
+    for (final source in OnlineMusicInputSource.values) {
+      expect(
+        inputSourceLabel(source),
+        isNot(source.name),
+        reason: '${source.name} 缺中文标签（会以英文枚举名显示在取值来源菜单里）',
+      );
+    }
+    for (final transform in OnlineMusicFieldTransform.values) {
+      expect(
+        transformLabel(transform),
+        isNot(transform.name),
+        reason: '${transform.name} 缺中文标签',
+      );
+    }
+  });
+
+  test('★ F1 P-64 试跑是否需要额外 ID 由能力决定', () {
+    // 只有"按 id 取单条"的能力需要；数组类能力（歌单列表/分类/榜单/新歌）一律不需要
+    //（旧写法只对 playlistCollection 特判，于是另三个也显示一个用不到的输入框）。
+    const needsId = {
+      OnlineMusicCapability.playlist,
+      OnlineMusicCapability.lyric,
+      OnlineMusicCapability.stream,
+    };
+    for (final capability in OnlineMusicCapability.values) {
+      final testId = testIdFieldFor(capability);
+      expect(
+        testId.needed,
+        needsId.contains(capability),
+        reason: '${capability.name} 是否需要试跑 ID 判断错了',
+      );
+      if (testId.needed) {
+        expect(testId.label, isNotEmpty, reason: '需要 ID 就得给出它的名字');
+      }
+    }
+  });
+
+  testWidgets('F1 P-64 非搜索能力的副标题按能力取名，不再一律"播放解析"', (tester) async {
+    final controller = _controller();
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+    await openCapabilityEditorFor(
+      tester,
+      OnlineMusicCapability.playlistCollection,
+    );
+
+    // 断言要**限定在编辑器对话框内**：背后的平台卡每个平台都有一行「播放解析」。
+    final editor = find.byType(Dialog);
+    expect(
+      find.descendant(of: editor, matching: find.textContaining('声明式歌单列表')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: editor, matching: find.textContaining('播放解析')),
+      findsNothing,
+      reason: '以前所有非搜索能力的副标题都写"声明式播放解析"',
+    );
+  });
+
+  testWidgets('F1 P-64 数组类能力的试跑不再要求 ID', (tester) async {
+    final controller = _controller();
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+    await openCapabilityEditorFor(tester, OnlineMusicCapability.chartList);
+
+    // ⚠️ 不能滚到「试跑」：操作栏上的「试跑」按钮永远可见，锚点会立刻命中而根本不滚动。
+    // 直接滚到那句提示本身（表单最下方，惰性 ListView）⇒ 多给几次机会。
+    await scrollCapabilityFormTo(
+      tester,
+      '这个能力不需要额外 ID：试跑会直接请求一次列表。',
+      maxAttempts: 30,
+    );
+    expect(find.textContaining('这个能力不需要额外 ID'), findsOneWidget);
+    expect(find.textContaining('试跑用的'), findsNothing);
+  });
+
+  testWidgets('F1 P-64 用户可见处不再露英文平台枚举名', (tester) async {
+    final controller = _controller();
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    // 列表副标题：内容来源用中文平台名。
+    expect(
+      find.textContaining(musicPlatformLabel(MusicPlatform.netease)),
+      findsWidgets,
+    );
+    expect(
+      find.textContaining('netease'),
+      findsNothing,
+      reason: '界面文案里不该出现英文枚举名',
+    );
+
+    // 添加提供商对话框的「内容来源」分段按钮同理。
+    await tester.tap(find.text('添加'));
+    await tester.pumpAndSettle();
+    for (final platform in MusicPlatform.values) {
+      expect(
+        find.text(musicPlatformLabel(platform)),
+        findsWidgets,
+        reason: '内容来源应当显示 ${musicPlatformLabel(platform)}',
+      );
+    }
+    expect(find.text('netease'), findsNothing);
+  });
+
+  testWidgets('F1 P-64 标题用展示名而不是内部 id', (tester) async {
+    final settings = OnlineMusicSettings.fromJson({
+      'providers': [
+        {
+          'id': 'selfData',
+          'displayName': '网易云本地',
+          'baseUrl': 'https://self.invalid',
+          'auth': {'kind': 'none'},
+          'capabilities': {
+            'search': validBindingFor(OnlineMusicCapability.search).toJson(),
+          },
+        },
+      ],
+    });
+    final controller = _controller(configured: settings, active: settings);
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    await tester.tap(find.byTooltip('能力配置'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('能力配置 · 网易云本地'), findsOneWidget);
+    expect(
+      find.textContaining('能力配置 · selfData'),
+      findsNothing,
+      reason: '用户可见标题不该用内部 id',
+    );
+  });
 }
 
 /// 各能力的**校验通过**夹具：路径与字段名都取自真实配方（`docs/dev/netease-bindings/`）。

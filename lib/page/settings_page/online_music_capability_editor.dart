@@ -33,7 +33,7 @@ class OnlineMusicCapabilitiesDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('能力配置 · ${definition.id}'),
+      title: Text('能力配置 · ${definition.label}'),
       content: SizedBox(
         width: 520,
         child: Column(
@@ -176,10 +176,6 @@ class _OnlineMusicCapabilityEditorDialogState
   }
 
   bool get _isSearch => widget.capability == OnlineMusicCapability.search;
-
-  /// 歌单列表是"一次请求拿一个数组"，不需要曲目/歌单 ID。
-  bool get _isPlaylistCollection =>
-      widget.capability == OnlineMusicCapability.playlistCollection;
 
   @override
   void initState() {
@@ -742,13 +738,15 @@ class _OnlineMusicCapabilityEditorDialogState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _DialogHeader(
+                // P-64：标题用**展示名**（`label` 优先 displayName，缺省回落到 id），
+                // 与设置页列表里的称呼保持一致；不再在用户可见文案里混用内部 id。
                 title:
-                    '${capabilityLabel(widget.capability)} · ${widget.definition.id}',
+                    '${capabilityLabel(widget.capability)} · ${widget.definition.label}',
                 subtitle: _showJson
                     ? 'JSON 高级视图（与表单共享同一份校验）'
-                    : (_isSearch
-                          ? '声明式搜索：请求与响应映射都可以在这里改'
-                          : '声明式播放解析：请求与响应映射都可以在这里改'),
+                    // P-64：这里以前对**所有非搜索能力**都写"声明式播放解析"。
+                    // 现在按能力取名，于是歌单详情/歌单列表/榜单…各自说对了自己是什么。
+                    : '声明式${capabilityLabel(widget.capability)}：请求与响应映射都可以在这里改',
               ),
               const SizedBox(height: 12.0),
               _ResultArea(
@@ -832,6 +830,7 @@ class _OnlineMusicCapabilityEditorDialogState
 
   Widget _buildForm() {
     final pathFields = responsePathFieldsFor(widget.capability);
+    final testId = testIdFieldFor(widget.capability);
     return ListView(
       key: capabilityFormKey,
       padding: EdgeInsets.zero,
@@ -1020,13 +1019,16 @@ class _OnlineMusicCapabilityEditorDialogState
         if (!_isSearch) ...[
           const SizedBox(height: 12.0),
           const _SectionTitle('试跑'),
-          if (_isPlaylistCollection)
+          if (testId.needed)
+            _textRow(testId.label, _testTrackId)
+          else
+            // P-64：以前只对 `playlistCollection` 特判，于是**歌单分类 / 榜单 / 新歌**
+            // 也显示一个用不到的「试跑用的 ID（曲目 / 歌单）」输入框
+            // （它们和歌单列表一样，一次请求拿一个数组）。现在由能力决定。
             const Padding(
               padding: EdgeInsets.only(bottom: 8.0),
-              child: _Hint('歌单列表不需要额外 ID：试跑会直接请求一次列表。'),
-            )
-          else
-            _textRow('试跑用的 ID（曲目 / 歌单）', _testTrackId),
+              child: _Hint('这个能力不需要额外 ID：试跑会直接请求一次列表。'),
+            ),
         ],
       ],
     );
@@ -1080,8 +1082,8 @@ class _OnlineMusicCapabilityEditorDialogState
             value: row.source,
             options: OnlineMusicInputSource.values,
             labelOf: inputSourceLabel,
-            // 英文枚举名作为副标题保留（与 JSON 视图对照用）；是否收敛属 F1-g（P-64）。
-            sublabelOf: (source) => source.name,
+            // P-64：不再把英文枚举名当副标题露出来（它是**内部细节**）。
+            // 要和 JSON 视图对照时，JSON 视图里本来就是原始枚举名。
             onChanged: (value) => setState(() => row.source = value),
           );
           final removeButton = IconButton(
@@ -1431,7 +1433,9 @@ class _OnlineMusicCapabilityEditorDialogState
             value: row.transform,
             options: _transformChoicesFor(field),
             labelOf: transformLabel,
-            sublabelOf: (transform) => transform.name,
+            // P-64：同样不再露英文枚举名（原来这里的注释说"便于与 JSON 视图对照"，
+            // 但取值来源那一处本来就没有这句注释，两处口径不一致；统一按"内部细节不露出"
+            // 处理，对照 JSON 时看 JSON 视图即可）。
             onChanged: (value) => setState(() => row.transform = value),
           );
           return Column(
@@ -1486,6 +1490,13 @@ const _domainFieldLabels = <OnlineMusicDomainField, String>{
   OnlineMusicDomainField.playlistCoverUri: '歌单封面',
   OnlineMusicDomainField.playlistCreator: '歌单创建者',
   OnlineMusicDomainField.playlistTrackCount: '歌单曲目数',
+  // P-64：这四项以前缺失 ⇒ 「歌单分类」的字段行标题会显示英文枚举名
+  // （categoryId / categoryName / categoryCount），歌单列表/榜单会显示
+  // playlistUpdateFrequency。
+  OnlineMusicDomainField.playlistUpdateFrequency: '更新频率',
+  OnlineMusicDomainField.categoryId: '分类 ID',
+  OnlineMusicDomainField.categoryName: '分类名',
+  OnlineMusicDomainField.categoryCount: '分类内歌单数',
   OnlineMusicDomainField.lyricOriginal: '原文歌词',
   OnlineMusicDomainField.lyricTranslation: '翻译歌词',
   OnlineMusicDomainField.lyricRomanization: '罗马音歌词',
@@ -1502,6 +1513,10 @@ const _domainFieldLabels = <OnlineMusicDomainField, String>{
 
 /// 字段的界面标签。「必填」标记由**该能力真实的校验集合**决定，
 /// 不在标签表里写死——同一个字段在不同能力下的必填性不同。
+///
+/// ⚠️ 标签表必须**覆盖全部枚举值**（P-64）：兜底是 `?? field.name`，漏一个就会把
+/// 英文枚举名渲染成**字段行标题**。`test/page/settings_page/online_music_settings_test.dart`
+/// 里有一条**穷举守卫**逐值断言"标签不等于枚举名"，漏了就会变红。
 String domainFieldLabel(OnlineMusicDomainField field, {bool required = false}) {
   final base = _domainFieldLabels[field] ?? field.name;
   return required ? '$base（必填）' : base;
@@ -1557,7 +1572,33 @@ OnlineMusicInputSource defaultInputSourceFor(
   OnlineMusicCapability.newSongs => OnlineMusicInputSource.limit,
 };
 
+/// 试跑是否需要"额外 ID"输入，以及那个 ID 是什么（P-64）。
+///
+/// 旧写法只对 `playlistCollection` 特判，于是**歌单分类 / 榜单 / 新歌**也显示
+/// 一个用不到的 ID 输入框；而歌单详情与播放解析的输入**含义不同**（歌单 ID vs 曲目 ID），
+/// 却共用一句「试跑用的 ID（曲目 / 歌单）」。
+///
+/// 穷举 switch：新增能力漏改即**编译失败**。
+({bool needed, String label}) testIdFieldFor(
+  OnlineMusicCapability capability,
+) => switch (capability) {
+  OnlineMusicCapability.search => (needed: false, label: ''),
+  OnlineMusicCapability.playlist => (needed: true, label: '试跑用的歌单 ID'),
+  OnlineMusicCapability.lyric ||
+  OnlineMusicCapability.stream => (needed: true, label: '试跑用的曲目 ID'),
+  // 这四个能力一次请求拿一个数组：试跑不需要额外 ID。
+  OnlineMusicCapability.playlistCollection ||
+  OnlineMusicCapability.playlistCategories ||
+  OnlineMusicCapability.chartList ||
+  OnlineMusicCapability.newSongs => (needed: false, label: ''),
+};
+
 /// 查询参数取值来源的界面标签。
+///
+/// ⚠️ 必须**覆盖全部枚举值**（P-64）：漏一个就会在界面上露出英文枚举名
+/// （`inputSourceLabel` 的兜底是 `?? source.name`）。
+/// `test/page/settings_page/online_music_settings_test.dart` 里有一条
+/// **穷举守卫**逐值断言"标签不等于枚举名"，漏了就会变红。
 const _inputSourceLabels = <OnlineMusicInputSource, String>{
   OnlineMusicInputSource.keyword: '搜索关键词',
   OnlineMusicInputSource.limit: '每页数量',
@@ -1566,6 +1607,8 @@ const _inputSourceLabels = <OnlineMusicInputSource, String>{
   OnlineMusicInputSource.cursor: '游标',
   OnlineMusicInputSource.trackId: '曲目 ID',
   OnlineMusicInputSource.playlistId: '歌单 ID',
+  // P-64：这一项以前缺失 ⇒ 「歌单分类」能力里选它时菜单显示英文 `categoryId`。
+  OnlineMusicInputSource.categoryId: '歌单分类',
   OnlineMusicInputSource.quality: '音质',
 };
 

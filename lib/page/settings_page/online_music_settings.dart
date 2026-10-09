@@ -165,7 +165,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     if (_controller.settings.providers.length <= 1) return;
     final confirmed = await showDangerConfirmDialog(
       context: context,
-      title: '删除提供商 ${provider.id}？',
+      title: '删除提供商 ${provider.label}？',
       message:
           '指向它的能力分配与默认提供商都会回落到列表中的第一个条目。'
           '已保存的 API Key 不会被删除。',
@@ -332,7 +332,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   Future<void> _clearCredential(OnlineMusicProviderDefinition provider) async {
     final confirmed = await showDangerConfirmDialog(
       context: context,
-      title: '清除 ${provider.id} 的 ${_controller.credentialDisplayName}？',
+      title: '清除 ${provider.label} 的 ${_controller.credentialDisplayName}？',
       message: _controller.isPortableBuild
           ? '这会清除本次运行中的 API Key，关闭应用后也不会保留。'
           : '这会删除当前 Windows 用户凭据中的该槽位。',
@@ -473,7 +473,10 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
             // 留着这个标记只会让用户以为它还在决定什么（字段本身仍兼容可读）。
             description: provider.label,
             subtitle:
-                '${_hostOf(provider.effectiveBaseUrl)} · ${provider.contentPlatform.name} · ${_authDescription(provider)}',
+                '${_hostOf(provider.effectiveBaseUrl)} · '
+                // P-64：内容来源也用中文平台名（以前这里露英文枚举名）。
+                '${musicPlatformLabel(provider.contentPlatform)} · '
+                '${_authDescription(provider)}',
             action: _buildProviderAction(provider),
           ),
           const SizedBox(height: 12),
@@ -905,7 +908,10 @@ class _ProviderDialogState extends State<_ProviderDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(_isEditing ? '编辑提供商 ${widget.editing!.id}' : '添加提供商'),
+      // P-64：用户可见文案统一用**展示名**（label 优先 displayName），与列表里的称呼一致。
+      title: Text(
+        _isEditing ? '编辑提供商 ${widget.editing!.label}' : '添加提供商',
+      ),
       content: SizedBox(
         width: 420,
         child: Column(
@@ -963,7 +969,12 @@ class _ProviderDialogState extends State<_ProviderDialog> {
                 showSelectedIcon: false,
                 segments: [
                   for (final platform in MusicPlatform.values)
-                    ButtonSegment(value: platform, label: Text(platform.name)),
+                    ButtonSegment(
+                value: platform,
+                // P-64：这里以前直接显示英文枚举名（netease/qq/kugou），
+                // 而平台卡用的是 `musicPlatformLabel`。同一个平台两种称呼 ⇒ 统一成中文。
+                label: Text(musicPlatformLabel(platform)),
+              ),
                 ],
                 selected: {_contentPlatform},
                 onSelectionChanged: _isEditing
