@@ -55,7 +55,9 @@ final class OnlineMusicProviderRegistry {
   final Map<OnlineMusicCapability, String> _explicitCapabilityProviders;
   final OnlineMusicExplicitCandidates? _explicitCandidates;
 
-  /// 被停用的平台；**空集 = 全部启用**（与 `OnlineMusicSettings.enabledPlatforms` 同义）。
+  /// 已**启用**的平台集合；**空集 = 全部启用**
+  /// （与 `OnlineMusicSettings.enabledPlatforms` 同义 —— P-55：这里以前也写成"被停用"，
+  /// 与字段语义相反，见那边的详细说明）。
   final Set<MusicPlatform> _enabledPlatforms;
   late final OnlineMusicProvider _defaultProvider;
   late final Map<OnlineMusicCapability, OnlineMusicProvider> _selectedProviders;
