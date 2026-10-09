@@ -240,20 +240,28 @@ final class ChkszOnlineMusicProvider
         safeMessage: '音乐服务请求失败',
       );
     }
-    final kind = switch (error.kind) {
-      ChkszErrorKind.badRequest => OnlineMusicErrorKind.badRequest,
-      ChkszErrorKind.unauthorized => OnlineMusicErrorKind.notConfigured,
-      ChkszErrorKind.quotaExhausted => OnlineMusicErrorKind.quotaExhausted,
-      ChkszErrorKind.forbidden => OnlineMusicErrorKind.forbidden,
-      ChkszErrorKind.notFound => OnlineMusicErrorKind.notFound,
-      ChkszErrorKind.rateLimited => OnlineMusicErrorKind.rateLimited,
-      ChkszErrorKind.unavailable => OnlineMusicErrorKind.unavailable,
-      ChkszErrorKind.businessFailure => OnlineMusicErrorKind.businessFailure,
-      ChkszErrorKind.invalidResponse => OnlineMusicErrorKind.invalidResponse,
-      ChkszErrorKind.cancelled => OnlineMusicErrorKind.cancelled,
-      ChkszErrorKind.network => OnlineMusicErrorKind.network,
-      ChkszErrorKind.unknown => OnlineMusicErrorKind.unknown,
-    };
+    // P-16：**带状态码**的失败一律交给唯一的状态码表分类（内置实现 ⇒ origin: builtin，
+    // 因此 404 仍然是"资源不存在"）。此前这里有一张与声明式**不同**的映射表，
+    // 同一个 404/500 在两层的结论不一致。
+    //
+    // 没有状态码的（取消 / 网络 / 业务失败 / 响应无法识别）才用 chksz 自己的信号 ——
+    // 它们是"传输层发生了什么"，不是"HTTP 说了什么"。
+    final kind = error.statusCode != null
+        ? classifyHttpStatus(
+            error.statusCode!,
+            origin: OnlineMusicErrorOrigin.builtin,
+          )
+        : switch (error.kind) {
+            ChkszErrorKind.businessFailure =>
+              OnlineMusicErrorKind.businessFailure,
+            ChkszErrorKind.invalidResponse =>
+              OnlineMusicErrorKind.invalidResponse,
+            ChkszErrorKind.cancelled => OnlineMusicErrorKind.cancelled,
+            ChkszErrorKind.network => OnlineMusicErrorKind.network,
+            // 客户端在**没有 HTTP 状态码**时给出的"凭据无效"信号（例如响应体里的业务码）。
+            ChkszErrorKind.unauthorized => OnlineMusicErrorKind.notConfigured,
+            _ => OnlineMusicErrorKind.unknown,
+          };
     return OnlineMusicException(
       kind: kind,
       safeMessage: error.safeMessage,

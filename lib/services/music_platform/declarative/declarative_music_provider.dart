@@ -318,18 +318,17 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
         statusCode: response.statusCode,
         body: response.data,
       )) {
-        // D15：声明式 Provider 的路径由**用户配置**，因此这里的 404 属于
-        // 「配置的接口对不上服务端」，与内置 Provider 的「资源不存在」是两件事。
-        // 响应根本不是 JSON 也归此类（成功判定对不上的根因是接口定义不匹配）。
-        if (response.statusCode == 404 || !_isReadableJson(response.data)) {
-          throw const OnlineMusicException(
-            kind: OnlineMusicErrorKind.endpointMismatch,
-            safeMessage: '当前接口定义无法匹配响应：请检查服务地址与请求路径',
-          );
-        }
+        // P-16：分类**统一**由 `classifyHttpStatus` 决定（单一事实源）。
+        // 声明式 Provider 的路径由**用户配置** ⇒ 这里的 404 与"响应不是可读 JSON"
+        // 都属于「接口定义对不上服务端」（Spec §6.5），该规则已内建在那张表里。
+        final kind = classifyHttpStatus(
+          response.statusCode,
+          origin: OnlineMusicErrorOrigin.declarative,
+          readableJson: _isReadableJson(response.data),
+        );
         throw OnlineMusicException(
-          kind: _errorKindForStatus(response.statusCode),
-          safeMessage: _safeMessageForStatus(response.statusCode),
+          kind: kind,
+          safeMessage: _safeMessageForKind(kind, response.statusCode),
         );
       }
       return map(response.data);
@@ -391,30 +390,25 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
   /// 不是的话说明接口定义与响应结构对不上（D15），而不是业务层说"没有这条数据"。
   static bool _isReadableJson(Object? data) => data is Map || data is List;
 
-  /// 状态码 → 错误分类。
+  /// 分类之后**给用户看的那句话**。
   ///
-  /// **注意没有 `404 => notFound`**：声明式 Provider 的 404 是"配置的接口对不上
-  /// 服务端"，已在调用处归入 [OnlineMusicErrorKind.endpointMismatch]（D15）。
-  /// 内置 Provider 的 404 仍然是 `notFound`（路径由代码拥有，404 就代表资源不存在）。
-  OnlineMusicErrorKind _errorKindForStatus(int statusCode) =>
-      switch (statusCode) {
-        400 => OnlineMusicErrorKind.badRequest,
-        401 => OnlineMusicErrorKind.notConfigured,
-        402 => OnlineMusicErrorKind.quotaExhausted,
-        403 => OnlineMusicErrorKind.forbidden,
-        429 => OnlineMusicErrorKind.rateLimited,
-        >= 500 => OnlineMusicErrorKind.unavailable,
-        _ => OnlineMusicErrorKind.businessFailure,
-      };
-
-  String _safeMessageForStatus(int statusCode) => switch (statusCode) {
-    400 => '音乐服务拒绝了该请求',
-    401 => '请先配置有效凭据',
-    403 => '音乐服务拒绝访问',
-    429 => '请求过于频繁，请稍后再试',
-    >= 500 => '音乐服务暂时不可用',
-    _ => '音乐服务请求失败',
-  };
+  /// P-16：**分类**只有一处（`classifyHttpStatus`），这里只负责措辞 ——
+  /// 声明式的 404/不可读响应统一说"接口定义无法匹配响应"，其余按分类取词，
+  /// 并在句末带上原始状态码（用户拿它去比对服务端日志）。
+  String _safeMessageForKind(OnlineMusicErrorKind kind, int statusCode) {
+    if (kind == OnlineMusicErrorKind.endpointMismatch) {
+      return '当前接口定义无法匹配响应：请检查服务地址与请求路径（HTTP $statusCode）';
+    }
+    final base = switch (kind) {
+      OnlineMusicErrorKind.badRequest => '音乐服务拒绝了该请求',
+      OnlineMusicErrorKind.notConfigured => '请先配置有效凭据',
+      OnlineMusicErrorKind.forbidden => '音乐服务拒绝访问',
+      OnlineMusicErrorKind.rateLimited => '请求过于频繁，请稍后再试',
+      OnlineMusicErrorKind.unavailable => '音乐服务暂时不可用',
+      _ => '音乐服务请求失败',
+    };
+    return '$base（HTTP $statusCode）';
+  }
 
   @override
   String toString() =>

@@ -11,6 +11,7 @@ import 'package:pure_music/services/music_platform/declarative/declarative_respo
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_credentials.dart';
+import 'package:pure_music/services/music_platform/online_music_error.dart';
 import 'package:pure_music/services/music_platform/online_music_request.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
@@ -104,22 +105,52 @@ final class DeclarativeCapabilityTestResult {
   }
 }
 
+/// 统一分类 → **试跑界面的展示大类**（P-16；这是唯一的投影表）。
+///
+/// 试跑的词表比运行期更粗（Spec §19.5 的用户口径：网络 / HTTP / 认证 / 业务 /
+/// 响应格式 / 映射失败），但它必须是 [OnlineMusicErrorKind] 的**纯函数** ——
+/// 否则同一个失败会出现"运行期说 X、试跑说 Y"（P-16 的原始症状）。
+DeclarativeTestFailureKind declarativeTestFailureKindFor(
+  OnlineMusicErrorKind kind,
+) => switch (kind) {
+  OnlineMusicErrorKind.network ||
+  OnlineMusicErrorKind.cancelled => DeclarativeTestFailureKind.network,
+  OnlineMusicErrorKind.notConfigured ||
+  OnlineMusicErrorKind.forbidden => DeclarativeTestFailureKind.authentication,
+  OnlineMusicErrorKind.businessFailure => DeclarativeTestFailureKind.business,
+  OnlineMusicErrorKind.endpointMismatch ||
+  OnlineMusicErrorKind.invalidResponse =>
+    DeclarativeTestFailureKind.responseFormat,
+  OnlineMusicErrorKind.badRequest ||
+  OnlineMusicErrorKind.notFound ||
+  OnlineMusicErrorKind.quotaExhausted ||
+  OnlineMusicErrorKind.rateLimited ||
+  OnlineMusicErrorKind.unavailable ||
+  OnlineMusicErrorKind.unknown => DeclarativeTestFailureKind.http,
+};
+
 /// 成功判定不通过时的**大类**（W5）。
 ///
-/// - 401 / 403 → 认证；
-/// - 其它 4xx / 5xx → HTTP；
-/// - 2xx 但判定不通过：响应是可读的结构（Map/List）⇒ 业务判定问题；
+/// - 状态码的分类**统一**由 `classifyHttpStatus` 决定（声明式 ⇒ 404 与不可读响应
+///   归「接口定义不匹配」），这里只把它投影成界面词表；
+/// - 2xx（或其它非错误状态）却判定不过：响应结构可读（Map/List）⇒ 业务判定问题；
 ///   连结构都不是（HTML 错误页、纯文本）⇒ 响应格式与接口定义不匹配。
 DeclarativeTestFailureKind classifyUnsuccessfulTestResponse(
   int statusCode,
   Object? body,
 ) {
-  if (statusCode == 401 || statusCode == 403) {
-    return DeclarativeTestFailureKind.authentication;
+  if (statusCode < 400) {
+    return (body is Map || body is List)
+        ? DeclarativeTestFailureKind.business
+        : DeclarativeTestFailureKind.responseFormat;
   }
-  if (statusCode >= 400) return DeclarativeTestFailureKind.http;
-  if (body is Map || body is List) return DeclarativeTestFailureKind.business;
-  return DeclarativeTestFailureKind.responseFormat;
+  return declarativeTestFailureKindFor(
+    classifyHttpStatus(
+      statusCode,
+      origin: OnlineMusicErrorOrigin.declarative,
+      readableJson: body is Map || body is List,
+    ),
+  );
 }
 
 /// 敏感**参数名 / 请求头名 / JSON 键名**：这些名字的取值一律不进界面、不进日志。
