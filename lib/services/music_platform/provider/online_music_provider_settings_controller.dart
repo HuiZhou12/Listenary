@@ -175,11 +175,12 @@ bool isSensitiveDiagnosticName(String name) => RegExp(
 /// 试跑结果里展示的**请求摘要**：方法 + 路径 + 参数名与值（敏感值脱敏）。
 ///
 /// 未知服务无法自动探测时，"到底发了什么请求"是唯一的排查依据（W5），
-/// 因此这里要把参数名与值都写出来。遮蔽判据有三条，**按可靠性排序**：
-/// 1. **值来自凭据**（认证放置 / 敏感请求头的凭据引用）⇒ 一律 `[redacted]`（最可靠）；
+/// 因此这里要把参数名与值都写出来。遮蔽判据有四条，**按可靠性排序**：
+/// 1. **值来自凭据**（认证放置 / 敏感请求头的凭据引用 / 请求体认证）⇒ 一律 `[redacted]`（最可靠）；
 /// 2. **值形态可疑**（`needs-user` 类：名字没命中、但值看起来像秘密）⇒ 也 `[redacted]`
 ///    （名字白名单对它们必然漏，而漏掉的后果是直接显示这个值）；
-/// 3. 名字落在兜底名单里 ⇒ 也 `[redacted]`（覆盖"明文写死在配置里"的旧配置）。
+/// 3. 名字落在兜底名单里 ⇒ 也 `[redacted]`（覆盖"明文写死在配置里"的旧配置）；
+/// 4. 请求体还有一条**额外的**保守规则：也按形态遮蔽（见下）。
 String describeDeclarativeRequest(BuiltDeclarativeRequest request) {
   bool headerIsCredential(String name) {
     if (request.credentialHeaderNames.contains(name)) return true;
@@ -193,6 +194,14 @@ String describeDeclarativeRequest(BuiltDeclarativeRequest request) {
       request.credentialQueryNames.contains(name) ||
       isSensitiveDiagnosticName(name);
 
+  // P-34：请求体与 query **不同**——body 字段的值可以来自配置里的**任意常量**
+  // （`defaultValue` 由用户手写，不像 query 那样只有闭集运行时输入），
+  // 所以这里连**形态**也判：宁可多遮一点，也不能把配置里写死的密钥显示出来。
+  bool bodyIsCredential(String name, Object? value) =>
+      request.credentialBodyNames.contains(name) ||
+      isSensitiveDiagnosticName(name) ||
+      looksLikeSensitiveHeaderValue(value is String ? value : '${value ?? ''}');
+
   final parts = <String>[
     for (final entry in request.query.entries)
       queryIsCredential(entry.key)
@@ -205,10 +214,37 @@ String describeDeclarativeRequest(BuiltDeclarativeRequest request) {
   ];
   final buffer = StringBuffer('${request.method} ${request.path}');
   if (parts.isNotEmpty) buffer.write(' · ${parts.join('&')}');
-  if (request.body != null) {
-    buffer.write(' · 请求体：已省略（可能含凭据）');
+  final body = request.body;
+  if (body != null) {
+    // P-34：**逐字段**输出 —— POST 类能力的核心排查动作是"我配的字段名服务端到底认不认"，
+    // 以前整块写成"已省略（可能含凭据）"，这件事在界面上根本做不了。
+    final fields = <String>[];
+    if (body is Map) {
+      for (final entry in body.entries) {
+        final name = '${entry.key}';
+        fields.add(
+          bodyIsCredential(name, entry.value)
+              ? '$name=[redacted]'
+              : '$name=${_diagnosticValueText(entry.value)}',
+        );
+      }
+    }
+    buffer.write(
+      fields.isEmpty ? ' · 请求体：（空对象）' : ' · 请求体：${fields.join('&')}',
+    );
   }
   return buffer.toString();
+}
+
+/// 摘要里单个值的字符上限（值来自输入或配置，长度不可控）。
+const requestSummaryValueMaxChars = 200;
+
+String _diagnosticValueText(Object? value) {
+  if (value == null) return 'null';
+  final text = value is String ? value : '$value';
+  return text.length > requestSummaryValueMaxChars
+      ? '${text.substring(0, requestSummaryValueMaxChars)}…'
+      : text;
 }
 
 /// 探测/试跑用的传输层工厂；默认按条目 baseUrl 建一个**不跟随重定向**的 Dio。

@@ -272,6 +272,133 @@ void main() {
     });
   });
 
+  // ------------------------------------------------------------------ P-34
+  group('★ P-34 请求体在摘要里逐字段可见，凭据字段遮蔽', () {
+    OnlineMusicRequestBodySpec bodyOf(
+      List<OnlineMusicParamBinding> fields, {
+      bool isForm = false,
+    }) => OnlineMusicRequestBodySpec(isForm: isForm, fields: fields);
+
+    test('POST + JSON 体：字段名与服务端要看的键都可见（以前整块"已省略"）', () {
+      // P-34：POST 类能力的核心排查动作就是"我配的字段名服务端到底认不认"，
+      // 旧实现只写一句"请求体：已省略（可能含凭据）"⇒ 这件事在界面上做不了。
+      final request = buildDeclarativeRequest(
+        spec: OnlineMusicRequestSpec(
+          verb: OnlineMusicHttpVerb.post,
+          path: '/search',
+          body: bodyOf(const [
+            OnlineMusicParamBinding(
+              name: 'kw',
+              source: OnlineMusicInputSource.keyword,
+            ),
+            OnlineMusicParamBinding(
+              name: 'limit',
+              source: OnlineMusicInputSource.limit,
+            ),
+          ]),
+        ),
+        inputs: const DeclarativeInputs(keyword: '海阔天空', limit: 30),
+      );
+
+      final summary = describeDeclarativeRequest(request);
+      expect(summary, startsWith('POST /search'));
+      expect(summary, contains('kw=海阔天空'));
+      expect(summary, contains('limit=30'));
+      expect(summary, isNot(contains('已省略')), reason: '不得再整块省略');
+    });
+
+    test('POST + 体认证（JSON）：凭据字段被遮蔽，明文永不出现', () {
+      // ⚠️ 夹具刻意用**平凡**的名字与值（`v` / `plain-old-value`）：
+      // 它们既不在名字名单里、形态也不可疑 ⇒ 只可能被"**值来源**"这一条判据拦住。
+      // （第一版用了 `sign` + `FAKE_SECRET_...`，结果被名字/形态判据兜住，
+      //   变异验证时"删掉登记"竟然全绿 —— 那是假绿，已改正。）
+      final request = buildDeclarativeRequest(
+        spec: OnlineMusicRequestSpec(
+          verb: OnlineMusicHttpVerb.post,
+          path: '/search',
+          body: bodyOf(const [
+            OnlineMusicParamBinding(
+              name: 'kw',
+              source: OnlineMusicInputSource.keyword,
+            ),
+          ]),
+          auth: const OnlineMusicBodyAuthPlacement(fieldName: 'v'),
+        ),
+        inputs: const DeclarativeInputs(keyword: 'x'),
+        credential: 'plain-old-value',
+      );
+
+      final summary = describeDeclarativeRequest(request);
+      expect(summary, contains('kw=x'));
+      expect(summary, contains('v=[redacted]'));
+      expect(summary, isNot(contains('plain-old-value')));
+    });
+
+    test('POST + 体认证（form）：同样登记并遮蔽', () {
+      final request = buildDeclarativeRequest(
+        spec: OnlineMusicRequestSpec(
+          verb: OnlineMusicHttpVerb.post,
+          path: '/search',
+          body: bodyOf(
+            const [
+              OnlineMusicParamBinding(
+                name: 'kw',
+                source: OnlineMusicInputSource.keyword,
+              ),
+            ],
+            isForm: true,
+          ),
+          auth: const OnlineMusicBodyAuthPlacement(fieldName: 't'),
+        ),
+        inputs: const DeclarativeInputs(keyword: 'x'),
+        credential: 'plain-old-value',
+      );
+
+      final summary = describeDeclarativeRequest(request);
+      expect(summary, contains('kw=x'));
+      expect(summary, contains('t=[redacted]'));
+      expect(summary, isNot(contains('plain-old-value')));
+    });
+
+    test('体里的值形态可疑时也遮蔽（body 值可来自配置常量，比 query 更保守）', () {
+      // 名字不敏感、也不是凭据来源，但值来自**配置里写死的常量**（`defaultValue`）
+      // 且看起来像秘密 ⇒ 必须遮蔽：query 只按名字判是因为它的值只有闭集运行时输入，
+      // 而 body 还可以带用户手写的任意常量。
+      final request = buildDeclarativeRequest(
+        spec: OnlineMusicRequestSpec(
+          verb: OnlineMusicHttpVerb.post,
+          path: '/search',
+          body: bodyOf(const [
+            OnlineMusicParamBinding(
+              name: 'device',
+              source: OnlineMusicInputSource.offset,
+              defaultValue: 'Ab3Kd9Zx7Qm2Pl5R',
+            ),
+          ]),
+        ),
+        inputs: const DeclarativeInputs(),
+      );
+
+      final summary = describeDeclarativeRequest(request);
+      expect(summary, contains('device'), reason: '名字仍要可见，否则没法排查');
+      expect(summary, contains('device=[redacted]'));
+      expect(summary, isNot(contains('Ab3Kd9Zx7Qm2Pl5R')));
+    });
+
+    test('空对象体也如实说明（不是"已省略"）', () {
+      final request = buildDeclarativeRequest(
+        spec: OnlineMusicRequestSpec(
+          verb: OnlineMusicHttpVerb.post,
+          path: '/search',
+          body: bodyOf(const []),
+        ),
+        inputs: const DeclarativeInputs(),
+      );
+
+      expect(describeDeclarativeRequest(request), contains('请求体：（空对象）'));
+    });
+  });
+
   // ⚠️ 这一组是本片自查后补的：原先这里只有一条**名字与内容不符**的用例
   //（标题声称覆盖"非字符串/嵌套 JSON"，实际只断言了 describeDeclarativeRequest），
   // 导致 P-35 的结构化遮蔽**零覆盖**。现在真的把响应走一遍控制器路径。

@@ -66,6 +66,7 @@ final class BuiltDeclarativeRequest {
     this.isForm = false,
     this.credentialHeaderNames = const {},
     this.credentialQueryNames = const {},
+    this.credentialBodyNames = const {},
   });
 
   /// `GET` / `POST`。
@@ -92,6 +93,13 @@ final class BuiltDeclarativeRequest {
   /// 同 [credentialHeaderNames]：参数名由用户自己起（可能叫 `sig`、`k`），
   /// 名字白名单一定漏，只有"值来源"是可靠判据。
   final Set<String> credentialQueryNames;
+
+  /// 值**来自凭据**的**请求体字段**名（认证放在 body 时，P-34）。
+  ///
+  /// 以前只登记 header/query 两处 ⇒ 请求体只能**整体省略**（"可能含凭据"），
+  /// 于是 POST 类能力的核心排查动作（"我配的字段名服务端到底认不认"）在界面上做不了。
+  /// 有了这份集合，摘要就能**逐字段**输出：凭据字段 `[redacted]`，其余照实显示。
+  final Set<String> credentialBodyNames;
 
   @override
   String toString() =>
@@ -134,6 +142,7 @@ BuiltDeclarativeRequest buildDeclarativeRequest({
   final headers = <String, String>{};
   final credentialHeaderNames = <String>{};
   final credentialQueryNames = <String>{};
+  final credentialBodyNames = <String>{};
   for (final header in spec.headers) {
     final reference = header.credentialReference;
     if (reference != null) {
@@ -198,6 +207,8 @@ BuiltDeclarativeRequest buildDeclarativeRequest({
       } else {
         (jsonBody ??= <String, Object?>{})[fieldName] = credential;
       }
+      // P-34：登记"这个字段的值来自凭据"，摘要据此**逐字段**遮蔽。
+      credentialBodyNames.add(fieldName);
   }
 
   return BuiltDeclarativeRequest(
@@ -211,6 +222,7 @@ BuiltDeclarativeRequest buildDeclarativeRequest({
     isForm: spec.body?.isForm ?? false,
     credentialHeaderNames: Set.unmodifiable(credentialHeaderNames),
     credentialQueryNames: Set.unmodifiable(credentialQueryNames),
+    credentialBodyNames: Set.unmodifiable(credentialBodyNames),
   );
 }
 
