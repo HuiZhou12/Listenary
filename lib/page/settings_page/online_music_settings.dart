@@ -488,6 +488,12 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
               '配置问题：${provider.validationIssues().join('；')}',
             ),
           ],
+          // P-04：**逐条目**的"未生效"标记（以前只有页面顶部一句全局提示，
+          // 用户看不出到底是哪一项改了还没生效）。
+          if (_controller.providerNeedsRestart(provider.id)) ...[
+            const SizedBox(height: 4),
+            const _SettingsHint('未生效：这个条目的改动要重启后才进入运行时'),
+          ],
           const SizedBox(height: 12),
         ],
         SettingsTile(
@@ -529,6 +535,15 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
             unavailableReason: _capabilities?.unavailableSearchReasonFor(
               platform,
             ),
+            // P-37：两个事实源各自标注来源。运行中的 service 是否**仍在服务**这个平台
+            // （从它的能力集合推导），用来回答"配置里停用了、但运行中其实还能用"。
+            runtimeServesPlatform: _runtimeServesPlatform(
+              _capabilities,
+              platform,
+            ),
+            needsRestart: _controller.platformNeedsRestart(platform),
+            capabilityNeedsRestart: (capability) =>
+                _controller.capabilityNeedsRestart(platform, capability),
             onEnabledChanged: (value) => _apply(
               _controller.setPlatformEnabled(platform, enabled: value),
             ),
@@ -617,6 +632,9 @@ class _PlatformCard extends StatelessWidget {
     required this.enabled,
     required this.canToggle,
     required this.unavailableReason,
+    required this.runtimeServesPlatform,
+    required this.needsRestart,
+    required this.capabilityNeedsRestart,
     required this.onEnabledChanged,
     required this.onCapabilityChanged,
   });
@@ -631,21 +649,45 @@ class _PlatformCard extends StatelessWidget {
   /// 运行中的 service 给出的"为什么不能搜"；停用或未涉及时为 null。
   final String? unavailableReason;
 
+  /// 运行中的 service 是否**仍在**这个平台提供服务（P-37）。
+  ///
+  /// 用来识别"配置里已停用、但运行中其实还能用"这种状态：
+  /// 两边都要说出来，而不是让展示优先级吃掉其中一个。
+  final bool runtimeServesPlatform;
+
+  /// 该平台是否有尚未生效的改动（P-04）。
+  final bool needsRestart;
+
+  /// 该能力的候选来源是否有尚未生效的改动（P-04）。
+  final bool Function(OnlineMusicCapability capability) capabilityNeedsRestart;
+
   final ValueChanged<bool> onEnabledChanged;
   final void Function(OnlineMusicCapability capability, String? providerId)
   onCapabilityChanged;
 
-  /// 不可用原因的展示优先级：**运行中的能力集合**优先，其次才是"已停用"（用户口径）。
-  String? get _statusText {
+  /// P-37：卡上的状态行，**每条都标注事实来源**。
+  ///
+  /// 以前这里只显示一句、且用优先级把另一个事实吃掉（运行中原因优先，其次才是
+  /// "已停用"）—— 用户看到"已停用"就以为运行中也停了，反之亦然。
+  /// 现在：运行中的事实带「运行中：」前缀；配置态用「已停用」（配合卡片级的
+  /// "未生效"提示说明它要下次启动才生效）。
+  List<String> get _statusLines {
+    final lines = <String>[];
     final reason = unavailableReason;
-    if (reason != null && reason.isNotEmpty) return reason;
-    return enabled ? null : '已停用';
+    if (reason != null && reason.isNotEmpty) {
+      lines.add('运行中：$reason');
+    } else if (!enabled && runtimeServesPlatform) {
+      // 配置说停用、运行中却仍能服务 ⇒ 明说这是"下次启动才生效"，不冒充。
+      lines.add('运行中：仍可用（停用要下次启动才生效）');
+    }
+    if (!enabled) lines.add('已停用');
+    return lines;
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final status = _statusText;
+    final statusLines = _statusLines;
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -666,9 +708,9 @@ class _PlatformCard extends StatelessWidget {
                           fontWeight: AppType.weightSemibold,
                         ),
                       ),
-                      if (status != null)
+                      for (final line in statusLines)
                         Text(
-                          status,
+                          line,
                           style: TextStyle(
                             fontSize: AppType.caption,
                             color: scheme.onSurfaceVariant,
@@ -688,6 +730,12 @@ class _PlatformCard extends StatelessWidget {
                 ),
               ],
             ),
+            // P-04：平台级"未生效"标记（启用状态或任一能力来源有改动）。
+            if (needsRestart)
+              const Padding(
+                padding: EdgeInsets.only(top: 4.0),
+                child: _SettingsHint('该平台的改动尚未生效（下次启动）'),
+              ),
             for (final capability in OnlineMusicCapability.values)
               _buildCapabilityRow(context, capability),
           ],
@@ -701,40 +749,75 @@ class _PlatformCard extends StatelessWidget {
     OnlineMusicCapability capability,
   ) {
     final candidates = settings.capableProviderIdsFor(platform, capability);
+    // P-04：**逐能力**的"未生效"标记。
+    final pending = capabilityNeedsRestart(capability);
     if (candidates.isEmpty) {
-      return SettingsTile(
-        description: _capabilityLabel(capability),
-        subtitle: '未配置：该平台下没有支持此能力的条目',
-        action: const Text('未配置'),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SettingsTile(
+            description: _capabilityLabel(capability),
+            subtitle: '未配置：该平台下没有支持此能力的条目',
+            action: const Text('未配置'),
+          ),
+          if (pending)
+            const _SettingsHint('这里的改动尚未生效（下次启动）'),
+        ],
       );
     }
     final selected = settings.selectedProviderIdFor(platform, capability);
-    return SettingsTile(
-      description: _capabilityLabel(capability),
-      subtitle: selected == null
-          ? '自动：按条目顺序使用 ${candidates.first}'
-          : '已指定 $selected',
-      action: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: SegmentedButton<String>(
-          showSelectedIcon: false,
-          segments: [
-            const ButtonSegment(value: _autoProviderValue, label: Text('自动')),
-            for (final id in candidates)
-              ButtonSegment(value: id, label: Text(id)),
-          ],
-          selected: {selected ?? _autoProviderValue},
-          onSelectionChanged: (selection) {
-            final value = selection.first;
-            onCapabilityChanged(
-              capability,
-              value == _autoProviderValue ? null : value,
-            );
-          },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SettingsTile(
+          description: _capabilityLabel(capability),
+          subtitle: selected == null
+              ? '自动：按条目顺序使用 ${candidates.first}'
+              : '已指定 $selected',
+          action: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: [
+                const ButtonSegment(
+                  value: _autoProviderValue,
+                  label: Text('自动'),
+                ),
+                for (final id in candidates)
+                  ButtonSegment(value: id, label: Text(id)),
+              ],
+              selected: {selected ?? _autoProviderValue},
+              onSelectionChanged: (selection) {
+                final value = selection.first;
+                onCapabilityChanged(
+                  capability,
+                  value == _autoProviderValue ? null : value,
+                );
+              },
+            ),
+          ),
         ),
-      ),
+        if (pending)
+          const _SettingsHint('这里的改动尚未生效（下次启动）'),
+      ],
     );
   }
+}
+
+/// 运行中的能力集合是否**仍在这个平台提供服务**（P-37 的"配置停用但运行中可用"）。
+bool _runtimeServesPlatform(
+  OnlineMusicCapabilities? capabilities,
+  MusicPlatform platform,
+) {
+  if (capabilities == null) return false;
+  return capabilities.searchablePlatforms.contains(platform) ||
+      capabilities.resolvablePlatforms.contains(platform) ||
+      capabilities.playlistPlatforms.contains(platform) ||
+      capabilities.playlistCollectionPlatforms.contains(platform) ||
+      capabilities.playlistCategoryPlatforms.contains(platform) ||
+      capabilities.chartPlatforms.contains(platform) ||
+      capabilities.newSongPlatforms.contains(platform) ||
+      capabilities.lyricPlatforms.contains(platform);
 }
 
 /// 设置分块标题：本页有多个设置项，用标题把它们分开。
@@ -773,13 +856,18 @@ class _SettingsHint extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 4),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(Symbols.info, size: 16, color: scheme.primary),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(color: scheme.primary, fontSize: AppType.body),
+          // 文本必须能换行：提示文案长短不一（P-04 的逐项"未生效"标记、
+          // P-32 的配置问题列表都可能很长），而 Row 里的裸 Text 不会自动换行 ——
+          // 这曾让长提示直接把整行撑出屏幕。
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(color: scheme.primary, fontSize: AppType.body),
+            ),
           ),
         ],
       ),

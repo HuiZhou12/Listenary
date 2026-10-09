@@ -335,6 +335,59 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   /// 是否有尚未生效（需要重启）的改动。
   bool get hasPendingRestart => _settings != _activeSettings;
 
+  /// 该条目是否有尚未生效的改动（P-04：把"待重启"从**整页布尔**下沉为**逐项**）。
+  ///
+  /// 判据是"已保存配置"与"运行中配置"在该条目上的差异：新增 / 删除 / 任何字段变化
+  /// 都算；用户把它改回去（与运行中一致）就自动恢复为"已生效"。
+  bool providerNeedsRestart(String providerId) =>
+      _settings.providerById(providerId) !=
+      _activeSettings.providerById(providerId);
+
+  /// 该 (平台, 能力) 的候选来源是否有尚未生效的改动。
+  ///
+  /// 要比**两件事**，缺一不可：
+  /// - **可选项清单**（`capableProviderIdsFor`）：新增/删除条目会改变它，
+  ///   而"自动"就是按这个顺序走的；
+  /// - **显式选择**（`explicitCandidateIdsFor`）：用户指定/清除来源时变的是它。
+  ///
+  /// （只比"可选项"会漏掉用户的指定；只比"显式选择"会漏掉"新增条目导致自动目标变化"。）
+  bool capabilityNeedsRestart(
+    MusicPlatform platform,
+    OnlineMusicCapability capability,
+  ) {
+    if (!_sameIds(
+      _settings.capableProviderIdsFor(platform, capability),
+      _activeSettings.capableProviderIdsFor(platform, capability),
+    )) {
+      return true;
+    }
+    return !_sameIds(
+      _settings.explicitCandidateIdsFor(platform, capability),
+      _activeSettings.explicitCandidateIdsFor(platform, capability),
+    );
+  }
+
+  /// 两个有序 id 列表是否相同（P-04：逐项差异的判据）。
+  static bool _sameIds(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var index = 0; index < a.length; index++) {
+      if (a[index] != b[index]) return false;
+    }
+    return true;
+  }
+
+  /// 该平台是否有尚未生效的改动（启用状态，或任一能力的候选）。
+  bool platformNeedsRestart(MusicPlatform platform) {
+    if (_settings.isPlatformEnabled(platform) !=
+        _activeSettings.isPlatformEnabled(platform)) {
+      return true;
+    }
+    for (final capability in OnlineMusicCapability.values) {
+      if (capabilityNeedsRestart(platform, capability)) return true;
+    }
+    return false;
+  }
+
   String get credentialDisplayName =>
       _fallbackCredentials.credentialDisplayName;
 

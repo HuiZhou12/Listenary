@@ -842,7 +842,12 @@ void main() {
 
     await pumpPanel(tester, controller);
 
-    expect(find.text('缺少播放解析能力，因此不会参与搜索'), findsOneWidget);
+    expect(
+      // P-37：运行中的事实**带来源前缀** —— 卡上同时有"运行中"与"配置态"两种状态，
+      // 各自标注来源，不再用展示优先级把其中一个吃掉。
+      find.text('运行中：缺少播放解析能力，因此不会参与搜索'),
+      findsOneWidget,
+    );
     controller.dispose();
   });
 
@@ -2131,6 +2136,104 @@ void main() {
     expect(find.text('加请求头'), findsOneWidget, reason: '确认到了同一块区域');
 
     expect(find.textContaining('不需要 Key'), findsNothing);
+  });
+
+  // ------------------------------------------------------------------ F2（P-04 / P-37）
+
+  testWidgets('★ F2 P-04 只有**改了的那一个条目**被标成"未生效"', (tester) async {
+    // 以**默认配置的序列化结果**为基底，保证内置条目与运行中的那份逐字段相同 ——
+    // 手写 `{'id':'chksz','protocol':'chksz'}` 会与内置默认条目在 baseUrl 等字段上不同，
+    // 于是"没改过的条目"也会被标成未生效（夹具不精确，而不是判定错了）。
+    final configured = OnlineMusicSettings.fromJson({
+      'providers': [
+        ...(OnlineMusicSettings.defaults.toJson()['providers'] as List),
+        OnlineMusicProviderDefinition.custom(
+          id: 'selfData',
+          baseUrl: 'http://127.0.0.1:8080',
+          requiresCredential: false,
+        ).toJson(),
+      ],
+    });
+    // active 里**没有** selfData ⇒ 只有它是"未生效"。
+    final controller = _controller(
+      configured: configured,
+      active: OnlineMusicSettings.defaults,
+    );
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    expect(
+      find.text('未生效：这个条目的改动要重启后才进入运行时'),
+      findsOneWidget,
+      reason: 'P-04：逐条目标记 —— 没改过的条目不背这个锅',
+    );
+  });
+
+  testWidgets('★ F2 P-04 改一个能力的来源 ⇒ 只在该平台/该能力上标"未生效"', (tester) async {
+    final base = settingsWithBinding(
+      OnlineMusicCapability.search,
+      validBindingFor(OnlineMusicCapability.search),
+    );
+    final controller = _controller(configured: base, active: base);
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    // 起点：一致 ⇒ 没有任何"未生效"标记。
+    expect(find.textContaining('尚未生效'), findsNothing);
+
+    await controller.assignPlatformCapability(
+      MusicPlatform.netease,
+      OnlineMusicCapability.search,
+      'selfData',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('这里的改动尚未生效'), findsOneWidget);
+    expect(find.textContaining('该平台的改动尚未生效'), findsOneWidget);
+  });
+
+  testWidgets('★ F2 P-37 配置停用、运行中仍可用 ⇒ **两个事实都显示**且各自标注来源', (tester) async {
+    // 让运行中的 service **确实**服务 qq：声明式条目 + search/stream 两条绑定
+    //（D3 硬门槛要求可搜索 = 有 search 且有 stream）。
+    final searchJson = validBindingFor(
+      OnlineMusicCapability.search,
+    ).toJson();
+    final qqSettings = OnlineMusicSettings.fromJson({
+      'providers': [
+        {
+          'id': 'selfData',
+          'contentPlatform': 'qq',
+          'baseUrl': 'https://self.invalid',
+          'auth': {'kind': 'none'},
+          'capabilities': {
+            'search': searchJson,
+            'stream': authDeclaringSearchBindingJson(),
+          },
+        },
+      ],
+    });
+    final configured = qqSettings.withPlatformEnabled(
+      MusicPlatform.qq,
+      enabled: false,
+    );
+    final controller = _controller(configured: configured, active: qqSettings);
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    final qqCard = platformCard(MusicPlatform.qq);
+    expect(
+      find.descendant(of: qqCard, matching: find.text('已停用')),
+      findsOneWidget,
+      reason: '配置态的事实',
+    );
+    expect(
+      find.descendant(
+        of: qqCard,
+        matching: find.text('运行中：仍可用（停用要下次启动才生效）'),
+      ),
+      findsOneWidget,
+      reason: 'P-37：运行中的事实必须**同时**说清，不能被展示优先级吃掉',
+    );
   });
 }
 
