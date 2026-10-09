@@ -591,6 +591,23 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       );
     }
 
+    // P-54：条目级/能力级认证的矛盾 —— 与**运行期同一文案、同一结论**，
+    // 而且**不发请求**。此前试跑会读到凭据并报成功，运行期却 missingCredential。
+    final authIssue = declarativeAuthConfigIssue(
+      auth: binding.request.auth,
+      hasCredentialReference: declarativeCredentialAvailable(
+        requiresCredential: definition.requiresCredential,
+        credentialReference: definition.credentialReference,
+      ),
+    );
+    if (authIssue != null) {
+      return DeclarativeCapabilityTestResult(
+        ok: false,
+        failureReason: authIssue,
+        failureKind: DeclarativeTestFailureKind.config,
+      );
+    }
+
     final token = cancelToken ?? OnlineMusicCancelToken();
     // F0：敏感请求头的值同样来自安全槽位；试跑**与运行期共用**同一条请求构造与凭据
     // 读取路径，因此同一个配置在两边会得到同一个结论（"试跑成功、运行期报错"那种
@@ -918,9 +935,18 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   ) async {
     final reader = _credentialReader;
     final reference = definition.credentialReference;
-    if (reader == null || reference == null) return null;
+    // P-54：与**运行期同一口径** —— 装配层只在"需要 Key 且槽位存在"时
+    // 才把槽位交给声明式 Provider；试跑不能比运行期多读一次凭据，
+    // 否则就会出现"试跑成功、运行期 missingCredential"那种两份说法。
+    if (reader == null ||
+        !declarativeCredentialAvailable(
+          requiresCredential: definition.requiresCredential,
+          credentialReference: reference,
+        )) {
+      return null;
+    }
     try {
-      return await reader.readCredential(reference);
+      return await reader.readCredential(reference!);
     } catch (_) {
       return null;
     }

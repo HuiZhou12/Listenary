@@ -86,6 +86,74 @@ void main() {
     },
   );
 
+  test(
+    '★ P-54 条目「不需要 Key」时，probe 即使**读得到**凭据也不使用（与运行期同一口径）',
+    () async {
+      // ⚠️ 夹具刻意让读取口**有值**、且槽位名**显式保留**
+      //（`kind: none` 也会保留 reference —— 既有设计：关掉认证不孤立已存的 Key）。
+      // 因此只有"按 `requiresCredential` 判断是否可用"这一条口径能拦住它；
+      // 若像以前那样只看 reference 是否存在，凭据就会被带进探测请求。
+      reader.value = 'chksz_KEY_TEST_ONLY';
+      transport.responder = (request) async => _msapiBody;
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'selfData',
+            'baseUrl': 'https://self.invalid',
+            'auth': {'kind': 'none', 'reference': 'a/b/c'},
+            'capabilities': {
+              'search': OnlineMusicDeclarativeCapabilityBinding(
+                request: const OnlineMusicRequestSpec(
+                  path: '/search',
+                  query: [
+                    OnlineMusicParamBinding(
+                      name: 'keywords',
+                      source: OnlineMusicInputSource.keyword,
+                      required: true,
+                    ),
+                  ],
+                ),
+                response: OnlineMusicResponseSpec(
+                  listPath: JsonPathForTest.data,
+                  fields: {
+                    OnlineMusicDomainField.trackId: _stringField(
+                      JsonPathForTest.id,
+                      required: true,
+                    ),
+                    OnlineMusicDomainField.title: _stringField(
+                      JsonPathForTest.name,
+                      required: true,
+                    ),
+                  },
+                ),
+              ).toJson(),
+            },
+          },
+        ],
+      });
+      final store = _MemorySettingsStore(settings);
+      final controller = OnlineMusicProviderSettingsController(
+        activeSettings: settings,
+        store: store,
+        fallbackCredentials: _FakeAccess(),
+        probeTransportFactory: (_) => transport,
+        credentialReader: reader,
+      );
+
+      await controller.probeSearch(settings.providers.single);
+
+      expect(transport.requests, isNotEmpty, reason: '探测本身照常进行');
+      for (final request in transport.requests) {
+        expect(
+          request.query.values,
+          isNot(contains('chksz_KEY_TEST_ONLY')),
+          reason: '条目不需要 Key ⇒ 探测不得使用凭据',
+        );
+        expect(request.headers.values, isNot(contains('chksz_KEY_TEST_ONLY')));
+      }
+    },
+  );
+
   test('testCapability(search) reports both HTTP and mapped result', () async {
     transport.responder = (request) async => _msapiBody;
 
@@ -325,6 +393,70 @@ void main() {
         transport.requests,
         isEmpty,
         reason: '配置不合法 ⇒ 一个请求都不该发出去',
+      );
+    });
+
+    test('★ P-54 试跑与运行期**同结论**：认证矛盾归配置错误，且不发请求', () async {
+      transport.responder = (request) async => _allCapabilitiesBody;
+      // 条目设为「不需要 Key」，但能力声明了认证 —— 以前试跑会**读到凭据并报成功**，
+      // 而运行期因为没有凭据槽位报 missingCredential（两份说法）。
+      // 现在两边共用同一个判据与**同一句文案**，并且都不发请求。
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'selfData',
+            'baseUrl': 'https://self.invalid',
+            'auth': {'kind': 'none'},
+            'capabilities': {
+              'search': OnlineMusicDeclarativeCapabilityBinding(
+                request: const OnlineMusicRequestSpec(
+                  path: '/search',
+                  query: [
+                    OnlineMusicParamBinding(
+                      name: 'keywords',
+                      source: OnlineMusicInputSource.keyword,
+                      required: true,
+                    ),
+                  ],
+                  auth: OnlineMusicQueryAuthPlacement(parameterName: 'key'),
+                ),
+                response: OnlineMusicResponseSpec(
+                  success: _codeSuccess,
+                  listPath: JsonPathForTest.data,
+                  fields: {
+                    OnlineMusicDomainField.trackId: _stringField(
+                      JsonPathForTest.id,
+                      required: true,
+                    ),
+                    OnlineMusicDomainField.title: _stringField(
+                      JsonPathForTest.name,
+                      required: true,
+                    ),
+                  },
+                ),
+              ).toJson(),
+            },
+          },
+        ],
+      });
+
+      final result = await controllerFor(
+        settings,
+        credential: 'SECRET_PROBE_TEST_ONLY',
+      ).testCapability(settings.providers.single, OnlineMusicCapability.search);
+
+      expect(result.ok, isFalse);
+      expect(result.failureKind, DeclarativeTestFailureKind.config);
+      expect(result.failureReason, contains('请先把条目的 Key 打开'));
+      expect(
+        result.failureReason,
+        isNot(contains('SECRET_PROBE_TEST_ONLY')),
+        reason: '文案不得回显凭据值',
+      );
+      expect(
+        transport.requests,
+        isEmpty,
+        reason: '配置矛盾 ⇒ 不发请求（与运行期同一判据）',
       );
     });
 

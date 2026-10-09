@@ -586,6 +586,60 @@ void main() {
         isNot(contains('不会被读取')),
       );
     });
+    test('★ P-54 capabilityAuth 对声明式无效时如实说明（旧旋钮可见）', () {
+      // 这个旋钮的唯一消费者是内置 ChkSz 链路；声明式绑定自己的认证在
+      // `binding.request.auth` 里。非空且**没有内置能力**时如实说明，
+      // 免得用户以为设了它就有认证。
+      final declarativeOnly = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'selfData',
+            'baseUrl': 'https://self.invalid',
+            'auth': {'kind': 'apiKey', 'reference': 'a/b/c'},
+            'capabilityAuth': {'search': 'none'},
+            'capabilities': {'search': httpBinding()},
+          },
+        ],
+      }).providers.single;
+      expect(
+        declarativeOnly.validationIssues().join('\n'),
+        contains('capabilityAuth'),
+      );
+
+      // 有内置能力时它**确实生效**（`authFor` 会用它）⇒ 不该报"无效"。
+      final withBuiltin = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'selfData',
+            'baseUrl': 'https://self.invalid',
+            'auth': {'kind': 'apiKey', 'reference': 'a/b/c'},
+            'capabilityAuth': {'search': 'none'},
+            'capabilities': {
+              'search': const OnlineMusicBuiltinCapabilityBinding().toJson(),
+            },
+          },
+        ],
+      }).providers.single;
+      expect(
+        withBuiltin.validationIssues().join('\n'),
+        isNot(contains('capabilityAuth')),
+      );
+
+      // 旧条目（无 `capabilities` 键）按内置实现解释 ⇒ 也生效。
+      final legacy = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'chksz',
+            'protocol': 'chksz',
+            'capabilityAuth': {'search': 'none'},
+          },
+        ],
+      }).providers.single;
+      expect(
+        legacy.validationIssues().join('\n'),
+        isNot(contains('capabilityAuth')),
+      );
+    });
   });
 
   group('validation rejects out-of-model configs', () {

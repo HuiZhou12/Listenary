@@ -297,6 +297,19 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
           safeMessage: '播放请求已取消',
         );
       }
+      // P-54：条目级「不需要 Key」与能力级「声明了认证」矛盾时，**换 Provider 也没用**
+      // ⇒ 归配置错误（`badRequest`，禁止回退），而不是"凭据还没配"那种可回退的
+      // `notConfigured`（后者换一个是合理出路，前者只会把配置错误掩盖掉）。
+      final authIssue = declarativeAuthConfigIssue(
+        auth: binding.request.auth,
+        hasCredentialReference: credentialReference != null,
+      );
+      if (authIssue != null) {
+        throw OnlineMusicException(
+          kind: OnlineMusicErrorKind.badRequest,
+          safeMessage: authIssue,
+        );
+      }
       final request = buildDeclarativeRequest(
         spec: binding.request,
         inputs: inputs,

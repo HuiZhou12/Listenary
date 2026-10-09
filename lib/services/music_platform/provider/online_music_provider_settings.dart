@@ -251,6 +251,7 @@ final class OnlineMusicProviderDefinition {
       }
     }
     issues.addAll(_capabilityAuthConsistencyIssues(corrupt));
+    issues.addAll(_capabilityAuthVisibilityIssues());
     return issues;
   }
 
@@ -308,6 +309,29 @@ final class OnlineMusicProviderDefinition {
       );
     }
     return issues;
+  }
+
+  /// P-54：`capabilityAuth`（能力级认证覆盖）**对声明式绑定零效果**。
+  ///
+  /// 这个旋钮的唯一消费者是内置 ChkSz 链路（`authFor` → `authResolver`）；
+  /// 声明式绑定自己的认证在 `binding.request.auth` 里。它也没有界面入口，
+  /// 只能来自手写或旧版本的配置 ⇒ 非空且该条目**没有内置能力**时如实说明，
+  /// 免得用户以为设了它就有认证。
+  List<String> _capabilityAuthVisibilityIssues() {
+    if (capabilityAuth.isEmpty) return const [];
+    final explicit = capabilities;
+    // 旧条目（无 `capabilities` 键）按内置实现解释 ⇒ 这个旋钮**确实生效**。
+    final hasBuiltin =
+        explicit == null ||
+        explicit.values.any(
+          (binding) => binding is OnlineMusicBuiltinCapabilityBinding,
+        );
+    if (hasBuiltin) return const [];
+    return const [
+      'capabilityAuth（能力级认证覆盖）对声明式绑定无效：本条目没有内置能力，'
+      '因此这个旋钮不起作用。请改在各能力的「认证方式」里设置；'
+      '如需清理，可在该能力的 JSON 视图里删掉 capabilityAuth',
+    ];
   }
 
   /// 能力级认证覆盖；未列出的能力使用 Provider 默认要求。

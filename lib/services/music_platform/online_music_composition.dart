@@ -5,6 +5,7 @@ import 'package:pure_music/services/music_platform/chksz/chksz_provider_config.d
 import 'package:pure_music/services/music_platform/chksz/chksz_runtime_factory.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_music_provider.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_credentials.dart';
 import 'package:pure_music/services/music_platform/online_music_error.dart';
@@ -139,7 +140,12 @@ OnlineMusicComposition createOnlineMusicComposition({
         bindings: declarativeBindings,
         transport: DioDeclarativeHttpTransport(dio: ownedDio),
         credentials: access,
-        credentialReference: definition.requiresCredential
+        // P-54：**唯一**的"凭据是否可用"口径（`declarativeCredentialAvailable`），
+        // 试跑侧用同一个函数 ⇒ 不会再出现"试跑成功、运行期 missingCredential"。
+        credentialReference: declarativeCredentialAvailable(
+          requiresCredential: definition.requiresCredential,
+          credentialReference: definition.credentialReference,
+        )
             ? definition.credentialReference
             : null,
         contentPlatform: definition.contentPlatform,

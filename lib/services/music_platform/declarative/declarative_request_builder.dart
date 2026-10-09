@@ -107,6 +107,36 @@ final class BuiltDeclarativeRequest {
       'headers=${headers.length}, body=${body == null ? 'none' : 'yes'})';
 }
 
+/// 装配层把凭据槽位交给声明式 Provider 的**唯一**条件（P-54）。
+///
+/// 运行期（`online_music_composition`）与试跑（设置控制器）都必须用这一条，
+/// 否则会出现"试跑读得到凭据、运行期读不到"那种两份说法。
+bool declarativeCredentialAvailable({
+  required bool requiresCredential,
+  required String? credentialReference,
+}) => requiresCredential && credentialReference != null;
+
+/// P-54：条目级「是否需要 Key」与能力级「认证方式」的**矛盾**（配置错误）。
+///
+/// 为什么会矛盾：条目级 `requiresCredential` 决定装配时**把凭据槽位传不传下去**，
+/// 能力级 `binding.request.auth` 决定**要不要注入**。两者叠加就能造出
+/// "要注入、但根本读不到凭据"的配置。
+///
+/// 与"凭据还没配"必须区分（否则会被回退白名单静默掩盖）：
+/// - 「需要 Key 但还没配」⇒ `notConfigured`：换个 Provider 是**合理出路**；
+/// - 本条（**不需要** Key 却声明认证）⇒ 换谁都没用，是**配置错误** ⇒ `badRequest`（禁止回退）。
+///
+/// 返回 null 表示没有矛盾。**文案只有这一份**：试跑与运行期必须给出同一个结论。
+String? declarativeAuthConfigIssue({
+  required OnlineMusicAuthPlacement auth,
+  required bool hasCredentialReference,
+}) {
+  if (auth is OnlineMusicNoAuthPlacement) return null;
+  if (hasCredentialReference) return null;
+  return '该能力声明了认证，但条目被设为「不需要 Key」（或没有可用的凭据槽位）'
+      '⇒ 运行期会因缺少凭据失败：请先把条目的 Key 打开，或把该能力的认证改回「无」';
+}
+
 /// 构造请求。
 ///
 /// [credential] 为该条目**认证放置**（auth placement）所用凭据槽位的当前值；

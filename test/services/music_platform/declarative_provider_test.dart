@@ -130,12 +130,14 @@ void main() {
   }
 
   test(
-    '★ P-36 条目设为「不需要 Key」但能力声明了认证 ⇒ 运行期缺凭据，且一个请求都不发',
+    '★ P-54 条目设为「不需要 Key」但能力声明了认证 ⇒ 归**配置错误**（禁止回退），且一个请求都不发',
     () async {
-      // P-36 的矛盾组合：能级说"要注入认证"，条目级说"不需要 Key"。
-      // 这种配置能保存成功，运行期才以 notConfigured 失败
-      // （而 notConfigured 在回退白名单里，还会静默换个 Provider 掩盖）。
-      // 本条钉住两件事：①结论不变（仍然 fail-closed）②**不发请求**。
+      // P-36 的矛盾组合：能力级说"要注入认证"，条目级说"不需要 Key"。
+      // ⚠️ 结论在 F2-S8 被**收紧**（本条断言随之上移，不是放宽）：
+      // 以前它归 `notConfigured`（"凭据还没配"），而 `notConfigured` **在回退白名单里**
+      // ⇒ 会被静默换个 Provider 掩盖；但"条目根本不需要 Key"这种矛盾换谁都没用。
+      // 现在归 `badRequest`（配置错误，禁止回退），并由运行时与试跑**共用同一句文案**。
+      // 对照：真正"需要 Key 但还没配"的情形仍然 `notConfigured`（见上一条用例）。
       final settings = OnlineMusicSettings.fromJson({
         'providers': [
           {
@@ -162,17 +164,23 @@ void main() {
           cancelToken: OnlineMusicCancelToken(),
         ),
         throwsA(
-          isA<OnlineMusicException>().having(
-            (error) => error.kind,
-            'kind',
-            OnlineMusicErrorKind.notConfigured,
-          ),
+          isA<OnlineMusicException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                OnlineMusicErrorKind.badRequest,
+              )
+              .having(
+                (error) => error.safeMessage,
+                'safeMessage',
+                contains('请先把条目的 Key 打开'),
+              ),
         ),
       );
       expect(
         adapter.requests,
         isEmpty,
-        reason: '缺凭据 ⇒ fail-closed：一个请求都不该发出去',
+        reason: '配置矛盾 ⇒ fail-closed：一个请求都不该发出去',
       );
     },
   );
