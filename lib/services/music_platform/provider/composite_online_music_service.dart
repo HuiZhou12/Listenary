@@ -212,8 +212,21 @@ final class CompositeOnlineMusicService
     OnlineMusicCapability.lyric,
     (provider) => provider.fetchLyrics(ref, cancelToken: cancelToken),
     // D9 / I1：歌词必须带回来源身份（用请求里的 ref 回填，Provider 不必自己提供）。
-    stamp: (lyrics, providerId) =>
-        lyrics.ref == null ? lyrics.withRef(ref) : lyrics,
+    //
+    // P-42：Provider **自己带回** ref 时，必须与请求的是同一首 —— 以前无条件采信它，
+    // 于是"另一个 Provider 返回了别人的歌词"会被原样当成这首歌的歌词（身份错配无法检出）。
+    // 现在不一致就**直接失败**（`invalidResponse`：数据无法采信，且不回退掩盖）。
+    stamp: (lyrics, providerId) {
+      final returned = lyrics.ref;
+      if (returned == null) return lyrics.withRef(ref);
+      if (returned != ref) {
+        throw const OnlineMusicException(
+          kind: OnlineMusicErrorKind.invalidResponse,
+          safeMessage: '返回的歌词与请求的曲目不是同一首：已拒绝使用该结果',
+        );
+      }
+      return lyrics;
+    },
   );
 
   @override

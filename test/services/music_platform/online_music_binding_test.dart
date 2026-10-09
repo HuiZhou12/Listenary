@@ -473,6 +473,55 @@ void main() {
     });
   });
 
+  group('★ P-42 播放解析必须声明身份映射', () {
+    test('stream 绑定缺 trackId 映射 ⇒ 校验明确报出（保存/试跑即拦）', () {
+      final withoutIdentity = OnlineMusicDeclarativeCapabilityBinding(
+        request: const OnlineMusicRequestSpec(path: '/song/url'),
+        response: OnlineMusicResponseSpec(
+          fieldsRootPath: _path('data'),
+          fields: {
+            OnlineMusicDomainField.streamUrl: OnlineMusicFieldSpec(
+              candidates: [_path('url')],
+              transform: OnlineMusicFieldTransform.asUri,
+              required: true,
+            ),
+          },
+        ),
+      );
+      final issues = withoutIdentity
+          .validationIssues(OnlineMusicCapability.stream)
+          .join('\n');
+
+      expect(issues, contains('trackId'));
+      expect(issues, contains('必填'));
+
+      // 配上身份映射之后不再有该问题。
+      final withIdentity = OnlineMusicDeclarativeCapabilityBinding(
+        request: const OnlineMusicRequestSpec(path: '/song/url'),
+        response: OnlineMusicResponseSpec(
+          fieldsRootPath: _path('data'),
+          fields: {
+            OnlineMusicDomainField.streamUrl: OnlineMusicFieldSpec(
+              candidates: [_path('url')],
+              transform: OnlineMusicFieldTransform.asUri,
+              required: true,
+            ),
+            OnlineMusicDomainField.trackId: OnlineMusicFieldSpec(
+              candidates: [_path('id')],
+              transform: OnlineMusicFieldTransform.asString,
+            ),
+          },
+        ),
+      );
+      expect(
+        withIdentity
+            .validationIssues(OnlineMusicCapability.stream)
+            .join('\n'),
+        isNot(contains('必填')),
+      );
+    });
+  });
+
   group('★ P-36 条目级与能力级认证的一致性', () {
     OnlineMusicProviderDefinition entry({
       required bool requiresCredential,

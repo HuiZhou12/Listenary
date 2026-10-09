@@ -666,7 +666,7 @@ const _allCapabilitiesBody = <String, Object?>{
     ],
   },
   'lrc': {'lyric': '[00:01.00]line'},
-  'stream': {'url': 'https://media.invalid/a.flac'},
+  'stream': {'id': 'track-1', 'url': 'https://media.invalid/a.flac'},
 };
 
 OnlineMusicFieldSpec _stringField(JsonPath path, {bool required = false}) =>
@@ -937,6 +937,10 @@ OnlineMusicSettings _allCapabilitiesSettings() => OnlineMusicSettings.fromJson({
                 candidates: [JsonPathForTest.url],
                 transform: OnlineMusicFieldTransform.asUri,
                 required: true,
+              ),
+              // P-42：播放解析必须能证明身份（响应体里的 `stream.id` 与试跑用的 trackId 一致）。
+              OnlineMusicDomainField.trackId: _stringField(
+                JsonPathForTest.id,
               ),
             },
           ),

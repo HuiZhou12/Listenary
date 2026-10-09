@@ -626,7 +626,14 @@ Set<OnlineMusicDomainField> requiredFieldsFor(
         OnlineMusicDomainField.title,
       };
     case OnlineMusicCapability.stream:
-      return const {OnlineMusicDomainField.streamUrl};
+      // P-42：**播放入口必须能证明身份**（D-F1-2「跨 Provider 解析必须可证明同一内容
+      // 或直接失败」）。没有 trackId 映射时，我们无法判断返回的地址是不是请求的那首歌，
+      // 而同平台多 Provider 回退会让"错歌"真实发生（身份是请求方回填的，看不出来）。
+      // 因此这里要求必须有 trackId 映射：保存/试跑时就会被拦住并说清怎么修。
+      return const {
+        OnlineMusicDomainField.streamUrl,
+        OnlineMusicDomainField.trackId,
+      };
     case OnlineMusicCapability.playlist:
       return const {
         OnlineMusicDomainField.playlistName,

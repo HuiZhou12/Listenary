@@ -74,20 +74,50 @@ void main() {
     expect(qqProvider.fetchCalls, 0, reason: '不允许"静默换源"到别的平台');
   });
 
-  test('Provider 自己带回来的 ref 优先于请求 ref（不覆盖更精确的来源）', () async {
+  // ⚠️ 这条用例原先是「Provider 自己带回来的 ref **优先**于请求 ref（不覆盖更精确的来源）」，
+  // 断言 `lyrics.ref!.trackId == 'returned'` —— 也就是说：**Provider 返回了别首的歌词，
+  // 我们照样当成这首歌的歌词**。这正是 P-42 要修的"身份错配无法检出"：
+  // 同平台多 Provider 回退时，另一家返回的歌词会被静默贴到当前曲目上。
+  // F2-S13 起改为：**带回的 ref 必须与请求的是同一首**，否则直接失败（不采信、不回退掩盖）。
+  // （"不覆盖"这一半仍然成立：同一首时原样保留 Provider 的 ref，不会被改写。）
+  test('★ P-42 Provider 带回**同一首**的 ref ⇒ 原样保留（不被改写）', () async {
     final provider = _LyricProvider(
       'neteaseLyric',
       netease,
       returnedRef: const PlatformTrackRef(
         platform: netease,
-        trackId: 'returned',
+        trackId: '1475869988',
       ),
     );
     final service = serviceWith([provider]);
 
     final lyrics = await lyricsOf(service, neteaseRef);
 
-    expect(lyrics.ref!.trackId, 'returned');
+    expect(lyrics.ref, neteaseRef, reason: '同一首 ⇒ 采信并保留它带回来的身份');
+  });
+
+  test('★ P-42 Provider 带回**别首**的 ref ⇒ 拒绝使用该结果（invalidResponse）', () async {
+    final provider = _LyricProvider(
+      'neteaseLyric',
+      netease,
+      returnedRef: const PlatformTrackRef(
+        platform: netease,
+        trackId: 'someoneElse',
+      ),
+    );
+    final service = serviceWith([provider]);
+
+    await expectLater(
+      lyricsOf(service, neteaseRef),
+      throwsA(
+        isA<OnlineMusicException>().having(
+          (error) => error.kind,
+          'kind',
+          OnlineMusicErrorKind.invalidResponse,
+        ),
+      ),
+      reason: 'P-42：无法证明是同一首 ⇒ 直接失败，而不是把别人的歌词贴上去',
+    );
   });
 }
 

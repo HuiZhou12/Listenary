@@ -80,6 +80,12 @@ Map<String, Object?> _streamBindingJson() => {
         transform: OnlineMusicFieldTransform.asUri,
         required: true,
       ),
+      // P-42：播放解析**必须能证明身份**（没有它就无法判断返回的是不是请求的那首歌）。
+      // 夹具随之补上：以前这里只有 url/br，属于"无法证明身份"的配置。
+      OnlineMusicDomainField.trackId: OnlineMusicFieldSpec(
+        candidates: [_p('id')],
+        transform: OnlineMusicFieldTransform.asString,
+      ),
       OnlineMusicDomainField.streamBitrate: OnlineMusicFieldSpec(
         candidates: [_p('br')],
         transform: OnlineMusicFieldTransform.asInt,
@@ -395,7 +401,13 @@ Future<Map<String, Object?>> _defaultResponder(RequestOptions options) async {
   }
   return const {
     'code': 0,
-    'data': {'url': 'https://media.invalid/song.flac', 'br': 320000},
+    // P-42：播放解析响应必须带上**与请求同一首**的 id，否则映射层会明确失败
+    // （"无法证明身份就不返回结果"）。
+    'data': {
+      'id': '347230',
+      'url': 'https://media.invalid/song.flac',
+      'br': 320000,
+    },
   };
 }
 

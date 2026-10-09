@@ -146,4 +146,103 @@ void main() {
       }
     });
   });
+
+  // ======================================================== P-42
+  group('★ P-42 播放解析必须能证明身份（否则直接失败）', () {
+    const requested = PlatformTrackRef(
+      platform: MusicPlatform.netease,
+      trackId: '123456',
+    );
+
+    OnlineMusicResponseSpec resolveSpec({
+      bool withTrackId = true,
+      OnlineMusicFieldTransform trackIdTransform = OnlineMusicFieldTransform.asString,
+      String trackIdPath = 'id',
+    }) => OnlineMusicResponseSpec(
+      fieldsRootPath: _p('data'),
+      fields: {
+        OnlineMusicDomainField.streamUrl: OnlineMusicFieldSpec(
+          candidates: [_p('url')],
+          transform: OnlineMusicFieldTransform.asUri,
+          required: true,
+        ),
+        if (withTrackId)
+          OnlineMusicDomainField.trackId: OnlineMusicFieldSpec(
+            candidates: [_p(trackIdPath)],
+            transform: trackIdTransform,
+          ),
+      },
+    );
+
+    DeclarativeMappingException resolveError(
+      OnlineMusicResponseSpec spec,
+      Object? body,
+    ) {
+      try {
+        mapDeclarativeResolveResponse(
+          spec: spec,
+          body: body,
+          expectedRef: requested,
+          requestedQuality: 'lossless',
+          resolvedAt: DateTime.utc(2026, 1, 1),
+        );
+      } on DeclarativeMappingException catch (caught) {
+        return caught;
+      }
+      fail('应当抛出映射异常');
+    }
+
+    test('没有配置 trackId 映射 ⇒ 明确失败（不再静默回填请求身份）', () {
+      final error = resolveError(
+        resolveSpec(withTrackId: false),
+        const {
+          'data': {'url': 'https://media.invalid/a.flac'},
+        },
+      );
+
+      expect(error.reason, contains('无法证明'));
+      expect(error.reason, contains('曲目 ID'));
+    });
+
+    test('配了 trackId 但读不到 ⇒ 说明是"路径/转换"问题', () {
+      final error = resolveError(
+        resolveSpec(trackIdTransform: OnlineMusicFieldTransform.asInt),
+        const {
+          'data': {'id': 'not-a-number', 'url': 'https://media.invalid/a.flac'},
+        },
+      );
+
+      expect(error.reason, contains('无法证明'));
+      expect(error.reason, contains('asInt'));
+      expect(error.reason, contains('字符串'));
+    });
+
+    test('返回的不是同一首 ⇒ 文案同时给出两个 id', () {
+      final error = resolveError(
+        resolveSpec(),
+        const {
+          'data': {'id': '999999', 'url': 'https://media.invalid/a.flac'},
+        },
+      );
+
+      expect(error.reason, contains('不是同一首'));
+      expect(error.reason, contains('123456'));
+      expect(error.reason, contains('999999'));
+    });
+
+    test('身份一致 ⇒ 正常返回，且 ref 是**请求方**的（不由 Provider 回填）', () {
+      final stream = mapDeclarativeResolveResponse(
+        spec: resolveSpec(),
+        body: const {
+          'data': {'id': '123456', 'url': 'https://media.invalid/a.flac'},
+        },
+        expectedRef: requested,
+        requestedQuality: 'lossless',
+        resolvedAt: DateTime.utc(2026, 1, 1),
+      );
+
+      expect(stream.ref, requested);
+      expect(stream.uri, Uri.parse('https://media.invalid/a.flac'));
+    });
+  });
 }

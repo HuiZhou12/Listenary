@@ -116,10 +116,35 @@ ResolvedStream mapDeclarativeResolveResponse({
     throw const DeclarativeMappingException('没有取到可用的播放地址');
   }
 
-  // 如果配置了 trackId 映射，就校验返回的就是请求的那首（与既有 ChkSz 行为一致）。
-  final returnedId = _readOptional(spec, OnlineMusicDomainField.trackId, root);
-  if (returnedId != null && '$returnedId' != expectedRef.trackId) {
-    throw const DeclarativeMappingException('返回的曲目与请求的不一致');
+  // P-42（「跨 Provider 解析必须可证明同一内容或直接失败」）：**无法证明身份就不返回结果**。
+  //
+  // 以前这里写的是 `returnedId != null && …` —— 也就是说"没配 trackId 映射"
+  // 或"配了但读不到"时校验被**静默跳过**，我们会把 `expectedRef` 直接回填给一个
+  // 可能根本不是同一首的播放地址（同平台多 Provider 回退时尤其危险）。
+  // 现在三种情况都失败：
+  //   1. 根本没配 trackId 映射（保存/试跑另有校验提前报，这里是运行期兜底）；
+  //   2. 配了但按当前路径/转换读不出来；
+  //   3. 读出来了但与请求的不是同一首。
+  final read = _readWithDiagnosis(
+    spec,
+    OnlineMusicDomainField.trackId,
+    root,
+  );
+  final returnedId = read.value;
+  if (returnedId == null) {
+    final mismatch = read.mismatch;
+    throw DeclarativeMappingException(
+      mismatch == null
+          ? '无法证明返回的曲目与请求的是同一首：没有配置或取到「曲目 ID」映射'
+                '（请在字段映射里把它指到响应里的 id 路径）'
+          : '无法证明返回的曲目与请求的是同一首：路径「${mismatch.path.source}」取到了值'
+                '（${mismatch.rawType}），但按当前类型转换 ${mismatch.transform.name} 解析不出来',
+    );
+  }
+  if ('$returnedId' != expectedRef.trackId) {
+    throw DeclarativeMappingException(
+      '返回的曲目与请求的不是同一首（请求 ${expectedRef.trackId}、返回 $returnedId）',
+    );
   }
 
   final expiresAt = _readEpochSeconds(

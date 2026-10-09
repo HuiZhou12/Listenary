@@ -269,6 +269,11 @@ void main() {
               OnlineMusicFieldTransform.asUri,
               path: 'url',
             ),
+            // P-42：播放解析必须能证明身份 ⇒ 夹具补上 trackId 映射（与请求的 id 一致）。
+            OnlineMusicDomainField.trackId: _field(
+              OnlineMusicFieldTransform.asString,
+              path: 'id',
+            ),
             OnlineMusicDomainField.streamExpiresAt: _field(
               OnlineMusicFieldTransform.asInt,
               path: 'exp',
@@ -276,7 +281,11 @@ void main() {
           },
         ),
         body: const {
-          'data': {'url': 'https://media.invalid/a.flac', 'exp': 1765000000},
+          'data': {
+            'id': '1',
+            'url': 'https://media.invalid/a.flac',
+            'exp': 1765000000,
+          },
         },
         expectedRef: const PlatformTrackRef(
           platform: MusicPlatform.netease,
