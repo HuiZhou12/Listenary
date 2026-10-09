@@ -473,6 +473,121 @@ void main() {
     });
   });
 
+  group('★ P-36 条目级与能力级认证的一致性', () {
+    OnlineMusicProviderDefinition entry({
+      required bool requiresCredential,
+      required Map<String, Object?> capabilities,
+    }) => OnlineMusicSettings.fromJson({
+      'providers': [
+        {
+          'id': 'selfData',
+          'baseUrl': 'https://self.invalid',
+          'auth': {'kind': requiresCredential ? 'apiKey' : 'none'},
+          'capabilities': capabilities,
+        },
+      ],
+    }).providers.single;
+
+    Map<String, Object?> httpBinding({String? authParam}) =>
+        OnlineMusicDeclarativeCapabilityBinding(
+          request: OnlineMusicRequestSpec(
+            path: '/search',
+            query: const [
+              OnlineMusicParamBinding(
+                name: 'keywords',
+                source: OnlineMusicInputSource.keyword,
+                required: true,
+              ),
+            ],
+            auth: authParam == null
+                ? const OnlineMusicNoAuthPlacement()
+                : OnlineMusicQueryAuthPlacement(parameterName: authParam),
+          ),
+          response: OnlineMusicResponseSpec(
+            listPath: _path('data'),
+            fields: {
+              OnlineMusicDomainField.trackId: OnlineMusicFieldSpec(
+                candidates: [_path('id')],
+                transform: OnlineMusicFieldTransform.asInt,
+                required: true,
+              ),
+              OnlineMusicDomainField.title: OnlineMusicFieldSpec(
+                candidates: [_path('name')],
+                transform: OnlineMusicFieldTransform.asString,
+                required: true,
+              ),
+            },
+          ),
+        ).toJson();
+
+    test('「不需要 Key」+ 能力声明了认证 ⇒ 提示运行期会缺凭据', () {
+      final issues = entry(
+        requiresCredential: false,
+        capabilities: {'search': httpBinding(authParam: 'k')},
+      ).validationIssues().join('\n');
+
+      expect(issues, contains('search'));
+      expect(issues, contains('不需要 Key'));
+      expect(issues, contains('缺少凭据'));
+    });
+
+    test('「需要 Key」+ 已配能力都不用 ⇒ 提示槽位不会被读取', () {
+      final issues = entry(
+        requiresCredential: true,
+        capabilities: {'search': httpBinding()},
+      ).validationIssues().join('\n');
+
+      expect(issues, contains('不会被读取'));
+    });
+
+    test('一致或无关的配置**不**产生认证提示', () {
+      // a) 需要 Key + 声明认证 ⇒ 一致
+      expect(
+        entry(
+          requiresCredential: true,
+          capabilities: {'search': httpBinding(authParam: 'k')},
+        ).validationIssues().join('\n'),
+        isNot(contains('认证')),
+      );
+      // b) 不需要 Key + 无认证 ⇒ 一致
+      expect(
+        entry(
+          requiresCredential: false,
+          capabilities: {'search': httpBinding()},
+        ).validationIssues().join('\n'),
+        isNot(contains('凭据')),
+      );
+      // c) 需要 Key + **还没配任何能力** ⇒ 不打扰（那只是"还没配"）
+      expect(
+        entry(
+          requiresCredential: true,
+          capabilities: const {},
+        ).validationIssues().join('\n'),
+        isNot(contains('不会被读取')),
+      );
+      // d) 旧条目（无 capabilities 键）：认证由条目级 authFor 决定 ⇒ 结构上不可能矛盾
+      final legacy = OnlineMusicSettings.fromJson({
+        'providers': [
+          {'id': 'chksz', 'protocol': 'chksz'},
+        ],
+      }).providers.single;
+      expect(
+        legacy.validationIssues().join('\n'),
+        isNot(contains('不会被读取')),
+      );
+      // e) 需要 Key + 内置绑定：内置用条目级 authFor ⇒ 会用到这个 Key
+      expect(
+        entry(
+          requiresCredential: true,
+          capabilities: {
+            'search': const OnlineMusicBuiltinCapabilityBinding().toJson(),
+          },
+        ).validationIssues().join('\n'),
+        isNot(contains('不会被读取')),
+      );
+    });
+  });
+
   group('validation rejects out-of-model configs', () {
     test('request path rules', () {
       final issues = const OnlineMusicRequestSpec(

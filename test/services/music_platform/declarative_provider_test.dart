@@ -129,6 +129,54 @@ void main() {
     );
   }
 
+  test(
+    '★ P-36 条目设为「不需要 Key」但能力声明了认证 ⇒ 运行期缺凭据，且一个请求都不发',
+    () async {
+      // P-36 的矛盾组合：能级说"要注入认证"，条目级说"不需要 Key"。
+      // 这种配置能保存成功，运行期才以 notConfigured 失败
+      // （而 notConfigured 在回退白名单里，还会静默换个 Provider 掩盖）。
+      // 本条钉住两件事：①结论不变（仍然 fail-closed）②**不发请求**。
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'selfData',
+            'baseUrl': 'https://self.invalid',
+            'auth': {'kind': 'none'},
+            'capabilities': {
+              'search': _searchBindingJson(),
+              'stream': _streamBindingJson(),
+            },
+          },
+        ],
+      });
+      final composition = await compose(settings);
+      addTearDown(composition.service.dispose);
+
+      await expectLater(
+        composition.service.resolve(
+          const PlatformTrackRef(
+            platform: MusicPlatform.netease,
+            trackId: '347230',
+          ),
+          requestedQuality: 'lossless',
+          cancelToken: OnlineMusicCancelToken(),
+        ),
+        throwsA(
+          isA<OnlineMusicException>().having(
+            (error) => error.kind,
+            'kind',
+            OnlineMusicErrorKind.notConfigured,
+          ),
+        ),
+      );
+      expect(
+        adapter.requests,
+        isEmpty,
+        reason: '缺凭据 ⇒ fail-closed：一个请求都不该发出去',
+      );
+    },
+  );
+
   test('a declarative search really issues the configured request', () async {
     final composition = await compose(_selfHostedSettings());
     addTearDown(composition.service.dispose);

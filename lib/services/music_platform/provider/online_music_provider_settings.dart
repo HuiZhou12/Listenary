@@ -2,6 +2,7 @@ import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_request_spec.dart';
 
 const defaultOnlineMusicBaseUrl = 'https://api.chksz.com';
 const defaultOnlineMusicConnectTimeout = Duration(seconds: 8);
@@ -248,6 +249,63 @@ final class OnlineMusicProviderDefinition {
           issues.add('${entry.key.name}：$issue');
         }
       }
+    }
+    issues.addAll(_capabilityAuthConsistencyIssues(corrupt));
+    return issues;
+  }
+
+  /// P-36：条目级「是否需要 Key」与能力级「认证方式」的**一致性**提示。
+  ///
+  /// 这是两层事实：条目级决定**有没有凭据可读**（装配时把槽位传不传下去），
+  /// 能力级决定**要不要注入**。组合出的矛盾能一路通过保存，却在运行期以
+  /// `notConfigured` 失败（而且 `notConfigured` 在回退白名单里，还会静默换个 Provider），
+  /// 界面上**全程没有任何提示**：
+  /// - 「不需要 Key」+ 某个能力声明了认证 ⇒ 运行期缺凭据；
+  /// - 「需要 Key」+ 已配置的能力里没有任何一个会用到它 ⇒ 这个槽位永远不会被读取。
+  ///
+  /// 只**提示**，不改变运行期语义（仍然 fail-closed，**不会**把 auth 静默降级成「无」）。
+  List<String> _capabilityAuthConsistencyIssues(
+    Set<OnlineMusicCapability> corrupt,
+  ) {
+    final issues = <String>[];
+    final explicit = capabilities;
+    // 旧条目（没有 `capabilities` 键）走内置实现，认证完全由条目级 `authFor` 决定
+    // ⇒ 结构上不可能矛盾，不需要检查。
+    if (explicit == null) return issues;
+
+    final declaring = <OnlineMusicCapability>[];
+    for (final entry in explicit.entries) {
+      if (corrupt.contains(entry.key)) continue;
+      final binding = entry.value;
+      if (binding is OnlineMusicDeclarativeCapabilityBinding &&
+          binding.request.auth is! OnlineMusicNoAuthPlacement) {
+        declaring.add(entry.key);
+      }
+    }
+
+    final hasCredential = requiresCredential && credentialReference != null;
+    if (!hasCredential) {
+      for (final capability in declaring) {
+        issues.add(
+          '${capability.name}：该能力声明了认证，但条目被设为「不需要 Key」'
+          '⇒ 运行期会因缺少凭据失败；请把条目改成「需要 Key」，或把该能力的认证改回「无」',
+        );
+      }
+      return issues;
+    }
+
+    // 「需要 Key」但一个都不会用到：只在这一条目**已经配了能力**时才提示 ——
+    // 刚新建、还没配任何能力的条目不该被这条噪音打扰（那只是"还没配"）。
+    if (explicit.isEmpty) return issues;
+    // ⚠️ 内置绑定的认证来自条目级 `authFor` ⇒ 它们**会**用到这个 Key。
+    final hasBuiltin = explicit.values.any(
+      (binding) => binding is OnlineMusicBuiltinCapabilityBinding,
+    );
+    if (declaring.isEmpty && !hasBuiltin) {
+      issues.add(
+        '需要 Key，但已配置的能力里没有任何一个会用到它（认证方式都是「无」）'
+        '⇒ 这个凭据槽位不会被读取',
+      );
     }
     return issues;
   }

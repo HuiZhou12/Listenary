@@ -2087,6 +2087,8 @@ void main() {
     expect(find.textContaining('SECRET'), findsNothing);
   });
 
+  // ------------------------------------------------------------------ F2（P-36）
+
   testWidgets('★ F2 P-29 拿不到诊断源时不渲染该区块（老替身不受影响）', (tester) async {
     final controller = _controller();
     addTearDown(controller.dispose);
@@ -2094,6 +2096,41 @@ void main() {
     await pumpPanel(tester, controller);
 
     expect(find.text('路由诊断'), findsNothing);
+  });
+
+  testWidgets('★ F2 P-36 能力编辑器在"条目不需要 Key 却声明认证"时当场提示', (tester) async {
+    final controller = _controller(
+      configured: settingsWithAuthDeclaringSearch(requiresCredential: false),
+      active: settingsWithAuthDeclaringSearch(requiresCredential: false),
+    );
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+    await openCapabilityEditorFor(tester, OnlineMusicCapability.search);
+    // 表单是**惰性 ListView**：滚到提示**下方**的「加请求头」，
+    // 保证提示所在的那一行确实进了构建窗口（否则会变成"没构建 ⇒ 找不到"的假绿）。
+    await scrollCapabilityFormTo(tester, '加请求头');
+
+    expect(
+      find.textContaining('但该条目当前设为「不需要 Key」'),
+      findsOneWidget,
+      reason: 'P-36：矛盾必须**在动手时**说清，而不是等运行期报缺少凭据',
+    );
+  });
+
+  testWidgets('★ F2 P-36 对照组：同一条能力，条目改成"需要 Key"后提示消失', (tester) async {
+    // 对照组与上一条**只差条目级那一个开关**，锚点、滚动过程完全相同 ——
+    // 这样"找不到"才是真的没有，而不是"没滚到/没构建"。
+    final controller = _controller(
+      configured: settingsWithAuthDeclaringSearch(requiresCredential: true),
+      active: settingsWithAuthDeclaringSearch(requiresCredential: true),
+    );
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+    await openCapabilityEditorFor(tester, OnlineMusicCapability.search);
+    await scrollCapabilityFormTo(tester, '加请求头');
+    expect(find.text('加请求头'), findsOneWidget, reason: '确认到了同一块区域');
+
+    expect(find.textContaining('不需要 Key'), findsNothing);
   });
 }
 
@@ -2288,6 +2325,36 @@ OnlineMusicDeclarativeCapabilityBinding bindingWithBody({
   ),
   response: validBindingFor(OnlineMusicCapability.search).response,
 );
+
+/// F2 P-36 用：一条**声明了认证**的声明式 search 绑定（字段映射齐全、校验通过）。
+Map<String, Object?> authDeclaringSearchBindingJson() {
+  final base = validBindingFor(OnlineMusicCapability.search);
+  return OnlineMusicDeclarativeCapabilityBinding(
+    request: OnlineMusicRequestSpec(
+      verb: base.request.verb,
+      path: base.request.path,
+      query: base.request.query,
+      headers: base.request.headers,
+      body: base.request.body,
+      auth: const OnlineMusicQueryAuthPlacement(parameterName: 'key'),
+    ),
+    response: base.response,
+  ).toJson();
+}
+
+/// F2 P-36 用：同一个条目，只切**条目级**「是否需要 Key」这一个开关。
+OnlineMusicSettings settingsWithAuthDeclaringSearch({
+  required bool requiresCredential,
+}) => OnlineMusicSettings.fromJson({
+  'providers': [
+    {
+      'id': 'selfData',
+      'baseUrl': 'https://self.invalid',
+      'auth': {'kind': requiresCredential ? 'apiKey' : 'none'},
+      'capabilities': {'search': authDeclaringSearchBindingJson()},
+    },
+  ],
+});
 
 /// 一个只配了某个能力的条目（用于驱动能力编辑器）。
 OnlineMusicSettings settingsWithBinding(

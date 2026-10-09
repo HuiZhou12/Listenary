@@ -966,6 +966,19 @@ class _OnlineMusicCapabilityEditorDialogState
           if (_authKindOf(_authPlacement) == OnlineMusicAuthKind.header)
             _textRow('认证前缀（如 "Bearer "）', _authPrefix),
         ],
+        // P-36：两层「认证」的事实会矛盾 —— 能力级说"要注入认证"，条目级说"不需要 Key"。
+        // 这种组合能一路保存，却在运行期以「缺少凭据」失败（还会被回退白名单静默换个
+        // Provider 掩盖）。这里在**动手时就**说清，而不是等运行期报错。
+        if (_authKindOf(_authPlacement) != OnlineMusicAuthKind.none &&
+            !widget.definition.requiresCredential)
+          const Padding(
+            padding: EdgeInsets.only(top: 8.0),
+            child: _Hint(
+              '⚠️ 这条能力声明了认证，但该条目当前设为「不需要 Key」'
+              '⇒ 运行期会因缺少凭据失败。请到「设置 → 在线音乐 → 服务提供商」'
+              '把该条目改成「需要 Key」，或把这里的认证改回「无」。',
+            ),
+          ),
         const SizedBox(height: 12),
         for (var index = 0; index < _headerRows.length; index++)
           _headerRow(index),
