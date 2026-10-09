@@ -6,6 +6,16 @@ import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+/// **本地库**那一套歌词子系统的来源枚举（P-15）。
+///
+/// ⚠️ 这是**两套歌词子系统**里的"本地歌曲"那一套（另一套在
+/// `lib/services/online_lyric/models/lyric_source_type.dart`，值域不同）。
+/// 它只被本地播放链路使用（`play_service/lyric_service.dart` 的 `updateLyric` /
+/// `useOnlineLyric`，作用于本地 `audioPath`）。
+///
+/// **在线曲目（`PlatformTrackRef`）不读这个枚举**：那条链路是
+/// `RemoteLyricController` → `OnlineMusicService.fetchLyrics(ref)`，按 `ref.platform`
+/// 路由到该平台的 Provider。两套**本阶段明确不合并**（Spec S6 边界：不动本地歌词源）。
 enum LyricSourceType {
   qq('qq'),
   kugou('kugou'),
