@@ -1991,6 +1991,49 @@ void main() {
       reason: '用户可见标题不该用内部 id',
     );
   });
+
+  // ------------------------------------------------------------------ F2（P-31）
+
+  testWidgets('★ F2 P-31 保存时把字段级 required 派生自能力级 requiredFieldsFor', (tester) async {
+    // 夹具起点故意制造**矛盾**：search 的能力级要求是 {trackId, title}，
+    // 但文件里 trackId 的字段级标记是 false（手工编辑或旧版本可能留下这种状态）。
+    final base = validBindingFor(OnlineMusicCapability.search);
+    final fields = Map.of(base.response.fields);
+    final trackId = fields[OnlineMusicDomainField.trackId]!;
+    fields[OnlineMusicDomainField.trackId] = OnlineMusicFieldSpec(
+      candidates: trackId.candidates,
+      transform: trackId.transform,
+      required: false,
+    );
+    final fixture = OnlineMusicDeclarativeCapabilityBinding(
+      request: base.request,
+      response: OnlineMusicResponseSpec(
+        success: base.response.success,
+        listPath: base.response.listPath,
+        fieldsRootPath: base.response.fieldsRootPath,
+        pagination: base.response.pagination,
+        fields: fields,
+      ),
+    );
+    expect(
+      fixture.response.fields[OnlineMusicDomainField.trackId]!.required,
+      isFalse,
+      reason: '夹具起点：字段级标记与能力级要求相反',
+    );
+
+    final saved = await saveRoundTrip(tester, fixture);
+
+    expect(
+      saved.response.fields[OnlineMusicDomainField.trackId]!.required,
+      isTrue,
+      reason: '保存后必须与唯一事实源（能力级 requiredFieldsFor）一致',
+    );
+    expect(
+      saved.response.fields[OnlineMusicDomainField.album]?.required ?? false,
+      isFalse,
+      reason: '非必填字段不得被写上必填',
+    );
+  });
 }
 
 /// 各能力的**校验通过**夹具：路径与字段名都取自真实配方（`docs/dev/netease-bindings/`）。

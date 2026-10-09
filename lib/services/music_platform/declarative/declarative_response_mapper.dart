@@ -332,28 +332,87 @@ Object? _readOptional(
   OnlineMusicResponseSpec spec,
   OnlineMusicDomainField field,
   Object? node,
+) => _readWithDiagnosis(spec, field, node).value;
+
+/// 一次取值的完整结果：值 + **"路径命中但转换失败"的诊断**（P-31）。
+///
+/// 为什么要带上诊断：[`_readOptional`] 的候选循环里，`raw != null` 但
+/// `_applyTransform` 返回 null 时，旧实现把它当成"这条路没有值"继续下一个候选，
+/// 循环落空后调用方只能看到 null ⇒ 一律报「缺少必填字段 X」。
+/// 用户于是去补字段/改路径，而真正的问题是**转换选错了**（例如 id 配成整数、
+/// 响应里却是字符串）—— 排查方向被带偏。
+final class _FieldRead {
+  const _FieldRead(this.value, {this.mismatch});
+
+  final Object? value;
+  final _TransformMismatch? mismatch;
+}
+
+/// 首次"命中但转换失败"的现场：路径（配置里的，不是数据）+ 转换 + 该位置的值类型。
+///
+/// **只带类型名、不带值**：错误文案会进界面，不得把响应内容（可能含敏感信息）带出去。
+final class _TransformMismatch {
+  const _TransformMismatch({
+    required this.path,
+    required this.transform,
+    required this.rawType,
+  });
+
+  final JsonPath path;
+  final OnlineMusicFieldTransform transform;
+  final String rawType;
+}
+
+_FieldRead _readWithDiagnosis(
+  OnlineMusicResponseSpec spec,
+  OnlineMusicDomainField field,
+  Object? node,
 ) {
   final fieldSpec = spec.fields[field];
-  if (fieldSpec == null) return null;
+  if (fieldSpec == null) return const _FieldRead(null);
+  _TransformMismatch? mismatch;
   for (final candidate in fieldSpec.candidates) {
     final raw = candidate.read(node);
     if (raw == null) continue;
     final transformed = _applyTransform(fieldSpec, raw);
-    if (transformed != null) return transformed;
+    if (transformed != null) return _FieldRead(transformed);
+    mismatch ??= _TransformMismatch(
+      path: candidate,
+      transform: fieldSpec.transform,
+      rawType: _diagnosticTypeName(raw),
+    );
   }
-  return fieldSpec.defaultValue;
+  return _FieldRead(fieldSpec.defaultValue, mismatch: mismatch);
 }
+
+/// 给错误文案用的**粗粒度**类型名（不暴露 Dart 内部类型名，也不暴露值）。
+String _diagnosticTypeName(Object raw) => switch (raw) {
+  String() => '字符串',
+  int() || double() => '数字',
+  bool() => '布尔值',
+  List() => '数组',
+  Map() => '对象',
+  _ => '其它类型',
+};
 
 Object? _readRequired(
   OnlineMusicResponseSpec spec,
   OnlineMusicDomainField field,
   Object? node,
 ) {
-  final value = _readOptional(spec, field, node);
-  if (value == null) {
-    throw DeclarativeMappingException('缺少必填字段 ${field.name}');
+  final result = _readWithDiagnosis(spec, field, node);
+  final value = result.value;
+  if (value != null) return value;
+  final mismatch = result.mismatch;
+  if (mismatch != null) {
+    // P-31：**取到了值、但转换解析不出来** —— 与"字段真的缺失"是两件事，
+    // 必须给出不同结论，否则用户会去补一个本来就存在的字段。
+    throw DeclarativeMappingException(
+      '字段 ${field.name} 的路径「${mismatch.path.source}」取到了值（${mismatch.rawType}），'
+      '但按当前类型转换 ${mismatch.transform.name} 解析不出来：请检查该字段的类型转换',
+    );
   }
-  return value;
+  throw DeclarativeMappingException('缺少必填字段 ${field.name}');
 }
 
 String? _readString(

@@ -411,7 +411,10 @@ class _OnlineMusicCapabilityEditorDialogState
       fields[entry.key] = OnlineMusicFieldSpec(
         candidates: paths,
         transform: entry.value.transform,
-        required: entry.value.required,
+        // P-31：必填只有**一个**事实源 —— 能力级的 `requiredFieldsFor`（保存与试跑都按它校验，
+        // 界面上的"（必填）"也取自它）。字段级 `required` 只是随配置往返的镜像，
+        // 这里按同一判据写，免得把"界面标必填、文件里写 false"的矛盾状态又保存回去。
+        required: requiredFieldsFor(widget.capability).contains(entry.key),
       );
     }
     final auth = switch (_authPlacement) {

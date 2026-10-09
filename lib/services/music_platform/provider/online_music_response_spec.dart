@@ -271,7 +271,17 @@ final class OnlineMusicFieldSpec {
   /// 按序取第一个存在的路径（firstOf）。
   final List<JsonPath> candidates;
   final OnlineMusicFieldTransform transform;
+
+  /// 该字段是否必填。
+  ///
+  /// ⚠️ **界面/兼容元数据，不参与运行期判定**（P-31 归位）：
+  /// - 运行期的必填性来自**能力级**的 [requiredFieldsFor]（保存与试跑都按它校验）；
+  ///   映射层是按调用点决定用 `_readRequired` 还是 `_readOptional`，不看这个字段；
+  /// - 编辑器显示的"（必填）"同样取自 [requiredFieldsFor]；
+  /// - 本字段只用于与既有配置**往返**（`toJson`/`fromJson`），且保存时由
+  ///   [requiredFieldsFor] 派生，因此不会出现"界面标必填、文件里写 false"的自相矛盾。
   final bool required;
+
   final Object? defaultValue;
 
   Map<String, dynamic> toJson() => {
