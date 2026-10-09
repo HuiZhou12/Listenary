@@ -615,8 +615,9 @@ class _ExplorePageState extends State<ExplorePage>
             const SizedBox(width: Spacing.sm),
             Expanded(
               child: Text(
-                '当前没有可用的「歌单列表」服务：在设置的平台卡里，'
-                '为某个条目配置「歌单列表」能力后，这里会显示它的平台歌单。',
+                '当前没有可用的「歌单列表」服务：先在「设置 → 在线音乐 → 服务提供商」里'
+                '为某个条目配置并试跑「歌单列表」能力（保存后重启生效），'
+                '再到平台卡里选它做该能力的来源。',
                 style: TextStyle(color: scheme.onSurfaceVariant),
               ),
             ),

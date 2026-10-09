@@ -221,8 +221,28 @@ class _OnlineMusicCapabilityEditorDialogState
       OnlineMusicDeclarativeCapabilityBinding(
         request: const OnlineMusicRequestSpec(path: '/'),
         response: OnlineMusicResponseSpec(
-          listPath: _isSearch ? JsonPath.tryParse('data') : null,
-          fieldsRootPath: _isSearch ? null : JsonPath.tryParse('data'),
+          // 空表单的**起手路径**：按能力给"最可能要填的那一个"一个值，另一个留空。
+          // **不显示出来的字段一律不写**（否则会留下用户看不见的死配置，反模式 7）。
+          listPath: switch (widget.capability) {
+            OnlineMusicCapability.search ||
+            OnlineMusicCapability.playlistCollection ||
+            OnlineMusicCapability.playlistCategories ||
+            OnlineMusicCapability.chartList ||
+            OnlineMusicCapability.newSongs => JsonPath.tryParse('data'),
+            OnlineMusicCapability.playlist ||
+            OnlineMusicCapability.lyric ||
+            OnlineMusicCapability.stream => null,
+          },
+          fieldsRootPath: switch (widget.capability) {
+            OnlineMusicCapability.playlist ||
+            OnlineMusicCapability.lyric ||
+            OnlineMusicCapability.stream => JsonPath.tryParse('data'),
+            OnlineMusicCapability.search ||
+            OnlineMusicCapability.playlistCollection ||
+            OnlineMusicCapability.playlistCategories ||
+            OnlineMusicCapability.chartList ||
+            OnlineMusicCapability.newSongs => null,
+          },
         ),
       );
 
@@ -404,10 +424,13 @@ class _OnlineMusicCapabilityEditorDialogState
               .toList(),
           allOf: predicates,
         ),
-        listPath: _isSearch ? JsonPath.tryParse(_listPath.text.trim()) : null,
-        fieldsRootPath: _isSearch
-            ? null
-            : JsonPath.tryParse(_fieldsRoot.text.trim()),
+        // **两条路径都按用户实际输入写**（P-01）。此前按 `_isSearch` 二选一，
+        // 于是非搜索能力**永远写不出 `listPath`**（校验必然报"必须配置列表路径"），
+        // 而歌单详情又**永远写不出曲目数组路径**（曲目恒空）。
+        // 空输入 → null（不写死配置）；已配置但当前能力不显示该字段时也原样保留，
+        // 编辑既有配置不丢字段。
+        listPath: JsonPath.tryParse(_listPath.text.trim()),
+        fieldsRootPath: JsonPath.tryParse(_fieldsRoot.text.trim()),
         totalPath: JsonPath.tryParse(_totalPath.text.trim()),
         nextCursorPath: JsonPath.tryParse(_nextCursor.text.trim()),
         fields: fields,
@@ -756,6 +779,7 @@ class _OnlineMusicCapabilityEditorDialogState
   }
 
   Widget _buildForm() {
+    final pathFields = responsePathFieldsFor(widget.capability);
     return ListView(
       key: capabilityFormKey,
       padding: EdgeInsets.zero,
@@ -859,9 +883,20 @@ class _OnlineMusicCapabilityEditorDialogState
           () => setState(() => _predicateRows.add(_PredicateRow.empty())),
         ),
         const SizedBox(height: 12),
-        if (_isSearch)
-          _textRow('列表路径（如 data.songs）', _listPath)
-        else
+        // 显示哪几个路径字段**由能力决定**（P-01，穷举 switch：漏改能力即编译失败）。
+        // 此前写成 `_isSearch ? 列表路径 : 字段根路径` 的互斥二选一，于是
+        // 歌单列表/分类/榜单/新歌**没有入口写 `列表路径`**（它们恰恰只需要它），
+        // 而歌单详情**没有入口写曲目数组**（元数据与曲目在两个不同路径上）。
+        if (pathFields.listPath && pathFields.fieldsRootPath)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8.0),
+            child: _Hint(
+              '歌单详情有两个位置：元数据在「字段根路径」，曲目数组在「列表路径」'
+              '（例如字段根路径=playlist、列表路径=playlist.tracks）。',
+            ),
+          ),
+        if (pathFields.listPath) _textRow('列表路径（如 data.songs）', _listPath),
+        if (pathFields.fieldsRootPath)
           _textRow('字段根路径（如 data）', _fieldsRoot),
         _textRow('总数路径（可选）', _totalPath),
         _textRow('游标路径（可选）', _nextCursor),
@@ -1318,6 +1353,32 @@ String domainFieldLabel(OnlineMusicDomainField field, {bool required = false}) {
   final base = _domainFieldLabels[field] ?? field.name;
   return required ? '$base（必填）' : base;
 }
+
+/// 该能力在表单里需要哪几个**响应路径**字段（P-01）。
+///
+/// 为什么必须按能力区分（而不是"搜索用列表路径、其余用字段根路径"的互斥二选一）：
+/// - `search`：字段相对**列表项**解析 ⇒ 只要 `listPath`；
+/// - `playlistCollection` / `playlistCategories` / `chartList` / `newSongs`：
+///   拿到的是一个数组、元素自带全部元数据 ⇒ **只要 `listPath`**（校验也要求它）
+///   —— 旧表单对这四个**根本没有写 `listPath` 的入口**，于是它们存不下也试不了；
+/// - `playlist`：元数据在 `fieldsRootPath`、曲目数组在 `listPath` ⇒ **两个都要**
+///   （网易云实测配方：`fieldsRoot=playlist`、`listPath=playlist.tracks`）
+///   —— 旧表单只给字段根路径，于是曲目**恒空**而试跑还报"成功"；
+/// - `lyric` / `stream`：字段相对响应体（或其子对象）解析 ⇒ 只要 `fieldsRootPath`。
+///
+/// 穷举 switch：新增能力漏改即**编译失败**（反模式 5）。
+({bool listPath, bool fieldsRootPath}) responsePathFieldsFor(
+  OnlineMusicCapability capability,
+) => switch (capability) {
+  OnlineMusicCapability.search => (listPath: true, fieldsRootPath: false),
+  OnlineMusicCapability.playlist => (listPath: true, fieldsRootPath: true),
+  OnlineMusicCapability.playlistCollection ||
+  OnlineMusicCapability.playlistCategories ||
+  OnlineMusicCapability.chartList ||
+  OnlineMusicCapability.newSongs => (listPath: true, fieldsRootPath: false),
+  OnlineMusicCapability.lyric ||
+  OnlineMusicCapability.stream => (listPath: false, fieldsRootPath: true),
+};
 
 /// 新增**参数行**的默认取值来源（P-23）。
 ///

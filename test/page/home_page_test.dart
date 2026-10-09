@@ -131,6 +131,10 @@ void main() {
     expect(find.textContaining('还没有自建歌单'), findsOneWidget);
     // 没有任何平台具备歌单列表能力 ⇒ 明确说明"怎么才会有"，而不是假装有内容。
     expect(find.textContaining('当前没有可用的「歌单列表」服务'), findsOneWidget);
+    // F1 P-02：指引必须指向**真正能配置能力的地方**（服务提供商 → 能力配置）。
+    // 旧文案写"在设置的平台卡里配置「歌单列表」能力"——平台卡只能选来源，配不了能力。
+    expect(find.textContaining('服务提供商'), findsOneWidget);
+    expect(find.textContaining('在设置的平台卡里'), findsNothing);
 
     // 「平台能力」是诊断信息：默认收起，展开后三个平台都在且都显示未配置。
     expect(find.text('未配置'), findsNothing, reason: '收起时不应渲染平台行');

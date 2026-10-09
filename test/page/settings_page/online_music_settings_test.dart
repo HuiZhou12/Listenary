@@ -1277,13 +1277,21 @@ void main() {
   /// 表单是 `ListView`（**惰性构建**）⇒ 视口外的控件根本没进 widget 树，
   /// 必须先把它滚进视口再断言/点击。用最朴素的 `drag` 循环：不依赖
   /// `scrollUntilVisible` 的 scrollable 解析（本对话框里有多个可滚动区域）。
-  Future<void> tapInCapabilityForm(WidgetTester tester, String label) async {
+  /// 把能力表单滚到指定文案出现为止。
+  ///
+  /// 表单是 `ListView`（**惰性构建**）⇒ 视口外的控件根本没进 widget 树；
+  /// 不先滚动就断言"找不到"，会把"没构建"误当成"不存在"（假绿）。
+  Future<void> scrollCapabilityFormTo(
+    WidgetTester tester,
+    String label, {
+    int maxAttempts = 12,
+  }) async {
     expect(
       find.byKey(capabilityFormKey),
       findsOneWidget,
       reason: '能力表单（带 capabilityFormKey 的列表）应当存在',
     );
-    for (var attempt = 0; attempt < 12; attempt++) {
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
       if (find.text(label).evaluate().isNotEmpty) break;
       await tester.drag(find.byKey(capabilityFormKey), const Offset(0, -320));
       await tester.pumpAndSettle();
@@ -1293,6 +1301,10 @@ void main() {
       findsOneWidget,
       reason: '把「$label」滚进视口后应当能找到它',
     );
+  }
+
+  Future<void> tapInCapabilityForm(WidgetTester tester, String label) async {
+    await scrollCapabilityFormTo(tester, label);
     await tester.tap(find.text(label));
     await tester.pumpAndSettle();
   }
@@ -1321,7 +1333,342 @@ void main() {
     expect(find.text('搜索关键词'), findsOneWidget);
     controller.dispose();
   });
+
+  // ------------------------------------------------------------------ F1-a（P-01 / P-02）
+
+  test('★ F1 P-01 模型要求「列表路径」的能力，表单就必须能填它', () {
+    // 这条是 P-01 的**跨层断言**：以前表单把两个路径写成互斥二选一，
+    // 于是"校验要求列表路径"的四个能力**根本没有入口写它** ⇒ 存不下也试不了。
+    // 用 `validationIssues` 反推"模型要什么"，因此**新增能力也不会漏**。
+    for (final capability in OnlineMusicCapability.values) {
+      final fields = responsePathFieldsFor(capability);
+      final issues = const OnlineMusicResponseSpec().validationIssues(capability);
+      final requiresListPath = issues.any(
+        (issue) => issue.contains('必须配置列表路径'),
+      );
+      // **单向蕴含**：模型要求的，表单必须给入口（反向不必 —— 表单可以多给，
+      // 例如歌单详情模型不"要求"列表路径，但界面必须给，否则曲目恒空）。
+      if (requiresListPath) {
+        expect(
+          fields.listPath,
+          isTrue,
+          reason: '${capability.name}：模型要求列表路径，表单就必须有这个入口',
+        );
+      }
+      expect(
+        fields.listPath || fields.fieldsRootPath,
+        isTrue,
+        reason: '${capability.name} 至少要有一个响应路径入口',
+      );
+    }
+    // 逐个点名（新增能力会走到上面那条蕴含断言；这里钉住当前 8 项的语义）。
+    {
+      const listPathOnly = (listPath: true, fieldsRootPath: false);
+      const fieldsRootOnly = (listPath: false, fieldsRootPath: true);
+      const both = (listPath: true, fieldsRootPath: true);
+      expect(
+        responsePathFieldsFor(OnlineMusicCapability.search),
+        listPathOnly,
+      );
+      // 歌单详情两个都要：元数据在字段根路径、曲目数组在列表路径（真实配方形状）。
+      expect(responsePathFieldsFor(OnlineMusicCapability.playlist), both);
+      for (final capability in const [
+        OnlineMusicCapability.playlistCollection,
+        OnlineMusicCapability.playlistCategories,
+        OnlineMusicCapability.chartList,
+        OnlineMusicCapability.newSongs,
+      ]) {
+        expect(
+          responsePathFieldsFor(capability),
+          listPathOnly,
+          reason: '${capability.name} 拿到的是一个数组，只要列表路径',
+        );
+      }
+      for (final capability in const [
+        OnlineMusicCapability.lyric,
+        OnlineMusicCapability.stream,
+      ]) {
+        expect(responsePathFieldsFor(capability), fieldsRootOnly);
+      }
+    }
+  });
+
+  testWidgets('F1 P-01 歌单列表：只有「列表路径」入口（旧表单只有字段根路径）', (tester) async {
+    final controller = _controller();
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+    await openCapabilityEditorFor(
+      tester,
+      OnlineMusicCapability.playlistCollection,
+    );
+
+    // 表单是惰性 ListView：先滚到路径区（总数路径）把相邻行建出来，
+    // 否则"找不到"可能只是因为没构建 ⇒ 否定断言会变成假绿。
+    await scrollCapabilityFormTo(tester, '总数路径（可选）');
+    expect(find.text('列表路径（如 data.songs）'), findsOneWidget);
+    expect(find.text('字段根路径（如 data）'), findsNothing);
+  });
+
+  testWidgets('F1 P-01 歌单详情：两个路径入口都在，并说明各自放什么', (tester) async {
+    final controller = _controller();
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+    await openCapabilityEditorFor(tester, OnlineMusicCapability.playlist);
+
+    await scrollCapabilityFormTo(tester, '总数路径（可选）');
+    expect(find.text('列表路径（如 data.songs）'), findsOneWidget);
+    expect(find.text('字段根路径（如 data）'), findsOneWidget);
+    expect(find.textContaining('元数据在「字段根路径」'), findsOneWidget);
+  });
+
+  // 8 个能力逐个走一遍「打开编辑器 → 保存 → 配置往返不丢字段」。
+  // 这就是 P-01 的正面复现：修复前，非 search 能力按保存会被
+  // 「必须配置列表路径」拦下（歌单详情则静默丢掉列表路径）。
+  for (final capability in OnlineMusicCapability.values) {
+    testWidgets('F1 P-01 ${capability.name}：配置可保存且路径不丢', (tester) async {
+      final binding = validBindingFor(capability);
+      expect(
+        binding.validationIssues(capability),
+        isEmpty,
+        reason: '夹具本身必须是合法配置（否则这条测试会在错误的层面失败）',
+      );
+      final settings = settingsWithBinding(capability, binding);
+      final controller = _controller(configured: settings, active: settings);
+      addTearDown(controller.dispose);
+      await pumpPanel(tester, controller);
+      await openCapabilityEditorFor(tester, capability);
+
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('无法保存'),
+        findsNothing,
+        reason: '${capability.name} 的合法配置不该被校验拦下',
+      );
+      final saved =
+          controller.settings.providers.single.bindingFor(capability)
+              as OnlineMusicDeclarativeCapabilityBinding;
+      expect(
+        saved.response.listPath,
+        binding.response.listPath,
+        reason: '${capability.name} 的列表路径不得在保存时丢失',
+      );
+      expect(
+        saved.response.fieldsRootPath,
+        binding.response.fieldsRootPath,
+        reason: '${capability.name} 的字段根路径不得在保存时丢失',
+      );
+      expect(saved, binding, reason: '整份绑定往返不变（编辑既有配置不丢字段）');
+    });
+  }
+
+  testWidgets('F1 P-01 歌单详情：曲目数组路径写得住、试跑真的取到曲目', (tester) async {
+    const trackCount = 3;
+    final binding = validBindingFor(OnlineMusicCapability.playlist);
+    final settings = settingsWithBinding(OnlineMusicCapability.playlist, binding);
+    final transport = _StubTransport({
+      'playlist': {
+        'id': 42,
+        'name': '测试歌单',
+        'tracks': [
+          for (var i = 0; i < trackCount; i++)
+            {'id': 100 + i, 'name': '曲目 $i'},
+        ],
+      },
+    });
+    final controller = OnlineMusicProviderSettingsController(
+      activeSettings: settings,
+      store: _MemorySettingsStore(settings),
+      fallbackCredentials: _FakeCredentialAccess(),
+      probeTransportFactory: (_) => transport,
+    );
+    addTearDown(controller.dispose);
+
+    final result = await controller.testCapability(
+      settings.providers.single,
+      OnlineMusicCapability.playlist,
+      trackId: '42',
+    );
+
+    expect(result.ok, isTrue);
+    expect(
+      result.mappedSummary,
+      contains('$trackCount 首曲目'),
+      reason: '修复前曲目恒空（列表路径写不出去）',
+    );
+  });
+
+  testWidgets('F1 P-01 歌单详情缺「列表路径」时试跑必须失败，不得报成功', (tester) async {
+    // 元数据配好了、但没配曲目数组路径 ⇒ 这是**配置缺项**，不是"这个歌单是空的"。
+    final binding = OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(path: '/playlist/detail'),
+      response: OnlineMusicResponseSpec(
+        fieldsRootPath: JsonPath.tryParse('playlist'),
+        fields: {
+          OnlineMusicDomainField.playlistId: OnlineMusicFieldSpec(
+            candidates: [JsonPath.tryParse('id')!],
+            transform: OnlineMusicFieldTransform.asString,
+            required: true,
+          ),
+          OnlineMusicDomainField.playlistName: OnlineMusicFieldSpec(
+            candidates: [JsonPath.tryParse('name')!],
+            transform: OnlineMusicFieldTransform.asString,
+            required: true,
+          ),
+        },
+      ),
+    );
+    expect(binding.validationIssues(OnlineMusicCapability.playlist), isEmpty);
+    final settings = settingsWithBinding(OnlineMusicCapability.playlist, binding);
+    final transport = _StubTransport({
+      'playlist': {'id': 42, 'name': '测试歌单'},
+    });
+    final controller = OnlineMusicProviderSettingsController(
+      activeSettings: settings,
+      store: _MemorySettingsStore(settings),
+      fallbackCredentials: _FakeCredentialAccess(),
+      probeTransportFactory: (_) => transport,
+    );
+    addTearDown(controller.dispose);
+
+    final result = await controller.testCapability(
+      settings.providers.single,
+      OnlineMusicCapability.playlist,
+      trackId: '42',
+    );
+
+    expect(result.ok, isFalse, reason: '曲目数组路径没配就不该报"试跑成功"');
+    expect(result.failureReason, contains('列表路径'));
+  });
 }
+
+/// 各能力的**校验通过**夹具：路径与字段名都取自真实配方（`docs/dev/netease-bindings/`）。
+OnlineMusicDeclarativeCapabilityBinding validBindingFor(
+  OnlineMusicCapability capability,
+) {
+  OnlineMusicFieldSpec field(
+    OnlineMusicDomainField domainField,
+    String path,
+    OnlineMusicFieldTransform transform,
+  ) => OnlineMusicFieldSpec(
+    candidates: [JsonPath.tryParse(path)!],
+    transform: transform,
+    required: requiredFieldsFor(capability).contains(domainField),
+  );
+
+  const asString = OnlineMusicFieldTransform.asString;
+  const asInt = OnlineMusicFieldTransform.asInt;
+  const asUri = OnlineMusicFieldTransform.asUri;
+  const trackId = OnlineMusicDomainField.trackId;
+  const title = OnlineMusicDomainField.title;
+  const playlistId = OnlineMusicDomainField.playlistId;
+  const playlistName = OnlineMusicDomainField.playlistName;
+  const categoryId = OnlineMusicDomainField.categoryId;
+  const categoryName = OnlineMusicDomainField.categoryName;
+  const streamUrl = OnlineMusicDomainField.streamUrl;
+  const lyricOriginal = OnlineMusicDomainField.lyricOriginal;
+
+  return switch (capability) {
+    OnlineMusicCapability.search => OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(path: '/search'),
+      response: OnlineMusicResponseSpec(
+        listPath: JsonPath.tryParse('result.songs'),
+        fields: {
+          trackId: field(trackId, 'id', asInt),
+          title: field(title, 'name', asString),
+        },
+      ),
+    ),
+    // 歌单详情：元数据在 `playlist`，曲目数组在 `playlist.tracks`（两个不同的位置）。
+    OnlineMusicCapability.playlist => OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(path: '/playlist/detail'),
+      response: OnlineMusicResponseSpec(
+        fieldsRootPath: JsonPath.tryParse('playlist'),
+        listPath: JsonPath.tryParse('playlist.tracks'),
+        fields: {
+          playlistId: field(playlistId, 'id', asString),
+          playlistName: field(playlistName, 'name', asString),
+          trackId: field(trackId, 'id', asInt),
+          title: field(title, 'name', asString),
+        },
+      ),
+    ),
+    OnlineMusicCapability.playlistCollection =>
+      OnlineMusicDeclarativeCapabilityBinding(
+        request: const OnlineMusicRequestSpec(path: '/top/playlist'),
+        response: OnlineMusicResponseSpec(
+          listPath: JsonPath.tryParse('playlists'),
+          fields: {
+            playlistId: field(playlistId, 'id', asInt),
+            playlistName: field(playlistName, 'name', asString),
+          },
+        ),
+      ),
+    OnlineMusicCapability.chartList => OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(path: '/toplist'),
+      response: OnlineMusicResponseSpec(
+        listPath: JsonPath.tryParse('list'),
+        fields: {
+          playlistId: field(playlistId, 'id', asInt),
+          playlistName: field(playlistName, 'name', asString),
+        },
+      ),
+    ),
+    OnlineMusicCapability.playlistCategories =>
+      OnlineMusicDeclarativeCapabilityBinding(
+        request: const OnlineMusicRequestSpec(path: '/playlist/catlist'),
+        response: OnlineMusicResponseSpec(
+          listPath: JsonPath.tryParse('sub'),
+          fields: {
+            categoryId: field(categoryId, 'name', asString),
+            categoryName: field(categoryName, 'name', asString),
+          },
+        ),
+      ),
+    OnlineMusicCapability.newSongs => OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(path: '/personalized/newsong'),
+      response: OnlineMusicResponseSpec(
+        listPath: JsonPath.tryParse('result'),
+        fields: {
+          trackId: field(trackId, 'song.id', asInt),
+          title: field(title, 'song.name', asString),
+        },
+      ),
+    ),
+    OnlineMusicCapability.lyric => OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(path: '/lyric'),
+      response: OnlineMusicResponseSpec(
+        fields: {lyricOriginal: field(lyricOriginal, 'lrc.lyric', asString)},
+      ),
+    ),
+    OnlineMusicCapability.stream => OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(path: '/song/url'),
+      response: OnlineMusicResponseSpec(
+        fieldsRootPath: JsonPath.tryParse('data'),
+        fields: {
+          streamUrl: field(streamUrl, 'url', asUri),
+          trackId: field(trackId, 'id', asInt),
+        },
+      ),
+    ),
+  };
+}
+
+/// 一个只配了某个能力的条目（用于驱动能力编辑器）。
+OnlineMusicSettings settingsWithBinding(
+  OnlineMusicCapability capability,
+  OnlineMusicCapabilityBinding binding,
+) => OnlineMusicSettings.fromJson({
+  'providers': [
+    {
+      'id': 'selfData',
+      'baseUrl': 'https://self.invalid',
+      'auth': {'kind': 'none'},
+      'capabilities': {capability.name: binding.toJson()},
+    },
+  ],
+});
 
 /// F0-4 用的**校验通过**的声明式 search 绑定（字段映射齐全）。
 Map<String, Object?> f04SearchBindingJson() => OnlineMusicDeclarativeCapabilityBinding(
@@ -1357,6 +1704,11 @@ Map<String, Object?> f04SearchBindingJson() => OnlineMusicDeclarativeCapabilityB
 ).toJson();
 
 final class _StubTransport implements DeclarativeHttpTransport {
+  /// 可选自定义响应体；缺省是"搜索形状"的假响应（既有用例依赖它）。
+  _StubTransport([this.response]);
+
+  final Object? response;
+
   int probeCalls = 0;
 
   @override
@@ -1365,15 +1717,17 @@ final class _StubTransport implements DeclarativeHttpTransport {
     required OnlineMusicCancelToken cancelToken,
   }) async {
     probeCalls++;
-    return const DeclarativeHttpResponse(
+    return DeclarativeHttpResponse(
       statusCode: 200,
-      data: {
-        'result': {
-          'songs': [
-            {'id': 1, 'name': 'probe', 'duration': 1000},
-          ],
-        },
-      },
+      data:
+          response ??
+          const {
+            'result': {
+              'songs': [
+                {'id': 1, 'name': 'probe', 'duration': 1000},
+              ],
+            },
+          },
     );
   }
 }

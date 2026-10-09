@@ -647,6 +647,19 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     }
 
     if (capability == OnlineMusicCapability.playlist) {
+      // P-01：曲目数组路径**没配**时曲目必然为空 —— 那是"配置缺项"，不是"这个歌单
+      // 没有曲目"。以前这里恒 `ok: true`，于是配置写漏了也报「试跑成功」（假阳性）。
+      // 注意：配了列表路径但数组为空 ⇒ 仍然算成功（合法的空歌单）。
+      if (binding.response.listPath == null) {
+        return DeclarativeCapabilityTestResult(
+          ok: false,
+          statusCode: response.statusCode,
+          responsePreview: preview,
+          failureReason:
+              '歌单详情没有配置「列表路径」（曲目数组所在位置），因此取不到任何曲目',
+          failureKind: DeclarativeTestFailureKind.config,
+        );
+      }
       final playlist = mapDeclarativePlaylistResponse(
         spec: binding.response,
         body: response.data,

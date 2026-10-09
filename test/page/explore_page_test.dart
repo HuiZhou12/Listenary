@@ -98,6 +98,9 @@ void main() {
     expect(find.text('探索'), findsOneWidget);
     expect(find.text('平台歌单'), findsOneWidget);
     expect(find.textContaining('当前没有可用的「歌单列表」服务'), findsOneWidget);
+    // F1 P-02：指引指向真正能配置能力的地方（服务提供商 → 能力配置），不是平台卡。
+    expect(find.textContaining('服务提供商'), findsOneWidget);
+    expect(find.textContaining('在设置的平台卡里'), findsNothing);
     // 平台能力是诊断信息：默认收起。
     expect(find.text('平台能力'), findsOneWidget);
     expect(find.text('未配置'), findsNothing);
