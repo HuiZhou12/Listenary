@@ -1,0 +1,82 @@
+{
+  "kind": "http",
+  "request": {
+    "verb": "get",
+    "path": "/top/playlist",
+    "query": [
+      {
+        "name": "cat",
+        "source": "categoryId",
+        "required": false
+      },
+      {
+        "name": "limit",
+        "source": "limit",
+        "required": false
+      },
+      {
+        "name": "offset",
+        "source": "offset",
+        "required": false
+      }
+    ],
+    "headers": [],
+    "auth": {
+      "kind": "none"
+    }
+  },
+  "response": {
+    "success": {
+      "statusCodes": [],
+      "allOf": [
+        {
+          "path": "code",
+          "op": "eq",
+          "value": 200
+        }
+      ]
+    },
+    "listPath": "playlists",
+    "fields": {
+      "playlistId": {
+        "paths": [
+          "id"
+        ],
+        "transform": "asInt",
+        "required": true
+      },
+      "playlistName": {
+        "paths": [
+          "name"
+        ],
+        "transform": "asString",
+        "required": true
+      },
+      "playlistCoverUri": {
+        "paths": [
+          "coverImgUrl"
+        ],
+        "transform": "asHttpsUri",
+        "required": false
+      },
+      "playlistCreator": {
+        "paths": [
+          "creator.nickname"
+        ],
+        "transform": "asString",
+        "required": false
+      },
+      "playlistTrackCount": {
+        "paths": [
+          "trackCount"
+        ],
+        "transform": "asInt",
+        "required": false
+      }
+    },
+    "pagination": {
+      "kind": "offsetLimit",
+      "defaultLimit": 30
+    }
+  }
+}

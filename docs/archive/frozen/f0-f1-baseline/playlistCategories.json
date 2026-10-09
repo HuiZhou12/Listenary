@@ -1,0 +1,52 @@
+{
+  "kind": "http",
+  "request": {
+    "verb": "get",
+    "path": "/playlist/catlist",
+    "query": [],
+    "headers": [],
+    "auth": {
+      "kind": "none"
+    }
+  },
+  "response": {
+    "success": {
+      "statusCodes": [],
+      "allOf": [
+        {
+          "path": "code",
+          "op": "eq",
+          "value": 200
+        }
+      ]
+    },
+    "listPath": "sub",
+    "fields": {
+      "categoryId": {
+        "paths": [
+          "name"
+        ],
+        "transform": "asString",
+        "required": true
+      },
+      "categoryName": {
+        "paths": [
+          "name"
+        ],
+        "transform": "asString",
+        "required": true
+      },
+      "categoryCount": {
+        "paths": [
+          "resourceCount"
+        ],
+        "transform": "asInt",
+        "required": false
+      }
+    },
+    "pagination": {
+      "kind": "none",
+      "defaultLimit": 30
+    }
+  }
+}

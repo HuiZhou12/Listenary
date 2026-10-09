@@ -1,0 +1,82 @@
+{
+  "kind": "http",
+  "request": {
+    "verb": "get",
+    "path": "/search",
+    "query": [
+      {
+        "name": "keywords",
+        "source": "keyword",
+        "required": true
+      },
+      {
+        "name": "limit",
+        "source": "limit",
+        "required": false
+      },
+      {
+        "name": "offset",
+        "source": "offset",
+        "required": false
+      }
+    ],
+    "headers": [],
+    "auth": {
+      "kind": "none"
+    }
+  },
+  "response": {
+    "success": {
+      "statusCodes": [],
+      "allOf": [
+        {
+          "path": "code",
+          "op": "eq",
+          "value": 200
+        }
+      ]
+    },
+    "listPath": "result.songs",
+    "fields": {
+      "trackId": {
+        "paths": [
+          "id"
+        ],
+        "transform": "asInt",
+        "required": true
+      },
+      "title": {
+        "paths": [
+          "name"
+        ],
+        "transform": "asString",
+        "required": true
+      },
+      "artists": {
+        "paths": [
+          "artists[*].name"
+        ],
+        "transform": "asStringList",
+        "required": false
+      },
+      "album": {
+        "paths": [
+          "album.name"
+        ],
+        "transform": "asString",
+        "required": false
+      },
+      "duration": {
+        "paths": [
+          "duration"
+        ],
+        "transform": "asDurationMs",
+        "required": false
+      }
+    },
+    "pagination": {
+      "kind": "offsetLimit",
+      "defaultLimit": 30
+    }
+  }
+}

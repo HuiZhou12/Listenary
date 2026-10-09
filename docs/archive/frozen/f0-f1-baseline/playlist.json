@@ -1,0 +1,107 @@
+{
+  "kind": "http",
+  "request": {
+    "verb": "get",
+    "path": "/playlist/detail",
+    "query": [
+      {
+        "name": "id",
+        "source": "playlistId",
+        "required": true
+      }
+    ],
+    "headers": [],
+    "auth": {
+      "kind": "none"
+    }
+  },
+  "response": {
+    "success": {
+      "statusCodes": [],
+      "allOf": [
+        {
+          "path": "code",
+          "op": "eq",
+          "value": 200
+        }
+      ]
+    },
+    "listPath": "playlist.tracks",
+    "fields": {
+      "playlistName": {
+        "paths": [
+          "playlist.name"
+        ],
+        "transform": "asString",
+        "required": false
+      },
+      "playlistCoverUri": {
+        "paths": [
+          "playlist.coverImgUrl"
+        ],
+        "transform": "asHttpsUri",
+        "required": false
+      },
+      "playlistCreator": {
+        "paths": [
+          "playlist.creator.nickname"
+        ],
+        "transform": "asString",
+        "required": false
+      },
+      "playlistTrackCount": {
+        "paths": [
+          "playlist.trackCount"
+        ],
+        "transform": "asInt",
+        "required": false
+      },
+      "trackId": {
+        "paths": [
+          "id"
+        ],
+        "transform": "asInt",
+        "required": true
+      },
+      "title": {
+        "paths": [
+          "name"
+        ],
+        "transform": "asString",
+        "required": true
+      },
+      "artists": {
+        "paths": [
+          "ar[*].name"
+        ],
+        "transform": "asStringList",
+        "required": false
+      },
+      "album": {
+        "paths": [
+          "al.name"
+        ],
+        "transform": "asString",
+        "required": false
+      },
+      "coverUri": {
+        "paths": [
+          "al.picUrl"
+        ],
+        "transform": "asHttpsUri",
+        "required": false
+      },
+      "duration": {
+        "paths": [
+          "dt"
+        ],
+        "transform": "asDurationMs",
+        "required": false
+      }
+    },
+    "pagination": {
+      "kind": "none",
+      "defaultLimit": 30
+    }
+  }
+}
