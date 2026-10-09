@@ -746,23 +746,42 @@ void main() {
     controller.dispose();
   });
 
-  testWidgets('平台卡：该平台没有支持某能力的条目时显示"未配置"', (tester) async {
+  testWidgets('平台卡：没有候选的能力显示"未配置"（含 P-19：内置条目只支持 4 项）', (tester) async {
     final controller = _controller();
+    addTearDown(controller.dispose);
     await pumpPanel(tester, controller);
 
+    const unconfigured = '未配置：该平台下没有支持此能力的条目';
     // 默认只有一个 netease 条目：QQ / 酷狗的所有能力都没有候选。
-    expect(
-      find.text('未配置：该平台下没有支持此能力的条目'),
-      findsNWidgets(2 * OnlineMusicCapability.values.length),
-    );
     expect(
       find.descendant(
         of: platformCard(MusicPlatform.kugou),
-        matching: find.text('未配置：该平台下没有支持此能力的条目'),
+        matching: find.text(unconfigured),
       ),
       findsNWidgets(OnlineMusicCapability.values.length),
     );
-    controller.dispose();
+    // ⚠️ 语义变更（F1-c / P-19）：网易云卡以前在**全部 8 项**上都有候选 ——
+    // 因为旧条目对任意能力都自称"内置实现"，而运行时只服务 4 项，
+    // 于是界面上选得到、调用时静默 `unavailable`。
+    // 现在只有**内置实现真正有的能力**才有候选，其余如实显示"未配置"。
+    final missingOnNetease = OnlineMusicCapability.values
+        .where((capability) => !builtinOnlineMusicCapabilities.contains(capability))
+        .length;
+    expect(missingOnNetease, 4, reason: '内置实现有 4 项 ⇒ 网易云卡应缺 4 项');
+    expect(
+      find.descendant(
+        of: platformCard(MusicPlatform.netease),
+        matching: find.text(unconfigured),
+      ),
+      findsNWidgets(missingOnNetease),
+      reason: 'P-19：不得给一个运行时必然失败的候选',
+    );
+    expect(
+      find.text(unconfigured),
+      findsNWidgets(
+        2 * OnlineMusicCapability.values.length + missingOnNetease,
+      ),
+    );
   });
 
   testWidgets('平台卡显示运行中能力集合给出的不可用原因（D3b:a）', (tester) async {

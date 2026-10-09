@@ -145,13 +145,22 @@ final class OnlineMusicProviderDefinition {
   final Map<OnlineMusicCapability, OnlineMusicCapabilityBinding>? capabilities;
 
   /// 该能力最终生效的绑定（含旧条目的兼容解释）。
+  ///
+  /// 旧条目（配置里没有 `capabilities` 键、`protocol=chksz`）按内置实现解释，
+  /// 但**只对它真正实现的那几个能力**（[builtinOnlineMusicCapabilities]）。
+  ///
+  /// P-19：这里以前对**任意**能力都返回内置实现 ⇒ 平台卡声称 8 个能力、
+  /// 运行时只服务 4 个，另外 4 项成了静默的 `unavailable`（界面说能、运行说不能）。
+  /// 现在"没实现"就如实是**不支持**：平台卡显示"未配置"，而不是给一个必然失败的候选。
+  /// 注意这只改**旧条目的解释**：自定义条目仍按各自 `capabilities` 里的实际绑定判断。
   OnlineMusicCapabilityBinding bindingFor(OnlineMusicCapability capability) {
     final explicit = capabilities;
     if (explicit != null) {
       return explicit[capability] ??
           const OnlineMusicUnsupportedCapabilityBinding();
     }
-    if (protocol == builtinOnlineMusicChkszId) {
+    if (protocol == builtinOnlineMusicChkszId &&
+        builtinOnlineMusicCapabilities.contains(capability)) {
       return const OnlineMusicBuiltinCapabilityBinding();
     }
     return const OnlineMusicUnsupportedCapabilityBinding();

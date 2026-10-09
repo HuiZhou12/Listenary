@@ -44,8 +44,11 @@ OnlineMusicDeclarativeCapabilityBinding _searchBinding({
 void main() {
   group('capabilities / protocol priority (spec §5.3)', () {
     test(
-      'legacy entry without capabilities keeps the builtin interpretation',
+      '★ legacy entry without capabilities declares ONLY what the builtin implements',
       () {
+        // ⚠️ 语义变更（F1-c / P-19）：旧断言是"旧条目对**全部 8 个**能力都是内置实现"，
+        // 而运行时只服务四项 ⇒ 平台卡声称 8 个、运行说不能（静默 `unavailable`）。
+        // 现在旧条目的兼容解释**只覆盖内置实现真正有的能力**，其余如实为"不支持"。
         final settings = OnlineMusicSettings.fromJson({
           'providers': [
             {'id': 'chksz', 'protocol': 'chksz'},
@@ -53,13 +56,33 @@ void main() {
         });
 
         final definition = settings.providers.single;
-        expect(definition.capabilities, isNull);
+        expect(definition.capabilities, isNull, reason: '这仍是旧条目（无该键）');
         for (final capability in OnlineMusicCapability.values) {
+          final supported = builtinOnlineMusicCapabilities.contains(capability);
           expect(
             definition.bindingFor(capability),
-            isA<OnlineMusicBuiltinCapabilityBinding>(),
+            supported
+                ? isA<OnlineMusicBuiltinCapabilityBinding>()
+                : isA<OnlineMusicUnsupportedCapabilityBinding>(),
+            reason:
+                '${capability.name}：内置实现'
+                '${supported ? '有' : '没有'}实现 ⇒ 声明必须一致',
           );
         }
+        // 自定义条目**不**受这条限制：它们仍按各自 `capabilities` 里的绑定判断。
+        final custom = OnlineMusicProviderDefinition.custom(
+          id: 'selfData',
+          baseUrl: 'https://self.invalid',
+          requiresCredential: false,
+        ).withCapabilityBinding(
+          OnlineMusicCapability.chartList,
+          _searchBinding(),
+        );
+        expect(
+          custom.bindingFor(OnlineMusicCapability.chartList),
+          isA<OnlineMusicDeclarativeCapabilityBinding>(),
+          reason: 'P-19 的收窄只针对旧条目的内置解释，不得扩散到自定义 Provider',
+        );
       },
     );
 
