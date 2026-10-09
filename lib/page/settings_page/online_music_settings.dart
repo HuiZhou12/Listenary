@@ -31,6 +31,9 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   final Map<String, bool> _configured = {};
   bool _hasLoaded = false;
   bool _loading = false;
+
+  /// 迁移正在进行（防止按钮重入）。
+  bool _migrating = false;
   String? _error;
 
   /// 当前**运行中**的能力集合（D3b:a）：平台卡据此解释"为什么这个平台不能搜"。
@@ -230,6 +233,18 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   /// **先只报告识别结果**，用户明确放行后才执行 —— 也就是说，
   /// "改动用户配置"这件事永远发生在一次明确的点击之后（Spec §4.1/§4.2）。
   Future<void> _migrateSensitiveHeaders() async {
+    // 迁移过程中不让按钮可重入：并发触发会产生两份报告与两个对话框
+    //（写入本身是幂等的，但用户看到的是自相矛盾的两份"结果"）。
+    if (_migrating) return;
+    setState(() => _migrating = true);
+    try {
+      await _runSensitiveHeaderMigration();
+    } finally {
+      if (mounted) setState(() => _migrating = false);
+    }
+  }
+
+  Future<void> _runSensitiveHeaderMigration() async {
     final findings = _controller.identifySensitiveHeaders();
     final sensitive = [
       for (final finding in findings)
@@ -452,9 +467,9 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
               '把配置里以明文保存的敏感请求头（Cookie / Authorization 等）'
               '搬进系统凭据管理器，配置里只留引用；先给你看识别结果，确认后才动手',
           action: FilledButton.icon(
-            onPressed: _migrateSensitiveHeaders,
+            onPressed: _migrating ? null : _migrateSensitiveHeaders,
             icon: const Icon(Symbols.security),
-            label: const Text('检查'),
+            label: Text(_migrating ? '迁移中' : '检查'),
           ),
         ),
         const SizedBox(height: 24),
@@ -975,9 +990,15 @@ class _MigrationPreviewDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 只有 `actionable` 的项**这次真的会被搬**（已带引用/空值的会被跳过）——
+    // 与迁移计划共用同一个判据，避免"先说将迁移 N 项、结果报无需迁移"。
     final toMigrate = [
       for (final finding in sensitive)
-        if (finding.slot != null) finding,
+        if (finding.actionable) finding,
+    ];
+    final alreadyReferenced = [
+      for (final finding in sensitive)
+        if (!finding.actionable) finding,
     ];
     return AlertDialog(
       title: const Text('敏感请求头：识别结果'),
@@ -994,6 +1015,13 @@ class _MigrationPreviewDialog extends StatelessWidget {
                 const Text('（没有需要迁移的明文敏感请求头）')
               else
                 for (final finding in toMigrate) Text('· ${finding.summary}'),
+              if (alreadyReferenced.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text('已用安全凭据引用（${alreadyReferenced.length} 项，本次不动）：'),
+                const SizedBox(height: 4),
+                for (final finding in alreadyReferenced)
+                  Text('· ${finding.summary}'),
+              ],
               if (needsUser.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text('待你裁定（${needsUser.length} 项，本次不会迁移）：'),
@@ -1053,7 +1081,11 @@ class _MigrationOutcomeDialog extends StatelessWidget {
     ];
     return AlertDialog(
       title: Text(
-        report.stopped
+        // **失败优先**：全条目都写失败（回滚成功后 stopped 为 false、migratedCount 为 0）时
+        // 不能说"没有需要迁移的内容" —— 那是假阳性成功（反模式 3）。
+        report.anyFailure
+            ? '迁移未完成'
+            : report.stopped
             ? '迁移已停止'
             : (report.migratedCount > 0 ? '迁移完成' : '没有需要迁移的内容'),
       ),

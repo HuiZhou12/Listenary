@@ -506,11 +506,14 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     }
 
     final token = cancelToken ?? OnlineMusicCancelToken();
-    // F0：敏感请求头的值同样来自安全槽位；试跑必须与运行期走同一条路，
-    // 否则"试跑成功、运行期报错"就成了两份说法（反模式 4/8）。
+    // F0：敏感请求头的值同样来自安全槽位；试跑**与运行期共用**同一条请求构造与凭据
+    // 读取路径，因此同一个配置在两边会得到同一个结论（"试跑成功、运行期报错"那种
+    // 两份说法不会出现）。
     //
     // 存储读取失败**不当成**"试试网络"（那会把配置/存储问题误报成网络问题）：
     // 这里单独收敛成配置大类，并且**不发任何请求**。
+    // ⚠️ 已知差异（既有，未在 F0 修）：运行期遇到凭据存储**读取异常**时会落进
+    // `catch (_)` 归为 unknown，而这里是"配置"分类 —— 两处分类并不完全一致。
     final Map<String, String> headerCredentials;
     try {
       headerCredentials = await readHeaderCredentialValues(

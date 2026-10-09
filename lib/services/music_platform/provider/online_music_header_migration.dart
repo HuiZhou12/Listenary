@@ -109,6 +109,7 @@ final class OnlineMusicHeaderFinding {
     required this.headerName,
     required this.disposition,
     this.slot,
+    this.actionable = false,
   });
 
   final String providerId;
@@ -118,6 +119,13 @@ final class OnlineMusicHeaderFinding {
 
   /// 仅当 [disposition] 为 `sensitive` 时有值。
   final String? slot;
+
+  /// 这一项**这次真的会被迁移**（已标记敏感、还没有引用、且值非空）。
+  ///
+  /// 不是所有 `sensitive` 项都会被搬：**已带引用**的（迁移过，或用户手工配好）与
+  /// **空值**的（"待填凭据"中间态）都会被跳过。
+  /// 界面与迁移计划**共用这一个判据**，否则会出现"先说将迁移 N 项、结果报无需迁移"。
+  final bool actionable;
 
   /// 供报告与界面展示的一行（**绝不含值**）。
   String get summary => switch (disposition) {
@@ -374,6 +382,7 @@ final class OnlineMusicHeaderMigration {
         headerName: header.name,
         disposition: OnlineMusicHeaderDisposition.sensitive,
         slot: header.credentialReference ?? slot,
+        actionable: _isActionable(header),
       );
     }
     // 规则 A（主判据）：名称命中名单。
@@ -384,6 +393,7 @@ final class OnlineMusicHeaderMigration {
         headerName: header.name,
         disposition: OnlineMusicHeaderDisposition.sensitive,
         slot: slot,
+        actionable: _isActionable(header),
       );
     }
     // 规则 C（兜底）：值形态可疑 ⇒ **只**生成待确认候选。
@@ -402,6 +412,13 @@ final class OnlineMusicHeaderMigration {
       disposition: OnlineMusicHeaderDisposition.plain,
     );
   }
+
+  /// 该项**这次真的会被搬**：还没有引用（没迁移过、也没手工配好），且确有明文可搬。
+  ///
+  /// 识别报告与迁移计划**共用它** —— 界面显示"将迁移 N 项"时，
+  /// 那个 N 就是计划里真的会写槽位的项数，不会出现"先说 N 项、结果报无需迁移"。
+  static bool _isActionable(OnlineMusicHeaderSpec header) =>
+      header.credentialReference == null && header.value.trim().isNotEmpty;
 
   /// 事务化执行迁移（Spec §4.3/§4.4/§11.3）。
   ///
@@ -584,14 +601,25 @@ final class OnlineMusicHeaderMigration {
     ];
     if (reparsed != next || plaintextLeft.isNotEmpty) {
       // 走到这里说明改写/落盘有问题：把配置还原回去，绝不能留着"看起来迁移完了"。
+      //
+      // ⚠️ **防御性分支**：只要"配置能往返解析"且 `_rewrite` 真的清空了明文，这里就进不来。
+      // 已实测的只有它的**通过侧** —— 每个迁移成功用例都必须先通过这次重新解析校验，
+      // 因此一旦模型不再能往返，那些用例会立刻翻红。失败侧（下面两条 return）在
+      // 当前不变式下**无法由外部注入构造**，故**无测试覆盖**，如实登记。
       final restored = await _restore(current);
       if (!restored) {
+        // ⚠️ 磁盘上现在是**已经改写过的** next。这里**不删凭据**（配置引用了它们），
+        // 并且把 report.settings 报成 next —— 让界面/内存与**磁盘真实状态**一致。
+        // 若继续报 current，界面会显示明文、而磁盘已是引用（两份说法）。
         return _EntryOutcome(
           OnlineMusicMigrationEntryOutcome(
             providerId: provider.id,
             status: OnlineMusicMigrationEntryStatus.rollbackFailed,
-            reason: '配置无法还原（${plaintextLeft.isEmpty ? '重新解析不一致' : '仍有明文'}）',
+            reason: '配置无法还原：磁盘上已是改写后的配置'
+                '（${plaintextLeft.isEmpty ? '重新解析不一致' : '仍有明文'}），'
+                '凭据已写入且未删除，请人工核对',
           ),
+          settings: next,
           stopReason: '${provider.id}：回滚失败，已停止整个迁移',
         );
       }
@@ -602,7 +630,6 @@ final class OnlineMusicHeaderMigration {
         reason: plaintextLeft.isEmpty
             ? '迁移后配置无法重新解析（已还原配置）'
             : '迁移后配置里仍有明文（已还原配置）',
-        alsoRestoredConfig: true,
       );
     }
 
@@ -631,13 +658,10 @@ final class OnlineMusicHeaderMigration {
       for (final header in binding.request.headers) {
         // 已有引用 ⇒ 已经迁移过（或用户手工配好），跳过；但名称仍参与碰撞检测。
         names.add(header.name);
-        if (header.credentialReference != null) continue;
-        // 只有"名称命中规则 A"或"显式标记"才迁移（值形态启发式**不**迁移）。
+        // 与识别报告**共用同一个判据**（actionable）：界面说的"将迁移 N 项"
+        // 就是这里真的会搬的那 N 项。值形态启发式（needs-user）**永不**迁移。
         final finding = _classify(provider.id, entry.key, header);
-        if (finding.disposition != OnlineMusicHeaderDisposition.sensitive) {
-          continue;
-        }
-        if (header.value.trim().isEmpty) continue; // 没有明文可搬
+        if (!finding.actionable) continue;
         items.add(
           _MigrationItem(
             capability: entry.key,
@@ -713,7 +737,6 @@ final class OnlineMusicHeaderMigration {
     required List<String> created,
     required OnlineMusicMigrationEntryStatus status,
     required String reason,
-    bool alsoRestoredConfig = false,
   }) async {
     final rolledBack = await _deleteCreated(created);
     if (!rolledBack) {

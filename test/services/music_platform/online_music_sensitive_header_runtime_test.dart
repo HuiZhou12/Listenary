@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 import 'package:pure_music/services/music_platform/online_music_composition.dart';
 
@@ -231,14 +232,82 @@ void main() {
       expect(summary, contains('X-Mystery: [redacted]'));
     });
 
-    test('响应预览的非字符串 / 嵌套 JSON 秘密也被遮蔽（P-35）', () {
+    test('普通请求（无凭据来源、名字也不敏感）不会被过度遮蔽', () {
       final request = buildDeclarativeRequest(
-        spec: const OnlineMusicRequestSpec(path: '/search'),
-        inputs: const DeclarativeInputs(),
+        spec: const OnlineMusicRequestSpec(
+          path: '/search',
+          query: [
+            OnlineMusicParamBinding(
+              name: 'kw',
+              source: OnlineMusicInputSource.keyword,
+            ),
+          ],
+        ),
+        inputs: const DeclarativeInputs(keyword: 'x'),
       );
-      // describeDeclarativeRequest 只管请求；响应预览的遮蔽由控制器负责，
-      // 这里只锁定"名字白名单之外的头也被遮蔽"这一条。
-      expect(describeDeclarativeRequest(request), 'GET /search');
+
+      expect(describeDeclarativeRequest(request), 'GET /search · kw=x');
+    });
+  });
+
+  // ⚠️ 这一组是本片自查后补的：原先这里只有一条**名字与内容不符**的用例
+  //（标题声称覆盖"非字符串/嵌套 JSON"，实际只断言了 describeDeclarativeRequest），
+  // 导致 P-35 的结构化遮蔽**零覆盖**。现在真的把响应走一遍控制器路径。
+  group('响应预览的结构化遮蔽（P-35：非字符串 / 嵌套 / 数组）', () {
+    OnlineMusicProviderSettingsController controllerWith(Object? response) {
+      final settings = _settingsWithHeader(value: 'plain-header-value');
+      return OnlineMusicProviderSettingsController(
+        activeSettings: settings,
+        store: _MemoryStore(settings),
+        fallbackCredentials: ChkszCredentialAccess(portableBuild: true),
+        credentialReader: ChkszCredentialAccess(portableBuild: true),
+        probeTransportFactory: (_) => _StubTransport(response),
+      );
+    }
+
+    test('★ 非字符串值（数字 / 布尔 / null）同样被遮蔽', () async {
+      final controller = controllerWith(const {
+        'token': 12345678901234,
+        'jwt': true,
+        'session': null,
+        'sessionid': 987654321,
+        'visible': 7,
+      });
+      addTearDown(controller.dispose);
+
+      final result = await controller.testCapability(
+        controller.settings.providers.single,
+        OnlineMusicCapability.search,
+      );
+
+      final preview = result.responsePreview!;
+      for (final secret in ['12345678901234', '987654321']) {
+        expect(preview, isNot(contains(secret)), reason: '非字符串的秘密也要挡');
+      }
+      expect(preview, contains('"token"'));
+      expect(preview, contains('"visible": 7'), reason: '无关字段照常显示');
+    });
+
+    test('★ 嵌套 JSON 与数组里的秘密也被遮蔽', () async {
+      final controller = controllerWith(const {
+        'data': {
+          'nested': {'apikey': 'NESTED_SECRET_TEST_ONLY'},
+          'items': [
+            {'jwt': 'ARRAY_SECRET_TEST_ONLY', 'name': 'keep-me'},
+          ],
+        },
+      });
+      addTearDown(controller.dispose);
+
+      final result = await controller.testCapability(
+        controller.settings.providers.single,
+        OnlineMusicCapability.search,
+      );
+
+      final preview = result.responsePreview!;
+      expect(preview, isNot(contains('NESTED_SECRET_TEST_ONLY')));
+      expect(preview, isNot(contains('ARRAY_SECRET_TEST_ONLY')));
+      expect(preview, contains('keep-me'), reason: '无关字段不该被牺牲');
     });
   });
   group('引用字段的模型与保存时校验', () {
@@ -493,4 +562,32 @@ final class _RecordingAdapter implements HttpClientAdapter {
 
   @override
   void close({bool force = false}) {}
+}
+
+/// 只回一个固定响应的传输层替身（试跑路径用）。
+final class _StubTransport implements DeclarativeHttpTransport {
+  _StubTransport(this.response);
+
+  final Object? response;
+
+  @override
+  Future<DeclarativeHttpResponse> send(
+    BuiltDeclarativeRequest request, {
+    required OnlineMusicCancelToken cancelToken,
+  }) async => DeclarativeHttpResponse(statusCode: 200, data: response);
+}
+
+final class _MemoryStore implements OnlineMusicSettingsStore {
+  _MemoryStore(this.value);
+
+  OnlineMusicSettings value;
+
+  @override
+  OnlineMusicSettings read() => value;
+
+  @override
+  Future<bool> write(OnlineMusicSettings settings) async {
+    value = settings;
+    return true;
+  }
 }

@@ -443,8 +443,10 @@ class _OnlineMusicCapabilityEditorDialogState
 
   /// 把一行表单收集成请求头声明。
   ///
-  /// **敏感头绝不把明文写进配置**：明文要么已被迁移进槽位，要么保留在行里等待
-  /// 用户处理（此时保存会被校验拦下，而不是悄悄丢掉值）。
+  /// **敏感头不会把明文落盘**：这里仍然带上 `value`（因为**绝不静默丢弃**用户已经填好的
+  /// 秘密），拦截发生在保存校验那一层 —— `sensitive + 明文` 会被 `validationIssues`
+  /// 拒绝（`请求头 X 已有凭据引用，明文值必须清空`），因此**写不进配置**。
+  /// 换句话说：不是"在这里把值清空"，而是"这个状态**不许保存**"。
   OnlineMusicHeaderSpec _headerSpecOf(_HeaderRow row) {
     final name = row.name.text.trim();
     if (!row.sensitive) {

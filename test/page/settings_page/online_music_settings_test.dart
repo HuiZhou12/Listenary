@@ -1107,6 +1107,89 @@ void main() {
     expect(credentials.saved, isEmpty);
     expect(store.writes, 0);
   });
+
+  testWidgets('F0-6 迁移失败时标题不得说"没有需要迁移的内容"', (tester) async {
+    final settings = migrationSettings();
+    final credentials = _FakeCredentialAccess()..failWrites = true;
+    final store = _MemorySettingsStore(settings);
+    final controller = OnlineMusicProviderSettingsController(
+      activeSettings: settings,
+      store: store,
+      fallbackCredentials: credentials,
+      credentialReader: credentials,
+      isPortableBuild: false,
+    );
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    await tester.tap(find.text('检查'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('开始迁移'));
+    await tester.pumpAndSettle();
+
+    // 全部条目写失败、回滚成功后 stopped 仍是 false ⇒ 标题**必须**看失败，
+    // 否则会出现"标题说没东西要迁移、下面每行都写着失败"的自相矛盾（假阳性成功）。
+    expect(find.text('迁移未完成'), findsOneWidget);
+    expect(find.text('没有需要迁移的内容'), findsNothing);
+    expect(find.textContaining('失败：凭据写入失败'), findsOneWidget);
+    expect(store.writes, 0);
+    expect(credentials.saved, isEmpty);
+  });
+
+  testWidgets('F0-6 预览的"将迁移 N 项"只数真的会被搬的项', (tester) async {
+    // 一项是真的明文（会被搬），一项已经带引用（本次不动）。
+    final settings = OnlineMusicSettings.fromJson({
+      'providers': [
+        {
+          'id': 'selfData',
+          'baseUrl': 'https://self.invalid',
+          'auth': {'kind': 'none'},
+          'capabilities': {
+            'search': Map<String, Object?>.from(f04SearchBindingJson())
+              ..['request'] = {
+                ...(f04SearchBindingJson()['request']! as Map<String, Object?>),
+                'headers': const [
+                  {
+                    'name': 'Cookie',
+                    'value': 'session=FAKE_COOKIE_UI_MIGRATION_TEST_ONLY',
+                  },
+                  {
+                    'name': 'Authorization',
+                    'value': '',
+                    'sensitive': true,
+                    'reference': 'selfData/search/authorization',
+                  },
+                ],
+              },
+          },
+        },
+      ],
+    });
+    final credentials = _FakeCredentialAccess();
+    final store = _MemorySettingsStore(settings);
+    final controller = OnlineMusicProviderSettingsController(
+      activeSettings: settings,
+      store: store,
+      fallbackCredentials: credentials,
+      credentialReader: credentials,
+      isPortableBuild: false,
+    );
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    await tester.tap(find.text('检查'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('将迁移（1 项）：'), findsOneWidget);
+    expect(find.textContaining('已用安全凭据引用（1 项，本次不动）'), findsOneWidget);
+
+    await tester.tap(find.text('开始迁移'));
+    await tester.pumpAndSettle();
+
+    // 说的 1 项就是真的搬了 1 项：不会先说 N 项、结果报"无需迁移"。
+    expect(find.text('迁移完成'), findsOneWidget);
+    expect(credentials.saved.keys.single, contains('cookie'));
+  });
 }
 
 /// F0-4 用的**校验通过**的声明式 search 绑定（字段映射齐全）。
@@ -1207,6 +1290,9 @@ final class _FakeCredentialAccess
   /// 为真时让凭据读取抛错，用于覆盖错误提示与重试。
   bool failReads = false;
 
+  /// 为真时让凭据**写入**失败（F0-6：覆盖"迁移全部失败"的标题）。
+  bool failWrites = false;
+
   @override
   String get credentialDisplayName => 'API Key';
 
@@ -1225,6 +1311,7 @@ final class _FakeCredentialAccess
 
   @override
   Future<void> save(String reference, String value) async {
+    if (failWrites) throw StateError('credential write failed');
     saved[reference] = value;
   }
 
