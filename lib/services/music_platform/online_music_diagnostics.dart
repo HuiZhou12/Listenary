@@ -37,6 +37,7 @@ final class OnlineMusicDiagnosticsEntry {
     required this.capabilityLabel,
     required this.attempts,
     this.winnerProviderId,
+    this.qualityDeclarerProviderId,
   });
 
   final String platformLabel;
@@ -48,13 +49,26 @@ final class OnlineMusicDiagnosticsEntry {
   /// 实际成功的 Provider id；全部失败或未回退时为 null。
   final String? winnerProviderId;
 
+  /// 档位清单/文案的**声明者**（P-56）；只在它与 [winnerProviderId] 分叉时有值。
+  final String? qualityDeclarerProviderId;
+
   bool get didFallback => attempts.isNotEmpty;
 
+  /// 档位声明者与实际服务者不是同一个（P-56 要如实说出来的那种情况）。
+  bool get qualityDeclarerDiffers =>
+      qualityDeclarerProviderId != null &&
+      winnerProviderId != null &&
+      qualityDeclarerProviderId != winnerProviderId;
+
   /// 单行摘要：`网易云/搜索：chksz（网络） → qq（成功）`。
+  ///
+  /// 档位声明者与服务者分叉时补一句（P-56）：用户看到的档位清单来自声明者，
+  /// 而真正收到请求的是服务者 —— 不写出来就完全看不出来。
   String get summary =>
       '$platformLabel/$capabilityLabel：'
       '${attempts.isEmpty ? '首次命中' : attempts.join(' → ')}'
-      '${winnerProviderId == null ? '' : ' → $winnerProviderId（成功）'}';
+      '${winnerProviderId == null ? '' : ' → $winnerProviderId（成功）'}'
+      '${qualityDeclarerDiffers ? ' · 档位声明来自 $qualityDeclarerProviderId' : ''}';
 }
 
 /// 诊断数据的**只读出口**（P-29）。
@@ -81,5 +95,6 @@ List<OnlineMusicDiagnosticsEntry> buildOnlineMusicDiagnostics(
           '${attempt.providerId}（${onlineMusicErrorKindLabel(attempt.kind)}）',
       ],
       winnerProviderId: record.winnerProviderId,
+      qualityDeclarerProviderId: record.qualityDeclarerProviderId,
     ),
 ];

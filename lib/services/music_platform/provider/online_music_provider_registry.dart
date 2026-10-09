@@ -118,9 +118,12 @@ final class OnlineMusicProviderRegistry {
   /// 旧单值映射（`capabilities{cap → providerId}`）本身不含平台信息，D13:A 把它解释为
   /// "该 Provider **自己那个平台**上的候选"。因此它只有在这个 Provider 确实支持
   /// `(platform, capability)` 时才算一个显式候选；否则该组合视作**没有**显式候选，
-  /// 继续按注册顺序推导隐式条目。这与配置层 `explicitCandidateIdsFor`
-  /// （`contentPlatform != platform ⇒ 空`）的语义一致，避免"一个 qq 条目的旧映射
-  /// 把 netease 的候选全部清空"。
+  /// 继续按注册顺序推导隐式条目。
+  ///
+  /// ⚠️ 判据用的是 [_supports]（**运行期**那条规则，即 `platformsFor`），
+  /// 与配置层 `explicitCandidateIdsFor` 现在的判据**同源**（F2-P59 把配置层从
+  /// `contentPlatform` 改成运行期规则后，两边才真正一致 —— 以前注释里写"一致"，
+  /// 实际是两套标准）。
   List<String> _explicitIdsFor(
     MusicPlatform platform,
     OnlineMusicCapability capability,

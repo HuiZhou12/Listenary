@@ -262,9 +262,29 @@ final class CompositeOnlineMusicService
   @override
   String defaultQualityFor(MusicPlatform platform) {
     // 同步查询：没有候选即不可用；不在此处回退（无异步空间，也没有请求可失败）。
+    final declaring = _qualityDeclaringProvider(platform);
+    if (declaring == null) throw unsupportedCapability();
+    return declaring.defaultQualityFor(platform);
+  }
+
+  /// 该平台**档位清单/文案的声明者** —— P-56 的单一来源。
+  ///
+  /// 就是候选里的第一个（`providersFor` 已经让**显式指定的候选排在前面**，
+  /// 因此用户指定了来源时，声明者与服务者都是它）。
+  ///
+  /// **不变量**：正常情况下"声明者 = 服务者"。
+  /// 唯一的例外是**回落** —— 第一个候选失败、由后面的候选真正提供服务时：
+  /// - 发给平台前的**档位转换**始终用**服务者自己**的声明（见 [resolve]：转换发生在
+  ///   逐个候选的执行里，而不是在这里先算好），因此请求值永远是对的；
+  /// - 但 UI 展示的档位清单/文案来自**声明者**，二者可能不同（例如 A 把 `lossless`
+  ///   映射成 `flac`、B 映射成 `sq`）。
+  ///
+  /// 因此这种分叉必须**可见**：`_record` 会把它写进路由诊断（P-56）。
+  /// （"让 UI 跟随实际服务者"需要运行期记住"这个平台上次是谁服务的"，属于档位表达力
+  /// 的范畴 ⇒ F4 的延期项。）
+  OnlineMusicProvider? _qualityDeclaringProvider(MusicPlatform platform) {
     final candidates = _streamCandidates(platform);
-    if (candidates.isEmpty) throw unsupportedCapability();
-    return candidates.first.defaultQualityFor(platform);
+    return candidates.isEmpty ? null : candidates.first;
   }
 
   /// 该平台**可用的音质档位**（含平台自己的文案），供 UI 渲染选择菜单。
@@ -272,17 +292,17 @@ final class CompositeOnlineMusicService
   /// 空列表表示该 Provider 没有声明档位（内部偏好原样透传）；UI 此时只应展示内部
   /// 偏好本身，**不要伪造平台档位名称**（补充口径④）。
   @override
-  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) {
-    final candidates = _streamCandidates(platform);
-    return candidates.isEmpty
-        ? const []
-        : candidates.first.qualityTiersFor(platform);
-  }
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) =>
+      _qualityDeclaringProvider(platform)?.qualityTiersFor(platform) ?? const [];
 
   /// 把内部偏好解析成该平台实际使用的档位，并告知**是否发生了回落**。
   ///
   /// 用途：UI 用 `displayLabel` 展示该平台自己的档位名称；`fellBack == true` 时提示
   /// "已回落为 displayLabel"。
+  ///
+  /// ⚠️ P-56：这里用的是**声明者**（`_qualityDeclaringProvider`）的档位表。
+  /// 正常情况下声明者就是服务者；若发生了**回落**，实际收到请求的是别的 Provider
+  /// （它按自己的声明做转换）—— 这种分叉会进路由诊断，见 [OnlineMusicRouteRecord]。
   @override
   PlatformQualitySelection selectQualityFor(
     MusicPlatform platform, {
@@ -419,12 +439,19 @@ final class CompositeOnlineMusicService
     List<OnlineMusicRouteAttempt> attempts,
     String? winnerProviderId,
   ) {
+    // P-56：档位清单/文案的**声明者**是候选里的第一个（`_qualityDeclaringProvider`）。
+    // 正常情况下它就是服务者；一旦回落让二者分叉，就把它记下来 —— 否则用户看到的
+    // 档位清单来自 A、实际请求却由 B 按自己的声明转换，且没有任何线索。
+    final declaringProviderId = capability == OnlineMusicCapability.stream
+        ? _qualityDeclaringProvider(platform)?.providerId
+        : null;
     _routeLog.add(
       OnlineMusicRouteRecord(
         platform: platform,
         capability: capability,
         attempts: List.unmodifiable(attempts),
         winnerProviderId: winnerProviderId,
+        qualityDeclarerProviderId: declaringProviderId,
       ),
     );
     if (_routeLog.length > _routeLogLimit) _routeLog.removeAt(0);

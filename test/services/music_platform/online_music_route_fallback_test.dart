@@ -353,10 +353,93 @@ void main() {
       );
     });
   });
+
+  // ======================================================== P-56
+  group('★ P-56 档位声明者与服务者', () {
+    test('回落时分叉：转换用**服务者**的声明，UI 用**声明者**的清单，且诊断里说出来', () async {
+      // A 是候选里的第一个（= 档位**声明者**），但它解析失败 ⇒ 由 B 真正提供服务。
+      // 两个条目的档位映射不同：A 把 lossless 映射成 flac、B 映射成 sq。
+      final declarer = _ScriptedProvider(
+        'neteaseA',
+        neteaseSearchAndStream,
+        failure: OnlineMusicErrorKind.network,
+        tiers: const [
+          PlatformQualityTier(
+            internalLevel: 'lossless',
+            displayLabel: 'FLAC',
+            requestValue: 'flac',
+          ),
+        ],
+      );
+      final server = _ScriptedProvider(
+        'neteaseB',
+        neteaseSearchAndStream,
+        tiers: const [
+          PlatformQualityTier(
+            internalLevel: 'lossless',
+            displayLabel: 'SQ',
+            requestValue: 'sq',
+          ),
+        ],
+      );
+      final service = serviceWith([declarer, server]);
+      addTearDown(service.dispose);
+
+      // ① UI 看到的档位清单来自**声明者 A**（这是既定语义，本片把它写明）。
+      expect(
+        service.qualityTiersFor(MusicPlatform.netease).single.requestValue,
+        'flac',
+      );
+
+      // ② 实际收到请求的是 B，它按**自己**的声明转换 ⇒ 请求值是 sq，不是 flac。
+      await service.resolve(
+        const PlatformTrackRef(platform: netease, trackId: 't1'),
+        requestedQuality: 'lossless',
+        cancelToken: OnlineMusicCancelToken(),
+      );
+      expect(declarer.resolveQualities, isEmpty, reason: 'A 失败了，不该留下请求');
+      expect(server.resolveQualities.single, 'sq');
+
+      // ③ 分叉必须**可见**：诊断里写出档位声明来自谁。
+      final entries =
+          (service as OnlineMusicDiagnosticsSource).routeDiagnostics;
+      final streamEntry = entries.firstWhere(
+        (entry) => entry.capabilityLabel ==
+            onlineMusicCapabilityLabel(OnlineMusicCapability.stream),
+      );
+      expect(streamEntry.winnerProviderId, 'neteaseB');
+      expect(streamEntry.qualityDeclarerProviderId, 'neteaseA');
+      expect(streamEntry.qualityDeclarerDiffers, isTrue);
+      expect(streamEntry.summary, contains('档位声明来自 neteaseA'));
+    });
+
+    test('未回落时声明者就是服务者 ⇒ 诊断不补那句话（不制造噪音）', () async {
+      final only = _ScriptedProvider('neteaseA', neteaseSearchAndStream);
+      final service = serviceWith([only]);
+      addTearDown(service.dispose);
+
+      await service.resolve(
+        const PlatformTrackRef(platform: netease, trackId: 't1'),
+        requestedQuality: 'lossless',
+        cancelToken: OnlineMusicCancelToken(),
+      );
+
+      final entry = (service as OnlineMusicDiagnosticsSource)
+          .routeDiagnostics
+          .single;
+      expect(entry.qualityDeclarerDiffers, isFalse);
+      expect(entry.summary, isNot(contains('档位声明来自')));
+    });
+  });
 }
 
 final class _ScriptedProvider extends UnsupportedOnlineMusicProvider {
-  _ScriptedProvider(this.providerId, this._platforms, {this.failure});
+  _ScriptedProvider(
+    this.providerId,
+    this._platforms, {
+    this.failure,
+    this.tiers = const [],
+  });
 
   @override
   final String providerId;
@@ -366,11 +449,20 @@ final class _ScriptedProvider extends UnsupportedOnlineMusicProvider {
   /// 非空时，该 Provider 的所有调用都以这个 kind 失败。
   final OnlineMusicErrorKind? failure;
 
+  /// 该 Provider 声明的平台档位（P-56：用来制造"声明者 ≠ 服务者"）。
+  final List<PlatformQualityTier> tiers;
+
+  /// 每次成功的 `resolve` 收到的档位请求值（用来验证**用谁的声明做转换**）。
+  final List<String> resolveQualities = [];
+
   int searchCalls = 0;
 
   @override
   Set<MusicPlatform> platformsFor(OnlineMusicCapability capability) =>
       _platforms[capability] ?? const {};
+
+  @override
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) => tiers;
 
   @override
   Future<MusicSearchPage> search({
@@ -404,6 +496,7 @@ final class _ScriptedProvider extends UnsupportedOnlineMusicProvider {
         safeMessage: 'failed:${kind.name}',
       );
     }
+    resolveQualities.add(requestedQuality);
     return ResolvedStream(
       ref: ref,
       uri: Uri.parse('https://media.invalid/a.flac'),
@@ -412,7 +505,6 @@ final class _ScriptedProvider extends UnsupportedOnlineMusicProvider {
     );
   }
 }
-
 final class _StubTransport implements DeclarativeHttpTransport {
   _StubTransport(this.response);
 

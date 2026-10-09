@@ -23,6 +23,7 @@ final class OnlineMusicRouteRecord {
     required this.capability,
     required this.attempts,
     this.winnerProviderId,
+    this.qualityDeclarerProviderId,
   });
 
   final MusicPlatform platform;
@@ -34,11 +35,26 @@ final class OnlineMusicRouteRecord {
   /// 实际成功的 Provider；全部失败或未回退时为 null。
   final String? winnerProviderId;
 
+  /// 该平台**档位清单/文案的声明者**（P-56）。
+  ///
+  /// 正常情况下等于 [winnerProviderId]（候选里的第一个就是服务者）。
+  /// **只在回落导致二者分叉时**才有值：UI 展示的档位来自声明者，而真正收到请求、
+  /// 并按**自己**的声明做档位转换的是 winner ⇒ 这件事必须可见，否则用户会看到
+  /// 一份与实际请求值对不上的档位清单（且没有任何线索）。
+  final String? qualityDeclarerProviderId;
+
+  /// 档位声明者与服务者是否**不是**同一个（P-56 要如实说出来的那种情况）。
+  bool get qualityDeclarerDiffers =>
+      qualityDeclarerProviderId != null &&
+      winnerProviderId != null &&
+      qualityDeclarerProviderId != winnerProviderId;
+
   bool get didFallback => attempts.isNotEmpty;
 
   @override
   String toString() =>
       '${platform.name}/${capability.name}: '
       '${attempts.isEmpty ? '首次命中' : attempts.join(' → ')}'
-      '${winnerProviderId == null ? '' : ' → ${winnerProviderId!}(成功)'}';
+      '${winnerProviderId == null ? '' : ' → ${winnerProviderId!}(成功)'}'
+      '${qualityDeclarerDiffers ? ' [档位声明来自 ${qualityDeclarerProviderId!}]' : ''}';
 }
