@@ -623,183 +623,195 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       );
     }
 
-    if (capability == OnlineMusicCapability.search) {
-      final page = mapDeclarativeSearchResponse(
-        spec: binding.response,
-        body: response.data,
-        platform: definition.contentPlatform,
-        limit: 1,
-        offset: 0,
-      );
-      final first = page.items.isEmpty ? null : page.items.first.title;
-      return DeclarativeCapabilityTestResult(
-        ok: page.items.isNotEmpty,
-        statusCode: response.statusCode,
-        responsePreview: preview,
-        mappedSummary: page.items.isEmpty
-            ? '解析成功，但没有曲目'
-            : '${page.items.length} 首曲目 · 第 1 首：$first',
-        failureReason: page.items.isEmpty ? '没有解析出曲目' : null,
-        failureKind: page.items.isEmpty
-            ? DeclarativeTestFailureKind.mapping
-            : null,
-      );
-    }
+    switch (capability) {
+      case OnlineMusicCapability.search:
+        {
+          final page = mapDeclarativeSearchResponse(
+            spec: binding.response,
+            body: response.data,
+            platform: definition.contentPlatform,
+            limit: 1,
+            offset: 0,
+          );
+          final first = page.items.isEmpty ? null : page.items.first.title;
+          return DeclarativeCapabilityTestResult(
+            ok: page.items.isNotEmpty,
+            statusCode: response.statusCode,
+            responsePreview: preview,
+            mappedSummary: page.items.isEmpty
+                ? '解析成功，但没有曲目'
+                : '${page.items.length} 首曲目 · 第 1 首：$first',
+            failureReason: page.items.isEmpty ? '没有解析出曲目' : null,
+            failureKind: page.items.isEmpty
+                ? DeclarativeTestFailureKind.mapping
+                : null,
+          );
+        }
 
-    if (capability == OnlineMusicCapability.playlist) {
-      // P-01：曲目数组路径**没配**时曲目必然为空 —— 那是"配置缺项"，不是"这个歌单
-      // 没有曲目"。以前这里恒 `ok: true`，于是配置写漏了也报「试跑成功」（假阳性）。
-      // 注意：配了列表路径但数组为空 ⇒ 仍然算成功（合法的空歌单）。
-      if (binding.response.listPath == null) {
-        return DeclarativeCapabilityTestResult(
-          ok: false,
-          statusCode: response.statusCode,
-          responsePreview: preview,
-          failureReason:
-              '歌单详情没有配置「列表路径」（曲目数组所在位置），因此取不到任何曲目',
-          failureKind: DeclarativeTestFailureKind.config,
-        );
-      }
-      final playlist = mapDeclarativePlaylistResponse(
-        spec: binding.response,
-        body: response.data,
-        platform: definition.contentPlatform,
-        requestedPlaylistId: requestedPlaylistId!,
-      );
-      return DeclarativeCapabilityTestResult(
-        ok: true,
-        statusCode: response.statusCode,
-        responsePreview: preview,
-        mappedSummary: '歌单「${playlist.name}」· ${playlist.tracks.length} 首曲目',
-      );
-    }
+      case OnlineMusicCapability.playlist:
+        {
+          // P-01：曲目数组路径**没配**时曲目必然为空 —— 那是"配置缺项"，不是"这个歌单
+          // 没有曲目"。以前这里恒 `ok: true`，于是配置写漏了也报「试跑成功」（假阳性）。
+          // 注意：配了列表路径但数组为空 ⇒ 仍然算成功（合法的空歌单）。
+          if (binding.response.listPath == null) {
+            return DeclarativeCapabilityTestResult(
+              ok: false,
+              statusCode: response.statusCode,
+              responsePreview: preview,
+              failureReason: '歌单详情没有配置「列表路径」（曲目数组所在位置），因此取不到任何曲目',
+              failureKind: DeclarativeTestFailureKind.config,
+            );
+          }
+          final playlist = mapDeclarativePlaylistResponse(
+            spec: binding.response,
+            body: response.data,
+            platform: definition.contentPlatform,
+            requestedPlaylistId: requestedPlaylistId!,
+          );
+          return DeclarativeCapabilityTestResult(
+            ok: true,
+            statusCode: response.statusCode,
+            responsePreview: preview,
+            mappedSummary:
+                '歌单「${playlist.name}」· ${playlist.tracks.length} 首曲目',
+          );
+        }
 
-    if (capability == OnlineMusicCapability.playlistCollection) {
-      final playlists = mapDeclarativePlaylistCollectionResponse(
-        spec: binding.response,
-        body: response.data,
-        platform: definition.contentPlatform,
-      );
-      final first = playlists.isEmpty ? null : playlists.first.name;
-      return DeclarativeCapabilityTestResult(
-        ok: playlists.isNotEmpty,
-        statusCode: response.statusCode,
-        responsePreview: preview,
-        mappedSummary: playlists.isEmpty
-            ? '解析成功，但没有歌单'
-            : '${playlists.length} 个歌单 · 第一个：$first',
-        failureReason: playlists.isEmpty ? '没有解析出歌单' : null,
-        failureKind: playlists.isEmpty
-            ? DeclarativeTestFailureKind.mapping
-            : null,
-      );
-    }
+      case OnlineMusicCapability.playlistCollection:
+        {
+          final playlists = mapDeclarativePlaylistCollectionResponse(
+            spec: binding.response,
+            body: response.data,
+            platform: definition.contentPlatform,
+          );
+          final first = playlists.isEmpty ? null : playlists.first.name;
+          return DeclarativeCapabilityTestResult(
+            ok: playlists.isNotEmpty,
+            statusCode: response.statusCode,
+            responsePreview: preview,
+            mappedSummary: playlists.isEmpty
+                ? '解析成功，但没有歌单'
+                : '${playlists.length} 个歌单 · 第一个：$first',
+            failureReason: playlists.isEmpty ? '没有解析出歌单' : null,
+            failureKind: playlists.isEmpty
+                ? DeclarativeTestFailureKind.mapping
+                : null,
+          );
+        }
 
-    if (capability == OnlineMusicCapability.chartList) {
-      // 榜单索引与歌单集合同构，试跑用同一个映射（见映射函数的说明）。
-      final charts = mapDeclarativePlaylistCollectionResponse(
-        spec: binding.response,
-        body: response.data,
-        platform: definition.contentPlatform,
-      );
-      final first = charts.isEmpty ? null : charts.first.name;
-      return DeclarativeCapabilityTestResult(
-        ok: charts.isNotEmpty,
-        statusCode: response.statusCode,
-        responsePreview: preview,
-        mappedSummary: charts.isEmpty
-            ? '解析成功，但没有榜单'
-            : '${charts.length} 个榜单 · 第一个：$first',
-        failureReason: charts.isEmpty ? '没有解析出榜单' : null,
-        failureKind: charts.isEmpty
-            ? DeclarativeTestFailureKind.mapping
-            : null,
-      );
-    }
+      case OnlineMusicCapability.chartList:
+        {
+          // 榜单索引与歌单集合同构，试跑用同一个映射（见映射函数的说明）。
+          final charts = mapDeclarativePlaylistCollectionResponse(
+            spec: binding.response,
+            body: response.data,
+            platform: definition.contentPlatform,
+          );
+          final first = charts.isEmpty ? null : charts.first.name;
+          return DeclarativeCapabilityTestResult(
+            ok: charts.isNotEmpty,
+            statusCode: response.statusCode,
+            responsePreview: preview,
+            mappedSummary: charts.isEmpty
+                ? '解析成功，但没有榜单'
+                : '${charts.length} 个榜单 · 第一个：$first',
+            failureReason: charts.isEmpty ? '没有解析出榜单' : null,
+            failureKind: charts.isEmpty
+                ? DeclarativeTestFailureKind.mapping
+                : null,
+          );
+        }
 
-    if (capability == OnlineMusicCapability.playlistCategories) {
-      final categories = mapDeclarativePlaylistCategoriesResponse(
-        spec: binding.response,
-        body: response.data,
-        platform: definition.contentPlatform,
-      );
-      final first = categories.isEmpty ? null : categories.first.name;
-      return DeclarativeCapabilityTestResult(
-        ok: categories.isNotEmpty,
-        statusCode: response.statusCode,
-        responsePreview: preview,
-        mappedSummary: categories.isEmpty
-            ? '解析成功，但没有分类'
-            : '${categories.length} 个分类 · 第一个：$first',
-        failureReason: categories.isEmpty ? '没有解析出分类' : null,
-        failureKind: categories.isEmpty
-            ? DeclarativeTestFailureKind.mapping
-            : null,
-      );
-    }
+      case OnlineMusicCapability.playlistCategories:
+        {
+          final categories = mapDeclarativePlaylistCategoriesResponse(
+            spec: binding.response,
+            body: response.data,
+            platform: definition.contentPlatform,
+          );
+          final first = categories.isEmpty ? null : categories.first.name;
+          return DeclarativeCapabilityTestResult(
+            ok: categories.isNotEmpty,
+            statusCode: response.statusCode,
+            responsePreview: preview,
+            mappedSummary: categories.isEmpty
+                ? '解析成功，但没有分类'
+                : '${categories.length} 个分类 · 第一个：$first',
+            failureReason: categories.isEmpty ? '没有解析出分类' : null,
+            failureKind: categories.isEmpty
+                ? DeclarativeTestFailureKind.mapping
+                : null,
+          );
+        }
 
-    if (capability == OnlineMusicCapability.newSongs) {
-      // 新歌与搜索同构（都是曲目数组），试跑复用同一个映射。
-      final tracks = mapDeclarativeSearchResponse(
-        spec: binding.response,
-        body: response.data,
-        platform: definition.contentPlatform,
-        limit: 30,
-        offset: 0,
-      ).items;
-      final first = tracks.isEmpty ? null : tracks.first.title;
-      return DeclarativeCapabilityTestResult(
-        ok: tracks.isNotEmpty,
-        statusCode: response.statusCode,
-        responsePreview: preview,
-        mappedSummary: tracks.isEmpty
-            ? '解析成功，但没有新歌'
-            : '${tracks.length} 首曲目 · 第一首：$first',
-        failureReason: tracks.isEmpty ? '没有解析出曲目' : null,
-        failureKind: tracks.isEmpty
-            ? DeclarativeTestFailureKind.mapping
-            : null,
-      );
-    }
+      case OnlineMusicCapability.newSongs:
+        {
+          // 新歌与搜索同构（都是曲目数组），试跑复用同一个映射。
+          final tracks = mapDeclarativeSearchResponse(
+            spec: binding.response,
+            body: response.data,
+            platform: definition.contentPlatform,
+            limit: 30,
+            offset: 0,
+          ).items;
+          final first = tracks.isEmpty ? null : tracks.first.title;
+          return DeclarativeCapabilityTestResult(
+            ok: tracks.isNotEmpty,
+            statusCode: response.statusCode,
+            responsePreview: preview,
+            mappedSummary: tracks.isEmpty
+                ? '解析成功，但没有新歌'
+                : '${tracks.length} 首曲目 · 第一首：$first',
+            failureReason: tracks.isEmpty ? '没有解析出曲目' : null,
+            failureKind: tracks.isEmpty
+                ? DeclarativeTestFailureKind.mapping
+                : null,
+          );
+        }
 
-    if (capability == OnlineMusicCapability.lyric) {
-      final lyrics = mapDeclarativeLyricsResponse(
-        spec: binding.response,
-        body: response.data,
-        ref: PlatformTrackRef(
-          platform: definition.contentPlatform,
-          trackId: trackId!,
-        ),
-      );
-      // 空歌词**不是失败**：纯音乐/间奏本来就没有歌词，配置可能是对的。
-      return DeclarativeCapabilityTestResult(
-        ok: true,
-        statusCode: response.statusCode,
-        responsePreview: preview,
-        mappedSummary: lyrics.isEmpty
-            ? '解析成功，但这份响应里没有歌词（纯音乐？）'
-            : '歌词：原文${lyrics.original != null ? '有' : '无'}'
-                  '${lyrics.translation != null ? ' · 翻译有' : ''}',
-      );
-    }
+      case OnlineMusicCapability.lyric:
+        {
+          final lyrics = mapDeclarativeLyricsResponse(
+            spec: binding.response,
+            body: response.data,
+            ref: PlatformTrackRef(
+              platform: definition.contentPlatform,
+              trackId: trackId!,
+            ),
+          );
+          // 空歌词**不是失败**：纯音乐/间奏本来就没有歌词，配置可能是对的。
+          return DeclarativeCapabilityTestResult(
+            ok: true,
+            statusCode: response.statusCode,
+            responsePreview: preview,
+            mappedSummary: lyrics.isEmpty
+                ? '解析成功，但这份响应里没有歌词（纯音乐？）'
+                : '歌词：原文${lyrics.original != null ? '有' : '无'}'
+                      '${lyrics.translation != null ? ' · 翻译有' : ''}',
+          );
+        }
 
-    final stream = mapDeclarativeResolveResponse(
-      spec: binding.response,
-      body: response.data,
-      expectedRef: PlatformTrackRef(
-        platform: definition.contentPlatform,
-        trackId: trackId!,
-      ),
-      requestedQuality: quality,
-      resolvedAt: DateTime.now(),
-    );
-    return DeclarativeCapabilityTestResult(
-      ok: true,
-      statusCode: response.statusCode,
-      responsePreview: preview,
-      // 只显示主机与路径：签名串留在 query 里，不进界面。
-      mappedSummary: '播放地址：${stream.uri.host}${stream.uri.path}',
-    );
+      case OnlineMusicCapability.stream:
+        {
+          final stream = mapDeclarativeResolveResponse(
+            spec: binding.response,
+            body: response.data,
+            expectedRef: PlatformTrackRef(
+              platform: definition.contentPlatform,
+              trackId: trackId!,
+            ),
+            requestedQuality: quality,
+            resolvedAt: DateTime.now(),
+          );
+          return DeclarativeCapabilityTestResult(
+            ok: true,
+            statusCode: response.statusCode,
+            responsePreview: preview,
+            // 只显示主机与路径：签名串留在 query 里，不进界面。
+            mappedSummary: '播放地址：${stream.uri.host}${stream.uri.path}',
+          );
+        }
+    }
   }
 
   DeclarativeHttpTransport _transportFor(
@@ -900,9 +912,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       };
     }
     if (data is List) {
-      return [
-        for (final item in data) _redactStructured(item, depth + 1),
-      ];
+      return [for (final item in data) _redactStructured(item, depth + 1)];
     }
     return data;
   }
@@ -936,7 +946,8 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
 /// 没有注入凭据读取口时的占位实现：一律"读不到"。
 ///
 /// 合法的失败，而不是静默通过 —— 敏感请求头缺凭据时**必须**明确报错。
-final class _UnavailableCredentialReader implements OnlineMusicCredentialReader {
+final class _UnavailableCredentialReader
+    implements OnlineMusicCredentialReader {
   const _UnavailableCredentialReader();
 
   @override
