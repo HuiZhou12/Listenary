@@ -1,4 +1,5 @@
 import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/online_music_diagnostics.dart';
 import 'package:pure_music/services/music_platform/online_music_error.dart';
 import 'package:pure_music/services/music_platform/online_music_request.dart';
 import 'package:pure_music/services/music_platform/online_music_service.dart';
@@ -17,7 +18,8 @@ import 'package:pure_music/services/music_platform/provider/online_music_route_d
 /// 缺少凭据 / 暂时没有余量"才换下一个（见 [allowsProviderFallback]）；内容语义与
 /// 配置类错误一律**立即失败**，不换 Provider。回退默认**静默**（D5b:B），
 /// 但每次分发都记入 [routeLog] 以便诊断。
-final class CompositeOnlineMusicService implements OnlineMusicService {
+final class CompositeOnlineMusicService
+    implements OnlineMusicService, OnlineMusicDiagnosticsSource {
   CompositeOnlineMusicService({required this.registry})
     : capabilities = _capabilitiesFor(registry);
 
@@ -80,6 +82,18 @@ final class CompositeOnlineMusicService implements OnlineMusicService {
 
   OnlineMusicRouteRecord? get lastRoute =>
       _routeLog.isEmpty ? null : _routeLog.last;
+
+  /// P-29：应用层可读的**诊断出口**。
+  ///
+  /// Spec §6.4 要求"回退静默但必须可观测"，并把暴露面定为诊断/调试视图；
+  /// 此前 `routeLog` 只是本实现的类字段 —— 应用层只拿到 `OnlineMusicService`，
+  /// 生产路径**没有任何地方**能读到它（全仓只有测试 downcast 读）。
+  ///
+  /// 这里返回的是**已本地化、已脱敏**的行（见 [OnlineMusicDiagnosticsEntry]）：
+  /// 应用层不需要、也不允许引用 Provider 层的配置/能力枚举符号。
+  @override
+  List<OnlineMusicDiagnosticsEntry> get routeDiagnostics =>
+      List.unmodifiable(buildOnlineMusicDiagnostics(routeLog));
 
   @override
   Future<MusicSearchPage> search({

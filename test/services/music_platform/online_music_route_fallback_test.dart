@@ -4,13 +4,16 @@ import 'package:pure_music/services/music_platform/declarative/declarative_music
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_templates.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/online_music_diagnostics.dart';
 import 'package:pure_music/services/music_platform/online_music_error.dart';
 import 'package:pure_music/services/music_platform/online_music_request.dart';
+import 'package:pure_music/services/music_platform/online_music_service.dart';
 import 'package:pure_music/services/music_platform/provider/composite_online_music_service.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_credentials.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_registry.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 
 /// S2：fail-closed 受限回退、诊断可观测、以及 D15 的 `endpointMismatch` 分类。
 void main() {
@@ -145,6 +148,60 @@ void main() {
       expect(first.searchCalls, 1);
       expect(second.searchCalls, 1);
       expect(service.lastRoute!.attempts, hasLength(2));
+    });
+
+    test('★ P-29 诊断经**窄接口**可达（生产路径拿到的就是接口类型）', () async {
+      final first = _ScriptedProvider(
+        'neteaseA',
+        neteaseSearchAndStream,
+        failure: OnlineMusicErrorKind.network,
+      );
+      final second = _ScriptedProvider('neteaseB', neteaseSearchAndStream);
+      final service = serviceWith([first, second]);
+      addTearDown(service.dispose);
+
+      await searchWith(service);
+
+      // 关键：**只用接口类型**读诊断（应用层拿不到、也不该拿到实现类）。
+      final OnlineMusicService asInterface = service;
+      expect(asInterface, isA<OnlineMusicDiagnosticsSource>());
+      final entries =
+          (asInterface as OnlineMusicDiagnosticsSource).routeDiagnostics;
+
+      expect(entries, hasLength(1));
+      final entry = entries.single;
+      expect(entry.platformLabel, musicPlatformLabel(MusicPlatform.netease));
+      expect(
+        entry.capabilityLabel,
+        onlineMusicCapabilityLabel(OnlineMusicCapability.search),
+      );
+      expect(entry.attempts.single, contains('neteaseA'));
+      expect(
+        entry.attempts.single,
+        contains(onlineMusicErrorKindLabel(OnlineMusicErrorKind.network)),
+      );
+      // "已本地化"要能被抓住：诊断里必须出现中文类别名，且**不得**把枚举名当文案。
+      expect(entry.attempts.single, contains('网络'));
+      expect(
+        entry.attempts.single,
+        isNot(contains('network')),
+        reason: '诊断是给人看的：不得直接暴露枚举名',
+      );
+      expect(entry.capabilityLabel, isNot('search'));
+      expect(entry.winnerProviderId, 'neteaseB');
+      expect(entry.didFallback, isTrue);
+      expect(entry.summary, contains('neteaseB（成功）'));
+      // 记录里只有 providerId 与错误类别：不含地址、查询串、响应片段或凭据。
+      expect(entry.summary, isNot(contains('http')));
+      expect(entry.summary, isNot(contains('SECRET')));
+    });
+
+    test('★ P-29 诊断不落库（Spec §6.4 明令只读、仅内存）', () {
+      // `servedByProviderId` 与路由记录都不得进入持久化配置。
+      final json = OnlineMusicSettings.defaults.toJson().toString();
+      expect(json, isNot(contains('servedByProvider')));
+      expect(json, isNot(contains('routeLog')));
+      expect(json, isNot(contains('routeDiagnostics')));
     });
 
     test('空结果不是错误：直接返回，不触发回退', () async {

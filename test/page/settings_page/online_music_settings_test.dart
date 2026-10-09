@@ -10,6 +10,8 @@ import 'package:pure_music/services/music_platform/chksz/index.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 import 'package:pure_music/services/music_platform/online_music_composition.dart';
+// P-29：诊断出口（窄接口 + 已本地化/已脱敏的 DTO）。
+import 'package:pure_music/services/music_platform/online_music_diagnostics.dart';
 
 const _apiKey = 'chksz_SETTINGS_TEST_ONLY';
 
@@ -2070,6 +2072,61 @@ void main() {
 
     expect(find.textContaining('配置问题：'), findsNothing);
   });
+
+  // ------------------------------------------------------------------ F2（P-29）
+
+  testWidgets('★ F2 P-29 设置页显示路由诊断（只读、纯文本、不含凭据）', (tester) async {
+    final controller = _controller();
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller, service: _DiagnosticsOnlyService());
+
+    expect(find.text('路由诊断'), findsOneWidget);
+    expect(find.textContaining('网易云/搜索'), findsOneWidget);
+    expect(find.textContaining('neteaseA'), findsOneWidget);
+    expect(find.textContaining('neteaseB（成功）'), findsOneWidget);
+    expect(find.textContaining('SECRET'), findsNothing);
+  });
+
+  testWidgets('★ F2 P-29 拿不到诊断源时不渲染该区块（老替身不受影响）', (tester) async {
+    final controller = _controller();
+    addTearDown(controller.dispose);
+    // 真实组合：还没有任何路由记录 ⇒ 整段不渲染。
+    await pumpPanel(tester, controller);
+
+    expect(find.text('路由诊断'), findsNothing);
+  });
+}
+
+/// 只提供诊断的最小替身：其余成员用 `noSuchMethod` 兜住
+/// （这正是"诊断是**可选**出口"的体现 —— 不实现它就等于这一版没有诊断）。
+final class _DiagnosticsOnlyService
+    implements OnlineMusicService, OnlineMusicDiagnosticsSource {
+  @override
+  OnlineMusicCapabilities get capabilities => OnlineMusicCapabilities(
+    searchablePlatforms: const [],
+    resolvablePlatforms: const [],
+  );
+
+  @override
+  List<OnlineMusicDiagnosticsEntry> get routeDiagnostics => const [
+    OnlineMusicDiagnosticsEntry(
+      platformLabel: '网易云',
+      capabilityLabel: '搜索',
+      attempts: ['neteaseA（网络）'],
+      winnerProviderId: 'neteaseB',
+    ),
+  ];
+
+  @override
+  void dispose() {}
+
+  /// 面板的"播放音质"区块会问档位；这个替身没有声明 ⇒ 空表（UI 走内部档位回落）。
+  @override
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) => const [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      super.noSuchMethod(invocation);
 }
 
 /// 各能力的**校验通过**夹具：路径与字段名都取自真实配方（`docs/dev/netease-bindings/`）。

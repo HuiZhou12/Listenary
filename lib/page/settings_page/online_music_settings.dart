@@ -545,10 +545,54 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
         const SizedBox(height: 24),
         const _SettingsSectionTitle('播放音质'),
         const _DefaultQualityTile(),
+        const SizedBox(height: 24),
+        _buildRouteDiagnosticsSection(),
+      ],
+    );
+  }
+
+  /// P-29：**诊断出口**（Spec §6.4：回退静默但必须可观测）。
+  ///
+  /// 内容全部由服务层拼成"人类可读且已脱敏"的行（平台名 / 能力名 / 试过谁 / 为什么换 /
+  /// 最后谁成功），界面只做渲染 —— 应用层不得引用 Provider 层的配置与能力枚举符号。
+  /// 拿不到诊断源（例如测试替身）或还没有记录时，整段不渲染。
+  Widget _buildRouteDiagnosticsSection() {
+    final service = context.read<OnlineMusicService?>();
+    // 用模式匹配取（而不是 `is` + 三元）：窄接口与 `OnlineMusicService` 无继承关系，
+    // 这里只关心"这个 service 顺带实现了诊断接口吗"。
+    final entries = switch (service) {
+      OnlineMusicDiagnosticsSource(:final routeDiagnostics) => routeDiagnostics,
+      _ => const <OnlineMusicDiagnosticsEntry>[],
+    };
+    if (entries.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SettingsSectionTitle('路由诊断'),
+        const _SettingsHint(
+          '回退是静默的，但必须可查：下面是最近几次「平台 / 能力」分发，'
+          '按"试过谁（失败原因）→ 最后谁成功"排列。只读，不含任何凭据。',
+        ),
+        const SizedBox(height: 8),
+        for (final entry in entries.take(_diagnosticsDisplayLimit))
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              entry.summary,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        if (entries.length > _diagnosticsDisplayLimit)
+          _SettingsHint(
+            '仅显示最近 $_diagnosticsDisplayLimit 条（共 ${entries.length} 条）。',
+          ),
       ],
     );
   }
 }
+
+/// 诊断区块最多显示多少条（内存里保留 32 条，界面不必全铺开）。
+const _diagnosticsDisplayLimit = 8;
 
 int _enabledPlatformCount(OnlineMusicSettings settings) =>
     MusicPlatform.values.where(settings.isPlatformEnabled).length;
