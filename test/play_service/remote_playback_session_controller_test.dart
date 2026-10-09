@@ -142,6 +142,71 @@ void main() {
     },
   );
 
+  test('★ P-57 fallbackQuality 只在**同一平台**内携带', () async {
+    // 档位声明：netease 的**请求值就是内部键**（内置 chksz 正是这种），qq 完全不声明档位
+    // ⇒ 后者走"按内部偏好逐级下探"的链（`_qualityFallbackChain` 的第二条分支），
+    // 而泄漏过来的 'exhigh' 恰好与内部档位**同名** ⇒ 会把下探链**截成只剩一档**
+    // （用户在一次失败后就直接播不出来，且看不出原因）。
+    gateway.tiersByPlatform[MusicPlatform.netease] = const [
+      PlatformQualityTier(
+        internalLevel: 'standard',
+        displayLabel: '标准',
+        requestValue: 'standard',
+      ),
+      PlatformQualityTier(
+        internalLevel: 'exhigh',
+        displayLabel: '高',
+        requestValue: 'exhigh',
+      ),
+      PlatformQualityTier(
+        internalLevel: 'lossless',
+        displayLabel: '无损',
+        requestValue: 'lossless',
+      ),
+    ];
+    // 三个条目：netease、netease、**qq**（第三条用来验跨平台）。
+    queue.replace([
+      _item('1'),
+      _item('2'),
+      _item('3', platform: MusicPlatform.qq),
+    ]);
+
+    // ① 先在 netease 上播一首 ⇒ "上一首的实际档位"变成 exhigh。
+    await sessionController.play(0, requestedQuality: 'exhigh');
+
+    // ② 之后每次请求都失败 ⇒ 下探链会被完整走完，链内容可以从记录里读出来。
+    gateway.error = StateError('open failed');
+
+    // ③ **同一平台**：下限被携带 ⇒ 链止于 exhigh（P-57 明确要求"同平台行为不变"）。
+    gateway.qualities.clear();
+    await expectLater(
+      sessionController.play(1, requestedQuality: 'lossless'),
+      throwsStateError,
+    );
+    expect(
+      gateway.qualities,
+      ['lossless', 'exhigh'],
+      reason: 'P-57：同平台仍按上一首的实际档位取下限',
+    );
+
+    // ④ **跨平台**：下限不得携带 ⇒ 链一路下探到底，而不是被上一平台的取值截断。
+    gateway.qualities.clear();
+    await expectLater(
+      sessionController.play(2, requestedQuality: 'lossless'),
+      throwsStateError,
+    );
+    expect(
+      gateway.qualities,
+      isNot(['lossless']),
+      reason: 'P-57：不得把上一平台（netease 的 exhigh）当成 qq 的下限',
+    );
+    expect(
+      gateway.qualities.length,
+      greaterThan(2),
+      reason: 'P-57：跨平台要按新平台的偏好重新下探，而不是只剩一档',
+    );
+  });
+
   test('failed current selection can retry', () async {
     gateway.error = StateError('open failed');
     await expectLater(
@@ -724,8 +789,11 @@ void main() {
   });
 }
 
-RemotePlaybackQueueItem _item(String trackId) => RemotePlaybackQueueItem(
-  ref: PlatformTrackRef(platform: MusicPlatform.netease, trackId: trackId),
+RemotePlaybackQueueItem _item(
+  String trackId, {
+  MusicPlatform platform = MusicPlatform.netease,
+}) => RemotePlaybackQueueItem(
+  ref: PlatformTrackRef(platform: platform, trackId: trackId),
   title: 'Track $trackId',
   artists: const ['Artist'],
 );
@@ -785,10 +853,20 @@ final class _RecordingLocalBridge implements LocalPlaybackSessionBridge {
   }
 }
 
-final class _RecordingGateway implements RemoteQueuePlaybackMetadataGateway {
+final class _RecordingGateway
+    implements
+        RemoteQueuePlaybackMetadataGateway,
+        RemoteQueuePlaybackQualityGateway {
   final refs = <PlatformTrackRef>[];
   final qualities = <String>[];
   final events = <String>[];
+
+  /// 各平台的档位声明（P-57 用例用来制造"上一平台的下限对新平台无意义"）。
+  final tiersByPlatform = <MusicPlatform, List<PlatformQualityTier>>{};
+
+  @override
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) =>
+      tiersByPlatform[platform] ?? const [];
   final pending = <Future<void>>[];
   final tokens = <ChkszCancelToken>[];
   final results = <RemoteQueuePlaybackResult>[];

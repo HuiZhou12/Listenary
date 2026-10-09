@@ -199,8 +199,20 @@ final class RemotePlaybackSessionController {
   LocalPlaybackResumePoint? _localResumePoint;
   String? _requestedQuality;
 
-  /// 平台实际返回的档位（`MusicQuality.level`），用于降权提示与切歌时保持可用档位。
+  /// 平台实际返回的档位，用于降权提示与切歌时保持可用档位。
+  ///
+  /// ⚠️ 它不是 `MusicQuality.level`（内部偏好），而是**平台自己的请求值**
+  /// （`queue_controller` 把平台返回值原样带回来），因此它**只对产生它的那个平台有效**
+  /// —— 见 [_currentQualityPlatform] 与 P-57 的携带条件。
   String? _currentQuality;
+
+  /// [_currentQuality] 所属的平台。
+  ///
+  /// P-57：`fallbackQuality` **只在同一平台内携带** —— 档位取值域是平台专属的
+  /// （`flac`/`sq`/`320` 之类），把上一首所在平台的取值当成下一首（可能换平台）的
+  /// "下限"，会去新平台的档位表里反查出一个**毫无意义**的下限、压掉本该可用的档位。
+  /// 因此必须**连同平台一起记住**，携带前比较。
+  MusicPlatform? _currentQualityPlatform;
   int _revision = 0;
   int _controlRevision = 0;
   int? _activeRemoteRevision;
@@ -242,6 +254,9 @@ final class RemotePlaybackSessionController {
     final previous = _currentQuality;
     final resolved = actual ?? requested;
     _currentQuality = resolved;
+    // P-57：档位是**平台专属取值** ⇒ 连同平台一起记住（平台未知就记 null，
+    // 这样携带条件判等为假，宁可不带也不带错）。
+    _currentQualityPlatform = platform;
     final resolver = _qualityDowngradeLabelFor;
     if (resolver == null || platform == null) return;
     final label = resolver(
@@ -437,10 +452,19 @@ final class RemotePlaybackSessionController {
           ),
         );
       }
+      // P-57：`fallbackQuality` **只在同一平台内携带**。
+      // `_currentQuality` 是**上一首所在平台**的实际取值（平台专属）；下一首换了平台时
+      // 它对新平台毫无意义 —— 带着它会在新平台的档位表里反查出一个错误下限，
+      // 压掉本该可用的档位（且用户只看到"音质被降了"，没有任何线索）。
+      // 代价：跨平台时可能多试 1–2 个更低档，这正是要求的方向（宁可按偏好重选）。
+      final carriesFallback = stopCurrent &&
+          _currentQuality != null &&
+          _currentQualityPlatform != null &&
+          _currentQualityPlatform == _platformOf(index);
       final actual = await _remoteController.play(
         index,
         requestedQuality: requestedQuality,
-        fallbackQuality: stopCurrent ? _currentQuality : null,
+        fallbackQuality: carriesFallback ? _currentQuality : null,
       );
       _applyResolvedQuality(
         requestedQuality,
@@ -614,6 +638,8 @@ final class RemotePlaybackSessionController {
     _localResumePoint = null;
     _requestedQuality = null;
     _currentQuality = null;
+    // P-57：平台也要一起清 —— 否则下次会话开始时可能拿上一段会话的平台去判等。
+    _currentQualityPlatform = null;
     _activeRemoteRevision = null;
     _stopTransitionRevision = null;
     _setControlState(RemotePlaybackControlSnapshot.inactive);
