@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_errors.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
@@ -13,6 +14,7 @@ import 'package:pure_music/services/music_platform/online_music_credentials.dart
 import 'package:pure_music/services/music_platform/online_music_request.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_header_migration.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_credentials.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 
@@ -228,6 +230,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     Map<String, OnlineMusicCredentialController> runningCredentials = const {},
     DeclarativeProbeTransportFactory? probeTransportFactory,
     OnlineMusicCredentialReader? credentialReader,
+    this.isPortableBuild = portableBuild,
   }) : _activeSettings = activeSettings,
        _store = store,
        _fallbackCredentials = fallbackCredentials,
@@ -244,6 +247,10 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
 
   /// 探测/试跑时需要凭据值（界面层拿不到），因此单独注入一个读取口。
   final OnlineMusicCredentialReader? _credentialReader;
+
+  /// 是否便携版构建（决定"能否安全持久保存秘密"，F0-5 / §11.2）。
+  final bool isPortableBuild;
+
   OnlineMusicSettings _settings;
   bool _disposed = false;
 
@@ -384,6 +391,39 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   /// （Spec §11.3 的"不得覆盖"只约束**迁移路径**）。
   Future<void> saveReferencedCredential(String reference, String value) =>
       _fallbackCredentials.save(reference, value);
+
+  /// F0-5：**只识别**当前已保存配置里的敏感请求头（三态清单，不写任何东西）。
+  List<OnlineMusicHeaderFinding> identifySensitiveHeaders() =>
+      _credentialProviderMigration()?.identify() ?? const [];
+
+  /// F0-5：执行迁移。
+  ///
+  /// 返回 `null` 表示**前置条件不成立**（没有凭据读取口 ⇒ 无法做"写后立即回读校验"）：
+  /// 宁可不迁移，也不要写进去没法验证。
+  Future<OnlineMusicHeaderMigrationReport?> migrateSensitiveHeaders() async {
+    final migration = _credentialProviderMigration();
+    if (migration == null) return null;
+    final report = await migration.run();
+    // 迁移成功后 _settings 必须跟着走（迁移自己已经落盘）。
+    if (report.settings != _settings && !_disposed) {
+      _settings = report.settings;
+      _notify();
+    }
+    return report;
+  }
+
+  /// 迁移用的协作对象；缺少读取口时返回 null（fail-closed）。
+  OnlineMusicHeaderMigration? _credentialProviderMigration() {
+    final reader = _credentialReader;
+    if (reader == null) return null;
+    return OnlineMusicHeaderMigration(
+      settings: _settings,
+      store: _store,
+      access: _fallbackCredentials,
+      reader: reader,
+      portableBuild: isPortableBuild,
+    );
+  }
 
   /// 探测该条目的 search 能力（Spec §4 的 P1–P10）。
   ///

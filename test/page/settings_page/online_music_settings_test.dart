@@ -1004,13 +1004,108 @@ void main() {
               OnlineMusicCapability.search,
             )
             as OnlineMusicDeclarativeCapabilityBinding;
-    expect(
-      binding.request.headers,
-      isEmpty,
-      reason: '保存失败就不该改动配置',
-    );
+    expect(binding.request.headers, isEmpty, reason: '保存失败就不该改动配置');
     expect(credentials.saved, isEmpty);
     controller.dispose();
+  });
+
+  // ------------------------------------------------------------------ F0-5
+
+  /// 带明文敏感头 + 一个"值可疑但名字未命中"的条目。
+  OnlineMusicSettings migrationSettings() => OnlineMusicSettings.fromJson({
+    'providers': [
+      {
+        'id': 'selfData',
+        'baseUrl': 'https://self.invalid',
+        'auth': {'kind': 'none'},
+        'capabilities': {
+          'search': Map<String, Object?>.from(f04SearchBindingJson())
+            ..['request'] = {
+              ...(f04SearchBindingJson()['request']! as Map<String, Object?>),
+              'headers': const [
+                {
+                  'name': 'Cookie',
+                  'value': 'session=FAKE_COOKIE_UI_MIGRATION_TEST_ONLY',
+                },
+                {'name': 'X-Weird', 'value': 'Ab3Kd9Zx7Qm2Pl5R'},
+              ],
+            },
+        },
+      },
+    ],
+  });
+
+  testWidgets('F0-5 迁移入口：先只给识别结果，确认后才动手（可疑项不迁移）', (tester) async {
+    const cookiePlaintext = 'session=FAKE_COOKIE_UI_MIGRATION_TEST_ONLY';
+    final settings = migrationSettings();
+    final credentials = _FakeCredentialAccess();
+    final store = _MemorySettingsStore(settings);
+    final controller = OnlineMusicProviderSettingsController(
+      activeSettings: settings,
+      store: store,
+      fallbackCredentials: credentials,
+      credentialReader: credentials,
+      // ⚠️ `portableBuild` 的编译期默认值是 **true**（便携版是默认产物形态），
+      // 所以想覆盖"真的迁移"这条路径必须显式声明这是安装版构建。
+      isPortableBuild: false,
+    );
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    await tester.tap(find.text('检查'));
+    await tester.pumpAndSettle();
+
+    // 第一步：**只识别**。名字命中的列出槽位，形态可疑的列成"待你裁定"。
+    expect(find.text('敏感请求头：识别结果'), findsOneWidget);
+    expect(find.textContaining('Cookie'), findsWidgets);
+    expect(find.textContaining('待你裁定'), findsWidgets);
+    expect(find.textContaining('X-Weird'), findsWidgets);
+    // 界面里不得出现任何值。
+    expect(find.textContaining(cookiePlaintext), findsNothing);
+    // 还没动手：没有写凭据、没有改配置。
+    expect(credentials.saved, isEmpty);
+    expect(store.writes, 0);
+
+    await tester.tap(find.text('开始迁移'));
+    await tester.pumpAndSettle();
+
+    // 第二步：执行并报告结果。
+    expect(find.text('迁移完成'), findsOneWidget);
+    expect(credentials.saved.keys.single, contains('cookie'));
+    expect(credentials.saved.values.single, cookiePlaintext);
+    final serialized = jsonEncode(store.value.toJson());
+    expect(serialized, isNot(contains(cookiePlaintext)));
+    // 可疑项**没有被迁移**：原样保留（等用户自己裁定）。
+    expect(serialized, contains('Ab3Kd9Zx7Qm2Pl5R'));
+  });
+
+  testWidgets('F0-5 便携版：只提示不可迁移，不给"开始迁移"按钮', (tester) async {
+    final settings = migrationSettings();
+    final credentials = _FakeCredentialAccess();
+    final store = _MemorySettingsStore(settings);
+    final controller = OnlineMusicProviderSettingsController(
+      activeSettings: settings,
+      store: store,
+      fallbackCredentials: credentials,
+      credentialReader: credentials,
+      isPortableBuild: true,
+    );
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    await tester.tap(find.text('检查'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('便携版无法安全持久保存秘密'), findsOneWidget);
+    expect(find.textContaining('明文会原样保留'), findsOneWidget);
+    expect(find.text('开始迁移'), findsNothing);
+    expect(find.text('知道了'), findsOneWidget);
+
+    await tester.tap(find.text('知道了'));
+    await tester.pumpAndSettle();
+
+    expect(credentials.saved, isEmpty);
+    expect(store.writes, 0);
   });
 }
 
@@ -1088,17 +1183,22 @@ final class _MemorySettingsStore implements OnlineMusicSettingsStore {
 
   OnlineMusicSettings value;
 
+  /// 落盘次数（用来断言"用户确认之前一个字节都没写"）。
+  int writes = 0;
+
   @override
   OnlineMusicSettings read() => value;
 
   @override
   Future<bool> write(OnlineMusicSettings settings) async {
+    writes++;
     value = settings;
     return true;
   }
 }
 
-final class _FakeCredentialAccess implements OnlineMusicCredentialAccess {
+final class _FakeCredentialAccess
+    implements OnlineMusicCredentialAccess, OnlineMusicCredentialReader {
   final Map<String, String> saved = {};
 
   /// 非空时挂起 [`isConfigured`]，用于观察「加载中」这一帧的布局。
@@ -1130,4 +1230,8 @@ final class _FakeCredentialAccess implements OnlineMusicCredentialAccess {
 
   @override
   Future<void> clear(String reference) async => saved.remove(reference);
+
+  /// F0-5 迁移需要"写后立即回读"，所以这个假件同时当读取口。
+  @override
+  Future<String?> readCredential(String reference) async => saved[reference];
 }

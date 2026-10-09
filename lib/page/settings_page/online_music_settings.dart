@@ -6,12 +6,12 @@ import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/preference.dart';
-import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/settings_page/online_music_capability_editor.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_header_migration.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings_controller.dart';
 
@@ -225,6 +225,51 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     if (saved && mounted) showTextOnSnackBar('能力配置已保存；重启后生效');
   }
 
+  /// F0-5：明文敏感请求头的迁移入口。
+  ///
+  /// **先只报告识别结果**，用户明确放行后才执行 —— 也就是说，
+  /// "改动用户配置"这件事永远发生在一次明确的点击之后（Spec §4.1/§4.2）。
+  Future<void> _migrateSensitiveHeaders() async {
+    final findings = _controller.identifySensitiveHeaders();
+    final sensitive = [
+      for (final finding in findings)
+        if (finding.disposition == OnlineMusicHeaderDisposition.sensitive)
+          finding,
+    ];
+    final needsUser = [
+      for (final finding in findings)
+        if (finding.disposition == OnlineMusicHeaderDisposition.needsUser)
+          finding,
+    ];
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => _MigrationPreviewDialog(
+        sensitive: sensitive,
+        needsUser: needsUser,
+        portable: _controller.isPortableBuild,
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final report = await _controller.migrateSensitiveHeaders();
+    if (!mounted) return;
+    if (report == null) {
+      // 前置条件不成立（没有凭据读取口 ⇒ 无法回读校验）：**宁可不迁移**。
+      showTextOnSnackBar(
+        '无法回读校验凭据写入，已取消迁移（未改动任何配置）',
+        variant: ToastVariant.error,
+      );
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _MigrationOutcomeDialog(report: report),
+    );
+    if (mounted) setState(() {});
+  }
+
   Future<void> _openCredentialDialog(
     OnlineMusicProviderDefinition provider,
   ) async {
@@ -245,7 +290,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     final confirmed = await showDangerConfirmDialog(
       context: context,
       title: '清除 ${provider.id} 的 ${_controller.credentialDisplayName}？',
-      message: portableBuild
+      message: _controller.isPortableBuild
           ? '这会清除本次运行中的 API Key，关闭应用后也不会保留。'
           : '这会删除当前 Windows 用户凭据中的该槽位。',
       confirmLabel: '清除',
@@ -374,7 +419,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
           const _SettingsHint('修改将在下次启动时生效'),
           const SizedBox(height: 8),
         ],
-        if (portableBuild) ...[
+        if (_controller.isPortableBuild) ...[
           const _SettingsHint('便携版：API Key 只在本次运行内有效，重启后需要重新配置'),
           const SizedBox(height: 8),
         ],
@@ -397,6 +442,19 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
             onPressed: _addProvider,
             icon: const Icon(Symbols.add),
             label: const Text('添加'),
+          ),
+        ),
+        const SizedBox(height: 24),
+        const _SettingsSectionTitle('凭据安全'),
+        SettingsTile(
+          description: '检查并迁移敏感请求头',
+          subtitle:
+              '把配置里以明文保存的敏感请求头（Cookie / Authorization 等）'
+              '搬进系统凭据管理器，配置里只留引用；先给你看识别结果，确认后才动手',
+          action: FilledButton.icon(
+            onPressed: _migrateSensitiveHeaders,
+            icon: const Icon(Symbols.security),
+            label: const Text('检查'),
           ),
         ),
         const SizedBox(height: 24),
@@ -894,6 +952,136 @@ class _ProviderDialogState extends State<_ProviderDialog> {
           child: const Text('取消'),
         ),
         FilledButton(onPressed: _submit, child: const Text('保存')),
+      ],
+    );
+  }
+}
+
+/// 迁移前的**识别结果**（只列名称/槽位/判定，绝不显示值）。
+///
+/// 用户在这里放行之前，一个字节都不会被写。
+class _MigrationPreviewDialog extends StatelessWidget {
+  const _MigrationPreviewDialog({
+    required this.sensitive,
+    required this.needsUser,
+    required this.portable,
+  });
+
+  final List<OnlineMusicHeaderFinding> sensitive;
+  final List<OnlineMusicHeaderFinding> needsUser;
+
+  /// 便携版：无法持久保存秘密 ⇒ 不给"迁移"这个按钮，并说明明文仍在。
+  final bool portable;
+
+  @override
+  Widget build(BuildContext context) {
+    final toMigrate = [
+      for (final finding in sensitive)
+        if (finding.slot != null) finding,
+    ];
+    return AlertDialog(
+      title: const Text('敏感请求头：识别结果'),
+      content: SizedBox(
+        width: 560,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('将迁移（${toMigrate.length} 项）：'),
+              const SizedBox(height: 4),
+              if (toMigrate.isEmpty)
+                const Text('（没有需要迁移的明文敏感请求头）')
+              else
+                for (final finding in toMigrate) Text('· ${finding.summary}'),
+              if (needsUser.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text('待你裁定（${needsUser.length} 项，本次不会迁移）：'),
+                const SizedBox(height: 4),
+                for (final finding in needsUser) Text('· ${finding.summary}'),
+                const Text(
+                  '这些请求头的名字不在已知敏感名单里，只是"值看起来像秘密"。'
+                  '要迁移它们，请在对应能力编辑器里手动勾选「敏感」。',
+                ),
+              ],
+              const SizedBox(height: 12),
+              if (portable)
+                const Text(
+                  '便携版无法安全持久保存秘密：本次不做迁移，'
+                  '配置里的明文会原样保留。请改用安装版后再迁移。',
+                )
+              else
+                const Text(
+                  '确认后：先写入系统凭据管理器 → 立即回读逐字节校验 → '
+                  '全部成功才改写配置并移除明文。任何一步失败都会整条回滚；'
+                  '回滚失败会停止整个迁移并报告。',
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(portable ? '知道了' : '取消'),
+        ),
+        if (!portable)
+          FilledButton(
+            onPressed: toMigrate.isEmpty
+                ? null
+                : () => Navigator.of(context).pop(true),
+            child: const Text('开始迁移'),
+          ),
+      ],
+    );
+  }
+}
+
+/// 迁移结果：逐条目状态 + 停止原因（都只含名称与判定）。
+class _MigrationOutcomeDialog extends StatelessWidget {
+  const _MigrationOutcomeDialog({required this.report});
+
+  final OnlineMusicHeaderMigrationReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = <String>[
+      for (final outcome in report.entries)
+        '· ${outcome.providerId}：${onlineMusicMigrationEntryLabel(outcome.status)}'
+            '${outcome.migratedHeaderNames.isEmpty ? '' : '（${outcome.migratedHeaderNames.join('、')}）'}'
+            '${outcome.reason == null ? '' : '\n    ${outcome.reason}'}',
+    ];
+    return AlertDialog(
+      title: Text(
+        report.stopped
+            ? '迁移已停止'
+            : (report.migratedCount > 0 ? '迁移完成' : '没有需要迁移的内容'),
+      ),
+      content: SizedBox(
+        width: 560,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (report.stopReason != null) ...[
+                Text('停止原因：${report.stopReason}'),
+                const SizedBox(height: 8),
+              ],
+              if (report.portable)
+                const Text('便携版：本次未做任何迁移，明文仍在配置里。'),
+              for (final line in lines) Text(line),
+              const SizedBox(height: 8),
+              const Text('改动会在下次启动时生效。'),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('关闭'),
+        ),
       ],
     );
   }
