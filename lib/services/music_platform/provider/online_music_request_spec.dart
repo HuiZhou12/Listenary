@@ -81,18 +81,36 @@ final class OnlineMusicParamBinding {
 
 /// 常量请求头（不支持动态值：时间戳/签名属于"需要代码实现"的边界）。
 final class OnlineMusicHeaderSpec {
-  const OnlineMusicHeaderSpec({required this.name, required this.value});
+  const OnlineMusicHeaderSpec({
+    required this.name,
+    required this.value,
+    this.sensitive = false,
+  });
 
   final String name;
   final String value;
 
-  Map<String, dynamic> toJson() => {'name': name, 'value': value};
+  /// 是否**明确标记为敏感**（F0 / 决策 A）。
+  ///
+  /// 标记后该请求头**必须**走安全凭据存储与引用流程：用明文 [value] 保存会被
+  /// `validationIssues` 拒绝（保存时拒绝，见用户 2026-10-09 裁定），
+  /// 运行期也不得以明文发送。
+  ///
+  /// **缺省 `false`，且为 `false` 时不写盘** ⇒ 旧配置往返后语义与字节都不变。
+  final bool sensitive;
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'value': value,
+    if (sensitive) 'sensitive': true,
+  };
 
   static OnlineMusicHeaderSpec fromJson(Object? value) {
     final map = _requireMap(value, '请求头');
     return OnlineMusicHeaderSpec(
       name: _requireText(map['name'], '请求头名称'),
       value: map['value'] == null ? '' : '${map['value']}',
+      sensitive: map['sensitive'] == true,
     );
   }
 
@@ -100,10 +118,11 @@ final class OnlineMusicHeaderSpec {
   bool operator ==(Object other) =>
       other is OnlineMusicHeaderSpec &&
       other.name == name &&
-      other.value == value;
+      other.value == value &&
+      other.sensitive == sensitive;
 
   @override
-  int get hashCode => Object.hash(name, value);
+  int get hashCode => Object.hash(name, value, sensitive);
 }
 
 /// 请求体：扁平 JSON 或 form-urlencoded，字段同样来自闭集输入。
@@ -123,15 +142,18 @@ final class OnlineMusicRequestBodySpec {
 
   static OnlineMusicRequestBodySpec fromJson(Object? value) {
     final map = _requireMap(value, '请求体');
-    final kind = map['kind'] == null ? 'json' : _requireText(map['kind'], '请求体类型');
+    final kind = map['kind'] == null
+        ? 'json'
+        : _requireText(map['kind'], '请求体类型');
     if (kind != 'json' && kind != 'form') {
       throw FormatException('请求体类型只支持 json / form，收到 "$kind"');
     }
     return OnlineMusicRequestBodySpec(
       isForm: kind == 'form',
-      fields: _requireList(map['fields'], '请求体字段')
-          .map(OnlineMusicParamBinding.fromJson)
-          .toList(growable: false),
+      fields: _requireList(
+        map['fields'],
+        '请求体字段',
+      ).map(OnlineMusicParamBinding.fromJson).toList(growable: false),
     );
   }
 }
@@ -194,10 +216,7 @@ final class OnlineMusicQueryAuthPlacement extends OnlineMusicAuthPlacement {
 }
 
 final class OnlineMusicHeaderAuthPlacement extends OnlineMusicAuthPlacement {
-  const OnlineMusicHeaderAuthPlacement({
-    required this.headerName,
-    this.prefix,
-  });
+  const OnlineMusicHeaderAuthPlacement({required this.headerName, this.prefix});
 
   final String headerName;
 
@@ -271,12 +290,12 @@ final class OnlineMusicRequestSpec {
     return OnlineMusicRequestSpec(
       verb: _requireEnum(map['verb'], OnlineMusicHttpVerb.values, 'HTTP 方法'),
       path: _requireText(map['path'], '请求路径'),
-      query: _optionalList(map['query'])
-          .map(OnlineMusicParamBinding.fromJson)
-          .toList(growable: false),
-      headers: _optionalList(map['headers'])
-          .map(OnlineMusicHeaderSpec.fromJson)
-          .toList(growable: false),
+      query: _optionalList(
+        map['query'],
+      ).map(OnlineMusicParamBinding.fromJson).toList(growable: false),
+      headers: _optionalList(
+        map['headers'],
+      ).map(OnlineMusicHeaderSpec.fromJson).toList(growable: false),
       body: map['body'] == null
           ? null
           : OnlineMusicRequestBodySpec.fromJson(map['body']),
@@ -311,6 +330,14 @@ final class OnlineMusicRequestSpec {
     }
     for (final header in headers) {
       if (header.name.trim().isEmpty) issues.add('请求头名称不能为空');
+      // F0 / 决策 A（用户 2026-10-09 裁定"保存时拒绝"）：
+      // 明确标记为敏感的请求头**不得**以明文值保存；它必须改走安全凭据引用。
+      if (header.sensitive && header.value.trim().isNotEmpty) {
+        issues.add(
+          '请求头 ${header.name} 已标记为敏感，不能以明文值保存；'
+          '请改用安全凭据引用',
+        );
+      }
     }
     if (body != null) {
       if (verb != OnlineMusicHttpVerb.post) {
@@ -373,10 +400,9 @@ bool _sameBody(OnlineMusicRequestBodySpec? a, OnlineMusicRequestBodySpec? b) {
 }
 
 List<String> _placeholders(String path) {
-  return RegExp(r'\{([A-Za-z0-9_]+)\}')
-      .allMatches(path)
-      .map((match) => match.group(1)!)
-      .toList(growable: false);
+  return RegExp(
+    r'\{([A-Za-z0-9_]+)\}',
+  ).allMatches(path).map((match) => match.group(1)!).toList(growable: false);
 }
 
 Map<Object?, Object?> _requireMap(Object? value, String label) {
