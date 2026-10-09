@@ -8,18 +8,34 @@ const defaultOnlineMusicConnectTimeout = Duration(seconds: 8);
 const defaultOnlineMusicSendTimeout = Duration(seconds: 8);
 const defaultOnlineMusicReceiveTimeout = Duration(seconds: 10);
 
-/// 只接受 http/https 且带 host 的绝对地址；其余一律回落默认值。
-String normalizeOnlineMusicBaseUrl(Object? value) {
-  if (value is! String) return defaultOnlineMusicBaseUrl;
-  final normalized = value.trim();
-  if (normalized.isEmpty) return defaultOnlineMusicBaseUrl;
-  final uri = Uri.tryParse(normalized);
-  if (uri == null) return defaultOnlineMusicBaseUrl;
+/// 用户**显式提供**且非空的 baseUrl；缺失 / 空串 / 非字符串一律 `null`。
+///
+/// "缺失"与"显式提供了非法值"必须分开（Spec §7.2）：
+/// 前者是旧配置没写这一项 ⇒ 允许使用默认值，行为与旧版一致；
+/// 后者是用户真的填错了 ⇒ **必须报错**，绝不允许悄悄换成别的主机。
+String? explicitOnlineMusicBaseUrl(Object? value) {
+  if (value is! String) return null;
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
+/// baseUrl 的**非法原因**；`null` 表示可用。
+///
+/// 空串 = **缺失**（走默认值），因此**不算非法** —— 这正是"不破坏合法旧配置"的那一半。
+///
+/// **刻意不做任何替换**（P-18）：旧实现的 `normalizeOnlineMusicBaseUrl` 会把
+/// `ftp://…` / `/relative/path` / `https://` 一律改写成 `https://api.chksz.com`，
+/// 于是用户带着自己的凭据打到了一台他从未指定的主机上。
+String? onlineMusicBaseUrlIssue(String baseUrl) {
+  final trimmed = baseUrl.trim();
+  if (trimmed.isEmpty) return null;
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null) return '服务地址无效';
   if (uri.scheme != 'http' && uri.scheme != 'https') {
-    return defaultOnlineMusicBaseUrl;
+    return '服务地址必须以 http:// 或 https:// 开头';
   }
-  if (uri.host.isEmpty) return defaultOnlineMusicBaseUrl;
-  return normalized;
+  if (uri.host.isEmpty) return '服务地址缺少主机名';
+  return null;
 }
 
 /// 非正数或不可解析的值回落默认超时。
@@ -79,7 +95,21 @@ final class OnlineMusicProviderDefinition {
 
   final String id;
   final String protocol;
+
+  /// 用户**显式提供**的服务地址；空串表示"配置里没这一项"（= 走 [effectiveBaseUrl] 的默认值）。
+  ///
+  /// 刻意保存**原值**而不是归一化后的值：只有这样才能区分"缺失"与"填错了"，
+  /// 也才谈得上"不静默替换"（P-18）。
   final String baseUrl;
+
+  /// 实际生效的服务地址：缺失 ⇒ [defaultOnlineMusicBaseUrl]；显式提供 ⇒ 原样。
+  String get effectiveBaseUrl {
+    final trimmed = baseUrl.trim();
+    return trimmed.isEmpty ? defaultOnlineMusicBaseUrl : trimmed;
+  }
+
+  /// 显式提供的地址是否非法（`null` = 可用，含"缺失 ⇒ 用默认值"）。
+  String? get baseUrlIssue => onlineMusicBaseUrlIssue(baseUrl);
 
   /// 展示名；留空时回落到 [id]。它只影响界面文案，不参与任何映射。
   final String displayName;
@@ -151,8 +181,10 @@ final class OnlineMusicProviderDefinition {
       allowReserved: true,
     );
     if (idError != null) issues.add(idError);
-    if (normalizeOnlineMusicBaseUrl(baseUrl) != baseUrl) {
-      issues.add('服务地址无效或会被回落为默认值');
+    final baseUrlIssue = this.baseUrlIssue;
+    if (baseUrlIssue != null) {
+      // 必须说清"不会被替换"：旧行为会悄悄改成默认主机，这正是 P-18。
+      issues.add('$baseUrlIssue（不会回落到默认服务地址）');
     }
     final explicit = capabilities;
     if (explicit != null) {
@@ -191,7 +223,8 @@ final class OnlineMusicProviderDefinition {
     return OnlineMusicProviderDefinition(
       id: id,
       protocol: defaultOnlineMusicProtocol,
-      baseUrl: normalizeOnlineMusicBaseUrl(baseUrl),
+      // 原样保存（不归一化、不替换）：非法值由 validationIssues / 运行时拦下。
+      baseUrl: baseUrl.trim(),
       displayName: displayName.trim(),
       contentPlatform: contentPlatform,
       connectTimeout: defaultOnlineMusicConnectTimeout,
@@ -218,7 +251,7 @@ final class OnlineMusicProviderDefinition {
     return OnlineMusicProviderDefinition(
       id: id,
       protocol: protocol,
-      baseUrl: normalizeOnlineMusicBaseUrl(baseUrl),
+      baseUrl: baseUrl.trim(),
       displayName: displayName?.trim() ?? this.displayName,
       connectTimeout: connectTimeout,
       sendTimeout: sendTimeout,
@@ -289,7 +322,8 @@ final class OnlineMusicProviderDefinition {
   Map<String, dynamic> toJson() => {
     'id': id,
     'protocol': protocol,
-    'baseUrl': baseUrl,
+    // 缺失（空串）时不写该键：旧配置里本来就没有它，写一个 `""` 只是噪声。
+    if (baseUrl.trim().isNotEmpty) 'baseUrl': baseUrl,
     if (displayName.trim().isNotEmpty) 'displayName': displayName,
     'contentPlatform': contentPlatform.name,
     'connectTimeoutMs': connectTimeout.inMilliseconds,
@@ -948,7 +982,9 @@ final class OnlineMusicSettings {
       contentPlatform: _parseContentPlatform(value['contentPlatform']),
       displayName: _nonEmptyString(value['displayName']) ?? '',
       capabilities: parsedCapabilities,
-      baseUrl: normalizeOnlineMusicBaseUrl(value['baseUrl']),
+      // 只保存"显式提供"的原值：缺失（含非字符串 / 空串）一律留空 ⇒ 走默认地址。
+      // **绝不替换非法值**（P-18），是否可用交给 baseUrlIssue 判定。
+      baseUrl: explicitOnlineMusicBaseUrl(value['baseUrl']) ?? '',
       connectTimeout: normalizeOnlineMusicTimeout(
         value['connectTimeoutMs'],
         defaultValue: defaultOnlineMusicConnectTimeout,

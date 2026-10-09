@@ -71,7 +71,10 @@ void main() {
       controller.dispose();
     });
 
-    test('keeps an unusable base URL at the documented default', () async {
+    // ⚠️ 语义变更（F0-3 / P-18）：旧行为把非法 baseUrl 静默改写为默认地址。
+    // 现在非法值原样保留并明确报错 —— 静默替换正是被修掉的缺陷，
+    // 因此这条断言被改写（详见 F0-3 提交说明）。
+    test('keeps an explicitly invalid base URL and reports it', () async {
       final controller = _controller();
       await controller.updateProvider(
         controller.settings.providers.single.editedBy(
@@ -80,9 +83,14 @@ void main() {
         ),
       );
 
+      final provider = controller.settings.providers.single;
+      // 保存路径本身不做替换（模型层保留原值，界面层另有保存前校验）。
+      expect(provider.baseUrl, 'ftp://invalid');
+      expect(provider.baseUrlIssue, isNotNull);
+      expect(provider.effectiveBaseUrl, 'ftp://invalid');
       expect(
-        controller.settings.providers.single.baseUrl,
-        defaultOnlineMusicBaseUrl,
+        provider.validationIssues().join(),
+        contains('不会回落到默认服务地址'),
       );
       controller.dispose();
     });

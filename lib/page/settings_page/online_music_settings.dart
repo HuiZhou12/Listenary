@@ -382,7 +382,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
             // 留着这个标记只会让用户以为它还在决定什么（字段本身仍兼容可读）。
             description: provider.label,
             subtitle:
-                '${_hostOf(provider.baseUrl)} · ${provider.contentPlatform.name} · ${_authDescription(provider)}',
+                '${_hostOf(provider.effectiveBaseUrl)} · ${provider.contentPlatform.name} · ${_authDescription(provider)}',
             action: _buildProviderAction(provider),
           ),
           const SizedBox(height: 12),
@@ -750,7 +750,9 @@ class _ProviderDialogState extends State<_ProviderDialog> {
     final editing = widget.editing;
     _idController = TextEditingController(text: editing?.id ?? '');
     _baseUrlController = TextEditingController(
-      text: editing?.baseUrl ?? defaultOnlineMusicBaseUrl,
+      // 配置里没有这一项时显示**实际生效**的默认地址（它是可编辑的原值，
+      // 用户看到的就是运行时真正会用的地址）。
+      text: editing?.effectiveBaseUrl ?? defaultOnlineMusicBaseUrl,
     );
     _displayNameController = TextEditingController(
       text: editing?.displayName ?? '',
@@ -791,14 +793,9 @@ class _ProviderDialogState extends State<_ProviderDialog> {
   }
 
   String? _validateBaseUrl(String value) {
-    if (value.isEmpty) return '请填写服务地址';
-    final uri = Uri.tryParse(value);
-    if (uri == null) return '服务地址无效';
-    if (uri.scheme != 'http' && uri.scheme != 'https') {
-      return '服务地址必须以 http:// 或 https:// 开头';
-    }
-    if (uri.host.isEmpty) return '服务地址缺少主机名';
-    return null;
+    if (value.trim().isEmpty) return '请填写服务地址';
+    // 非空值的判据只有一份（`onlineMusicBaseUrlIssue`），避免界面与模型各说一套。
+    return onlineMusicBaseUrlIssue(value);
   }
 
   @override

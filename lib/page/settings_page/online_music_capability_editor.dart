@@ -413,6 +413,18 @@ class _OnlineMusicCapabilityEditorDialogState
     try {
       final report = await widget.onProbe();
       if (!mounted) return;
+      // F0-3：整个探测被拦下（服务地址非法）时**不能**说"候选都没通过"——
+      // 那意味着"我们试过了"，而事实是一个请求都没发。
+      final blocked = report.blockedReason;
+      if (blocked != null) {
+        setState(() {
+          _busy = false;
+          _resultOk = false;
+          _resultHeadline = '无法探测';
+          _resultController.text = blocked;
+        });
+        return;
+      }
       final detail = StringBuffer();
       for (final outcome in report.outcomes) {
         detail.writeln(

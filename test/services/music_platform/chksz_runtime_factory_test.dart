@@ -35,27 +35,33 @@ void main() {
     expect(dio.options.receiveTimeout, const Duration(seconds: 4));
   });
 
-  test('normalizes an unusable base URL back to the default', () {
-    expect(normalizeOnlineMusicBaseUrl(null), defaultOnlineMusicBaseUrl);
-    expect(normalizeOnlineMusicBaseUrl(''), defaultOnlineMusicBaseUrl);
-    expect(normalizeOnlineMusicBaseUrl('   '), defaultOnlineMusicBaseUrl);
+  // ⚠️ 语义变更（F0-3 / P-18）：旧实现 `normalizeOnlineMusicBaseUrl` 会把**非法**
+  // 地址一律改写成 `https://api.chksz.com`，于是用户带着自己的凭据打到了一台
+  // 他从未指定的主机上。现在非法值**原样保留并报错**，只有"缺失"才回落默认值。
+  // 这条测试因此被改写 —— 它固化的正是被修掉的那个缺陷行为。
+  test('distinguishes a missing base URL from an explicitly invalid one', () {
+    // 缺失 ⇒ 用默认值（旧配置行为不变）。
+    expect(explicitOnlineMusicBaseUrl(null), isNull);
+    expect(explicitOnlineMusicBaseUrl(''), isNull);
+    expect(explicitOnlineMusicBaseUrl('   '), isNull);
     expect(
-      normalizeOnlineMusicBaseUrl('ftp://api.invalid'),
+      OnlineMusicProviderDefinition.defaults.effectiveBaseUrl,
       defaultOnlineMusicBaseUrl,
     );
-    expect(
-      normalizeOnlineMusicBaseUrl('/relative/path'),
-      defaultOnlineMusicBaseUrl,
-    );
-    expect(normalizeOnlineMusicBaseUrl('https://'), defaultOnlineMusicBaseUrl);
-    expect(
-      normalizeOnlineMusicBaseUrl(' https://api.invalid '),
-      'https://api.invalid',
-    );
-    expect(
-      normalizeOnlineMusicBaseUrl('http://127.0.0.1:8080'),
-      'http://127.0.0.1:8080',
-    );
+
+    // 显式提供 ⇒ 原样保留，**不替换**。
+    expect(explicitOnlineMusicBaseUrl(' https://api.invalid '), 'https://api.invalid');
+    expect(explicitOnlineMusicBaseUrl('ftp://api.invalid'), 'ftp://api.invalid');
+    expect(explicitOnlineMusicBaseUrl('/relative/path'), '/relative/path');
+
+    // 非法 ⇒ 给出明确原因，绝不回落。
+    expect(onlineMusicBaseUrlIssue('ftp://api.invalid'), isNotNull);
+    expect(onlineMusicBaseUrlIssue('/relative/path'), isNotNull);
+    expect(onlineMusicBaseUrlIssue('https://'), isNotNull);
+    expect(onlineMusicBaseUrlIssue('https://api.invalid'), isNull);
+    expect(onlineMusicBaseUrlIssue('http://127.0.0.1:8080'), isNull);
+    // 空串 = 缺失 ⇒ 不算非法（这是"不破坏合法旧配置"的那一半）。
+    expect(onlineMusicBaseUrlIssue(''), isNull);
   });
 
   test('normalizes unusable timeouts back to the defaults', () {

@@ -70,6 +70,7 @@ final class ProviderProbeReport {
     required this.outcomes,
     this.draft,
     this.draftTemplateId,
+    this.blockedReason,
   });
 
   final List<ProviderProbeOutcome> outcomes;
@@ -77,6 +78,15 @@ final class ProviderProbeReport {
   /// 最高分候选生成的初稿；全部分数为 0 时为 null（进入手工配置）。
   final OnlineMusicDeclarativeCapabilityBinding? draft;
   final String? draftTemplateId;
+
+  /// **整个探测被拦下**的原因（非 null 时 [outcomes] 必为空）。
+  ///
+  /// 目前只有一种：服务地址是用户显式提供的非法值（F0-3 / P-18）。
+  /// 这时**一个请求都不发**，也**绝不能**报成"候选都没通过" ——
+  /// 那是在说"我们试过了"，而事实是我们根本没试（反模式 3/10）。
+  final String? blockedReason;
+
+  bool get isBlocked => blockedReason != null;
 
   bool get hasDraft => draft != null;
 

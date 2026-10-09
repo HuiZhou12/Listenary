@@ -378,6 +378,15 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     OnlineMusicProviderDefinition definition, {
     OnlineMusicCancelToken? cancelToken,
   }) async {
+    final baseUrlIssue = definition.baseUrlIssue;
+    if (baseUrlIssue != null) {
+      // F0-3：服务地址是显式提供的非法值 ⇒ **一个请求都不发**。
+      // 探测会试多个候选路径，必须在这里整体拦下；且不能报成"候选都没通过"。
+      return ProviderProbeReport(
+        outcomes: const [],
+        blockedReason: '服务地址无效：$baseUrlIssue（不会回落到默认地址，也不会发出请求）',
+      );
+    }
     return probeDeclarativeSearch(
       transport: _transportFor(definition),
       platform: definition.contentPlatform,
@@ -401,6 +410,16 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       return const DeclarativeCapabilityTestResult(
         ok: false,
         failureReason: '该能力不是声明式配置（内置实现，或尚未配置）',
+        failureKind: DeclarativeTestFailureKind.config,
+      );
+    }
+    final baseUrlIssue = definition.baseUrlIssue;
+    if (baseUrlIssue != null) {
+      // F0-3：发请求前的**防御性再校验**。保存时已经拦过一次，但配置文件是
+      // 可以被手工编辑的，这里再拦一次才能保证"非法地址一个请求都不发"。
+      return DeclarativeCapabilityTestResult(
+        ok: false,
+        failureReason: '服务地址无效：$baseUrlIssue（不会回落到默认地址，也不会发出请求）',
         failureKind: DeclarativeTestFailureKind.config,
       );
     }
@@ -714,7 +733,8 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     return DioDeclarativeHttpTransport(
       dio: Dio(
         BaseOptions(
-          baseUrl: definition.baseUrl,
+          // 缺失 ⇒ 默认地址；显式提供的非法值根本走不到这里（见上面的两处拦截）。
+          baseUrl: definition.effectiveBaseUrl,
           connectTimeout: definition.connectTimeout,
           sendTimeout: definition.sendTimeout,
           receiveTimeout: definition.receiveTimeout,

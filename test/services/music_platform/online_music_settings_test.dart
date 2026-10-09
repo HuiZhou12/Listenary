@@ -85,7 +85,11 @@ void main() {
       expect(settings.providers.single.baseUrl, 'https://first.invalid');
     });
 
-    test('normalizes an unusable base URL and timeouts per entry', () {
+    // ⚠️ 语义变更（F0-3 / P-18）：旧行为把**非法** baseUrl 静默改写成
+    // `https://api.chksz.com`，于是用户带着自己的凭据打到了一台他从未指定的主机上。
+    // 现在非法值**原样保留并报错**（`baseUrlIssue`），只有"缺失"才回落默认值。
+    // 这条断言固化的正是被修掉的缺陷，因此被改写（详见 F0-3 提交说明）。
+    test('keeps an unusable base URL as written and reports it', () {
       final settings = OnlineMusicSettings.fromJson({
         'providers': [
           {
@@ -105,13 +109,20 @@ void main() {
       });
 
       final first = settings.providers.first;
-      expect(first.baseUrl, defaultOnlineMusicBaseUrl);
+      expect(first.baseUrl, 'ftp://invalid', reason: '不替换、不丢用户的输入');
+      expect(first.baseUrlIssue, isNotNull);
+      expect(first.effectiveBaseUrl, 'ftp://invalid');
+      expect(
+        first.validationIssues().join(),
+        contains('不会回落到默认服务地址'),
+      );
       expect(first.connectTimeout, defaultOnlineMusicConnectTimeout);
       expect(first.sendTimeout, defaultOnlineMusicSendTimeout);
       expect(first.receiveTimeout, defaultOnlineMusicReceiveTimeout);
 
       final second = settings.providers.last;
       expect(second.baseUrl, 'http://127.0.0.1:9000');
+      expect(second.baseUrlIssue, isNull);
       expect(second.connectTimeout, const Duration(milliseconds: 2500));
       expect(second.sendTimeout, const Duration(milliseconds: 3000));
       expect(second.receiveTimeout, defaultOnlineMusicReceiveTimeout);
