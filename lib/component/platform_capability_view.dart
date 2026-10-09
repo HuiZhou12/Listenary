@@ -11,11 +11,21 @@ import 'package:pure_music/services/music_platform/index.dart';
 typedef CapabilityProbe =
     bool Function(OnlineMusicCapabilities capabilities, MusicPlatform platform);
 
+/// 平台能力清单的**行**：展示名 + 可用性判定。
+///
+/// ⚠️ 顺序与能力枚举一致（搜索 / 歌单详情 / 歌单列表 / 歌单分类 / 榜单 / 新歌 / 歌词 / 播放解析），
+/// 且**必须覆盖全部能力** —— P-45：这里曾长期是**手写的 5 行**，漏掉
+/// 「歌单分类 / 榜单 / 新歌」，于是这三项在诊断视图里**根本看不到**（不是"未来风险"，
+/// 而是当时的现状）。`test/component/platform_capability_view_test.dart` 里有一条
+/// **跨层覆盖守卫**：行标签必须逐个等于能力枚举的标签，漏一项即变红。
 const platformCapabilityRows =
     <({String label, CapabilityProbe available})>[
       (label: '搜索', available: _searchable),
       (label: '歌单详情', available: _playlistDetail),
       (label: '歌单列表', available: _playlistCollection),
+      (label: '歌单分类', available: _playlistCategories),
+      (label: '榜单', available: _chartList),
+      (label: '新歌', available: _newSongs),
       (label: '歌词', available: _lyrics),
       (label: '播放解析', available: _resolvable),
     ];
@@ -28,6 +38,15 @@ bool _playlistDetail(OnlineMusicCapabilities c, MusicPlatform p) =>
 
 bool _playlistCollection(OnlineMusicCapabilities c, MusicPlatform p) =>
     c.playlistCollectionPlatforms.contains(p);
+
+bool _playlistCategories(OnlineMusicCapabilities c, MusicPlatform p) =>
+    c.playlistCategoryPlatforms.contains(p);
+
+bool _chartList(OnlineMusicCapabilities c, MusicPlatform p) =>
+    c.chartPlatforms.contains(p);
+
+bool _newSongs(OnlineMusicCapabilities c, MusicPlatform p) =>
+    c.newSongPlatforms.contains(p);
 
 bool _lyrics(OnlineMusicCapabilities c, MusicPlatform p) =>
     c.lyricPlatforms.contains(p);
