@@ -785,7 +785,7 @@ final class OnlineMusicSettings {
     final legacy = capabilityProviders[capability];
     if (legacy == null) return const [];
     final provider = providerById(legacy);
-    if (provider == null || !_legacyAffects(provider, platform)) {
+    if (provider == null || !_legacyAffects(provider, capability, platform)) {
       return const [];
     }
     return [legacy];
@@ -798,12 +798,55 @@ final class OnlineMusicSettings {
   /// - `explicitCandidateIdsFor` 的**回落**（决定界面上显示「已指定 X」还是「自动」）；
   /// - `withRoutingCandidates` 的**清除**（用户点「自动」时该清哪个旧值）。
   ///
-  /// 判据是"该条目声明的**内容来源**"——旧单值是平台无关的，只允许在同一平台内回落。
-  /// （P-59 会把它换成运行期同一判据 `platformsFor`，届时两处会**一起**变。）
+  /// 判据用**运行期同一条规则** `platformsFor`（而不是配置里声明的 `contentPlatform`）。
+  ///
+  /// P-59：此前一边用 `contentPlatform`（配置层）、一边用 `platformsFor`（运行期）——两套口径。
+  /// 于是**内置条目**把 `contentPlatform` 改成别的平台之后：运行期照旧服务网易云，
+  /// 而旧单值却因为"来源不匹配"被判为失效 ⇒ 用户的显式选择**被静默丢弃**
+  /// （界面从「已指定」变回「自动」，而功能看起来还是好的）。
+  /// 统一之后，"旧单值是否生效"与"这个条目运行时到底服务谁"**永远一致**。
   static bool _legacyAffects(
     OnlineMusicProviderDefinition provider,
+    OnlineMusicCapability capability,
     MusicPlatform platform,
-  ) => provider.contentPlatform == platform;
+  ) => provider.platformsFor(capability).contains(platform);
+
+  /// P-14：旧版旋钮仍在这份配置里时，如实说明（旧旋钮**可见可清**）。
+  ///
+  /// 两个旧旋钮的现状不同，必须分别说清：
+  /// - `capabilityProviders`（旧单值映射）**仍参与候选回落**（见 [explicitCandidateIdsFor]），
+  ///   但界面上看不到、也没有入口 —— F1 已经删掉了「能力分配」那块；
+  ///   清除路径：到「平台」区块把对应能力的来源选成「自动」
+  ///   （只清那一格，见 P-22 的实现）；
+  /// - `defaultProviderId` 自 D14 起**不参与候选选择**（`providersFor`），
+  ///   只在注册表的单值问答路径里保留历史行为（那条路径在生产里没有调用者）。
+  ///
+  /// 这是**设置级**的问题（旋钮在 [OnlineMusicSettings] 上，不在单个条目上）。
+  List<String> legacyKnobIssues() {
+    final issues = <String>[];
+    if (capabilityProviders.isNotEmpty) {
+      final parts = [
+        for (final entry in capabilityProviders.entries)
+          '${entry.key.name}→${entry.value}',
+      ];
+      issues.add(
+        '这份配置还带着旧版「能力分配」：${parts.join('、')}。'
+        '它仍按兼容规则参与候选回落，但界面上没有入口 —— '
+        '到「平台」区块把对应能力的来源选成「自动」即可清除（只清那一格）。',
+      );
+    }
+    if (defaultProviderId != defaultOnlineMusicProviderId &&
+        defaultProviderId != providers.first.id) {
+      // ⚠️ 判据要排除"合成值"：缺少该键时 `fromJson` 会把 `defaultProviderId`
+      // 合成成**第一个条目**（历史行为），那不是用户带着的旧旋钮 ⇒ 报它只会制造噪音。
+      // （这条误报是被"清掉那一格之后提示消失"的用例抓出来的。）
+      issues.add(
+        '这份配置还带着旧版「默认提供商」$defaultProviderId：'
+        '它自 D14 起不参与候选选择，仅作兼容读取',
+      );
+    }
+    return issues;
+  }
 
   /// 某个能力实际会用到的 Provider id（缺失/未注册时回落默认）。
   String resolvedProviderIdFor(OnlineMusicCapability capability) {
@@ -974,7 +1017,7 @@ final class OnlineMusicSettings {
       final legacy = legacyId == null ? null : providerById(legacyId);
       // ⚠️ 判据必须与 `explicitCandidateIdsFor` 的**回落判据同源**（`_legacyAffects`），
       // 否则"点自动"清不掉界面上真正在生效的那个旧值（P-22 就是这种不同源造成的）。
-      if (legacy != null && _legacyAffects(legacy, platform)) {
+      if (legacy != null && _legacyAffects(legacy, capability, platform)) {
         nextCapabilityProviders.remove(capability);
       }
     }

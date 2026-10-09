@@ -2232,6 +2232,30 @@ void main() {
     expect(find.textContaining('自动：按条目顺序使用'), findsWidgets);
   });
 
+  testWidgets('★ F2 P-14 面板把旧版旋钮如实列出来（以前完全看不到）', (tester) async {
+    final settings = OnlineMusicSettings.fromJson({
+      'providers': [
+        {'id': 'chksz', 'protocol': 'chksz'},
+      ],
+      'capabilities': {'search': 'chksz'},
+    });
+    final controller = _controller(configured: settings, active: settings);
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    expect(find.textContaining('还带着旧版「能力分配」'), findsOneWidget);
+    expect(find.textContaining('search→chksz'), findsOneWidget);
+  });
+
+  testWidgets('★ F2 P-14 默认配置不显示旧旋钮提示（不误报）', (tester) async {
+    final controller = _controller();
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    expect(find.textContaining('还带着旧版「能力分配」'), findsNothing);
+    expect(find.textContaining('还带着旧版「默认提供商」'), findsNothing);
+  });
+
   testWidgets('★ F2 P-37 配置停用、运行中仍可用 ⇒ **两个事实都显示**且各自标注来源', (tester) async {
     // 让运行中的 service **确实**服务 qq：声明式条目 + search/stream 两条绑定
     //（D3 硬门槛要求可搜索 = 有 search 且有 stream）。

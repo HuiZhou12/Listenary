@@ -506,6 +506,10 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
           ),
         ),
         const SizedBox(height: 24),
+        // P-14：**设置级**的旧旋钮提示（旧的能力分配 / 默认提供商仍在这份配置里）。
+        // 它们不在单个条目上，因此单独列在这里 —— 以前它们在界面上完全看不到。
+        for (final issue in settings.legacyKnobIssues()) _SettingsHint(issue),
+        if (settings.legacyKnobIssues().isNotEmpty) const SizedBox(height: 12),
         const _SettingsSectionTitle('凭据安全'),
         SettingsTile(
           description: '检查并迁移敏感请求头',

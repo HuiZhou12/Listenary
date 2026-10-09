@@ -4,8 +4,9 @@ import 'package:pure_music/services/music_platform/chksz/index.dart';
 /// 配置层的平台感知路由（S1c）。
 ///
 /// 关键点：`routing` 与旧的 `capabilities{cap→providerId}` **并存**（D13:A 不迁移），
-/// 解析候选时 `routing` 优先、旧的单值映射仅在"该 Provider 的 contentPlatform 正好
-/// 等于查询平台"时回落；`defaultProvider` **不参与路由**（D14）。
+/// 解析候选时 `routing` 优先；旧的单值映射按**运行期同一条规则**回落
+/// （P-59：该条目 `platformsFor(capability)` 真的包含查询平台才回落，
+/// 而不是看配置里声明的 `contentPlatform`）；`defaultProvider` **不参与路由**（D14）。
 void main() {
   const search = OnlineMusicCapability.search;
 
@@ -81,10 +82,14 @@ void main() {
 
   group('routing 与旧单值映射并存', () {
     test('旧 capabilities 只在同一平台内回落', () {
+      // ⚠️ 夹具修正（P-59 统一判据带来）：以前用"旧版内置条目 + `contentPlatform: qq`"
+      // 代表"一个 qq 条目"——但内置实现运行时**只服务网易云**，声明 qq 只是配置里的
+      // 一厢情愿。P-59 把"旧单值是否生效"统一到运行期规则后，这种自相矛盾的夹具
+      // 不再能代表 qq 条目 ⇒ 换成**声明式** qq 条目（断言本身不变）。
       final settings = OnlineMusicSettings.fromJson({
         'providers': [
           {'id': 'neA', 'contentPlatform': 'netease'},
-          {'id': 'qqA', 'contentPlatform': 'qq'},
+          _declarativeQqProvider('qqA'),
         ],
         'capabilities': {'search': 'qqA'},
       });
@@ -95,6 +100,34 @@ void main() {
       // 旧单值是平台无关的，但**不允许跨平台**回落。
       expect(
         settings.explicitCandidateIdsFor(MusicPlatform.netease, search),
+        isEmpty,
+      );
+    });
+
+    test('★ P-59 内置条目被改了 contentPlatform，显式选择**不再被静默丢弃**', () {
+      // 运行期：内置实现（chksz）**只服务网易云**，与 contentPlatform 无关。
+      // 以前旧单值的回落判据却看 contentPlatform ⇒ 一旦它被改成 qq，这条显式选择
+      // 就被判为"来源不匹配"而**静默丢弃**：界面从「已指定」变回「自动」，
+      // 而功能看起来还是好的（条目实际仍在服务网易云）。
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {'id': 'chksz', 'protocol': 'chksz', 'contentPlatform': 'qq'},
+        ],
+        'capabilities': {'search': 'chksz'},
+      });
+
+      expect(
+        settings.explicitCandidateIdsFor(MusicPlatform.netease, search),
+        ['chksz'],
+        reason: 'P-59：判据与运行期一致 ⇒ 显式选择必须还在',
+      );
+      expect(
+        settings.selectedProviderIdFor(MusicPlatform.netease, search),
+        'chksz',
+      );
+      // 跨平台仍然不回落（运行期也不服务 qq）。
+      expect(
+        settings.explicitCandidateIdsFor(MusicPlatform.qq, search),
         isEmpty,
       );
     });
@@ -146,12 +179,13 @@ void main() {
       final settings = OnlineMusicSettings.fromJson({
         'providers': [
           {'id': 'neA', 'contentPlatform': 'netease'},
-          {'id': 'qqA', 'contentPlatform': 'qq'},
+          // 声明式 qq 条目：它**真的**服务 qq（见上一条的夹具说明）。
+          _declarativeQqProvider('qqA'),
         ],
         'capabilities': {'search': 'qqA'},
       });
 
-      // 旧值指 qq：在 netease 这一格上本来就不生效（不跨平台回落）⇒ 清 netease 不该动它。
+      // 旧值指 qq：在 netease 这一格上本来就不生效（运行期也不服务 netease）⇒ 清它不该动。
       final cleared = settings.withRoutingCandidates(
         MusicPlatform.netease,
         search,
@@ -166,6 +200,51 @@ void main() {
       expect(cleared.explicitCandidateIdsFor(MusicPlatform.qq, search), [
         'qqA',
       ]);
+    });
+
+    test('★ P-14 旧旋钮**可见**：旧能力分配与旧默认提供商都会被如实说出来', () {
+      final legacy = OnlineMusicSettings.fromJson({
+        'providers': [
+          {'id': 'neA', 'contentPlatform': 'netease'},
+          {'id': 'neB', 'contentPlatform': 'netease'},
+        ],
+        'capabilities': {'search': 'neA'},
+        'defaultProvider': 'neB',
+      });
+
+      final issues = legacy.legacyKnobIssues().join('\n');
+      expect(issues, contains('能力分配'));
+      expect(issues, contains('search→neA'));
+      // 必须给出**清除路径**（否则"可见"没有出口）。
+      expect(issues, contains('自动'));
+      expect(issues, contains('默认提供商'));
+      expect(issues, contains('neB'));
+    });
+
+    test('★ P-14 默认配置**不**产生旧旋钮提示（不误报）', () {
+      expect(OnlineMusicSettings.defaults.legacyKnobIssues(), isEmpty);
+    });
+
+    test('★ P-14 + P-22 点「自动」清掉那一格之后，旧旋钮提示随之消失', () {
+      final legacy = OnlineMusicSettings.fromJson({
+        'providers': [
+          {'id': 'neA', 'contentPlatform': 'netease'},
+        ],
+        'capabilities': {'search': 'neA'},
+      });
+      expect(legacy.legacyKnobIssues(), isNotEmpty);
+
+      final cleared = legacy.withRoutingCandidates(
+        MusicPlatform.netease,
+        search,
+        const [],
+      );
+
+      expect(
+        cleared.legacyKnobIssues(),
+        isEmpty,
+        reason: '可见 + 可清：清掉之后提示也要跟着消失',
+      );
     });
 
     test('routing 优先于旧 capabilities', () {
@@ -266,3 +345,23 @@ final class _FakeProvider extends UnsupportedOnlineMusicProvider {
   Set<MusicPlatform> platformsFor(OnlineMusicCapability capability) =>
       _platforms[capability] ?? const {};
 }
+
+/// 一个**声明式**的 qq 条目（它真的服务 qq）。
+///
+/// ⚠️ 不能再用"旧版内置条目 + `contentPlatform: qq`"当夹具：内置实现运行时**只服务
+/// 网易云**，声明 qq 只是配置里的一厢情愿 —— P-59 统一判据后，那种自相矛盾的夹具
+/// 不再代表"一个 qq 条目"。
+Map<String, Object?> _declarativeQqProvider(String id) => {
+  'id': id,
+  'contentPlatform': 'qq',
+  'baseUrl': 'https://qq.invalid',
+  'auth': {'kind': 'none'},
+  'capabilities': {
+    'search': OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(path: '/search'),
+      response: OnlineMusicResponseSpec(
+        listPath: JsonPath.tryParse('data')!,
+      ),
+    ).toJson(),
+  },
+};
