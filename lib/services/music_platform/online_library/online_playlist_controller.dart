@@ -171,8 +171,8 @@ final class OnlinePlaylistController extends ChangeNotifier {
     final tracks = snapshot.playlist.tracks
         .where(
           (track) =>
-              track.availability != TrackAvailability.unavailable &&
-              track.availability != TrackAvailability.paid,
+        // P-63：service 已在手 ⇒ 直接用能力集合的身份判据。
+        _service.capabilities.canPlayTrack(track),
         )
         .toList(growable: false);
     final selectedIndex = tracks.indexWhere((track) => track.ref == selectedRef);

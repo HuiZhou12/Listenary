@@ -1,3 +1,4 @@
+import 'package:pure_music/services/music_platform/online_music_service.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -40,9 +41,13 @@ final class PersonalOnlinePlaylistViewSnapshot {
 final class PersonalOnlinePlaylistController extends ChangeNotifier {
   PersonalOnlinePlaylistController({
     required Future<OnlineLibraryRepository> repository,
-  }) : _repositoryFuture = repository;
+    /// P-63：可选的**能力集合**（身份判据）。不传 ⇒ 维持既有判据。
+    OnlineMusicCapabilities? capabilities,
+  }) : _repositoryFuture = repository,
+       _capabilities = capabilities;
 
   final Future<OnlineLibraryRepository> _repositoryFuture;
+  final OnlineMusicCapabilities? _capabilities;
   OnlineLibraryRepository? _repository;
   PersonalOnlinePlaylistViewSnapshot _snapshot =
       const PersonalOnlinePlaylistViewSnapshot.idle();
@@ -190,8 +195,10 @@ final class PersonalOnlinePlaylistController extends ChangeNotifier {
     final tracks = snapshot.tracks
         .where(
           (track) =>
-              track.availability != TrackAvailability.unavailable &&
-              track.availability != TrackAvailability.paid,
+        // P-63：优先用平台身份判据（内置语义在 canPlayTrack 内保留）。
+        _capabilities?.canPlayTrack(track) ??
+            (track.availability != TrackAvailability.unavailable &&
+                track.availability != TrackAvailability.paid),
         )
         .toList(growable: false);
     final selectedIndex = tracks.indexWhere(
