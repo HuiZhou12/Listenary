@@ -15,6 +15,16 @@ void main() {
     );
   });
 
+  test('★ P3 声明的展示名**优先于**内置文案（F4-S5 语义：内置平台也可改名）', () {
+    expect(
+      platformDisplayLabel(
+        const PlatformIdentity.builtin(MusicPlatform.netease),
+        platformName: '自建网易云代理',
+      ),
+      '自建网易云代理',
+    );
+  });
+
   test('★ P3 自定义平台：用条目声明的 platformName；缺失时回落「自定义平台」', () {
     const id = '0f9a1c2e-dddd-4ddd-8ddd-dddddddddddd';
     expect(

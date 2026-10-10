@@ -50,9 +50,11 @@ String platformDisplayLabel(
   PlatformIdentity identity, {
   String? platformName,
 }) {
-  if (!identity.isCustom) return musicPlatformLabel(identity.platform);
+  // ⚠️ 顺序很重要：**条目声明的展示名优先**（F4-S5 语义 —— 内置平台也可以自定义展示名，
+  // 例如"自建网易云代理"）。展示名不参与身份判定（P0），只是文案。
   final declared = platformName?.trim();
   if (declared != null && declared.isNotEmpty) return declared;
+  if (!identity.isCustom) return musicPlatformLabel(identity.platform);
   return identity.isValid ? '自定义平台' : '未知平台';
 }
 

@@ -94,7 +94,15 @@ void main() {
       // 该条目因此是"不可用但可见"的条目（带 platformConfigIssue）⇒ 不参与路由，
       // 所以可搜索平台集合里**没有 netease**（旧断言 `{netease}` 反映的正是被禁止的旧行为）。
       // 同时它**不被隐藏**（否则平台卡会静默少一个候选 —— 见下面的 provider 候选断言）。
-      expect(composition.service.capabilities.searchablePlatforms, isEmpty);
+      // ★ P-39 / P0 规则④（本断言随 P2-l 再更新一次）：认不出的内容来源必须**原样保留身份**
+      //（`custom` + 原始值 `mySelfHosted`），**绝不回落网易云**。
+      // 说明：`custom` 现在**允许**出现在能力集合里（P2-l 修正了 P1a 的越界 —— 否则自定义平台
+      // 根本发不出请求）；真正的不变量是"**不得变成 netease**"且该条目仍不可用、仍 0 请求。
+      expect(
+        composition.service.capabilities.searchablePlatforms,
+        isNot(contains(MusicPlatform.netease)),
+        reason: '认不出的来源不得让该条目变成"网易云"（旧行为会静默回落）',
+      );
 
       // ★ P0（本用例随身份模型更新）：该条目现在是**自定义平台**（`custom` + `mySelfHosted`），
       // 不再冒充 netease。⚠️ 在 P2 把路由按 `PlatformIdentity` 键化之前，服务层搜索入口
