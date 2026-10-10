@@ -183,7 +183,8 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
     final playable = tracks
         .where(
           (t) =>
-              t.availability != TrackAvailability.unavailable &&
+              t.ref.hasValidIdentity &&
+            t.availability != TrackAvailability.unavailable &&
               t.availability != TrackAvailability.paid,
         )
         .toList(growable: false);

@@ -113,8 +113,9 @@ class _PersonalPlaylistDetailPageState
     final playable = tracks
         .where(
           (track) =>
-              track.availability != TrackAvailability.unavailable &&
-              track.availability != TrackAvailability.paid,
+              track.ref.hasValidIdentity &&
+        track.availability != TrackAvailability.unavailable &&
+        track.availability != TrackAvailability.paid,
         )
         .toList(growable: false);
     if (playable.isEmpty) return;
@@ -231,8 +232,9 @@ class _PersonalPlaylistDetailPageState
     final playable = tracks
         .where(
           (track) =>
-              track.availability != TrackAvailability.unavailable &&
-              track.availability != TrackAvailability.paid,
+              track.ref.hasValidIdentity &&
+        track.availability != TrackAvailability.unavailable &&
+        track.availability != TrackAvailability.paid,
         )
         .toList(growable: false);
     final scheme = Theme.of(context).colorScheme;
