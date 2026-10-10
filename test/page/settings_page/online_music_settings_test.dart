@@ -1924,6 +1924,27 @@ void main() {
     });
   });
 
+  group('★ F4-S9 边界文案（P-12 / D4）', () {
+    test('源码守卫：界面必须写明"不支持什么"与"空值≡缺失 / 转换闭集"', () {
+      // 这两条是 D3/D4 的"必须写明支持范围"落到**用户看得见的地方**；
+      // 文案在惰性列表深处 ⇒ 用源码守卫钉住，不做易碎的滚动断言。
+      final source = File(
+        'lib/page/settings_page/online_music_capability_editor.dart',
+      ).readAsStringSync();
+
+      // P-12 / D3：不支持的认证方式必须明确报出边界。
+      expect(source, contains('自动登录'), reason: 'P-12');
+      expect(source, contains('动态签名'));
+      expect(source, contains('令牌刷新'));
+      expect(source, contains('不会被静默忽略'));
+      // F4-S8 的非 ASCII 边界也写在用户看得见的地方。
+      expect(source, contains('请求头值只能是 ASCII'));
+      // D4：null 与缺失同义、转换是闭集，且**不会静默返回空值**。
+      expect(source, contains('空值与「键不存在」同义'), reason: 'D4');
+      expect(source, contains('不会静默变成空值'));
+    });
+  });
+
   group('F1 P-21 请求体可编辑（POST 类能力不再只能走 JSON）', () {
     testWidgets('★ 请求体的存在性 / 格式 / 字段都能配并且往返不变', (tester) async {
       // 有请求体 + JSON + 一个字段（含必填与默认值）。

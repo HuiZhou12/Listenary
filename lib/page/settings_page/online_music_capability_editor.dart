@@ -1134,7 +1134,13 @@ class _OnlineMusicCapabilityEditorDialogState
         const _SectionTitle('字段映射'),
         const Padding(
           padding: EdgeInsets.only(bottom: 8.0),
-          child: _Hint('勾选后该字段才会写进配置；候选路径按顺序取第一个存在的。'),
+          // F4-S9（D4 边界）：把"支持范围"写在用户看得见的地方 ——
+          // 空值与缺失同义、转换是闭集；选错转换**不会静默返回空值**，试跑会明确报错。
+          child: _Hint(
+            '勾选后该字段才会写进配置；候选路径按顺序取第一个存在的。'
+            '空值与「键不存在」同义；转换只有每行下拉里的那几种 —— '
+            '选错转换会在试跑时明确报错，不会静默变成空值。',
+          ),
         ),
         for (final field in domainFieldsFor(widget.capability))
           _fieldRow(field, _fieldRows[field]!),
@@ -1483,6 +1489,14 @@ class _OnlineMusicCapabilityEditorDialogState
           const _Hint(
             '敏感请求头不写进配置：值保存在系统凭据管理器，配置里只留一个「凭据引用」；'
             '引用默认按 标识/能力/请求头名 派生，也可以手改成别的槽位（多个能力共享同一凭据）。',
+          ),
+          const SizedBox(height: 8.0),
+          // F4-S9（P-12 / D3 边界）：把"不支持什么"明确写出来 ——
+          // 而且这些写法**不会被静默忽略**（保存或试跑会明确报错）。
+          const _Hint(
+            '只支持静态认证值（固定值或凭据引用）：自动登录、Cookie 生命周期、动态签名、'
+            '令牌刷新一概不支持；请求头值只能是 ASCII。'
+            '不支持的写法不会被静默忽略 —— 保存或试跑时会明确报错。',
           ),
           const SizedBox(height: 8.0),
           LayoutBuilder(
