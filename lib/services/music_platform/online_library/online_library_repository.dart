@@ -306,6 +306,21 @@ final class OnlineLibraryRepository {
         );
       }
 
+      // F5-S3（P-62）：先记下**既有条目**的加入时间。
+      //
+      // 刷新只应"更新清单"，不应把老歌的「加入时间」重置成刷新时刻 ——
+      // 那既破坏"最近加入"语义，也会打乱用户可见顺序
+      //（`OnlinePlaylistSnapshot` 的加入时间还参与排序比较）。
+      // 键 = "平台\u0000曲目 id"：与数据库主键 `(playlist_id, platform, track_id)` 的后两段一致，
+      // 且**不经过** `_parsePlatform`（避免引入平台解析的额外前提）。
+      final previousAddedAt = <String, String>{
+        for (final row in _db.select(
+          'SELECT platform, track_id, added_at FROM online_playlist_items '
+          'WHERE playlist_id = ?',
+          [localId],
+        ))
+          '${row['platform']}\u0000${row['track_id']}': row['added_at'] as String,
+      };
       _db.execute('DELETE FROM online_playlist_items WHERE playlist_id = ?', [
         localId,
       ]);
@@ -319,12 +334,15 @@ final class OnlineLibraryRepository {
         for (var index = 0; index < playlist.tracks.length; index++) {
           final track = playlist.tracks[index];
           _upsertTrack(track, lastQuality: null, updatedAt: timestamp);
+          final trackId = _requiredTrackId(track.ref.trackId);
           statement.execute([
             localId,
             platform,
-            _requiredTrackId(track.ref.trackId),
+            trackId,
             index,
-            addedAt,
+            // 同一歌单 + 同一平台 + 同一曲目 id ⇒ 仍是那首歌 ⇒ **保留原加入时间**；
+            // 只有本次刷新新出现的条目才写刷新时刻。
+            previousAddedAt['$platform\u0000$trackId'] ?? addedAt,
           ]);
         }
       } finally {
