@@ -120,6 +120,20 @@ final class OnlineMusicProviderRegistry {
     ]);
   }
 
+  /// P-63: identities of providers supporting the capability (availability judgement source).
+  Set<PlatformIdentity> identitiesFor(OnlineMusicCapability capability) {
+    final result = <PlatformIdentity>{};
+    for (final provider in _providers.values) {
+      final platforms = provider.platformsFor(capability);
+      if (platforms.isEmpty) continue;
+      result.add(
+        _identities[provider.providerId] ??
+            PlatformIdentity.builtin(platforms.first),
+      );
+    }
+    return Set.unmodifiable(result);
+  }
+
   List<OnlineMusicProvider> providersFor(
     MusicPlatform platform,
     OnlineMusicCapability capability,

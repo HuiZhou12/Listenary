@@ -50,6 +50,8 @@ final class CompositeOnlineMusicService
     return OnlineMusicCapabilities(
       searchablePlatforms: searchable,
       resolvablePlatforms: stream,
+    // P-63: identity-level resolvable set (custom platforms need it).
+    resolvableIdentities: registry.identitiesFor(OnlineMusicCapability.stream),
       playlistPlatforms: registry.platformsFor(OnlineMusicCapability.playlist),
       playlistCollectionPlatforms: registry.platformsFor(
         OnlineMusicCapability.playlistCollection,

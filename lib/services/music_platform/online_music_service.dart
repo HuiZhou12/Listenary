@@ -17,9 +17,11 @@ final class OnlineMusicCapabilities {
     Iterable<MusicPlatform> chartPlatforms = const [],
     Iterable<MusicPlatform> newSongPlatforms = const [],
     Iterable<MusicPlatform> lyricPlatforms = const [],
+    Iterable<PlatformIdentity> resolvableIdentities = const [],
     Map<MusicPlatform, String> unavailableSearchReasons = const {},
   }) : searchablePlatforms = Set.unmodifiable(searchablePlatforms),
        resolvablePlatforms = Set.unmodifiable(resolvablePlatforms),
+       resolvableIdentities = Set.unmodifiable(resolvableIdentities),
        playlistPlatforms = Set.unmodifiable(playlistPlatforms),
        playlistCollectionPlatforms = Set.unmodifiable(
          playlistCollectionPlatforms,
@@ -37,6 +39,21 @@ final class OnlineMusicCapabilities {
 
   /// 可做播放解析的平台。
   final Set<MusicPlatform> resolvablePlatforms;
+
+  /// F5-P-39（P-63）：**按平台身份**可做播放解析的集合（自定义平台用稳定 ID 区分）。
+  final Set<PlatformIdentity> resolvableIdentities;
+
+  /// P-63（可用性复核的**唯一判据**）：这条数据所属的平台身份当前能否解析（能否播放）。
+  ///
+  /// - 内置平台 ⇒ 沿用 [resolvablePlatforms]（既有语义不变）；
+  /// - 自定义平台 ⇒ 按 **`(custom, stableId)`** 精确判定（只比枚举会让两个自定义平台互相冒充）；
+  /// - 身份无效（缺稳定 ID）或未登记 ⇒ `false`（fail-closed：**只呈现状态**，
+  ///   不静默删除数据、不自动改写身份、不触发任何修复动作）。
+  bool canResolveIdentity(PlatformIdentity identity) {
+    if (!identity.isValid) return false;
+    if (!identity.isCustom) return resolvablePlatforms.contains(identity.platform);
+    return resolvableIdentities.contains(identity);
+  }
 
   final Set<MusicPlatform> playlistPlatforms;
   final Set<MusicPlatform> lyricPlatforms;
