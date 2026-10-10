@@ -1811,6 +1811,119 @@ void main() {
     });
   });
 
+  group('★ F4-S2 请求头可「来自输入」（P-09 / D3 边界）', () {
+    OnlineMusicDeclarativeCapabilityBinding dynamicHeaderFixture() =>
+        OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(
+            path: '/search',
+            headers: [
+              OnlineMusicHeaderSpec(
+                name: 'X-Keyword',
+                value: '',
+                source: OnlineMusicInputSource.keyword,
+              ),
+            ],
+          ),
+          response: validBindingFor(OnlineMusicCapability.search).response,
+        );
+
+    Future<void> addHeader(WidgetTester tester, String name) async {
+      // 表单是惰性 ListView：必须先滚到「加请求头」再点。
+      await scrollCapabilityFormTo(tester, '加请求头');
+      await tester.tap(find.text('加请求头'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find
+            .ancestor(of: find.text('请求头名'), matching: find.byType(TextField))
+            .first,
+        name,
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('★ 动态头经「打开 → 保存」往返不丢 source', (tester) async {
+      final saved = await saveRoundTrip(tester, dynamicHeaderFixture());
+
+      final header = saved.request.headers.single;
+      expect(
+        header.source,
+        OnlineMusicInputSource.keyword,
+        reason: '表单保存不得把动态头悄悄变回固定值',
+      );
+      expect(header.value, isEmpty);
+      expect(header.toJson().containsKey('source'), isTrue);
+    });
+
+    testWidgets('★ 表单里勾「来自输入」并保存 ⇒ 配置带 source、无固定值', (tester) async {
+      final fixture = bindingWithParamExtras();
+      final settings = settingsWithBinding(
+        OnlineMusicCapability.search,
+        fixture,
+      );
+      final controller = _controller(configured: settings, active: settings);
+      addTearDown(controller.dispose);
+      await pumpPanel(tester, controller);
+      await openCapabilityEditorFor(tester, OnlineMusicCapability.search);
+
+      await addHeader(tester, 'X-Keyword');
+      await scrollCapabilityFormTo(tester, '来自输入');
+      final toggleRow = find
+          .ancestor(of: find.text('来自输入'), matching: find.byType(Row))
+          .first;
+      await tester.tap(
+        find.descendant(of: toggleRow, matching: find.byType(Checkbox)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      final saved =
+          controller.settings.providers.single.bindingFor(
+                OnlineMusicCapability.search,
+              )
+              as OnlineMusicDeclarativeCapabilityBinding;
+      final header = saved.request.headers.single;
+      expect(
+        header.source,
+        defaultInputSourceFor(OnlineMusicCapability.search),
+        reason: '默认来源按能力决定（与参数行同一规则，P-23）',
+      );
+      expect(header.value, isEmpty, reason: '动态头不带固定值（两者互斥）');
+    });
+
+    testWidgets('★ 勾上「敏感」会被强制退回固定值/引用模式（不得来自输入）', (tester) async {
+      final settings = settingsWithBinding(
+        OnlineMusicCapability.search,
+        dynamicHeaderFixture(),
+      );
+      final controller = _controller(configured: settings, active: settings);
+      addTearDown(controller.dispose);
+      await pumpPanel(tester, controller);
+      await openCapabilityEditorFor(tester, OnlineMusicCapability.search);
+
+      await scrollCapabilityFormTo(tester, '敏感');
+      // 与既有 F0 用例同一手法（`tapVisible`：先滚进视口再点）。
+      await tapVisible(tester, find.text('敏感'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      final saved =
+          controller.settings.providers.single.bindingFor(
+                OnlineMusicCapability.search,
+              )
+              as OnlineMusicDeclarativeCapabilityBinding;
+      final header = saved.request.headers.single;
+      expect(header.sensitive, isTrue);
+      expect(
+        header.source,
+        isNull,
+        reason: '敏感头绝不能来自输入（F0 边界只加强不削弱）',
+      );
+      expect(header.credentialReference, isNotNull, reason: '敏感头必须带凭据引用');
+    });
+  });
+
   group('F1 P-21 请求体可编辑（POST 类能力不再只能走 JSON）', () {
     testWidgets('★ 请求体的存在性 / 格式 / 字段都能配并且往返不变', (tester) async {
       // 有请求体 + JSON + 一个字段（含必填与默认值）。

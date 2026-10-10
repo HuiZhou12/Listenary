@@ -490,8 +490,12 @@ class _OnlineMusicCapabilityEditorDialogState
   void _toggleSensitive(_HeaderRow row) {
     setState(() {
       row.sensitive = !row.sensitive;
-      if (row.sensitive && row.reference.text.trim().isEmpty) {
-        row.reference.text = _derivedReferenceFor(row.name.text.trim());
+      if (row.sensitive) {
+        // F4-S2（P-09）：敏感头**不能**来自输入 —— 勾上敏感就退回"值 / 引用"模式。
+        row.source = null;
+        if (row.reference.text.trim().isEmpty) {
+          row.reference.text = _derivedReferenceFor(row.name.text.trim());
+        }
       }
       row.referenceConfigured = null;
     });
@@ -543,6 +547,11 @@ class _OnlineMusicCapabilityEditorDialogState
   /// 换句话说：不是"在这里把值清空"，而是"这个状态**不许保存**"。
   OnlineMusicHeaderSpec _headerSpecOf(_HeaderRow row) {
     final name = row.name.text.trim();
+    final source = row.source;
+    if (source != null) {
+      // F4-S2（P-09）：**动态头** —— 值来自闭集输入；固定值必须清空（两者互斥）。
+      return OnlineMusicHeaderSpec(name: name, value: '', source: source);
+    }
     if (!row.sensitive) {
       return OnlineMusicHeaderSpec(name: name, value: row.value.text);
     }
@@ -1342,6 +1351,41 @@ class _OnlineMusicCapabilityEditorDialogState
       ),
     );
 
+    // F4-S2（P-09）：**非敏感**头可以让值来自闭集输入（动态头）。
+    // 敏感头**没有**这个选项 —— 那等于把凭据放进普通输入通道。
+    final inputToggle = InkWell(
+      onTap: () => setState(() {
+        row.source = row.source == null
+            ? defaultInputSourceFor(widget.capability)
+            : null;
+      }),
+      borderRadius: BorderRadius.circular(6.0),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IgnorePointer(
+              child: Checkbox(
+                value: row.source != null,
+                visualDensity: VisualDensity.compact,
+                onChanged: (_) {},
+              ),
+            ),
+            const Text('来自输入'),
+          ],
+        ),
+      ),
+    );
+    final headerSourceField = _EnumMenuField<OnlineMusicInputSource>(
+      label: '取值来源',
+      value: row.source ?? defaultInputSourceFor(widget.capability),
+      options: OnlineMusicInputSource.values,
+      labelOf: inputSourceLabel,
+      onChanged: (value) => setState(() => row.source = value),
+    );
+    final entryField = row.source == null ? valueField : headerSourceField;
+
     if (!row.sensitive) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 8.0),
@@ -1353,10 +1397,11 @@ class _OnlineMusicCapabilityEditorDialogState
                 children: [
                   nameField,
                   const SizedBox(height: 8.0),
-                  valueField,
+                  entryField,
                   Row(
                     children: [
                       sensitiveToggle,
+                      inputToggle,
                       const Spacer(),
                       removeButton,
                     ],
@@ -1368,9 +1413,10 @@ class _OnlineMusicCapabilityEditorDialogState
               children: [
                 Expanded(child: nameField),
                 const SizedBox(width: 12.0),
-                Expanded(child: valueField),
+                Expanded(child: entryField),
                 const SizedBox(width: 4.0),
                 sensitiveToggle,
+                inputToggle,
                 removeButton,
               ],
             );
@@ -2278,6 +2324,7 @@ class _HeaderRow {
   _HeaderRow(
     this.name,
     this.value, {
+    this.source,
     this.sensitive = false,
     String reference = '',
   }) : reference = TextEditingController(text: reference);
@@ -2290,8 +2337,10 @@ class _HeaderRow {
   }) => _HeaderRow(
     TextEditingController(text: header.name),
     TextEditingController(text: header.value),
+    source: header.source,
     sensitive: header.sensitive,
-    reference: header.credentialReference ??
+    reference:
+        header.credentialReference ??
         (header.sensitive ? derivedReference : ''),
   );
 
@@ -2306,6 +2355,9 @@ class _HeaderRow {
 
   /// 是否明确标记为敏感（F0-4 / 决策 A）。
   bool sensitive;
+
+  /// 值是否**来自闭集输入**（动态头，F4-S2 / P-09）；`null` = 用固定值 / 凭据引用。
+  OnlineMusicInputSource? source;
 
   /// 安全凭据**槽位名**（只是引用，不是值）；可编辑，以便多个能力显式共享凭据。
   final TextEditingController reference;

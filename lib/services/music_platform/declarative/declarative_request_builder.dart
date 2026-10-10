@@ -175,6 +175,25 @@ BuiltDeclarativeRequest buildDeclarativeRequest({
   final credentialBodyNames = <String>{};
   for (final header in spec.headers) {
     final reference = header.credentialReference;
+    final dynamicSource = header.source;
+    if (dynamicSource != null) {
+      // F4-S2（P-09）：动态头 —— 值来自闭集输入。
+      // ⚠️ 敏感头**绝不能**走这条路（校验已拦，这里兜底）：那等于把凭据放进普通输入通道。
+      if (header.sensitive || reference != null) {
+        throw DeclarativeRequestException(
+          DeclarativeRequestErrorKind.invalidParameterBinding,
+          header.sensitive
+              ? '请求头 ${header.name} 已标记为敏感，不能来自输入；敏感值只能走安全凭据引用'
+              : '请求头 ${header.name} 已有凭据引用，不能再来自输入',
+        );
+      }
+      // 输入缺失 ⇒ 该头**本次不发送**（与参数"值为空就省略"同一口径）。
+      final dynamicValue = inputs.valueOf(dynamicSource);
+      if (dynamicValue != null) {
+        headers[header.name] = _stringify(dynamicValue);
+      }
+      continue;
+    }
     if (reference != null) {
       // 有引用 ⇒ 值只能来自安全凭据槽位。
       final secret = headerCredentials[reference];

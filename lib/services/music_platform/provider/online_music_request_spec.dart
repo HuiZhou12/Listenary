@@ -107,12 +107,21 @@ final class OnlineMusicHeaderSpec {
   const OnlineMusicHeaderSpec({
     required this.name,
     required this.value,
+    this.source,
     this.sensitive = false,
     this.credentialReference,
   });
 
   final String name;
   final String value;
+
+  /// 值来自**闭集输入来源**（动态头，F4-S2 / P-09）；与 [value] / [credentialReference] **互斥**。
+  ///
+  /// ⚠️ **敏感头绝不能使用它**：那等于把凭据放进普通输入通道（`validationIssues` 会拒绝，
+  /// 运行期构造请求时也会兜底拒绝）—— F0 的边界**只加强、不削弱**。
+  ///
+  /// **缺省 `null`，且为 `null` 时不写盘** ⇒ 旧配置往返后语义与字节都不变。
+  final OnlineMusicInputSource? source;
 
   /// 是否**明确标记为敏感**（F0 / 决策 A）。
   ///
@@ -147,6 +156,8 @@ final class OnlineMusicHeaderSpec {
   Map<String, dynamic> toJson() => {
     'name': name,
     'value': value,
+    // 缺省不写盘（同 sensitive）⇒ 旧配置往返后语义与字节都不变。
+    if (source != null) 'source': source!.name,
     if (sensitive) 'sensitive': true,
     // 缺省不写盘 ⇒ 旧配置往返后语义与字节都不变。
     if (credentialReference != null) 'reference': credentialReference,
@@ -154,9 +165,13 @@ final class OnlineMusicHeaderSpec {
 
   static OnlineMusicHeaderSpec fromJson(Object? value) {
     final map = _requireMap(value, '请求头');
+    final rawSource = map['source'];
     return OnlineMusicHeaderSpec(
       name: _requireText(map['name'], '请求头名称'),
       value: map['value'] == null ? '' : '${map['value']}',
+      source: rawSource == null
+          ? null
+          : _requireEnum(rawSource, OnlineMusicInputSource.values, '请求头取值来源'),
       sensitive: map['sensitive'] == true,
       credentialReference: _optionalText(map['reference']),
     );
@@ -167,11 +182,13 @@ final class OnlineMusicHeaderSpec {
       other is OnlineMusicHeaderSpec &&
       other.name == name &&
       other.value == value &&
+      other.source == source &&
       other.sensitive == sensitive &&
       other.credentialReference == credentialReference;
 
   @override
-  int get hashCode => Object.hash(name, value, sensitive, credentialReference);
+  int get hashCode =>
+      Object.hash(name, value, source, sensitive, credentialReference);
 }
 
 /// 请求体：扁平 JSON 或 form-urlencoded，字段同样来自闭集输入。
@@ -384,6 +401,24 @@ final class OnlineMusicRequestSpec {
         continue;
       }
       final reference = header.credentialReference;
+      // F4-S2（P-09 / D3 边界）：动态头的三条硬约束 ——
+      // ① 敏感头**绝不能**来自输入（那等于把凭据放进普通输入通道）；
+      // ② 与凭据引用互斥；③ 与固定值互斥（与参数同一套"恰好一种取值"风格）。
+      final headerSource = header.source;
+      if (headerSource != null) {
+        if (header.sensitive) {
+          issues.add(
+            '请求头 ${header.name} 已标记为敏感，不能来自输入；'
+            '敏感值只能走安全凭据引用',
+          );
+        }
+        if (reference != null) {
+          issues.add('请求头 ${header.name} 已有凭据引用，不能再来自输入');
+        }
+        if (header.value.trim().isNotEmpty) {
+          issues.add('请求头 ${header.name} 同时有固定值，只能留一个');
+        }
+      }
       if (reference != null) {
         // 引用是值的**替代**：有引用还留着明文 ⇒ 迁移没做完，必须拦住，
         // 否则"旧配置里不再有明文"这条不变式无法成立（Spec §4.5）。
