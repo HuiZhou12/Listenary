@@ -183,6 +183,16 @@ final class OnlineMusicProviderDefinition {
   /// （与 `baseUrlIssue` 同一套 fail-closed 口径），**绝不静默当成 netease**。
   final String? platformConfigIssue;
 
+  /// **平台身份**（P-39 / P0 裁定）：`(contentPlatform, platformId)`。
+  ///
+  /// 为什么需要它：所有自定义平台共享 `MusicPlatform.custom` ⇒ 平台级索引/路由/日志
+  /// 不能拿枚举当唯一键。`platformId` 是**稳定 ID**（F4-S5 起就存在，语义即"稳定标识"）：
+  /// - 旧配置里**已有的非空值原样使用**（不归一、不重写成 UUID）；
+  /// - 缺省时，自定义平台的身份**无效**（`isValid == false`）⇒ 不得参与网络路由（fail-closed），
+  ///   内置平台不受影响（`platformId` 恒空）。
+  PlatformIdentity get identity =>
+      PlatformIdentity(contentPlatform, platformId: platformId?.trim());
+
   /// F4-S5：界面展示用的平台名（`platformName` 优先，否则内置中文名）。
   String get displayPlatformName => platformName?.trim().isNotEmpty == true
       ? platformName!.trim()
@@ -1286,7 +1296,9 @@ final class OnlineMusicSettings {
   static MusicPlatform? _matchPlatform(Object? value) {
     final name = _nonEmptyString(value);
     if (name == null) return null;
-    for (final platform in builtinMusicPlatforms) {
+    // ⚠️ 这里**不能**用 `builtinMusicPlatforms`：内容来源/身份解析必须接受 `custom`
+    //（P-39 P0 裁定：自定义平台身份 = `custom` + 稳定 ID）。界面枚举才用内置列表。
+    for (final platform in MusicPlatform.values) {
       if (platform.name == name) return platform;
     }
     return null;
