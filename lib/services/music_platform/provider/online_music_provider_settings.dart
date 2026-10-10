@@ -1611,13 +1611,28 @@ _parsePlatformFields(Object? rawContentPlatform, Object? rawPlatformId) {
       );
     }
   }
+  // P-39 / P0 规则⑩：写成 `custom` 却没有稳定 ID ⇒ **明确报错**（身份无效，不得路由）。
+  if (name == MusicPlatform.custom.name) {
+    return (
+      contentPlatform: MusicPlatform.custom,
+      platformId: declaredId,
+      issue: declaredId == null
+          ? '内容来源是自定义平台，但没有提供稳定的 platformId：'
+                '该条目不会被路由，也不会发出任何请求。'
+          : null,
+    );
+  }
+  // P-39 / P0 规则④：认不出的内容来源**绝不回落网易云**。
+  // 它必须被**原样保留**成自定义平台身份（`custom` + 原始值）；条目若显式声明了
+  // `platformId`，以显式声明为准。同时**明确报出问题**（不隐藏、不静默改写）。
   return (
-    contentPlatform: MusicPlatform.netease,
+    contentPlatform: MusicPlatform.custom,
     platformId: declaredId ?? name,
     issue:
         '内容来源「$name」不是内置平台'
         '（${builtinMusicPlatforms.map((platform) => platform.name).join(' / ')}）：'
-        '请改为内置平台，或用 platformId / platformName 声明自定义平台'
-        '（该条目不会被使用，也不会发出任何请求）',
+        '已按**自定义平台**原样保留其标识（身份 = custom + ${declaredId ?? name}），'
+        '不会回落网易云。若这不是你想要的平台，请改正 contentPlatform 或 platformId'
+        '（在成功配置前，该条目不参与路由，也不会发出任何请求）',
   );
 }

@@ -89,11 +89,17 @@ void main() {
       );
       addTearDown(composition.service.dispose);
 
-      // 条目**不被隐藏**（否则平台卡会静默少一个候选）。
-      expect(composition.service.capabilities.searchablePlatforms, {
-        MusicPlatform.netease,
-      });
+      // ★ P-39 / P0 规则④（本用例随身份模型更新）：认不出的内容来源**原样保留身份**
+      //（`custom` + 原始值 `mySelfHosted`，见 `_parsePlatformFields`），**绝不回落网易云**。
+      // 该条目因此是"不可用但可见"的条目（带 platformConfigIssue）⇒ 不参与路由，
+      // 所以可搜索平台集合里**没有 netease**（旧断言 `{netease}` 反映的正是被禁止的旧行为）。
+      // 同时它**不被隐藏**（否则平台卡会静默少一个候选 —— 见下面的 provider 候选断言）。
+      expect(composition.service.capabilities.searchablePlatforms, isEmpty);
 
+      // ★ P0（本用例随身份模型更新）：该条目现在是**自定义平台**（`custom` + `mySelfHosted`），
+      // 不再冒充 netease。⚠️ 在 P2 把路由按 `PlatformIdentity` 键化之前，服务层搜索入口
+      // 仍以 `MusicPlatform` 为参数 ⇒ 对 `netease` 搜索**找不到任何候选** ⇒ `unavailable`
+      //（同样是**明确错误**，且下方仍断言 **0 请求**）。
       await expectLater(
         composition.service.search(
           platform: MusicPlatform.netease,
@@ -101,17 +107,11 @@ void main() {
           cancelToken: OnlineMusicCancelToken(),
         ),
         throwsA(
-          isA<OnlineMusicException>()
-              .having(
-                (error) => error.kind,
-                'kind',
-                OnlineMusicErrorKind.badRequest,
-              )
-              .having(
-                (error) => error.safeMessage,
-                'safeMessage',
-                allOf(contains('不是内置平台'), contains('mySelfHosted')),
-              ),
+          isA<OnlineMusicException>().having(
+            (error) => error.kind,
+            'kind',
+            OnlineMusicErrorKind.unavailable,
+          ),
         ),
       );
 
