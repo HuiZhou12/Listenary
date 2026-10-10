@@ -2,6 +2,7 @@ import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_quality_tiers.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_request_spec.dart';
 
 const defaultOnlineMusicBaseUrl = 'https://api.chksz.com';
@@ -95,6 +96,9 @@ final class OnlineMusicProviderDefinition {
     this.capabilities,
     this.contentPlatform = MusicPlatform.netease,
     this.displayName = '',
+    // F4-S4（P-13 / D10b:a）：Provider **静态声明**的音质档位
+    // （内部级别 → 平台取值 + 展示名）。缺省空 = 不声明档位（内部偏好原样透传）。
+    this.qualityTiers = const [],
     // P-32：解析期的损坏项，默认空；只有 `fromJson` 会填。
     this.capabilityConfigIssues = const [],
   });
@@ -158,6 +162,15 @@ final class OnlineMusicProviderDefinition {
   /// 身份模型（`PlatformTrackRef.platform`）本轮不泛化，因此自建 Provider 必须声明
   /// 它代理哪一家的内容；非 netease 型来源属于当前模型的边界。
   final MusicPlatform contentPlatform;
+
+  /// **静态声明**的音质档位表（F4-S4 / P-13 / D10b:a）：内部级别 → 平台取值 + 展示名。
+  ///
+  /// - 空列表 = **不声明档位** ⇒ 与修复前完全一致（UI 只展示内部偏好，不伪造平台名称）；
+  /// - 非空 = 该平台自己的档位名称与请求值由配置给出（声明式 Provider 从此**不需要写代码**
+  ///   也能让档位菜单/回落提示显示平台自己的叫法）；
+  /// - 这是**Provider 级**声明（与 `contentPlatform` 同级）：档位是"这个服务怎么叫档位"，
+  ///   不是某个能力的属性。
+  final List<PlatformQualityTier> qualityTiers;
 
   /// 逐能力绑定。
   ///
@@ -400,6 +413,8 @@ final class OnlineMusicProviderDefinition {
       capabilityAuth: capabilityAuth,
       capabilities: capabilities,
       contentPlatform: contentPlatform ?? this.contentPlatform,
+      // F4-S4：编辑条目时**必须透传**档位声明，否则表单保存会把用户填的档位静默丢掉。
+      qualityTiers: qualityTiers,
     );
   }
 
@@ -429,6 +444,8 @@ final class OnlineMusicProviderDefinition {
       }),
       contentPlatform: contentPlatform,
       displayName: displayName,
+      // F4-S4：改能力绑定不得动档位声明。
+      qualityTiers: qualityTiers,
     );
   }
 
@@ -471,6 +488,8 @@ final class OnlineMusicProviderDefinition {
       }),
       contentPlatform: contentPlatform,
       displayName: displayName,
+      // F4-S4：一键填充改的是能力实现，不该动档位声明。
+      qualityTiers: qualityTiers,
     );
   }
 
@@ -532,6 +551,16 @@ final class OnlineMusicProviderDefinition {
         for (final entry in capabilities!.entries)
           entry.key.name: entry.value.toJson(),
       },
+    // F4-S4：缺省（空表）时不写该键 ⇒ 旧配置往返后字节不变。
+    if (qualityTiers.isNotEmpty)
+      'qualityTiers': [
+        for (final tier in qualityTiers)
+          {
+            'internal': tier.internalLevel,
+            'label': tier.displayLabel,
+            'value': tier.requestValue,
+          },
+      ],
   };
 
   Map<String, dynamic> authToJson() {
@@ -557,6 +586,8 @@ final class OnlineMusicProviderDefinition {
       other.parameterName == parameterName &&
       other.contentPlatform == contentPlatform &&
       other.displayName == displayName &&
+      // F4-S4：档位声明是**真实配置**，必须参与相等性（否则界面判断"有未保存改动"会出错）。
+      _sameQualityTiers(other.qualityTiers, qualityTiers) &&
       _sameBindings(other.capabilities, capabilities) &&
       _sameCapabilityAuth(other.capabilityAuth, capabilityAuth);
 
@@ -591,6 +622,16 @@ final class OnlineMusicProviderDefinition {
         );
       }),
     ),
+    // F4-S4：档位声明的顺序**有意义**（它就是菜单顺序）⇒ 用有序哈希。
+    Object.hashAll(
+      qualityTiers.map(
+        (tier) => Object.hash(
+          tier.internalLevel,
+          tier.displayLabel,
+          tier.requestValue,
+        ),
+      ),
+    ),
   );
 
   @override
@@ -598,6 +639,22 @@ final class OnlineMusicProviderDefinition {
       'OnlineMusicProviderDefinition($id, $baseUrl, '
       'requiresCredential=$requiresCredential, slot=${credentialReference != null}, '
       'capabilities=${capabilities == null ? 'legacy' : capabilities!.length})';
+}
+
+/// F4-S4：档位声明按**顺序**比较（顺序就是菜单顺序）。
+bool _sameQualityTiers(
+  List<PlatformQualityTier> a,
+  List<PlatformQualityTier> b,
+) {
+  if (a.length != b.length) return false;
+  for (var index = 0; index < a.length; index++) {
+    if (a[index].internalLevel != b[index].internalLevel ||
+        a[index].displayLabel != b[index].displayLabel ||
+        a[index].requestValue != b[index].requestValue) {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool _sameBindings(
@@ -1258,6 +1315,8 @@ final class OnlineMusicSettings {
       protocol: protocol,
       contentPlatform: _parseContentPlatform(value['contentPlatform']),
       displayName: _nonEmptyString(value['displayName']) ?? '',
+      // F4-S4：档位声明（可缺省）——缺省即空表 ⇒ 与修复前完全一致。
+      qualityTiers: _parseQualityTiers(value['qualityTiers']),
       // P-32：绑定与"解析期损坏项"分开带上（后者不落盘、不参与相等性）。
       capabilityConfigIssues:
           parsedCapabilities?.issues ??
@@ -1439,4 +1498,35 @@ bool _sameRouting(
     }
   }
   return true;
+}
+
+/// F4-S4（P-13）：解析 `qualityTiers`。
+///
+/// - **缺省**（键不存在）⇒ 空表 ⇒ 与修复前完全一致（内部偏好原样透传）；
+/// - 单条不合法（不是对象 / 缺键 / 空串）⇒ 抛 [FormatException]：
+///   与其它字段同一口径 —— 坏配置**明确报错**，绝不静默丢一半档位表。
+List<PlatformQualityTier> _parseQualityTiers(Object? value) {
+  if (value == null) return const [];
+  if (value is! List) {
+    throw const FormatException('qualityTiers 必须是数组');
+  }
+  return List.unmodifiable([
+    for (final entry in value)
+      PlatformQualityTier(
+        internalLevel: _requireQualityTierText(entry, 'internal'),
+        displayLabel: _requireQualityTierText(entry, 'label'),
+        requestValue: _requireQualityTierText(entry, 'value'),
+      ),
+  ]);
+}
+
+String _requireQualityTierText(Object? entry, String key) {
+  if (entry is! Map) {
+    throw const FormatException('qualityTiers 的每一项都必须是对象');
+  }
+  final text = entry[key];
+  if (text is! String || text.trim().isEmpty) {
+    throw FormatException('qualityTiers 的 $key 必须是非空字符串');
+  }
+  return text.trim();
 }

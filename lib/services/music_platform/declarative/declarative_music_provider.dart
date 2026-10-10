@@ -33,6 +33,9 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
     required OnlineMusicCredentialReader credentials,
     this.credentialReference,
     this.contentPlatform = MusicPlatform.netease,
+    /// F4-S4（P-13 / D10b:a）：Provider **静态声明**的档位表（内部级别 → 平台取值 + 展示名）。
+    /// 缺省空 = 不声明档位 ⇒ 与修复前完全一致。
+    this.qualityTiers = const [],
     DeclarativeTransportDispose? disposeTransport,
     DateTime Function()? clock,
   }) : _bindings = Map.unmodifiable(bindings),
@@ -50,6 +53,10 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
   final OnlineMusicCredentialReader _credentials;
   final String? credentialReference;
   final MusicPlatform contentPlatform;
+
+  /// F4-S4：静态声明的档位表；空表表示"不声明"。
+  final List<PlatformQualityTier> qualityTiers;
+
   final DeclarativeTransportDispose? _disposeTransport;
   final DateTime Function() _clock;
 
@@ -265,7 +272,9 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
   /// （可能是 `level`，也可能是 `sq` 这种平台专有取值），程序无从推断。
   /// 留空即"原样透传内部偏好"，与引入档位模型之前的行为完全一致。
   @override
-  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) => const [];
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) =>
+      // F4-S4（P-13）：声明式 Provider 的档位由**配置**给出（以前恒空、只能写代码）。
+      qualityTiers;
 
   @override
   void dispose() => _disposeTransport?.call();

@@ -149,6 +149,8 @@ OnlineMusicComposition createOnlineMusicComposition({
             ? definition.credentialReference
             : null,
         contentPlatform: definition.contentPlatform,
+        // F4-S4：档位声明随条目一起装配（缺省空 ⇒ 行为不变）。
+        qualityTiers: definition.qualityTiers,
         disposeTransport: () => ownedDio.close(force: true),
       );
       for (final capability in declarativeBindings.keys) {
