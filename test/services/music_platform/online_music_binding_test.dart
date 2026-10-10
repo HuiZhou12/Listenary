@@ -785,6 +785,60 @@ void main() {
       expect(JsonPath.tryParse(r'a.b\c'), isNull);
     });
 
+    // ---------------------------------------------------------- F4-S7（P-41）
+
+    test('★ F4-S7 引号键：含点键 / 中文键可以寻址（以前根本表达不出来）', () {
+      const sample = {
+        'result': {
+          'a.b': 'dotted',
+          '中文键': 'chinese',
+          'a"b': 'quoted',
+          'a\\b': 'backslash',
+        },
+      };
+
+      expect(JsonPath.tryParse('result["a.b"]')!.read(sample), 'dotted');
+      expect(JsonPath.tryParse('result["中文键"]')!.read(sample), 'chinese');
+      expect(JsonPath.tryParse("result['a.b']")!.read(sample), 'dotted');
+      expect(JsonPath.tryParse(r'result["a\"b"]')!.read(sample), 'quoted');
+      expect(JsonPath.tryParse(r'result["a\\b"]')!.read(sample), 'backslash');
+      // 段首就是引号键、以及与后缀混用都要能解析
+      expect(JsonPath.tryParse('["a.b"]')!.read(const {'a.b': 1}), 1);
+      expect(
+        JsonPath.tryParse('result["a.b"][0]')!.read(const {
+          'result': {
+            'a.b': ['x'],
+          },
+        }),
+        'x',
+      );
+    });
+
+    test('★ F4-S7 引号键的非法写法仍然一律拒绝', () {
+      expect(JsonPath.tryParse('result[]'), isNull);
+      expect(JsonPath.tryParse('result[""]'), isNull, reason: '空键没有意义');
+      expect(JsonPath.tryParse('result["abc'), isNull, reason: '引号未闭合');
+      expect(JsonPath.tryParse('result["abc"'), isNull, reason: '少了 `]`');
+      expect(JsonPath.tryParse('result["abc"x]'), isNull);
+      expect(JsonPath.tryParse('result[a]'), isNull, reason: '方括号里只能是指号或引号键');
+      expect(JsonPath.tryParse('[0].a'), isNull, reason: '段首只能是裸键或引号键（老语法不变）');
+      expect(JsonPath.tryParse(r'result["a\nb"]'), isNull, reason: '只支持引号与反斜杠两种转义');
+    });
+
+    test('★ F4-S7 引号键的原始写法原样保留（往返不变）', () {
+      // 注意：中文键**必须**写成引号键（裸键仍限 `[A-Za-z0-9_-]`，老语法不变）。
+      const source = 'result["a.b"]["列表"]["x y"]';
+      final path = JsonPath.tryParse(source)!;
+
+      expect(path.source, source, reason: 'source 保留用户写法 ⇒ 落盘往返不变');
+      expect(path.segments.whereType<JsonPathKey>().map((s) => s.key), [
+        'result',
+        'a.b',
+        '列表',
+        'x y',
+      ]);
+    });
+
     test('reads keys, indexes and projections', () {
       const sample = {
         'result': {
