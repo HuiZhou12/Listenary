@@ -38,31 +38,44 @@ class OnlineMusicCapabilitiesDialog extends StatelessWidget {
       title: Text('能力配置 · ${definition.label}'),
       content: SizedBox(
         width: 520,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final capability in OnlineMusicCapability.values) ...[
-              SettingsTile(
-                description: capabilityLabel(capability),
-                subtitle: _describe(capability),
-                action: FilledButton.icon(
-                  onPressed: () => onEditCapability(capability),
-                  icon: const Icon(Symbols.tune),
-                  label: const Text('配置'),
+        // 能力数量会随平台能力增长（当前 8 个）。这里必须**可滚动 + 有高度上限**：
+        // 否则矮窗口下超出的能力会被裁掉、**根本点不到**（用户已报告过）。
+        // 滚动条按仓库既有约定关掉（滚轮/触控板照常可用；歌词视图用的也是这一写法）。
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.6,
+          ),
+          child: ScrollConfiguration(
+            behavior: ScrollConfiguration.of(
+              context,
+            ).copyWith(scrollbars: false),
+            child: ListView(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              children: [
+                for (final capability in OnlineMusicCapability.values) ...[
+                  SettingsTile(
+                    description: capabilityLabel(capability),
+                    subtitle: _describe(capability),
+                    action: FilledButton.icon(
+                      onPressed: () => onEditCapability(capability),
+                      icon: const Icon(Symbols.tune),
+                      label: const Text('配置'),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: onFillChkszCompatible,
+                    icon: const Icon(Symbols.auto_fix_high),
+                    label: const Text('一键按 ChkSz 兼容方式填充'),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: onFillChkszCompatible,
-                icon: const Icon(Symbols.auto_fix_high),
-                label: const Text('一键按 ChkSz 兼容方式填充'),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
       actions: [
@@ -135,11 +148,14 @@ class _OnlineMusicCapabilityEditorDialogState
   late TextEditingController _nextCursor;
   late TextEditingController _statusCodes;
   final _queryRows = <_ParamRow>[];
+
   /// 请求体字段（P-21）；与查询参数共用 [_ParamRow]（模型里就是同一个类型）。
   final _bodyRows = <_ParamRow>[];
+
   /// 是否带请求体。显式表达"有 body 但字段为空"（POST 会发 `{}`）与"没有 body"
   /// （不发 body）这两种**线上行为不同**的形状，不靠"有没有行"去猜。
   bool _bodyPresent = false;
+
   /// 请求体是 JSON 还是 form-urlencoded。
   bool _bodyIsForm = false;
   final _headerRows = <_HeaderRow>[];
@@ -699,7 +715,8 @@ class _OnlineMusicCapabilityEditorDialogState
         '（${onlineMusicCapabilityLabel(capability)}）· $id';
   }
 
-  Future<void> _runTest() async {    final binding = _collect();
+  Future<void> _runTest() async {
+    final binding = _collect();
     final issues = [
       ..._collectErrors,
       ...binding.validationIssues(widget.capability),
@@ -724,10 +741,12 @@ class _OnlineMusicCapabilityEditorDialogState
       final inputs = (
         keyword: fields.keyword && keywordText.isNotEmpty ? keywordText : null,
         limit: fields.limit ? int.tryParse(_testLimit.text.trim()) : null,
-        trackId: fields.id && widget.capability != OnlineMusicCapability.playlist
+        trackId:
+            fields.id && widget.capability != OnlineMusicCapability.playlist
             ? (idText.isEmpty ? null : idText)
             : null,
-        playlistId: fields.id && widget.capability == OnlineMusicCapability.playlist
+        playlistId:
+            fields.id && widget.capability == OnlineMusicCapability.playlist
             ? (idText.isEmpty ? null : idText)
             : null,
       );
@@ -987,8 +1006,7 @@ class _OnlineMusicCapabilityEditorDialogState
           action: Checkbox(
             value: _bodyPresent,
             visualDensity: VisualDensity.compact,
-            onChanged: (value) =>
-                setState(() => _bodyPresent = value ?? false),
+            onChanged: (value) => setState(() => _bodyPresent = value ?? false),
           ),
         ),
         if (_bodyPresent) ...[
@@ -1115,8 +1133,7 @@ class _OnlineMusicCapabilityEditorDialogState
             ),
           ),
         if (pathFields.listPath) _textRow('列表路径（如 data.songs）', _listPath),
-        if (pathFields.fieldsRootPath)
-          _textRow('字段根路径（如 data）', _fieldsRoot),
+        if (pathFields.fieldsRootPath) _textRow('字段根路径（如 data）', _fieldsRoot),
         _textRow('总数路径（可选）', _totalPath),
         _textRow('游标路径（可选）', _nextCursor),
         // F4-S9/收口：分页控件仍**刻意不给**（「分页类型 / 默认每页数量」在配置里原样保留，
@@ -1474,7 +1491,10 @@ class _OnlineMusicCapabilityEditorDialogState
                 child: Text(
                   '这一行仍有明文值，保存会被拒绝：请先用「检查并迁移」把它写进安全凭据，'
                   '或显式清空它。',
-                  style: TextStyle(fontSize: AppType.caption, color: scheme.error),
+                  style: TextStyle(
+                    fontSize: AppType.caption,
+                    color: scheme.error,
+                  ),
                 ),
               ),
               TextButton(
@@ -1512,11 +1532,7 @@ class _OnlineMusicCapabilityEditorDialogState
                     const SizedBox(height: 8.0),
                     referenceField,
                     Row(
-                      children: [
-                        sensitiveToggle,
-                        const Spacer(),
-                        removeButton,
-                      ],
+                      children: [sensitiveToggle, const Spacer(), removeButton],
                     ),
                   ],
                 );
@@ -1800,6 +1816,7 @@ typedef DeclarativeTestInputs = ({
   String? trackId,
   String? playlistId,
 });
+
 /// 试跑需要的**真实输入**（P-49）：关键词 / 每页数量 / 额外 ID。
 ///
 /// 以前试跑把关键词写死成探测用的常量、把数量写死成 1（搜索）/ 30（新歌），
@@ -1832,8 +1849,7 @@ typedef DeclarativeTestInputs = ({
     id: true,
     idLabel: '试跑用的歌单 ID',
   ),
-  OnlineMusicCapability.lyric ||
-  OnlineMusicCapability.stream => (
+  OnlineMusicCapability.lyric || OnlineMusicCapability.stream => (
     keyword: false,
     limit: false,
     id: true,
@@ -1848,9 +1864,7 @@ typedef DeclarativeTestInputs = ({
 /// 却共用一句「试跑用的 ID（曲目 / 歌单）」。
 ///
 /// 现在它**派生**自 [testInputFieldsFor] —— 两处口径不会分叉。
-({bool needed, String label}) testIdFieldFor(
-  OnlineMusicCapability capability,
-) {
+({bool needed, String label}) testIdFieldFor(OnlineMusicCapability capability) {
   final fields = testInputFieldsFor(capability);
   return (needed: fields.id, label: fields.idLabel);
 }
@@ -2211,9 +2225,11 @@ class _HeaderCredentialDialogState extends State<_HeaderCredentialDialog> {
     } catch (error) {
       // 保存失败必须**明确报错**：绝不能静默回退成明文（Spec §11.1 规则 3）。
       if (mounted) {
-        setState(() => _error = error is OnlineMusicCredentialException
-            ? error.safeMessage
-            : '无法把凭据写入安全存储');
+        setState(
+          () => _error = error is OnlineMusicCredentialException
+              ? error.safeMessage
+              : '无法把凭据写入安全存储',
+        );
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -2295,7 +2311,13 @@ class _Hint extends StatelessWidget {
 }
 
 class _ParamRow {
-  _ParamRow(this.name, this.source, this.value, this.required, this.defaultValue);
+  _ParamRow(
+    this.name,
+    this.source,
+    this.value,
+    this.required,
+    this.defaultValue,
+  );
 
   factory _ParamRow.from(OnlineMusicParamBinding binding) => _ParamRow(
     TextEditingController(text: binding.name),
