@@ -64,8 +64,11 @@ OnlineMusicComposition createOnlineMusicComposition({
   final credentialControllers = <String, OnlineMusicCredentialController>{};
 
   for (final definition in settings.providers) {
-    final baseUrlIssue = definition.baseUrlIssue;
-    if (baseUrlIssue != null) {
+    // F4-S5（P-39）：平台无法确定（内容来源不是内置平台）时与"非法服务地址"**同一套**
+    // fail-closed 口径 —— 不发请求、不参与路由，但**不隐藏**条目，调用时给出明确配置错误。
+    final unusableReason =
+        definition.baseUrlIssue ?? definition.platformConfigIssue;
+    if (unusableReason != null) {
       // 服务地址是**用户显式提供的非法值**（P-18 / Spec §7.2）：
       // - **不替换**成默认地址（旧实现会静默改成 api.chksz.com，带着用户的凭据打错主机）；
       // - **不建立任何连接、不读取任何凭据** ⇒ 传输层调用次数必然为 0；
@@ -74,7 +77,7 @@ OnlineMusicComposition createOnlineMusicComposition({
       providers.add(
         _UnusableBaseUrlProvider(
           providerId: definition.id,
-          reason: baseUrlIssue,
+          reason: unusableReason,
           platforms: {
             for (final capability in OnlineMusicCapability.values)
               capability: definition.platformsFor(capability),

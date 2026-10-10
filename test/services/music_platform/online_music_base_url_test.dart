@@ -66,6 +66,59 @@ void main() {
       expect(harness.seenAnywhere(fakeKey), isFalse);
     });
 
+    test('★ F4-S5 未知 contentPlatform ⇒ **不静默回落 netease**：条目可见但 0 请求', () async {
+      final harness = _CompositionHarness();
+      final composition = await harness.compose(
+        OnlineMusicSettings.fromJson({
+          'providers': [
+            {
+              'id': 'selfData',
+              'baseUrl': 'https://self.invalid',
+              'auth': {'kind': 'none'},
+              // 不是内置平台名 ⇒ 以前会**静默当成 netease**（P-39）。
+              'contentPlatform': 'mySelfHosted',
+              'capabilities': {
+                'search': _searchBindingJson(),
+                'stream': _streamBindingJson(),
+              },
+            },
+          ],
+          'defaultProvider': 'selfData',
+        }),
+        credentials: fakeKey,
+      );
+      addTearDown(composition.service.dispose);
+
+      // 条目**不被隐藏**（否则平台卡会静默少一个候选）。
+      expect(composition.service.capabilities.searchablePlatforms, {
+        MusicPlatform.netease,
+      });
+
+      await expectLater(
+        composition.service.search(
+          platform: MusicPlatform.netease,
+          keyword: 'x',
+          cancelToken: OnlineMusicCancelToken(),
+        ),
+        throwsA(
+          isA<OnlineMusicException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                OnlineMusicErrorKind.badRequest,
+              )
+              .having(
+                (error) => error.safeMessage,
+                'safeMessage',
+                allOf(contains('不是内置平台'), contains('mySelfHosted')),
+              ),
+        ),
+      );
+
+      expect(harness.requests, isEmpty, reason: '绝不把未知平台当成 netease 发请求');
+      expect(harness.dioFactoryCalls, 0, reason: '连连接都不该建立');
+    });
+
     test('★ 内置 ChkSz 条目：同样是**配置**错误，不是一个"网络"错误', () async {
       final harness = _CompositionHarness();
       final composition = await harness.compose(

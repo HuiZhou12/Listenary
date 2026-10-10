@@ -96,6 +96,11 @@ final class OnlineMusicProviderDefinition {
     this.capabilities,
     this.contentPlatform = MusicPlatform.netease,
     this.displayName = '',
+    // F4-S5（P-39 / D5:A）：**稳定唯一 ID + 展示名分离**（都可缺省 ⇒ 旧配置不变）。
+    this.platformId,
+    this.platformName,
+    // F4-S5：解析期"内容来源不是内置平台"的事实（不落盘、不参与相等性）。
+    this.platformConfigIssue,
     // F4-S4（P-13 / D10b:a）：Provider **静态声明**的音质档位
     // （内部级别 → 平台取值 + 展示名）。缺省空 = 不声明档位（内部偏好原样透传）。
     this.qualityTiers = const [],
@@ -162,6 +167,26 @@ final class OnlineMusicProviderDefinition {
   /// 身份模型（`PlatformTrackRef.platform`）本轮不泛化，因此自建 Provider 必须声明
   /// 它代理哪一家的内容；非 netease 型来源属于当前模型的边界。
   final MusicPlatform contentPlatform;
+
+  /// F4-S5（P-39 / D5:A）：**稳定唯一 ID**（可缺省 ⇒ 用 [contentPlatform] 的名字）。
+  ///
+  /// 用途：让自建/代理服务有一个稳定的平台标识，同时**不改变**内容身份的形状
+  /// （I1 仍是 `(platform, remoteId)`；本字段不参与身份、不参与请求参数）。
+  final String? platformId;
+
+  /// F4-S5：**展示名**（可缺省 ⇒ 用内置平台的中文名）。只用于界面文案。
+  final String? platformName;
+
+  /// F4-S5：解析期"内容来源不是内置平台"的事实（**不落盘、不参与相等性**）。
+  ///
+  /// 非 null 表示该条目的平台**无法确定**：合成层据此把它建成"不可用但可见"的条目
+  /// （与 `baseUrlIssue` 同一套 fail-closed 口径），**绝不静默当成 netease**。
+  final String? platformConfigIssue;
+
+  /// F4-S5：界面展示用的平台名（`platformName` 优先，否则内置中文名）。
+  String get displayPlatformName => platformName?.trim().isNotEmpty == true
+      ? platformName!.trim()
+      : musicPlatformLabel(contentPlatform);
 
   /// **静态声明**的音质档位表（F4-S4 / P-13 / D10b:a）：内部级别 → 平台取值 + 展示名。
   ///
@@ -414,6 +439,8 @@ final class OnlineMusicProviderDefinition {
       capabilities: capabilities,
       contentPlatform: contentPlatform ?? this.contentPlatform,
       // F4-S4：编辑条目时**必须透传**档位声明，否则表单保存会把用户填的档位静默丢掉。
+      platformId: platformId,
+      platformName: platformName,
       qualityTiers: qualityTiers,
     );
   }
@@ -445,6 +472,8 @@ final class OnlineMusicProviderDefinition {
       contentPlatform: contentPlatform,
       displayName: displayName,
       // F4-S4：改能力绑定不得动档位声明。
+      platformId: platformId,
+      platformName: platformName,
       qualityTiers: qualityTiers,
     );
   }
@@ -489,6 +518,8 @@ final class OnlineMusicProviderDefinition {
       contentPlatform: contentPlatform,
       displayName: displayName,
       // F4-S4：一键填充改的是能力实现，不该动档位声明。
+      platformId: platformId,
+      platformName: platformName,
       qualityTiers: qualityTiers,
     );
   }
@@ -536,6 +567,9 @@ final class OnlineMusicProviderDefinition {
     // 缺失（空串）时不写该键：旧配置里本来就没有它，写一个 `""` 只是噪声。
     if (baseUrl.trim().isNotEmpty) 'baseUrl': baseUrl,
     if (displayName.trim().isNotEmpty) 'displayName': displayName,
+    // F4-S5：缺省不写盘 ⇒ 旧配置往返后字节不变。
+    if (platformId?.trim().isNotEmpty == true) 'platformId': platformId!.trim(),
+    if (platformName?.trim().isNotEmpty == true) 'platformName': platformName!.trim(),
     'contentPlatform': contentPlatform.name,
     'connectTimeoutMs': connectTimeout.inMilliseconds,
     'sendTimeoutMs': sendTimeout.inMilliseconds,
@@ -586,6 +620,9 @@ final class OnlineMusicProviderDefinition {
       other.parameterName == parameterName &&
       other.contentPlatform == contentPlatform &&
       other.displayName == displayName &&
+      // F4-S5：平台标识/展示名是**真实配置** ⇒ 参与相等性（解析期 issue 不参与）。
+      other.platformId == platformId &&
+      other.platformName == platformName &&
       // F4-S4：档位声明是**真实配置**，必须参与相等性（否则界面判断"有未保存改动"会出错）。
       _sameQualityTiers(other.qualityTiers, qualityTiers) &&
       _sameBindings(other.capabilities, capabilities) &&
@@ -604,6 +641,8 @@ final class OnlineMusicProviderDefinition {
     parameterName,
     contentPlatform,
     displayName,
+    platformId,
+    platformName,
     // capabilities 为 null 与空 Map 语义不同（旧条目 vs 新条目），必须区分。
     capabilities == null
         ? -1
@@ -1310,10 +1349,20 @@ final class OnlineMusicSettings {
         _nonEmptyString(authMap['parameter']) ??
         defaultOnlineMusicCredentialParameter;
 
+    // F4-S5（P-39）：平台相关字段一起解析 —— "不是内置平台"时**绝不静默回落 netease**，
+    // 而是保留原始标识 + 给出解析期问题（合成层据此 fail-closed）。
+    final platformFields = _parsePlatformFields(
+      value['contentPlatform'],
+      value['platformId'],
+    );
+
     return OnlineMusicProviderDefinition(
       id: id,
       protocol: protocol,
-      contentPlatform: _parseContentPlatform(value['contentPlatform']),
+      contentPlatform: platformFields.contentPlatform,
+      platformId: platformFields.platformId,
+      platformName: _nonEmptyString(value['platformName']),
+      platformConfigIssue: platformFields.issue,
       displayName: _nonEmptyString(value['displayName']) ?? '',
       // F4-S4：档位声明（可缺省）——缺省即空表 ⇒ 与修复前完全一致。
       qualityTiers: _parseQualityTiers(value['qualityTiers']),
@@ -1443,15 +1492,6 @@ final class OnlineMusicSettings {
     );
   }
 
-  /// D1：内容来源只支持既有闭集；无法识别的值回落 netease（默认内容来源）。
-  static MusicPlatform _parseContentPlatform(Object? value) {
-    final name = _nonEmptyString(value);
-    if (name == null) return MusicPlatform.netease;
-    for (final platform in MusicPlatform.values) {
-      if (platform.name == name) return platform;
-    }
-    return MusicPlatform.netease;
-  }
 }
 
 bool _sameProviders(
@@ -1529,4 +1569,43 @@ String _requireQualityTierText(Object? entry, String key) {
     throw FormatException('qualityTiers 的 $key 必须是非空字符串');
   }
   return text.trim();
+}
+
+/// F4-S5（P-39 / D5:A）：解析平台相关字段 —— **未知平台绝不静默回落 netease**。
+///
+/// 三种情形：
+/// 1. `contentPlatform` **缺失**（旧配置）⇒ 与修复前完全一致：`netease` + 无问题；
+/// 2. `contentPlatform` 是**内置平台名** ⇒ 原样解析，并带上显式声明的 `platformId`；
+/// 3. 其它（未知名字）⇒ **保留原始串**（作为 `platformId`，除非用户显式给了 `platformId`）
+///    并给出 [platformConfigIssue] —— 由合成层建成"不可用但可见"的条目
+///    （与 `baseUrlIssue` 同一套 fail-closed 口径：不发请求、不参与路由，但**不隐藏**）。
+({MusicPlatform contentPlatform, String? platformId, String? issue})
+_parsePlatformFields(Object? rawContentPlatform, Object? rawPlatformId) {
+  final declaredId = _nonEmptyString(rawPlatformId);
+  final name = _nonEmptyString(rawContentPlatform);
+  if (name == null) {
+    return (
+      contentPlatform: MusicPlatform.netease,
+      platformId: declaredId,
+      issue: null,
+    );
+  }
+  for (final platform in MusicPlatform.values) {
+    if (platform.name == name) {
+      return (
+        contentPlatform: platform,
+        platformId: declaredId,
+        issue: null,
+      );
+    }
+  }
+  return (
+    contentPlatform: MusicPlatform.netease,
+    platformId: declaredId ?? name,
+    issue:
+        '内容来源「$name」不是内置平台'
+        '（${MusicPlatform.values.map((platform) => platform.name).join(' / ')}）：'
+        '请改为内置平台，或用 platformId / platformName 声明自定义平台'
+        '（该条目不会被使用，也不会发出任何请求）',
+  );
 }
