@@ -937,12 +937,38 @@ final class OnlineLibraryRepository {
   }
 }
 
-String _platformValue(MusicPlatform platform) => platform.name;
+/// F5-P-39（P4 数据层接缝）：**平台身份 → 落库值**。
+///
+/// - 内置平台 ⇒ 枚举名（与旧数据完全一致 ⇒ **零迁移**）；
+/// - 自定义平台 ⇒ **稳定 ID**（复用既有 `platform TEXT` 列 ⇒ 无需迁移）。
+String _platformIdentityValue(PlatformIdentity identity) =>
+    identity.storageValue;
 
-MusicPlatform _parsePlatform(String value) => MusicPlatform.values.firstWhere(
-  (platform) => platform.name == value,
-  orElse: () => throw FormatException('Unknown music platform: $value'),
-);
+/// F5-P-39（P0 规则④）：**落库值 → 平台身份**。
+///
+/// - 已知内置平台名 ⇒ 该平台；
+/// - 其他非空值 ⇒ `custom` + **原样保留**的标识（不归一、不推断、**绝不回落网易云**）；
+/// - `custom` 一词本身 / 空值 ⇒ `null`（没有稳定 ID ⇒ 调用方 fail-closed：
+///   数据可保留与展示，但**不得执行不确定的播放路由**）。
+PlatformIdentity? _parsePlatformIdentity(String value) =>
+    PlatformIdentity.tryParse(value);
+
+String _platformValue(MusicPlatform platform) =>
+    _platformIdentityValue(PlatformIdentity.builtin(platform));
+
+/// ⚠️ 这是**兼容层**：只接受内置平台（认不出仍旧抛 `FormatException`，行为与改动前一致）。
+///
+/// 它刻意**不**把自定义平台值解析出来 —— 因为本类目前仍以 `MusicPlatform` 收发，
+/// 拿不出稳定 ID 就无法构造有效身份。P4 正式改造时，凡是要用身份做**路由/落库判断**的地方
+/// 都应改用 [_parsePlatformIdentity]（否则字面量 `"custom"` 会被误当成 `MusicPlatform.custom`，
+/// 那是**没有稳定 ID 的无效身份**）。
+MusicPlatform _parsePlatform(String value) {
+  final identity = _parsePlatformIdentity(value);
+  if (identity == null || identity.isCustom) {
+    throw FormatException('Unknown music platform: $value');
+  }
+  return identity.platform;
+}
 
 TrackAvailability _parseAvailability(String value) =>
     TrackAvailability.values.firstWhere(
