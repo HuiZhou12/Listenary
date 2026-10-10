@@ -457,6 +457,48 @@ void main() {
       );
     });
 
+    test('★ F5（P-58）某平台抛非归一化异常 ⇒ 其它平台的成功结果必须保留', () async {
+      final broken = _ScriptedProvider(
+        'neteaseBroken',
+        neteaseSearchAndStream,
+        rawSearchError: StateError('provider bug'),
+      );
+      final healthy = _ScriptedProvider('qqHealthy', qqSearchAndStream);
+      final service = serviceWith([broken, healthy]);
+      addTearDown(service.dispose);
+
+      // 旧实现：`_searchOnePlatform` 只捕获 `OnlineMusicException` ⇒ 这个 `StateError`
+      // 会逃出 `Future.wait`，把 qq 已经成功的结果一起吞掉（整个调用抛错）。
+      final result = await service.searchAggregated(
+        keyword: 'x',
+        platforms: const [MusicPlatform.netease, MusicPlatform.qq],
+        limit: 10,
+        offset: 0,
+        cancelToken: OnlineMusicCancelToken(),
+      );
+
+      expect(
+        result.perPlatform.keys,
+        contains(MusicPlatform.qq),
+        reason: '健康平台的结果必须保留',
+      );
+      // 夹具的成功搜索返回空列表 ⇒ 关键断言是"qq 那次调用**成功完成并留下了记录**"，
+      // 而不是它的条数（旧实现下这个 await 会直接抛错）。
+      expect(result.perPlatform, contains(MusicPlatform.qq));
+      final failure = result.failures[MusicPlatform.netease];
+      expect(failure, isNotNull, reason: '失败平台要如实进 failures');
+      expect(
+        failure!.kind,
+        OnlineMusicErrorKind.unknown,
+        reason: '非归一化异常不得伪装成网络故障',
+      );
+      expect(
+        failure.safeMessage,
+        allOf(contains('非归一化'), contains('StateError')),
+        reason: '要带运行时类型便于定位，且不得混成普通网络错误',
+      );
+    });
+
     test('★ F4 收口 Search 服务者 ≠ Stream 实际服务者 ⇒ 档位跟随**实际服务者**', () async {
       // A：只对 **search** 失败（`resolve` 照常成功），声明档位 `flac`；
       // B：搜索的正常服务者，声明档位 `sq`。
@@ -544,6 +586,7 @@ final class _ScriptedProvider extends UnsupportedOnlineMusicProvider {
     this.failure,
     this.tiers = const [],
     this.searchFailure,
+    this.rawSearchError,
   });
 
   @override
@@ -559,6 +602,10 @@ final class _ScriptedProvider extends UnsupportedOnlineMusicProvider {
   /// 用来制造"**Search 服务者 ≠ Stream 实际服务者**"：搜索回退到别人，
   /// 而播放仍由本 Provider 服务 —— 档位表必须跟随**实际服务者**（stream 的那个）。
   final OnlineMusicErrorKind? searchFailure;
+
+  /// F5（P-58）：让 `search` 抛出**非归一化异常**（如 `StateError`），
+  /// 用来验证"平台级隔离边界"是否兜得住。
+  final Object? rawSearchError;
 
   /// 该 Provider 声明的平台档位（P-56：用来制造"声明者 ≠ 服务者"）。
   final List<PlatformQualityTier> tiers;
@@ -586,6 +633,8 @@ final class _ScriptedProvider extends UnsupportedOnlineMusicProvider {
     searchCalls++;
     // F4 收口：`searchFailure` 只影响搜索（`resolve` 仍成功）⇒ 可制造
     // "Search 服务者 ≠ Stream 实际服务者"。
+    final raw = rawSearchError;
+    if (raw != null) throw raw;
     final kind = searchFailure ?? failure;
     if (kind != null) {
       throw OnlineMusicException(
@@ -636,3 +685,8 @@ final class _NoCredentialReader implements OnlineMusicCredentialReader {
   @override
   Future<String?> readCredential(String reference) async => null;
 }
+
+const qqSearchAndStream = <OnlineMusicCapability, Set<MusicPlatform>>{
+  OnlineMusicCapability.search: {MusicPlatform.qq},
+  OnlineMusicCapability.stream: {MusicPlatform.qq},
+};

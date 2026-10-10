@@ -412,6 +412,18 @@ final class CompositeOnlineMusicService
       );
     } on OnlineMusicException catch (error) {
       failures[platform] = error;
+    } catch (error) {
+      // F5（P-58）：平台级隔离边界。**非归一化异常**（`StateError` / `TypeError` /
+      // 依赖抛出的任意对象）以前会逃出 `Future.wait`，把**其它平台已经成功的**结果一并吞掉。
+      // 这里按平台兜住，并明确标注为「非归一化异常」（含运行时类型）——
+      // **绝不**伪装成网络故障（D-F3-4 同桌口径），也不把程序缺陷混进普通网络错误里。
+      // ⚠️ 只带运行时类型，不带 `error.toString()`：异常文本可能含请求细节/凭据。
+      failures[platform] = OnlineMusicException(
+        kind: OnlineMusicErrorKind.unknown,
+        safeMessage:
+            '该平台抛出了非归一化异常（${error.runtimeType}）；'
+            '其它平台的结果不受影响，请按此类型定位',
+      );
     }
   }
 
