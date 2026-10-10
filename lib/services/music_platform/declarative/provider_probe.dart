@@ -25,10 +25,12 @@
 ///   本文件**不再自带**任何分类逻辑（有源码守卫盯着）。
 /// - 候选由调用方给（`online_music_probe_candidates.dart`）：**条目自身绑定优先**，
 ///   只有条目完全没有声明式绑定时才用兼容模板，并如实标注来源（D-F3-1）。
-/// - **服务级探测的可验能力范围**：只收"不需要用户再给 ID、且返回曲目列表"的能力
-///   （`search` / `newSongs`）。其余能力要么必须带 trackId/playlistId、要么返回的不是
-///   曲目列表 ⇒ **交给试跑**（Spec §19.5 的"探测 = 服务级 / 试跑 = 按能力"）。
-///   要扩展这个范围需要先裁定（见 F3 验收报告 §8.1）。
+/// - **服务级探测的可验能力范围**（按用户裁定修正）：优先 `search`；否则第一个已配置且
+///   **不需要用户提供具体实体 ID**、能独立执行的能力 —— 目前为
+///   `search` / `newSongs` / `playlistCollection` / `playlistCategories` / `chartList`。
+///   不同能力**按各自的响应结构与映射结果判定**（不强制返回曲目列表）。
+///   需要具体曲目 / 歌单 ID 的 `playlist` / `lyric` / `stream` **不作默认探针**，
+///   也**绝不伪造 ID** ⇒ 交给试跑（Spec §19.5 的"探测 = 服务级 / 试跑 = 按能力"）。
 /// - 缺凭据时只对**那一次请求**剥认证；这种探测**不计为可用、不产出初稿**，
 ///   并如实标注"需要 Key"（D-F3-2）。
 /// - 结论用**三态**词表（`declarative_verification.dart`）：已验证可用 / 未能确认 /
@@ -118,6 +120,26 @@ final class ProviderProbeCandidate {
       'source=${source.name})';
 }
 
+/// **服务级探测**能验的能力（D-F3-5，按用户裁定修正）。
+///
+/// Spec §19.5：探测 = 服务级（baseUrl 可达性 + 协议基本形态），**不是**逐个能力验一遍。
+/// 收进来的判据是两条（**不再要求"必须返回曲目列表"**）：
+/// 1. **不需要用户提供具体实体 ID**（不需要 trackId / playlistId）；
+/// 2. 能**独立执行**并给出有效的服务级证据（发一次真实请求 + 用**它自己的**响应结构
+///    与映射结果判定 —— 曲目列表、歌单列表、歌单分类、榜单各自算数）。
+///
+/// 排除在默认探针之外的（按用户裁定第 3 条）：
+/// - `playlist`（歌单详情）/ `lyric` / `stream` 都需要**具体实体 ID**
+///   ⇒ 交给**试跑**（用户自己填 ID），**绝不伪造一个 ID 去探测**。
+const probeCapableCapabilities = <OnlineMusicCapability>[
+  // 优先 Search；其余按"无需 ID 即可独立执行"的集合给出（顺序即执行顺序）。
+  OnlineMusicCapability.search,
+  OnlineMusicCapability.newSongs,
+  OnlineMusicCapability.playlistCollection,
+  OnlineMusicCapability.playlistCategories,
+  OnlineMusicCapability.chartList,
+];
+
 /// 该候选**走到了哪一步**（D-F3-4 / D-F3-5：三种情形必须能分开）。
 ///
 /// 特别是 [notAttempted]：**一个请求都没发**（预算耗尽 / 已取消 / 没有可执行候选），
@@ -142,7 +164,8 @@ final class ProviderProbeOutcome {
     required this.capability,
     this.status = ProviderProbeStatus.attempted,
     this.statusCode,
-    this.mappedTrackCount = 0,
+    this.mappedItemCount = 0,
+    this.mappedUnit,
     this.needsAuthentication = false,
     this.credentialMissingForAuth = false,
     this.failureReason,
@@ -168,7 +191,11 @@ final class ProviderProbeOutcome {
   final ProviderProbeStatus status;
 
   final int? statusCode;
-  final int mappedTrackCount;
+  /// 解析出的**条目数**（按该能力自己的单位：曲目 / 歌单 / 分类 / 榜单…）。
+  final int mappedItemCount;
+
+  /// 上面那个数字的**单位**（不同能力不同；用户裁定第 2 条：各能力按自己的结构判定）。
+  final String? mappedUnit;
 
   /// 401/403 或"需要凭据但没配置"。
   final bool needsAuthentication;
@@ -218,7 +245,7 @@ final class ProviderProbeOutcome {
       return DeclarativeVerificationConfidence.unconfirmed;
     }
     if (failureKind != null) return DeclarativeVerificationConfidence.failed;
-    if (mappedTrackCount == 0) {
+    if (mappedItemCount == 0) {
       // 响应有效但没有可验证的数据（空结果）⇒ 不能算"可用"。
       return DeclarativeVerificationConfidence.unconfirmed;
     }
@@ -444,6 +471,23 @@ Future<ProviderProbeOutcome> _send({
   required OnlineMusicCancelToken cancelToken,
   required int limit,
 }) async {
+  // 用户裁定第 3 条：需要**具体曲目 / 歌单 ID** 的能力不作默认探针，
+  // 且**绝不伪造 ID** —— 因此这里连请求都不发（候选策略本不该把它们放进来，
+  // 这是纵深防线：万一日后有人改坏了候选策略，也不会"编一个 ID 去试探"）。
+  if (!probeCapableCapabilities.contains(candidate.capability)) {
+    return ProviderProbeOutcome(
+      candidateId: candidate.id,
+      label: candidate.label,
+      score: 0,
+      source: candidate.source,
+      capability: candidate.capability,
+      status: ProviderProbeStatus.notAttempted,
+      notAttemptedReason:
+          '未尝试：该能力需要具体的曲目 / 歌单 ID，不适合服务级探测'
+          '（请用「试跑」并自己填 ID；探测不会伪造 ID）',
+    );
+  }
+
   // F3-S1：**共享执行引擎**（与试跑同一条路径）—— 构造 → 发送 → 成功判定 → 分类 → 脱敏诊断。
   final execution = await executeDeclarativeRequest(
     spec: spec,
@@ -501,14 +545,17 @@ Future<ProviderProbeOutcome> _send({
   }
 
   try {
-    final page = mapDeclarativeSearchResponse(
-      spec: binding.response,
+    // 用户裁定第 2 条：**按候选自己的能力**判定响应 ——
+    // 曲目列表 / 歌单列表 / 歌单分类 / 榜单各自用**自己的**结构与映射，
+    // 不再强制要求"必须返回曲目列表"。
+    final judged = _judgeProbeResponse(
+      candidate: candidate,
+      binding: binding,
       body: execution.body,
       platform: platform,
       limit: limit,
-      offset: 0,
     );
-    if (page.items.isEmpty) {
+    if (judged.count == 0) {
       return ProviderProbeOutcome(
         candidateId: candidate.id,
         label: candidate.label,
@@ -519,9 +566,9 @@ Future<ProviderProbeOutcome> _send({
         needsAuthentication: authWithoutCredential,
         credentialMissingForAuth: authWithoutCredential,
         failureReason: authWithoutCredential
-            ? '响应成功但没有解析出任何曲目；且认证条件**未满足**（该能力声明了认证，'
+            ? '响应成功但没有解析出任何${judged.unit}；且认证条件**未满足**（该能力声明了认证，'
                   '这次探测没有凭据）：请先配置该条目的 Key 再探测'
-            : '响应成功但没有解析出任何曲目',
+            : '响应成功但没有解析出任何${judged.unit}',
         requestSummary: execution.requestSummary,
         responsePreview: execution.responsePreview,
       );
@@ -536,11 +583,12 @@ Future<ProviderProbeOutcome> _send({
         source: candidate.source,
         capability: candidate.capability,
         statusCode: execution.statusCode,
-        mappedTrackCount: page.items.length,
+        mappedItemCount: judged.count,
+        mappedUnit: judged.unit,
         needsAuthentication: true,
         credentialMissingForAuth: true,
         failureReason:
-            '服务可能可达（HTTP ${execution.statusCode}，解析出 ${page.items.length} 首），'
+            '服务可能可达（HTTP ${execution.statusCode}，解析出 ${judged.count} ${judged.unit}），'
             '但认证条件**未满足**：该能力声明了认证，请先配置该条目的 Key 再探测',
         requestSummary: execution.requestSummary,
         responsePreview: execution.responsePreview,
@@ -553,7 +601,8 @@ Future<ProviderProbeOutcome> _send({
       source: candidate.source,
       capability: candidate.capability,
       statusCode: execution.statusCode,
-      mappedTrackCount: page.items.length,
+      mappedItemCount: judged.count,
+      mappedUnit: judged.unit,
       requestSummary: execution.requestSummary,
       responsePreview: execution.responsePreview,
     );
@@ -568,7 +617,7 @@ Future<ProviderProbeOutcome> _send({
       source: candidate.source,
       capability: candidate.capability,
       statusCode: execution.statusCode,
-      mappedTrackCount: partial,
+      mappedItemCount: partial,
       needsAuthentication: authWithoutCredential,
       credentialMissingForAuth: authWithoutCredential,
       failureReason: '字段映射不完整：${error.reason}',
@@ -583,3 +632,58 @@ int _countListEntries(JsonPath? listPath, Object? body) {
   final value = listPath.read(body);
   return value is List ? value.length : 0;
 }
+
+/// 按候选**自己的能力**判定这次响应（用户裁定第 2 条）。
+///
+/// 返回 `(解析出的条目数, 单位)`：单位随能力不同（首曲目 / 个歌单 / 个分类 / 个榜单），
+/// 界面上也就不会把"歌单列表"说成"曲目"。映射失败时抛
+/// [DeclarativeMappingException]（由调用方转成"映射不完整"）。
+({int count, String unit}) _judgeProbeResponse({
+  required ProviderProbeCandidate candidate,
+  required OnlineMusicDeclarativeCapabilityBinding binding,
+  required Object? body,
+  required MusicPlatform platform,
+  required int limit,
+}) => switch (candidate.capability) {
+  OnlineMusicCapability.search || OnlineMusicCapability.newSongs => (
+    count: mapDeclarativeSearchResponse(
+      spec: binding.response,
+      body: body,
+      platform: platform,
+      limit: limit,
+      offset: 0,
+    ).items.length,
+    unit: '首曲目',
+  ),
+  OnlineMusicCapability.playlistCollection => (
+    count: mapDeclarativePlaylistCollectionResponse(
+      spec: binding.response,
+      body: body,
+      platform: platform,
+    ).length,
+    unit: '个歌单',
+  ),
+  OnlineMusicCapability.chartList => (
+    count: mapDeclarativePlaylistCollectionResponse(
+      spec: binding.response,
+      body: body,
+      platform: platform,
+    ).length,
+    unit: '个榜单',
+  ),
+  OnlineMusicCapability.playlistCategories => (
+    count: mapDeclarativePlaylistCategoriesResponse(
+      spec: binding.response,
+      body: body,
+      platform: platform,
+    ).length,
+    unit: '个分类',
+  ),
+  // 需要具体实体 ID 的能力**不作为默认探针**（见 `probeCapableCapabilities`）。
+  // 真走到这里说明候选策略被改坏了 ⇒ 明确失败，而不是硬套某个映射或伪造 ID。
+  OnlineMusicCapability.playlist ||
+  OnlineMusicCapability.lyric ||
+  OnlineMusicCapability.stream => throw const DeclarativeMappingException(
+    '该能力需要具体的曲目 / 歌单 ID，不适合服务级探测（请用「试跑」并自己填 ID）',
+  ),
+};

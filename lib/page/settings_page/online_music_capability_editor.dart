@@ -623,7 +623,9 @@ class _OnlineMusicCapabilityEditorDialogState
           '· ${outcome.sourceLabel}（${outcome.candidateId}）：'
           '${outcome.status == ProviderProbeStatus.notSent ? '请求未发出（配置问题）' : declarativeVerificationConfidenceLabel(outcome.confidence)}'
           '${outcome.statusCode == null ? '' : ' · HTTP ${outcome.statusCode}'}'
-          '${outcome.mappedTrackCount > 0 ? ' · 解析出 ${outcome.mappedTrackCount} 首' : ''}'
+          // 用户裁定第 2 条：单位随能力不同（首曲目 / 个歌单 / 个分类 / 个榜单），
+          // 不再一律说"首"。
+          '${outcome.mappedItemCount > 0 ? ' · 解析出 ${outcome.mappedItemCount} ${outcome.mappedUnit ?? '项'}' : ''}'
           '${outcome.needsAuthentication ? ' · 需要认证' : ''}'
           '${kind == null ? '' : ' · ${onlineMusicErrorKindLabel(kind)}'}',
         );

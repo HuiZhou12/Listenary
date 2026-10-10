@@ -67,7 +67,7 @@ void main() {
       (outcome) => outcome.candidateId == builtinOnlineMusicChkszId,
     );
     expect(best.score, 2);
-    expect(best.mappedTrackCount, 1);
+    expect(best.mappedItemCount, 1);
     expect(best.statusCode, 200);
   });
 
@@ -667,7 +667,7 @@ void main() {
       // 这只是"服务可能可达"，不能算"验证可用"，更不能据此产出初稿
       //（否则保存后运行期恒 notConfigured）。
       expect(outcome.statusCode, 200);
-      expect(outcome.mappedTrackCount, greaterThan(0));
+      expect(outcome.mappedItemCount, greaterThan(0));
       expect(outcome.score, 0, reason: 'D-F3-2：不得标记为已验证可用');
       expect(outcome.needsAuthentication, isTrue);
       expect(outcome.credentialMissingForAuth, isTrue);
@@ -748,7 +748,7 @@ void main() {
         reason:
             'D-F3-3：空结果不能算可用 '
             '(status=${empty.status} kind=${empty.failureKind} code=${empty.statusCode} '
-            'mapped=${empty.mappedTrackCount} needsAuth=${empty.needsAuthentication} '
+            'mapped=${empty.mappedItemCount} needsAuth=${empty.needsAuthentication} '
             'credMissing=${empty.credentialMissingForAuth} score=${empty.score} '
             'why=${empty.failureReason})',
       );
@@ -790,6 +790,195 @@ void main() {
       expect(outcome.failureReason, contains('需要认证'));
       expect(outcome.failureReason, isNot(contains('网络')));
       expect(report.hasDraft, isFalse);
+    });
+  });
+
+  // ======================================================== F3-S9（用户裁定）
+
+  group('★ F3-S9 服务级探测按**各能力自己的结构**判定', () {
+    final codeSuccess = OnlineMusicSuccessSpec(
+      allOf: [
+        OnlineMusicSuccessPredicate(
+          path: JsonPath.tryParse('code')!,
+          op: OnlineMusicPredicateOp.eq,
+          value: 200,
+        ),
+      ],
+    );
+
+    OnlineMusicFieldSpec stringField(String path, {bool required = false}) =>
+        OnlineMusicFieldSpec(
+          candidates: [JsonPath.tryParse(path)!],
+          transform: OnlineMusicFieldTransform.asString,
+          required: required,
+        );
+
+    ProviderProbeCandidate candidateFor({
+      required OnlineMusicCapability capability,
+      required String path,
+      required String listPath,
+      required Map<OnlineMusicDomainField, OnlineMusicFieldSpec> fields,
+    }) => ProviderProbeCandidate(
+      id: 'user:${capability.name}',
+      label: '条目自身配置',
+      binding: OnlineMusicDeclarativeCapabilityBinding(
+        request: OnlineMusicRequestSpec(path: path),
+        response: OnlineMusicResponseSpec(
+          success: codeSuccess,
+          listPath: JsonPath.tryParse(listPath),
+          fields: fields,
+        ),
+      ),
+      capability: capability,
+      source: ProviderProbeCandidateSource.userConfig,
+    );
+
+    Future<ProviderProbeOutcome> probe(ProviderProbeCandidate candidate) async {
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        platform: MusicPlatform.netease,
+        candidates: [candidate],
+      );
+      return report.outcomes.single;
+    }
+
+    test('榜单 / 歌单列表 / 分类：各按自己的列表与字段判定，单位也不同', () async {
+      // ① 榜单（用榜单自己的 playlistId/playlistName 与列表路径）。
+      transport.responder = (options) async => const {
+        'code': 200,
+        'data': {
+          'list': [
+            {'id': '1', 'name': '飙升榜'},
+          ],
+        },
+      };
+      final chart = await probe(
+        candidateFor(
+          capability: OnlineMusicCapability.chartList,
+          path: '/toplist',
+          listPath: 'data.list',
+          fields: {
+            OnlineMusicDomainField.playlistId: stringField('id', required: true),
+            OnlineMusicDomainField.playlistName: stringField('name'),
+          },
+        ),
+      );
+      expect(chart.confidence, DeclarativeVerificationConfidence.verified);
+      expect(chart.mappedItemCount, 1);
+      expect(
+        chart.mappedUnit,
+        '个榜单',
+        reason: '不得再把榜单说成"首曲目"（用户裁定第 2 条）',
+      );
+
+      // ② 分类（categoryId/categoryName）。
+      transport.responder = (options) async => const {
+        'code': 200,
+        'data': {
+          'list': [
+            {'id': '3', 'name': '流行'},
+          ],
+        },
+      };
+      final categories = await probe(
+        candidateFor(
+          capability: OnlineMusicCapability.playlistCategories,
+          path: '/playlist/catlist',
+          listPath: 'data.list',
+          fields: {
+            OnlineMusicDomainField.categoryId: stringField(
+              'id',
+              required: true,
+            ),
+            OnlineMusicDomainField.categoryName: stringField('name'),
+          },
+        ),
+      );
+      expect(
+        categories.confidence,
+        DeclarativeVerificationConfidence.verified,
+      );
+      expect(categories.mappedUnit, '个分类');
+
+      // ③ 结构合法但没有数据 ⇒ 未能确认（它自己的结构，不是曲目列表）。
+      transport.responder = (options) async => const {
+        'code': 200,
+        'data': {'list': <Object?>[]},
+      };
+      final empty = await probe(
+        candidateFor(
+          capability: OnlineMusicCapability.playlistCollection,
+          path: '/top/playlist',
+          listPath: 'data.list',
+          fields: {
+            OnlineMusicDomainField.playlistId: stringField('id', required: true),
+            OnlineMusicDomainField.playlistName: stringField('name'),
+          },
+        ),
+      );
+      expect(
+        empty.confidence,
+        DeclarativeVerificationConfidence.unconfirmed,
+        reason: '空结果不算可用（三态，D-F3-3）',
+      );
+
+      // ④ **曲目列表**形状的响应喂给歌单列表候选 ⇒ 按它自己的结构取不到 ⇒ 不是"可用"
+      //    （证明判定确实随能力走，而不是套"曲目"那套）。
+      transport.responder = (options) async => const {
+        'code': 200,
+        'result': {
+          'songs': [
+            {'id': 1, 'name': 'A'},
+          ],
+        },
+      };
+      final wrongShape = await probe(
+        candidateFor(
+          capability: OnlineMusicCapability.playlistCollection,
+          path: '/top/playlist',
+          listPath: 'data.list',
+          fields: {
+            OnlineMusicDomainField.playlistId: stringField('id', required: true),
+            OnlineMusicDomainField.playlistName: stringField('name'),
+          },
+        ),
+      );
+      expect(
+        wrongShape.confidence,
+        isNot(DeclarativeVerificationConfidence.verified),
+      );
+    });
+
+    test('需要实体 ID 的能力：**连请求都不发**（绝不伪造 ID）', () async {
+      // 候选策略本不该把 playlist/lyric/stream 放进来；这是纵深防线。
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        platform: MusicPlatform.netease,
+        candidates: [
+          candidateFor(
+            capability: OnlineMusicCapability.playlist,
+            path: '/playlist/detail',
+            listPath: 'playlist.tracks',
+            fields: {
+              OnlineMusicDomainField.playlistId: stringField(
+                'id',
+                required: true,
+              ),
+            },
+          ),
+        ],
+      );
+
+      final outcome = report.outcomes.single;
+      expect(outcome.status, ProviderProbeStatus.notAttempted);
+      expect(outcome.notAttemptedReason, contains('不会伪造 ID'));
+      expect(
+        transport.requests,
+        isEmpty,
+        reason: '不能编一个 ID 去试探（用户裁定第 3 条）',
+      );
     });
   });
 }

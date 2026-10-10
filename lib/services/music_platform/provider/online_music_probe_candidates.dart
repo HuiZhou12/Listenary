@@ -5,25 +5,13 @@
 /// （尤其是"条目有绑定就**不得**退回模板"这条 D-F3-1 第 4 条）。
 library;
 
+// `probeCapableCapabilities`（哪些能力可作服务级探针）定义在**声明式层**：
+// 它是探测自身的契约，放在这里会形成 provider→declarative→provider 的循环依赖。
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_templates.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
-
-/// **服务级探测**能验的能力（D-F3-5）。
-///
-/// Spec §19.5：探测 = 服务级（baseUrl 可达性 + 协议基本形态），**不是**逐个能力验一遍。
-/// 因此这里只收同时满足两条的能力：
-/// 1. **不需要用户再给 ID 就能发一次真实请求**（search/newSongs 有内置探测输入）；
-/// 2. **返回曲目列表**（与搜索同构，可用同一套判定回答"发得出去、回得来、解析得出"）。
-///
-/// 其余能力（歌单/分类/榜单/歌词/播放地址）要么必须带 trackId/playlistId，
-/// 要么返回的不是曲目列表 —— 那些**用「试跑」验**（试跑用当前编辑中的配置、逐能力进行）。
-const probeCapableCapabilities = <OnlineMusicCapability>[
-  OnlineMusicCapability.search,
-  OnlineMusicCapability.newSongs,
-];
 
 /// 给该条目构造**探测候选**（列表顺序 = 执行顺序）。
 ///
@@ -75,6 +63,7 @@ bool _hasAnyDeclarativeBinding(OnlineMusicProviderDefinition definition) => [
 /// 说成"该条目没有绑定"，也不要说成"候选都没通过"）。
 String noProbeCandidateReason(OnlineMusicProviderDefinition definition) =>
     _hasAnyDeclarativeBinding(definition)
-    ? '该条目已配置的绑定不适合服务级探测（探测只验「搜索 / 新歌」这类能返回曲目列表的能力）：'
-          '请用「试跑」逐能力验证'
+    ? '该条目已配置的绑定都不适合服务级探测（探测只验**不需要实体 ID 就能独立执行**的能力，'
+          '如搜索 / 新歌 / 歌单列表 / 歌单分类 / 榜单）：请用「试跑」逐能力验证'
+          '（需要曲目或歌单 ID 的能力只能试跑，探测不会伪造 ID）'
     : '没有可执行的探测候选（该条目没有声明式绑定，也没有可用的兼容模板）';

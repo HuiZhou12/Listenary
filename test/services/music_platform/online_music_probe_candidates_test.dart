@@ -157,6 +157,66 @@ void main() {
     );
   });
 
+  test('★ F3-S9 候选范围按裁定扩大：无需实体 ID 的能力都可作探针', () {
+    // 用户裁定第 1/2 条：不要求"必须返回曲目列表" —— 只要**不需要用户提供具体实体 ID**、
+    // 能独立执行并给出自己的服务级证据，就可作候选。
+    expect(probeCapableCapabilities, const [
+      OnlineMusicCapability.search,
+      OnlineMusicCapability.newSongs,
+      OnlineMusicCapability.playlistCollection,
+      OnlineMusicCapability.playlistCategories,
+      OnlineMusicCapability.chartList,
+    ]);
+    // 裁定第 3 条：需要具体曲目 / 歌单 ID 的能力**不作默认探针**（也绝不伪造 ID）。
+    for (final capability in const [
+      OnlineMusicCapability.playlist,
+      OnlineMusicCapability.lyric,
+      OnlineMusicCapability.stream,
+    ]) {
+      expect(
+        probeCapableCapabilities,
+        isNot(contains(capability)),
+        reason: '${capability.name} 需要具体实体 ID ⇒ 只能试跑',
+      );
+    }
+  });
+
+  test('★ F3-S9 只配了歌单列表 / 分类 / 榜单 ⇒ 现在也能探测', () {
+    for (final capability in const [
+      OnlineMusicCapability.playlistCollection,
+      OnlineMusicCapability.playlistCategories,
+      OnlineMusicCapability.chartList,
+    ]) {
+      final definition = settingsWith({
+        capability.name: binding('/x').toJson(),
+      }).providers.single;
+
+      final candidates = probeCandidatesFor(definition);
+
+      expect(candidates, hasLength(1), reason: '${capability.name} 应当能作探针');
+      expect(candidates.single.capability, capability);
+      expect(
+        candidates.single.source,
+        ProviderProbeCandidateSource.userConfig,
+      );
+    }
+  });
+
+  test('★ F3-S9 search 优先；没有 search 时按可探测能力的顺序取', () {
+    final definition = settingsWith({
+      'chartList': binding('/toplist').toJson(),
+      'search': binding('/search').toJson(),
+    }).providers.single;
+
+    final candidates = probeCandidatesFor(definition);
+
+    expect(candidates.first.capability, OnlineMusicCapability.search);
+    expect(
+      candidates.map((candidate) => candidate.capability),
+      contains(OnlineMusicCapability.chartList),
+      reason: '其余可探测能力按 probeCapableCapabilities 的顺序跟在后面',
+    );
+  });
   test('界面标签写清"来源（能力）"，不得只报"探测成功"', () {
     final definition = settingsWith({
       'search': binding('/search').toJson(),
