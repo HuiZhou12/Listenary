@@ -49,6 +49,14 @@ final class OnlineMusicCapabilities {
   /// - 自定义平台 ⇒ 按 **`(custom, stableId)`** 精确判定（只比枚举会让两个自定义平台互相冒充）；
   /// - 身份无效（缺稳定 ID）或未登记 ⇒ `false`（fail-closed：**只呈现状态**，
   ///   不静默删除数据、不自动改写身份、不触发任何修复动作）。
+  /// P-63: 这条曲目当前**能否播放** —— 可用性复核的统一判据（内置语义 + **身份判据**）。
+  /// 身份无法解析（自定义平台缺稳定 ID / 未登记 / 未知历史值）⇒ false；
+  /// 调用方据此**只呈现状态**，不得删除数据或改写身份。
+  bool canPlayTrack(MusicTrack track) =>
+      track.availability != TrackAvailability.unavailable &&
+      track.availability != TrackAvailability.paid &&
+      canResolveIdentity(track.ref.identity);
+
   bool canResolveIdentity(PlatformIdentity identity) {
     if (!identity.isValid) return false;
     if (!identity.isCustom) return resolvablePlatforms.contains(identity.platform);
