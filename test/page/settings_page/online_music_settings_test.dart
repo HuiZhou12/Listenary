@@ -103,14 +103,14 @@ void main() {
     expect(find.text('能力分配'), findsNothing);
     expect(find.text('默认提供商'), findsNothing);
     expect(find.text('平台'), findsOneWidget);
-    for (final platform in MusicPlatform.values) {
+    for (final platform in builtinMusicPlatforms) {
       expect(find.text(musicPlatformLabel(platform)), findsOneWidget);
     }
     // 每个平台卡内五行能力（search / 歌单详情 / 歌单列表 / lyric / stream）。
     for (final capability in OnlineMusicCapability.values) {
       expect(
         find.text(onlineMusicCapabilityLabel(capability)),
-        findsNWidgets(MusicPlatform.values.length),
+        findsNWidgets(builtinMusicPlatforms.length),
         reason: '${capability.name} 在每个平台卡里都要有一行',
       );
     }
@@ -713,9 +713,9 @@ void main() {
     await pumpPanel(tester, controller);
 
     expect(find.text('已停用'), findsNothing);
-    expect(find.byType(Switch), findsNWidgets(MusicPlatform.values.length));
+    expect(find.byType(Switch), findsNWidgets(builtinMusicPlatforms.length));
 
-    // 关掉酷狗（卡顺序 = MusicPlatform.values 顺序）。
+    // 关掉酷狗（卡顺序 = builtinMusicPlatforms 顺序）。
     await tester.tap(find.byType(Switch).at(2));
     await tester.pumpAndSettle();
     expect(controller.settings.isPlatformEnabled(MusicPlatform.kugou), isFalse);
@@ -730,7 +730,7 @@ void main() {
     // 空集只能表示"全部启用"，所以最后一个平台不允许被关掉。
     expect(tester.widget<Switch>(find.byType(Switch).at(0)).onChanged, isNull);
     expect(
-      MusicPlatform.values.where(controller.settings.isPlatformEnabled).length,
+      builtinMusicPlatforms.where(controller.settings.isPlatformEnabled).length,
       1,
     );
     controller.dispose();
@@ -2190,7 +2190,7 @@ void main() {
     // 添加提供商对话框的「内容来源」分段按钮同理。
     await tester.tap(find.text('添加'));
     await tester.pumpAndSettle();
-    for (final platform in MusicPlatform.values) {
+    for (final platform in builtinMusicPlatforms) {
       expect(
         find.text(musicPlatformLabel(platform)),
         findsWidgets,

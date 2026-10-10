@@ -107,7 +107,7 @@ void main() {
 
     await tester.tap(find.text('平台能力'));
     await tester.pumpAndSettle();
-    expect(find.text('未配置'), findsNWidgets(MusicPlatform.values.length));
+    expect(find.text('未配置'), findsNWidgets(builtinMusicPlatforms.length));
   });
 
   testWidgets('能力驱动：只列出具备该能力的平台', (tester) async {

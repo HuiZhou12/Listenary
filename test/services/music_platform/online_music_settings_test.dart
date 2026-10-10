@@ -361,7 +361,7 @@ void main() {
     test('默认全部启用，且不写盘', () {
       const settings = OnlineMusicSettings.defaults;
 
-      for (final platform in MusicPlatform.values) {
+      for (final platform in builtinMusicPlatforms) {
         expect(settings.isPlatformEnabled(platform), isTrue);
       }
       expect(

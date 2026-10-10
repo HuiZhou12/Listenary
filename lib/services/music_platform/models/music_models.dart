@@ -1,6 +1,18 @@
 import 'package:pure_music/lyric/lyric.dart';
 
-enum MusicPlatform { netease, qq, kugou }
+enum MusicPlatform {
+  netease,
+  qq,
+  kugou,
+
+  /// 自定义平台种类（P-39 / 用户 P0 裁定）：真实身份 = `custom` + **稳定 `platformId`**。
+  ///
+  /// - 内置平台身份 = 平台类型本身，稳定 ID 为空；
+  /// - 自定义平台身份 = `custom` + 稳定 ID（标准 UUID v4，小写带连字符，创建后不变）；
+  /// - **未取得有效稳定 ID** 的自定义配置**不得参与网络路由**（fail-closed）；
+  /// - 历史数据里认不出的平台值归到这里，**绝不回落网易云**，且原样保留原始标识。
+  custom,
+}
 
 /// 平台的**展示名**（只用于界面文案）。
 ///
@@ -10,7 +22,21 @@ String musicPlatformLabel(MusicPlatform platform) => switch (platform) {
   MusicPlatform.netease => '网易云',
   MusicPlatform.qq => 'QQ音乐',
   MusicPlatform.kugou => '酷狗音乐',
+  // 自定义平台的展示名由条目自己的 `platformName` 提供；这里只是兜底文案，
+  // **不参与身份判定**（P0 裁定：不得用展示名推断身份）。
+  MusicPlatform.custom => '自定义平台',
 };
+
+/// **内置平台**列表（不含"自定义平台"这一种类）。
+///
+/// 自定义平台**不是**"可启用的内置平台"：它由条目通过稳定 `platformId` 声明。
+/// 凡是枚举"内置平台"的地方（平台卡、来源选择、能力视图、聚合分组、默认启用集合、
+/// 诊断文案）都应使用本列表 —— 否则会出现"可点但没有实现"的平台项。
+///
+/// 注意：**身份/持久化解析**不要用本列表（那里必须能处理自定义平台值），见 `PlatformIdentity`。
+List<MusicPlatform> get builtinMusicPlatforms => MusicPlatform.values
+    .where((platform) => platform != MusicPlatform.custom)
+    .toList(growable: false);
 
 enum TrackAvailability { playable, paid, unavailable, unknown }
 
@@ -30,20 +56,100 @@ enum MusicQuality {
   final String label;
 }
 
+/// **统一的平台身份**（P-39 / 用户 P0 裁定）。
+///
+/// 为什么不能只用 [MusicPlatform]：所有自定义平台都共享 `MusicPlatform.custom`
+/// ⇒ 拿枚举当唯一键时，两个不同的自定义平台会互相覆盖、串台。
+final class PlatformIdentity {
+  /// 内置平台身份（稳定 ID 必须为空）。
+  const PlatformIdentity.builtin(this.platform) : platformId = null;
+
+  /// 自定义平台身份：必须有**有效**稳定 ID 才可用于路由。
+  const PlatformIdentity.custom(String this.platformId)
+    : platform = MusicPlatform.custom;
+
+  /// 通用构造（兼容既有调用：内置平台不传 [platformId]）。
+  const PlatformIdentity(this.platform, {this.platformId});
+
+  /// 从**持久化 / 配置里的平台值**解析（P0 裁定的读回规则）：
+  ///
+  /// - 已知内置平台名 ⇒ 对应内置身份（按原规则读取）；
+  /// - 其他非空值 ⇒ `custom` + **该值作为稳定 ID**（原样保留，不猜测、不改写）；
+  /// - `custom` 一词本身、或空值 ⇒ `null`（没有稳定 ID ⇒ 身份无效 ⇒ 调用方 fail-closed）。
+  static PlatformIdentity? tryParse(String? value) {
+    final trimmed = value?.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    for (final platform in builtinMusicPlatforms) {
+      if (platform.name == trimmed) return PlatformIdentity.builtin(platform);
+    }
+    if (trimmed == MusicPlatform.custom.name) return null;
+    return PlatformIdentity.custom(trimmed);
+  }
+
+  final MusicPlatform platform;
+
+  /// 稳定平台 ID：内置平台恒为 `null`；`custom` 必须非空才构成有效身份。
+  final String? platformId;
+
+  bool get isCustom => platform == MusicPlatform.custom;
+
+  /// 身份是否**可用于网络路由**（也决定"能否安全落库"）。
+  bool get isValid => !isCustom || (platformId?.trim().isNotEmpty ?? false);
+
+  /// 持久化 / 日志里的**平台值**：内置 = 枚举名；自定义 = 稳定 ID。
+  /// （复用既有 `platform TEXT` 列 —— 无需迁移即可容纳自定义身份。）
+  String get storageValue => isCustom ? (platformId ?? '') : platform.name;
+
+  /// 仅用于诊断展示；**不参与身份比较**。
+  String get debugLabel => isCustom ? 'custom:${platformId ?? ''}' : platform.name;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlatformIdentity &&
+      other.platform == platform &&
+      other.platformId == platformId;
+
+  @override
+  int get hashCode => Object.hash(platform, platformId);
+
+  @override
+  String toString() => 'PlatformIdentity($debugLabel)';
+}
+
 final class PlatformTrackRef {
-  const PlatformTrackRef({required this.platform, required this.trackId});
+  const PlatformTrackRef({
+    required this.platform,
+    required this.trackId,
+    this.platformId,
+  });
+
+  /// 以**平台身份**构造（新代码推荐路径）。
+  PlatformTrackRef.of(PlatformIdentity identity, this.trackId)
+    : platform = identity.platform,
+      platformId = identity.platformId;
 
   final MusicPlatform platform;
   final String trackId;
+
+  /// 稳定平台 ID（P-39）：内置平台为空；`custom` 必须非空才是有效身份。
+  final String? platformId;
+
+  /// 统一身份：**曲目身份的键是 `(identity, trackId)`**（P0 裁定第 5 条）。
+  PlatformIdentity get identity =>
+      PlatformIdentity(platform, platformId: platformId);
+
+  /// 该引用是否可用于播放路由（自定义平台缺稳定 ID ⇒ 不可用）。
+  bool get hasValidIdentity => identity.isValid;
 
   @override
   bool operator ==(Object other) =>
       other is PlatformTrackRef &&
       other.platform == platform &&
+      other.platformId == platformId &&
       other.trackId == trackId;
 
   @override
-  int get hashCode => Object.hash(platform, trackId);
+  int get hashCode => Object.hash(platform, platformId, trackId);
 }
 
 final class MusicTrack {

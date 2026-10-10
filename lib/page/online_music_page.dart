@@ -138,7 +138,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
   late final TextEditingController _searchController = TextEditingController();
   _OnlineSearchStatus _status = _OnlineSearchStatus.idle;
 
-  /// 已搜索的平台分组（顺序 = `MusicPlatform.values`）。
+  /// 已搜索的平台分组（顺序 = `builtinMusicPlatforms`）。
   final List<_PlatformSearchState> _groups = [];
 
   /// 「全部 / 各平台」筛选（D6:A）；null = 全部。
@@ -190,7 +190,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     if (widget.search != null) return const [MusicPlatform.netease];
     final capabilities = context.read<OnlineMusicService>().capabilities;
     return [
-      for (final platform in MusicPlatform.values)
+      for (final platform in builtinMusicPlatforms)
         if (capabilities.searchablePlatforms.contains(platform)) platform,
     ];
   }

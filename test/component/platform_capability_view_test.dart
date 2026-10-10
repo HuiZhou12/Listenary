@@ -73,7 +73,7 @@ void main() {
       initiallyExpanded: true,
     );
 
-    for (final platform in MusicPlatform.values) {
+    for (final platform in builtinMusicPlatforms) {
       expect(find.text(musicPlatformLabel(platform)), findsWidgets);
     }
     // 网易云可用 ⇒ 能力标签都在。
@@ -96,7 +96,7 @@ void main() {
 
     expect(find.textContaining('在线音乐服务尚未就绪'), findsOneWidget);
     // 能力未知 ⇒ 三个平台都显示"未配置"，不假装可用。
-    expect(find.text('未配置'), findsNWidgets(MusicPlatform.values.length));
+    expect(find.text('未配置'), findsNWidgets(builtinMusicPlatforms.length));
 
     await tester.tap(find.text('去配置'));
     expect(configured, 1);

@@ -136,7 +136,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     final platforms = service == null
         ? const <MusicPlatform>[]
         : [
-            for (final platform in MusicPlatform.values)
+            for (final platform in builtinMusicPlatforms)
               if (service.capabilities.playlistCollectionPlatforms.contains(
                 platform,
               ))

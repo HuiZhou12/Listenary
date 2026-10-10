@@ -822,9 +822,9 @@ final class OnlineMusicSettings {
   ) {
     final kept = {
       for (final platform in platforms)
-        if (MusicPlatform.values.contains(platform)) platform,
+        if (builtinMusicPlatforms.contains(platform)) platform,
     };
-    return kept.length == MusicPlatform.values.length ? const {} : kept;
+    return kept.length == builtinMusicPlatforms.length ? const {} : kept;
   }
 
   /// 开/关一个平台；返回新配置（不落盘，由控制器决定）。
@@ -836,7 +836,7 @@ final class OnlineMusicSettings {
     required bool enabled,
   }) {
     final current = enabledPlatforms.isEmpty
-        ? {for (final value in MusicPlatform.values) value}
+        ? {for (final value in builtinMusicPlatforms) value}
         : {...enabledPlatforms};
     if (enabled) {
       current.add(platform);
@@ -1165,7 +1165,7 @@ final class OnlineMusicSettings {
       },
     if (enabledPlatforms.isNotEmpty)
       'enabledPlatforms': [
-        for (final platform in MusicPlatform.values)
+        for (final platform in builtinMusicPlatforms)
           if (enabledPlatforms.contains(platform)) platform.name,
       ],
   };
@@ -1211,7 +1211,7 @@ final class OnlineMusicSettings {
       'OnlineMusicSettings(${providers.length} providers, '
       'default=$defaultProviderId, capabilities=${capabilityProviders.length}, '
       'routing=${routing.length} platforms, '
-      'disabledPlatforms=${MusicPlatform.values.length - enabledPlatforms.length})';
+      'disabledPlatforms=${builtinMusicPlatforms.length - enabledPlatforms.length})';
 
   /// 解析 `onlineMusic` 配置；任何缺失、非法或未注册的内容逐项回落默认。
   ///
@@ -1286,7 +1286,7 @@ final class OnlineMusicSettings {
   static MusicPlatform? _matchPlatform(Object? value) {
     final name = _nonEmptyString(value);
     if (name == null) return null;
-    for (final platform in MusicPlatform.values) {
+    for (final platform in builtinMusicPlatforms) {
       if (platform.name == name) return platform;
     }
     return null;
@@ -1590,7 +1590,7 @@ _parsePlatformFields(Object? rawContentPlatform, Object? rawPlatformId) {
       issue: null,
     );
   }
-  for (final platform in MusicPlatform.values) {
+  for (final platform in builtinMusicPlatforms) {
     if (platform.name == name) {
       return (
         contentPlatform: platform,
@@ -1604,7 +1604,7 @@ _parsePlatformFields(Object? rawContentPlatform, Object? rawPlatformId) {
     platformId: declaredId ?? name,
     issue:
         '内容来源「$name」不是内置平台'
-        '（${MusicPlatform.values.map((platform) => platform.name).join(' / ')}）：'
+        '（${builtinMusicPlatforms.map((platform) => platform.name).join(' / ')}）：'
         '请改为内置平台，或用 platformId / platformName 声明自定义平台'
         '（该条目不会被使用，也不会发出任何请求）',
   );

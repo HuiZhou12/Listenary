@@ -124,7 +124,7 @@ class _ExplorePageState extends State<ExplorePage>
     final platforms = service == null
         ? const <MusicPlatform>[]
         : [
-            for (final platform in MusicPlatform.values)
+            for (final platform in builtinMusicPlatforms)
               if (service.capabilities.playlistCollectionPlatforms.contains(
                 platform,
               ))
@@ -133,14 +133,14 @@ class _ExplorePageState extends State<ExplorePage>
     final chartPlatforms = service == null
         ? const <MusicPlatform>[]
         : [
-            for (final platform in MusicPlatform.values)
+            for (final platform in builtinMusicPlatforms)
               if (service.capabilities.openableChartPlatforms.contains(platform))
                 platform,
           ];
     final categoryPlatforms = service == null
         ? const <MusicPlatform>[]
         : [
-            for (final platform in MusicPlatform.values)
+            for (final platform in builtinMusicPlatforms)
               if (service.capabilities.browsableCategoryPlatforms.contains(
                 platform,
               ))
@@ -149,7 +149,7 @@ class _ExplorePageState extends State<ExplorePage>
     final newSongPlatforms = service == null
         ? const <MusicPlatform>[]
         : [
-            for (final platform in MusicPlatform.values)
+            for (final platform in builtinMusicPlatforms)
               if (service.capabilities.playableNewSongPlatforms.contains(
                 platform,
               ))

@@ -139,10 +139,10 @@ void main() {
     // 「平台能力」是诊断信息：默认收起，展开后三个平台都在且都显示未配置。
     expect(find.text('未配置'), findsNothing, reason: '收起时不应渲染平台行');
     await expandCapabilities(tester);
-    for (final platform in MusicPlatform.values) {
+    for (final platform in builtinMusicPlatforms) {
       expect(find.text(musicPlatformLabel(platform)), findsWidgets);
     }
-    expect(find.text('未配置'), findsNWidgets(MusicPlatform.values.length));
+    expect(find.text('未配置'), findsNWidgets(builtinMusicPlatforms.length));
   });
 
   testWidgets('保证 2：平台能力按真实能力显示，并给出不可用原因', (tester) async {

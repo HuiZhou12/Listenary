@@ -68,7 +68,7 @@ class _ChartListPageState extends State<ChartListPage>
     final platforms = service == null
         ? const <MusicPlatform>[]
         : [
-            for (final platform in MusicPlatform.values)
+            for (final platform in builtinMusicPlatforms)
               if (service.capabilities.openableChartPlatforms.contains(platform))
                 platform,
           ];

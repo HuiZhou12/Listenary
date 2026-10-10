@@ -530,7 +530,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
         const _SettingsSectionTitle('平台'),
         if (_controller.hasPendingRestart)
           const _SettingsHint('平台与能力的改动将在下次启动时生效'),
-        for (final platform in MusicPlatform.values) ...[
+        for (final platform in builtinMusicPlatforms) ...[
           _PlatformCard(
             platform: platform,
             settings: settings,
@@ -618,7 +618,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
 const _diagnosticsDisplayLimit = 8;
 
 int _enabledPlatformCount(OnlineMusicSettings settings) =>
-    MusicPlatform.values.where(settings.isPlatformEnabled).length;
+    builtinMusicPlatforms.where(settings.isPlatformEnabled).length;
 
 /// 能力文案与能力编辑器共用 [onlineMusicCapabilityLabel]，避免两处走偏。
 String _capabilityLabel(OnlineMusicCapability capability) =>
@@ -920,7 +920,7 @@ class _DefaultQualityTileState extends State<_DefaultQualityTile> {
     final service = context.watch<OnlineMusicService?>();
     if (service == null) return const [];
     final mappings = <String>[];
-    for (final platform in MusicPlatform.values) {
+    for (final platform in builtinMusicPlatforms) {
       final tiers = service.qualityTiersFor(platform);
       if (tiers.isEmpty) continue;
       final labels = tiers.map((tier) => tier.displayLabel).join(' / ');
@@ -1117,7 +1117,7 @@ class _ProviderDialogState extends State<_ProviderDialog> {
               action: SegmentedButton<MusicPlatform>(
                 showSelectedIcon: false,
                 segments: [
-                  for (final platform in MusicPlatform.values)
+                  for (final platform in builtinMusicPlatforms)
                     ButtonSegment(
                 value: platform,
                 // P-64：这里以前直接显示英文枚举名（netease/qq/kugou），

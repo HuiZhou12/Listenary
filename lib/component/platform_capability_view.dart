@@ -105,7 +105,7 @@ class PlatformCapabilityView extends StatelessWidget {
             ),
           ),
           children: [
-            for (final platform in MusicPlatform.values)
+            for (final platform in builtinMusicPlatforms)
               Padding(
                 padding: const EdgeInsets.only(bottom: Spacing.sm),
                 child: PlatformCapabilityTile(

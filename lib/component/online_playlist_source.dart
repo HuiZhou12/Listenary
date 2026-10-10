@@ -12,7 +12,7 @@ import 'package:pure_music/services/music_platform/online_music_service.dart';
 
 export 'package:pure_music/component/online_playlist_draft.dart';
 
-/// 可选的来源平台（顺序 = `MusicPlatform.values`）。
+/// 可选的来源平台（顺序 = `builtinMusicPlatforms`）。
 ///
 /// 门槛来自服务层：`capabilities.playlistPlatforms` 只包含"真的有歌单详情候选"的平台
 /// （未配置 / 未启用的平台不会伪装成可用）。
@@ -24,7 +24,7 @@ List<MusicPlatform> onlinePlaylistPlatformsOf(BuildContext context) {
   if (service == null) return const [MusicPlatform.netease];
   final available = service.capabilities.playlistPlatforms;
   return [
-    for (final platform in MusicPlatform.values)
+    for (final platform in builtinMusicPlatforms)
       if (available.contains(platform)) platform,
   ];
 }
