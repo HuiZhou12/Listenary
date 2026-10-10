@@ -408,11 +408,11 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
                 title: summary.name,
                 coverUri: summary.coverUri,
                 details: _detailsOf(summary),
-                sourceLabel: musicPlatformLabel(summary.platform),
+                sourceLabel: platformLabelForIdentityOnly(summary.identity),
                 placeholderIcon: Symbols.queue_music,
                 onTap: busy ? null : () => _subscribe(summary),
                 semanticLabel:
-                    '${summary.name}，来自${musicPlatformLabel(summary.platform)}，点击订阅并打开',
+                    '${summary.name}，来自${platformLabelForIdentityOnly(summary.identity)}，点击订阅并打开',
                 footer: TextButton(
                   onPressed: busy ? null : () => _subscribe(summary),
                   child: const Text('订阅'),

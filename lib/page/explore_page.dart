@@ -391,13 +391,13 @@ class _ExplorePageState extends State<ExplorePage>
                 title: summary.name,
                 coverUri: summary.coverUri,
                 details: _chartDetailsOf(summary),
-                sourceLabel: musicPlatformLabel(summary.platform),
+                sourceLabel: platformLabelForIdentityOnly(summary.identity),
                 placeholderIcon: Symbols.leaderboard,
                 onTap: _subscribing.contains(platform)
                     ? null
                     : () => _subscribe(summary, failureLabel: '打开该榜单失败'),
                 semanticLabel:
-                    '${summary.name}，来自${musicPlatformLabel(summary.platform)}，点击订阅并打开',
+                    '${summary.name}，来自${platformLabelForIdentityOnly(summary.identity)}，点击订阅并打开',
                 footer: TextButton(
                   onPressed: _subscribing.contains(platform)
                       ? null
@@ -700,11 +700,11 @@ class _ExplorePageState extends State<ExplorePage>
                 title: summary.name,
                 coverUri: summary.coverUri,
                 details: _detailsOf(summary),
-                sourceLabel: musicPlatformLabel(summary.platform),
+                sourceLabel: platformLabelForIdentityOnly(summary.identity),
                 placeholderIcon: Symbols.queue_music,
                 onTap: () => _subscribe(summary),
                 semanticLabel: '${summary.name}，来自'
-                    '${musicPlatformLabel(summary.platform)}，点击订阅并打开',
+                    '${platformLabelForIdentityOnly(summary.identity)}，点击订阅并打开',
                 footer: TextButton(
                   onPressed: _subscribing.contains(platform)
                       ? null

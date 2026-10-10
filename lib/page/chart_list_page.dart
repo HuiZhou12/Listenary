@@ -185,11 +185,11 @@ class _ChartListPageState extends State<ChartListPage>
               title: summary.name,
               coverUri: summary.coverUri,
               details: _detailsOf(summary),
-              sourceLabel: musicPlatformLabel(summary.platform),
+              sourceLabel: platformLabelForIdentityOnly(summary.identity),
               placeholderIcon: Symbols.leaderboard,
               onTap: busy ? null : () => _open(summary),
               semanticLabel:
-                  '${summary.name}，来自${musicPlatformLabel(summary.platform)}，点击订阅并打开',
+                  '${summary.name}，来自${platformLabelForIdentityOnly(summary.identity)}，点击订阅并打开',
               footer: TextButton(
                 onPressed: busy ? null : () => _open(summary),
                 child: const Text('订阅'),

@@ -296,6 +296,7 @@ final class RemotePlaylist {
     this.coverUri,
     this.creator,
     this.trackCount,
+    this.platformId,
     Iterable<MusicTrack> tracks = const [],
   }) : tracks = List.unmodifiable(tracks);
 
@@ -306,6 +307,14 @@ final class RemotePlaylist {
   final String? creator;
   final int? trackCount;
   final List<MusicTrack> tracks;
+
+  /// F5-P-39（P3）：稳定平台 ID（自定义平台用；内置为 null ⇒ identity = builtin）。
+  /// 由产出方（provider 映射器）透传；缺省 null 时身份等价于内置平台（兼容旧构造点）。
+  final String? platformId;
+
+  /// F5-P-39（P3）：统一平台身份（与曲目/歌单/歌词共用同一类型）。
+  PlatformIdentity get identity =>
+      PlatformIdentity(platform, platformId: platformId);
 }
 
 /// 一个**歌单摘要**（歌单集合里的一项）：只有元数据，**没有曲目**。
@@ -324,6 +333,7 @@ final class RemotePlaylistSummary {
     this.coverUri,
     this.creator,
     this.trackCount,
+    this.platformId,
     this.updateFrequency,
   });
 
@@ -333,6 +343,14 @@ final class RemotePlaylistSummary {
   final Uri? coverUri;
   final String? creator;
   final int? trackCount;
+
+  /// F5-P-39（P3）：稳定平台 ID（自定义平台用；内置为 null ⇒ identity = builtin）。
+  /// 由产出方（provider 映射器）透传；缺省 null 时身份等价于内置平台（兼容旧构造点）。
+  final String? platformId;
+
+  /// F5-P-39（P3）：统一平台身份（与曲目/歌单/歌词共用同一类型）。
+  PlatformIdentity get identity =>
+      PlatformIdentity(platform, platformId: platformId);
 
   /// 该集合的**更新节奏**（平台自己的文案，例如"每天更新"）；null 表示平台没有给。
   ///
@@ -351,12 +369,21 @@ final class RemotePlaylistCategory {
     required this.platform,
     required this.id,
     required this.name,
+    this.platformId,
     this.count,
   });
 
   final MusicPlatform platform;
   final String id;
   final String name;
+
+  /// F5-P-39（P3）：稳定平台 ID（自定义平台用；内置为 null ⇒ identity = builtin）。
+  /// 由产出方（provider 映射器）透传；缺省 null 时身份等价于内置平台（兼容旧构造点）。
+  final String? platformId;
+
+  /// F5-P-39（P3）：统一平台身份（与曲目/歌单/歌词共用同一类型）。
+  PlatformIdentity get identity =>
+      PlatformIdentity(platform, platformId: platformId);
 
   /// 该分类下的歌单数量（平台给的时候才有）。
   final int? count;
@@ -365,6 +392,7 @@ final class RemotePlaylistCategory {
 final class MusicSearchPage {
   MusicSearchPage({
     required this.platform,
+    this.platformId,
     required Iterable<MusicTrack> items,
     this.offset,
     this.limit,
@@ -373,6 +401,14 @@ final class MusicSearchPage {
   }) : items = List.unmodifiable(items);
 
   final MusicPlatform platform;
+
+  /// F5-P-39（P3）：稳定平台 ID（自定义平台用；内置为 null ⇒ identity = builtin）。
+  /// 由产出方（provider 映射器）透传；缺省 null 时身份等价于内置平台（兼容旧构造点）。
+  final String? platformId;
+
+  /// F5-P-39（P3）：统一平台身份（与曲目/歌单/歌词共用同一类型）。
+  PlatformIdentity get identity =>
+      PlatformIdentity(platform, platformId: platformId);
   final List<MusicTrack> items;
   final int? offset;
   final int? limit;
