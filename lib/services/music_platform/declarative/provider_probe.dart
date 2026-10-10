@@ -129,6 +129,7 @@ final class ProviderProbeOutcome {
     this.statusCode,
     this.mappedTrackCount = 0,
     this.needsAuthentication = false,
+    this.credentialMissingForAuth = false,
     this.failureReason,
     this.notAttemptedReason,
     this.failureKind,
@@ -156,6 +157,14 @@ final class ProviderProbeOutcome {
 
   /// 401/403 或"需要凭据但没配置"。
   final bool needsAuthentication;
+
+  /// **该候选声明了认证、而这次探测没有凭据可用**（D-F3-2）。
+  ///
+  /// 这种探测为了"不因为缺凭据就拒绝探测"而**剥掉了认证**（只作用于这一次请求），
+  /// 因此即使服务端回了 200 且能解析，也**不能**算作"验证可用" ——
+  /// 它只是"服务可能可达"，认证条件并未满足。初稿也不会由它生成
+  /// （所以不会出现"探测成功但运行期恒 notConfigured"）。
+  final bool credentialMissingForAuth;
 
   /// 非敏感说明（不含响应体内容）。
   final String? failureReason;
@@ -345,6 +354,9 @@ Future<ProviderProbeOutcome> _probeCandidate({
   // ⚠️ D-F3-2：剥离只发生在**这一次探测请求**上；初稿仍然保留模板自己的认证声明
   // （S4 会把"需要 Key（尚未配置）"的结论如实报出来）。
   final hasCredential = credential != null && credential.isNotEmpty;
+  // D-F3-2：**只**为这一次探测请求剥掉认证（初稿永远保留原声明，见调用方）。
+  final authWithoutCredential =
+      !hasCredential && spec.auth is! OnlineMusicNoAuthPlacement;
   final probeSpec = hasCredential
       ? spec
       : OnlineMusicRequestSpec(
@@ -369,6 +381,7 @@ Future<ProviderProbeOutcome> _probeCandidate({
     candidate: candidate,
     binding: binding,
     spec: probeSpec,
+    authWithoutCredential: authWithoutCredential,
     inputs: inputs,
     credential: credential,
     platform: platform,
@@ -383,6 +396,7 @@ Future<ProviderProbeOutcome> _send({
   required ProviderProbeCandidate candidate,
   required OnlineMusicDeclarativeCapabilityBinding binding,
   required OnlineMusicRequestSpec spec,
+  required bool authWithoutCredential,
   required DeclarativeInputs inputs,
   required String? credential,
   required MusicPlatform platform,
@@ -461,7 +475,32 @@ Future<ProviderProbeOutcome> _send({
         source: candidate.source,
         capability: candidate.capability,
         statusCode: execution.statusCode,
-        failureReason: '响应成功但没有解析出任何曲目',
+        needsAuthentication: authWithoutCredential,
+        credentialMissingForAuth: authWithoutCredential,
+        failureReason: authWithoutCredential
+            ? '响应成功但没有解析出任何曲目；且认证条件**未满足**（该能力声明了认证，'
+                  '这次探测没有凭据）：请先配置该条目的 Key 再探测'
+            : '响应成功但没有解析出任何曲目',
+        requestSummary: execution.requestSummary,
+        responsePreview: execution.responsePreview,
+      );
+    }
+    if (authWithoutCredential) {
+      // D-F3-2：**服务可能可达，但认证条件未满足** ⇒ 不计为"可用"，也不产出初稿。
+      // 这样就不会再有 P-06 的"探测成功、运行期恒 notConfigured"。
+      return ProviderProbeOutcome(
+        candidateId: candidate.id,
+        label: candidate.label,
+        score: 0,
+        source: candidate.source,
+        capability: candidate.capability,
+        statusCode: execution.statusCode,
+        mappedTrackCount: page.items.length,
+        needsAuthentication: true,
+        credentialMissingForAuth: true,
+        failureReason:
+            '服务可能可达（HTTP ${execution.statusCode}，解析出 ${page.items.length} 首），'
+            '但认证条件**未满足**：该能力声明了认证，请先配置该条目的 Key 再探测',
         requestSummary: execution.requestSummary,
         responsePreview: execution.responsePreview,
       );
@@ -480,14 +519,17 @@ Future<ProviderProbeOutcome> _send({
   } on DeclarativeMappingException catch (error) {
     // 列表存在但字段映射不全：给 1 分，让用户拿到一个可继续编辑的初稿。
     final partial = _countListEntries(binding.response.listPath, execution.body);
+    // ⚠️ 认证未满足时连"部分可用"也不能说（那不是映射问题，而是根本没带凭据）⇒ 不计可用。
     return ProviderProbeOutcome(
       candidateId: candidate.id,
       label: candidate.label,
-      score: partial > 0 ? 1 : 0,
+      score: authWithoutCredential ? 0 : (partial > 0 ? 1 : 0),
       source: candidate.source,
       capability: candidate.capability,
       statusCode: execution.statusCode,
       mappedTrackCount: partial,
+      needsAuthentication: authWithoutCredential,
+      credentialMissingForAuth: authWithoutCredential,
       failureReason: '字段映射不完整：${error.reason}',
       requestSummary: execution.requestSummary,
       responsePreview: execution.responsePreview,

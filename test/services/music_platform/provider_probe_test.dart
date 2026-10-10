@@ -643,6 +643,96 @@ void main() {
       }
     });
   });
+
+  // ======================================================== F3-S4（P-06）
+
+  group('★ F3-S4 无凭据时的认证语义（D-F3-2）', () {
+    /// chksz 模板**声明了认证**（`apikey`），是这条边界最自然的夹具。
+    List<ProviderProbeCandidate> chkszCandidate() => [
+      ProviderProbeCandidate.fromTemplate(onlineMusicProviderTemplates().first),
+    ];
+
+    test('候选声明了认证但这次没有凭据 ⇒ **不计为可用**、不产出初稿', () async {
+      transport.responder = (options) async => _chkszBody;
+
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        platform: MusicPlatform.netease,
+        candidates: chkszCandidate(),
+      );
+
+      final outcome = report.outcomes.single;
+      // P-06 的核心：服务端回了 200 且能解析，但**我们没带凭据** ——
+      // 这只是"服务可能可达"，不能算"验证可用"，更不能据此产出初稿
+      //（否则保存后运行期恒 notConfigured）。
+      expect(outcome.statusCode, 200);
+      expect(outcome.mappedTrackCount, greaterThan(0));
+      expect(outcome.score, 0, reason: 'D-F3-2：不得标记为已验证可用');
+      expect(outcome.needsAuthentication, isTrue);
+      expect(outcome.credentialMissingForAuth, isTrue);
+      expect(outcome.failureReason, contains('认证'));
+      expect(outcome.failureReason, contains('Key'));
+      expect(report.hasDraft, isFalse);
+      // 剥认证**只作用于这一次探测请求**（因此请求里没有 apikey）。
+      expect(
+        transport.requests.single.query.containsKey('apikey'),
+        isFalse,
+        reason: '没有凭据时这次请求就是无认证的',
+      );
+      // 而候选自身的绑定**仍然声明着认证**（初稿结构上不可能"悄悄"要求认证）。
+      expect(
+        chkszCandidate().single.binding.request.auth,
+        isNot(isA<OnlineMusicNoAuthPlacement>()),
+      );
+    });
+
+    test('同一候选配上凭据 ⇒ 算"可用"并产出**保留认证声明**的初稿（同一套判定）', () async {
+      transport.responder = (options) async => _chkszBody;
+
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        platform: MusicPlatform.netease,
+        candidates: chkszCandidate(),
+        credential: 'chksz_KEY_TEST_ONLY',
+      );
+
+      final outcome = report.outcomes.single;
+      expect(outcome.score, 2, reason: '有凭据 ⇒ 真的走通了认证，才算可用');
+      expect(outcome.credentialMissingForAuth, isFalse);
+      expect(transport.requests.single.query['apikey'], 'chksz_KEY_TEST_ONLY');
+      expect(report.hasDraft, isTrue);
+      // D-F3-2 第 4 条：初稿必须保留**正确的**认证要求。
+      expect(
+        report.draft!.request.auth,
+        isA<OnlineMusicQueryAuthPlacement>().having(
+          (placement) => placement.parameterName,
+          'parameterName',
+          'apikey',
+        ),
+      );
+    });
+
+    test('没有凭据且服务端 401 ⇒ 如实报"需要认证"，绝不归成网络故障', () async {
+      transport.statusCode = 401;
+      transport.responder = (options) async => const {'msg': 'auth required'};
+
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        platform: MusicPlatform.netease,
+        candidates: chkszCandidate(),
+      );
+
+      final outcome = report.outcomes.single;
+      expect(outcome.needsAuthentication, isTrue);
+      expect(outcome.failureKind, OnlineMusicErrorKind.notConfigured);
+      expect(outcome.failureReason, contains('需要认证'));
+      expect(outcome.failureReason, isNot(contains('网络')));
+      expect(report.hasDraft, isFalse);
+    });
+  });
 }
 
 final class _FakeProbeTransport implements DeclarativeHttpTransport {

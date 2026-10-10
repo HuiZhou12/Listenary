@@ -614,6 +614,13 @@ class _OnlineMusicCapabilityEditorDialogState
         if (outcome.failureReason != null) {
           detail.writeln('    ${outcome.failureReason}');
         }
+        // D-F3-2 第 4 条：**明确标记待补配置的凭据项**（而不是让用户自己猜）。
+        if (outcome.credentialMissingForAuth) {
+          detail.writeln(
+            '    ⚠️ 待补配置：该条目的 Key（配置后重新探测；'
+            '本次探测**没有**携带凭据，因此结论只是"未确认"）',
+          );
+        }
         // P-07：摘要与片段（都已脱敏）—— 失败时它们才是唯一的排查依据。
         final summary = outcome.requestSummary;
         if (summary != null) detail.writeln('    请求：$summary');
@@ -632,6 +639,10 @@ class _OnlineMusicCapabilityEditorDialogState
             // D-F3-5 第 6 条：一次探测只证明**这个候选的这个能力**，所以标题也要说清
             // 验的是谁、哪个能力（"探测成功"本身不成立）。D-F3-1 第 3 条：来源不得混淆。
             ? '已由「${_probeSourceLabelOf(report)}」生成可编辑初稿'
+            // D-F3-2：这次没带凭据、候选又声明了认证 ⇒ **不算"未通过"，更不算成功**，
+            // 而是"未确认：认证条件未满足"。把它写成"均未通过"同样是撒谎。
+            : report.anyNeedsAuthentication
+            ? '未确认：需要该条目的 Key（配置后重新探测）'
             : '没有候选可用（${report.outcomes.length} 个候选均未通过）';
         _resultController.text = detail.toString().trimRight();
         if (report.hasDraft) {
