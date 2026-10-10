@@ -40,6 +40,22 @@ List<MusicPlatform> get builtinMusicPlatforms => MusicPlatform.values
     .where((platform) => platform != MusicPlatform.custom)
     .toList(growable: false);
 
+/// F5-P-39（P3）：平台**展示名**的统一出口（界面只用它，不要各自拼文案）。
+///
+/// 规则（P0）：
+/// - 内置平台 ⇒ [musicPlatformLabel]（既有文案不变）；
+/// - 自定义平台 ⇒ 条目配置的 `platformName`（缺失时回落「自定义平台」）；
+/// - **身份无效 / 未知名** ⇒ 「未知平台」（**绝不回落到网易云**，也不用名称/URL 反推平台）。
+String platformDisplayLabel(
+  PlatformIdentity identity, {
+  String? platformName,
+}) {
+  if (!identity.isCustom) return musicPlatformLabel(identity.platform);
+  final declared = platformName?.trim();
+  if (declared != null && declared.isNotEmpty) return declared;
+  return identity.isValid ? '自定义平台' : '未知平台';
+}
+
 enum TrackAvailability { playable, paid, unavailable, unknown }
 
 /// 在线歌曲音质档位；`level` 为网易云解析接口的请求参数，`label` 为展示文案。

@@ -193,10 +193,13 @@ final class OnlineMusicProviderDefinition {
   PlatformIdentity get identity =>
       PlatformIdentity(contentPlatform, platformId: platformId?.trim());
 
-  /// F4-S5：界面展示用的平台名（`platformName` 优先，否则内置中文名）。
-  String get displayPlatformName => platformName?.trim().isNotEmpty == true
-      ? platformName!.trim()
-      : musicPlatformLabel(contentPlatform);
+  /// F4-S5 / F5-P-39（P3）：界面展示用的平台名 —— 统一走 `platformDisplayLabel`
+  /// （内置 ⇒ 既有中文名；自定义 ⇒ 条目的 `platformName`，缺失时「自定义平台」；
+  /// 身份无效 ⇒ 「未知平台」，**绝不回落网易云**）。
+  String get displayPlatformName => platformDisplayLabel(
+    identity,
+    platformName: platformName,
+  );
 
   /// **静态声明**的音质档位表（F4-S4 / P-13 / D10b:a）：内部级别 → 平台取值 + 展示名。
   ///
