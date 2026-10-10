@@ -287,22 +287,51 @@ final class CompositeOnlineMusicService
     return candidates.isEmpty ? null : candidates.first;
   }
 
+  /// F4-S4b（P-56 的另一半）：档位表跟随**实际服务者**。
+  ///
+  /// 正常情况下"声明者就是服务者"；一旦发生回退，实际收到请求的是**另一个** Provider
+  /// （它按自己的声明做转换）—— 此时若仍用声明者的档位表，菜单与"已回落为 X"提示就会
+  /// 显示**别人的**档位名（P-56）。因此这里优先取"运行期最后一次真正服务该平台的
+  /// Provider"（来自路由记录，与 D5b:B 的可观测性同一份数据），没有记录时才退回声明者。
+  ///
+  /// 注意：若实际服务者**没有**声明档位，就**诚实地返回空表**（UI 只展示内部偏好），
+  /// 而不是回退去显示另一个 Provider 的档位名 —— 那正是 P-56 要修的误导。
+  OnlineMusicProvider? _qualityTierOwner(MusicPlatform platform) {
+    final servedId = _lastServedProviderId(platform);
+    if (servedId != null) {
+      for (final provider in registry.providers) {
+        if (provider.providerId == servedId) return provider;
+      }
+    }
+    return _qualityDeclaringProvider(platform);
+  }
+
+  /// 该平台**最后一次真正被谁服务**（只看 `stream` 路由记录；没有记录返回 null）。
+  String? _lastServedProviderId(MusicPlatform platform) {
+    for (final record in _routeLog.reversed) {
+      if (record.platform != platform) continue;
+      if (record.capability != OnlineMusicCapability.stream) continue;
+      return record.winnerProviderId;
+    }
+    return null;
+  }
+
   /// 该平台**可用的音质档位**（含平台自己的文案），供 UI 渲染选择菜单。
   ///
   /// 空列表表示该 Provider 没有声明档位（内部偏好原样透传）；UI 此时只应展示内部
   /// 偏好本身，**不要伪造平台档位名称**（补充口径④）。
   @override
   List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) =>
-      _qualityDeclaringProvider(platform)?.qualityTiersFor(platform) ?? const [];
+      _qualityTierOwner(platform)?.qualityTiersFor(platform) ?? const [];
 
   /// 把内部偏好解析成该平台实际使用的档位，并告知**是否发生了回落**。
   ///
   /// 用途：UI 用 `displayLabel` 展示该平台自己的档位名称；`fellBack == true` 时提示
   /// "已回落为 displayLabel"。
   ///
-  /// ⚠️ P-56：这里用的是**声明者**（`_qualityDeclaringProvider`）的档位表。
-  /// 正常情况下声明者就是服务者；若发生了**回落**，实际收到请求的是别的 Provider
-  /// （它按自己的声明做转换）—— 这种分叉会进路由诊断，见 [OnlineMusicRouteRecord]。
+  /// F4-S4b：档位表来自 `_qualityTierOwner` —— **实际服务者优先**（有路由记录时），
+  /// 没有记录才退回声明者。因此"已回落为 X"里的 X 是**真正收到请求的那个 Provider**
+  /// 的档位名，不再张冠李戴（P-56）。分叉仍会进路由诊断，见 [OnlineMusicRouteRecord]。
   @override
   PlatformQualitySelection selectQualityFor(
     MusicPlatform platform, {

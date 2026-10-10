@@ -411,6 +411,50 @@ void main() {
       expect(streamEntry.qualityDeclarerProviderId, 'neteaseA');
       expect(streamEntry.qualityDeclarerDiffers, isTrue);
       expect(streamEntry.summary, contains('档位声明来自 neteaseA'));
+
+      // ④ **F4-S4b（P-56 的另一半）**：回退发生之后，档位清单必须跟随**实际服务者 B**
+      //    （B 自己声明的是 `sq`）—— 不能再借用 A 的 `flac`，否则菜单与"已回落为 X"
+      //    会显示**别人的**档位名。
+      expect(
+        service.qualityTiersFor(MusicPlatform.netease).single.requestValue,
+        'sq',
+        reason: '回退后档位表跟随实际服务者（不再张冠李戴）',
+      );
+    });
+
+    test('★ F4-S4b 实际服务者**没有**档位声明 ⇒ 诚实返回空表（不借用别人的档位名）', () async {
+      final declarer = _ScriptedProvider(
+        'neteaseA',
+        neteaseSearchAndStream,
+        failure: OnlineMusicErrorKind.network,
+        tiers: const [
+          PlatformQualityTier(
+            internalLevel: 'lossless',
+            displayLabel: 'SQ',
+            requestValue: 'sq',
+          ),
+        ],
+      );
+      // B 不声明档位（内部偏好原样透传）。
+      final silentServer = _ScriptedProvider('neteaseB', neteaseSearchAndStream);
+
+      final service = serviceWith([declarer, silentServer]);
+      addTearDown(service.dispose);
+
+      // 回落前：没有路由记录 ⇒ 按声明者 A 的档位表（既有语义）。
+      expect(service.qualityTiersFor(MusicPlatform.netease).single.requestValue, 'sq');
+
+      await service.resolve(
+        const PlatformTrackRef(platform: netease, trackId: 't1'),
+        requestedQuality: 'lossless',
+        cancelToken: OnlineMusicCancelToken(),
+      );
+
+      expect(
+        service.qualityTiersFor(MusicPlatform.netease),
+        isEmpty,
+        reason: '实际服务者 B 不声明档位 ⇒ 只能展示内部偏好，绝不借用 A 的平台档位名',
+      );
     });
 
     test('未回落时声明者就是服务者 ⇒ 诊断不补那句话（不制造噪音）', () async {
