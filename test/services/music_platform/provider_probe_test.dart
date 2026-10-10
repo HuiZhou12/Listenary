@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
@@ -50,6 +52,7 @@ void main() {
 
     final report = await probeDeclarativeSearch(
       transport: transport,
+      headerCredentialReader: noHeaderCredentials,
       platform: MusicPlatform.netease,
       credential: 'chksz_KEY_TEST_ONLY',
     );
@@ -72,6 +75,7 @@ void main() {
 
     final report = await probeDeclarativeSearch(
       transport: transport,
+      headerCredentialReader: noHeaderCredentials,
       platform: MusicPlatform.netease,
     );
 
@@ -93,6 +97,7 @@ void main() {
 
     await probeDeclarativeSearch(
       transport: transport,
+      headerCredentialReader: noHeaderCredentials,
       platform: MusicPlatform.netease,
     );
 
@@ -107,6 +112,7 @@ void main() {
 
     await probeDeclarativeSearch(
       transport: transport,
+      headerCredentialReader: noHeaderCredentials,
       platform: MusicPlatform.netease,
       maxRequests: 99,
     );
@@ -119,6 +125,7 @@ void main() {
 
     final report = await probeDeclarativeSearch(
       transport: transport,
+      headerCredentialReader: noHeaderCredentials,
       platform: MusicPlatform.netease,
     );
 
@@ -141,6 +148,7 @@ void main() {
 
     final report = await probeDeclarativeSearch(
       transport: transport,
+      headerCredentialReader: noHeaderCredentials,
       platform: MusicPlatform.netease,
     );
 
@@ -166,6 +174,7 @@ void main() {
 
     final report = await probeDeclarativeSearch(
       transport: transport,
+      headerCredentialReader: noHeaderCredentials,
       platform: MusicPlatform.netease,
     );
 
@@ -182,6 +191,7 @@ void main() {
 
     final report = await probeDeclarativeSearch(
       transport: transport,
+      headerCredentialReader: noHeaderCredentials,
       platform: MusicPlatform.netease,
       credential: 'chksz_KEY_TEST_ONLY',
       maxRequests: 1,
@@ -200,15 +210,29 @@ void main() {
 
     final report = await probeDeclarativeSearch(
       transport: transport,
+      headerCredentialReader: noHeaderCredentials,
       platform: MusicPlatform.netease,
       clock: clock,
     );
 
     expect(transport.requests, isEmpty);
+    // ⚠️ 断言随 F3-S1 收紧（不是放宽）：预算耗尽的候选以前只是"一条失败理由"，
+    // 与"试过但失败"在结构上无法区分。D-F3-5 要求这种候选显示
+    // 「未尝试：请求预算耗尽」并且**不得误报为验证失败** ⇒ 现在它有独立状态。
     expect(
-      report.outcomes.map((outcome) => outcome.failureReason),
-      everyElement(contains('探测预算已用完')),
+      report.outcomes.map((outcome) => outcome.status),
+      everyElement(ProviderProbeStatus.notAttempted),
     );
+    expect(
+      report.outcomes.map((outcome) => outcome.notAttemptedReason),
+      everyElement(allOf(contains('未尝试'), contains('预算'))),
+    );
+    expect(
+      report.outcomes.map((outcome) => outcome.failureKind),
+      everyElement(isNull),
+      reason: '未尝试 ≠ 验证失败：不得给出失败分类',
+    );
+    expect(report.didNotSendAnyRequest, isTrue);
   });
 
   test('every candidate failing yields no draft but a full report', () async {
@@ -217,6 +241,7 @@ void main() {
 
     final report = await probeDeclarativeSearch(
       transport: transport,
+      headerCredentialReader: noHeaderCredentials,
       platform: MusicPlatform.netease,
       credential: 'chksz_KEY_TEST_ONLY',
     );
@@ -234,6 +259,7 @@ void main() {
 
     await probeDeclarativeSearch(
       transport: transport,
+      headerCredentialReader: noHeaderCredentials,
       platform: MusicPlatform.netease,
       credential: 'chksz_KEY_TEST_ONLY',
     );
@@ -253,12 +279,223 @@ void main() {
     );
     expect(transport.followRedirects, isFalse);
   });
+
+  // ======================================================== F3-S1（P-07）
+
+  group('★ F3-S1 探测与试跑共用同一执行与判定引擎', () {
+    test('失败分类取自**统一表**，且与试跑对同一响应同结论', () async {
+      // 500 + **可读** JSON 响应体
+      transport.statusCode = 500;
+      transport.responder = (options) async => const {'oops': true};
+
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        platform: MusicPlatform.netease,
+        templates: [onlineMusicProviderTemplates().first],
+      );
+
+      final outcome = report.outcomes.single;
+      expect(outcome.failureKind, OnlineMusicErrorKind.unavailable);
+      // **同一响应**：试跑那边的粗粒度词表必须是同一个结论的投影。
+      expect(
+        declarativeTestFailureKindFor(outcome.failureKind!),
+        classifyUnsuccessfulTestResponse(500, const {'oops': true}),
+      );
+      expect(
+        declarativeTestFailureKindFor(outcome.failureKind!),
+        DeclarativeTestFailureKind.http,
+      );
+
+      // 同一个状态码但**响应不可读**（HTML 错误页/纯文本）⇒ 统一表判为
+      // 「接口定义不匹配」（声明式路径的既定规则：读不出结构就说明打到的不是那个接口）。
+      transport.responder = (options) async => '<html>500</html>';
+      final unreadable = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        platform: MusicPlatform.netease,
+        templates: [onlineMusicProviderTemplates().first],
+      );
+      expect(
+        unreadable.outcomes.single.failureKind,
+        OnlineMusicErrorKind.endpointMismatch,
+      );
+      expect(
+        declarativeTestFailureKindFor(
+          unreadable.outcomes.single.failureKind!,
+        ),
+        classifyUnsuccessfulTestResponse(500, '<html>500</html>'),
+      );
+    });
+
+    test('200 但成功判定不通过：可读响应 ⇒ 业务；不可读 ⇒ 接口定义不匹配', () async {
+      transport.statusCode = 200;
+      transport.responder = (options) async => const {'nope': true};
+      final readable = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        platform: MusicPlatform.netease,
+        templates: [onlineMusicProviderTemplates().first],
+      );
+      expect(
+        readable.outcomes.single.failureKind,
+        OnlineMusicErrorKind.businessFailure,
+      );
+      expect(
+        declarativeTestFailureKindFor(readable.outcomes.single.failureKind!),
+        DeclarativeTestFailureKind.business,
+      );
+
+      transport.responder = (options) async => '<html>错误页</html>';
+      final unreadable = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        platform: MusicPlatform.netease,
+        templates: [onlineMusicProviderTemplates().first],
+      );
+      expect(
+        unreadable.outcomes.single.failureKind,
+        OnlineMusicErrorKind.endpointMismatch,
+      );
+      expect(
+        declarativeTestFailureKindFor(unreadable.outcomes.single.failureKind!),
+        DeclarativeTestFailureKind.responseFormat,
+      );
+    });
+
+    test('结果带上**已脱敏**的请求摘要与响应片段', () async {
+      // ⚠️ 必须让这条用例**真的成功**（走成功分支）：第一版我随手写了个结构不完整的
+      // data，结果落进"映射不全"分支 —— 那样即使把成功分支的诊断字段删掉，用例也照样绿
+      // （变异 M4 未命中目标即此原因，已按规则修正夹具而非放宽断言）。
+      transport.responder = (options) async => {
+        'code': 200,
+        'msg': 'success',
+        'data': {
+          'songs': [
+            {'id': 65800, 'name': '最佳损友', 'artists': '陈奕迅', 'duration': 233560},
+          ],
+          'total': 291,
+        },
+        'token': 'SECRET_SHOULD_NOT_APPEAR',
+      };
+
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        platform: MusicPlatform.netease,
+        credential: 'chksz_KEY_TEST_ONLY',
+        templates: [onlineMusicProviderTemplates().first],
+      );
+
+      final outcome = report.outcomes.single;
+      expect(outcome.score, 2, reason: '夹具必须走**成功**分支');
+      expect(outcome.requestSummary, isNotNull);
+      expect(outcome.requestSummary, contains('apikey=[redacted]'));
+      expect(outcome.requestSummary, isNot(contains('chksz_KEY_TEST_ONLY')));
+      expect(outcome.responsePreview, isNotNull);
+      expect(outcome.responsePreview, contains('[redacted]'));
+      expect(
+        outcome.responsePreview,
+        isNot(contains('SECRET_SHOULD_NOT_APPEAR')),
+        reason: 'P-07 的诊断必须与试跑共用同一份脱敏',
+      );
+    });
+
+    test('没有可执行候选 ⇒ 明确报"未尝试"，不构造成功结果', () async {
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        platform: MusicPlatform.netease,
+        templates: const [],
+      );
+
+      expect(report.outcomes, isEmpty);
+      expect(report.hasDraft, isFalse);
+      expect(report.isBlocked, isTrue);
+      expect(report.blockedReason, contains('没有可执行的探测候选'));
+      expect(transport.requests, isEmpty, reason: '一个请求都不该发');
+    });
+
+    test('请求**没发出去**（配置问题）⇒ notSent，绝不报成网络故障', () async {
+      // 声明了敏感请求头却没凭据：读取口一律返回 null ⇒ 构造请求时明确失败。
+      final template = OnlineMusicProviderTemplate(
+        id: 'needs-secret-header',
+        label: '需要敏感头',
+        search: OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(
+            path: '/search',
+            headers: [
+              OnlineMusicHeaderSpec(
+                name: 'X-Secret',
+                value: '',
+                credentialReference: 'a/b/c',
+              ),
+            ],
+          ),
+          response: OnlineMusicResponseSpec(
+            listPath: JsonPath.tryParse('data')!,
+            fields: {
+              OnlineMusicDomainField.trackId: OnlineMusicFieldSpec(
+                candidates: [JsonPath.tryParse('id')!],
+                transform: OnlineMusicFieldTransform.asString,
+              ),
+            },
+          ),
+        ),
+      );
+
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        platform: MusicPlatform.netease,
+        templates: [template],
+      );
+
+      final outcome = report.outcomes.single;
+      expect(outcome.status, ProviderProbeStatus.notSent);
+      expect(outcome.failureKind, isNull, reason: '没发出去 ⇒ 不给出"网络"分类');
+      expect(outcome.failureReason, isNotNull);
+      expect(transport.requests, isEmpty);
+      expect(report.didNotSendAnyRequest, isTrue);
+    });
+
+    test('源码守卫：探测不得再长出"第二套分类"', () {
+      // 审计点名的"第四处分类逻辑"就是这样长出来的：探测自带 401/403 判断、
+      // 自带成功判定、自带兜底 `catch (_)`。这里用源码扫描把它钉死 ——
+      // 一旦有人再写一遍，这个测试就会红。
+      final source = File(
+        'lib/services/music_platform/declarative/provider_probe.dart',
+      ).readAsStringSync();
+
+      expect(
+        source,
+        contains('executeDeclarativeRequest'),
+        reason: 'F3-S1：探测必须走共享执行引擎',
+      );
+      for (final forbidden in const [
+        'declarativeResponseIsSuccess', // 成功判定只允许在引擎里出现
+        'classifyHttpStatus', // 分类只允许在引擎里出现
+        'statusCode == 401', // 认证判断只允许由统一表得出
+        'statusCode == 403',
+        'catch (_) {', // 兜底吞异常会再次把配置错误误诊成网络故障
+      ]) {
+        expect(
+          source,
+          isNot(contains(forbidden)),
+          reason: '探测不得自带分类：$forbidden',
+        );
+      }
+    });
+  });
 }
 
 final class _FakeProbeTransport implements DeclarativeHttpTransport {
   final List<BuiltDeclarativeRequest> requests = [];
   int statusCode = 200;
-  Future<Map<String, Object?>> Function(RequestOptionsLike options) responder =
+
+  /// 响应体故意放宽成 `Object?`：F3-S1 要覆盖"**不可读**响应"（HTML 错误页/纯文本）
+  /// 与"可读 JSON"的分类差异，而真实服务端确实会回这些东西。
+  Future<Object?> Function(RequestOptionsLike options) responder =
       (options) async => const {};
 
   @override
@@ -288,4 +525,17 @@ final class _Options implements RequestOptionsLike {
 
   @override
   Map<String, dynamic> get queryParameters => request.query;
+}
+
+/// 探测要求注入"敏感请求头凭据读取口"（F3-S1：与试跑共用同一条执行路径）。
+///
+/// 本文件的候选都没有敏感请求头，因此给一个"一律读不到"的读取口即可 ——
+/// 而且它是 **fail-closed** 的：真有敏感头却没读到值时，构造请求会明确失败。
+const OnlineMusicCredentialReader noHeaderCredentials = _NoHeaderCredentials();
+
+final class _NoHeaderCredentials implements OnlineMusicCredentialReader {
+  const _NoHeaderCredentials();
+
+  @override
+  Future<String?> readCredential(String reference) async => null;
 }

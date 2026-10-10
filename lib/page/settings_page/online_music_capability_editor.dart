@@ -8,6 +8,7 @@ import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
 import 'package:pure_music/services/music_platform/online_music_credentials.dart';
+import 'package:pure_music/services/music_platform/online_music_diagnostics.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_header_slot.dart';
@@ -590,14 +591,36 @@ class _OnlineMusicCapabilityEditorDialogState
       }
       final detail = StringBuffer();
       for (final outcome in report.outcomes) {
+        // F3-S1：三种情形必须**分开说** ——「未尝试」「没发出去（配置问题）」与
+        // 「试过但失败」。把它们渲染成同一句"候选未通过"，就是在谎称"我们试过了"。
+        if (outcome.status == ProviderProbeStatus.notAttempted) {
+          detail.writeln(
+            '· ${outcome.label}（${outcome.candidateId}）：'
+            '${outcome.notAttemptedReason ?? '未尝试'}',
+          );
+          continue;
+        }
+        final kind = outcome.failureKind;
         detail.writeln(
-          '· ${outcome.label}（${outcome.candidateId}）：得分 ${outcome.score}'
+          '· ${outcome.label}（${outcome.candidateId}）：'
+          '${outcome.status == ProviderProbeStatus.notSent ? '请求未发出（配置问题）' : '得分 ${outcome.score}'}'
           '${outcome.statusCode == null ? '' : ' · HTTP ${outcome.statusCode}'}'
           '${outcome.mappedTrackCount > 0 ? ' · 解析出 ${outcome.mappedTrackCount} 首' : ''}'
-          '${outcome.needsAuthentication ? ' · 需要认证' : ''}',
+          '${outcome.needsAuthentication ? ' · 需要认证' : ''}'
+          '${kind == null ? '' : ' · ${onlineMusicErrorKindLabel(kind)}'}',
         );
         if (outcome.failureReason != null) {
           detail.writeln('    ${outcome.failureReason}');
+        }
+        // P-07：摘要与片段（都已脱敏）—— 失败时它们才是唯一的排查依据。
+        final summary = outcome.requestSummary;
+        if (summary != null) detail.writeln('    请求：$summary');
+        final preview = outcome.responsePreview;
+        if (preview != null) {
+          const previewLimit = 400;
+          detail.writeln(
+            '    响应：${preview.length > previewLimit ? '${preview.substring(0, previewLimit)}…' : preview}',
+          );
         }
       }
       setState(() {

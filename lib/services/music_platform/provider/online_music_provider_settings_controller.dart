@@ -1,10 +1,9 @@
-import 'dart:convert';
-
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_errors.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_execution.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_response_mapper.dart';
@@ -131,134 +130,27 @@ DeclarativeTestFailureKind declarativeTestFailureKindFor(
 
 /// 成功判定不通过时的**大类**（W5）。
 ///
-/// - 状态码的分类**统一**由 `classifyHttpStatus` 决定（声明式 ⇒ 404 与不可读响应
-///   归「接口定义不匹配」），这里只把它投影成界面词表；
-/// - 2xx（或其它非错误状态）却判定不过：响应结构可读（Map/List）⇒ 业务判定问题；
-///   连结构都不是（HTML 错误页、纯文本）⇒ 响应格式与接口定义不匹配。
+/// 分类本身住在**共享引擎**里（`declarative_execution.dart` 的
+/// [classifyDeclarativeUnsuccessfulResponse]），这里只是把它投影成**界面词表** ——
+/// 词表更粗（Spec §19.5 的用户口径），但必须是同一个结论的纯函数，
+/// 否则同一个失败会出现"运行期说 X、试跑说 Y"（P-16 的原始症状）。
 DeclarativeTestFailureKind classifyUnsuccessfulTestResponse(
   int statusCode,
   Object? body,
-) {
-  if (statusCode < 400) {
-    return (body is Map || body is List)
-        ? DeclarativeTestFailureKind.business
-        : DeclarativeTestFailureKind.responseFormat;
-  }
-  return declarativeTestFailureKindFor(
-    classifyHttpStatus(
-      statusCode,
-      origin: OnlineMusicErrorOrigin.declarative,
-      readableJson: body is Map || body is List,
-    ),
-  );
-}
+) => declarativeTestFailureKindFor(
+  classifyDeclarativeUnsuccessfulResponse(statusCode, body),
+);
 
-/// 敏感**参数名 / 请求头名 / JSON 键名**：这些名字的取值一律不进界面、不进日志。
+/// 敏感**参数名 / 请求头名 / JSON 键名**与请求摘要、响应片段的脱敏实现已移到
+/// **声明式层**（`declarative/declarative_diagnostics.dart`）—— 探测与试跑共用同一套，
+/// 避免出现第二份脱敏实现（漏一处就等于泄漏）。这里的旧定义已删除。
 ///
-/// ⚠️ 这只是一个**兜底白名单**（P-35 的教训）：白名单一定会漏（用户可以把认证参数
-/// 起成任何名字），所以真正的判据是**值来源** —— 凭据来源的值由
-/// [BuiltDeclarativeRequest.credentialHeaderNames] 与
-/// [BuiltDeclarativeRequest.credentialQueryNames] 精确标出，
-/// 不看名字就一律遮蔽。本名单只用于处理"来源未知"的响应体。
-const sensitiveDiagnosticNamePattern =
-    r'apikey|api[-_]?key|x-api-key|authorization|proxy-authorization|cookie|'
-    r'set-cookie|token|access[-_]?token|refresh[-_]?token|id[-_]?token|x-token|'
-    r'secret|appsecret|app[-_]?secret|appkey|app[-_]?key|password|passwd|pwd|'
-    r'sign|signature|x-signature|x-sign|auth|key|csrf|xsrf|sid|session|sessionid|'
-    r'jwt|qskey|pskey|qm_keyst|credential|h';
-
-bool isSensitiveDiagnosticName(String name) => RegExp(
-  '^($sensitiveDiagnosticNamePattern)\$',
-  caseSensitive: false,
-).hasMatch(name.trim());
-
-/// 试跑结果里展示的**请求摘要**：方法 + 路径 + 参数名与值（敏感值脱敏）。
-///
-/// 未知服务无法自动探测时，"到底发了什么请求"是唯一的排查依据（W5），
-/// 因此这里要把参数名与值都写出来。遮蔽判据有四条，**按可靠性排序**：
-/// 1. **值来自凭据**（认证放置 / 敏感请求头的凭据引用 / 请求体认证）⇒ 一律 `[redacted]`（最可靠）；
-/// 2. **值形态可疑**（`needs-user` 类：名字没命中、但值看起来像秘密）⇒ 也 `[redacted]`
-///    （名字白名单对它们必然漏，而漏掉的后果是直接显示这个值）；
-/// 3. 名字落在兜底名单里 ⇒ 也 `[redacted]`（覆盖"明文写死在配置里"的旧配置）；
-/// 4. 请求体还有一条**额外的**保守规则：也按形态遮蔽（见下）。
-String describeDeclarativeRequest(BuiltDeclarativeRequest request) {
-  bool headerIsCredential(String name) {
-    if (request.credentialHeaderNames.contains(name)) return true;
-    if (isSensitiveDiagnosticName(name)) return true;
-    // 只对**请求头**做形状判据：query 参数来自闭集输入（keyword/limit/…），
-    // 按形状遮蔽会把用户自己搜的关键词也糊掉，得不偿失。
-    return looksLikeSensitiveHeaderValue(request.headers[name] ?? '');
-  }
-
-  bool queryIsCredential(String name) =>
-      request.credentialQueryNames.contains(name) ||
-      isSensitiveDiagnosticName(name);
-
-  // P-34：请求体与 query **不同**——body 字段的值可以来自配置里的**任意常量**
-  // （`defaultValue` 由用户手写，不像 query 那样只有闭集运行时输入），
-  // 所以这里连**形态**也判：宁可多遮一点，也不能把配置里写死的密钥显示出来。
-  bool bodyIsCredential(String name, Object? value) =>
-      request.credentialBodyNames.contains(name) ||
-      isSensitiveDiagnosticName(name) ||
-      looksLikeSensitiveHeaderValue(value is String ? value : '${value ?? ''}');
-
-  final parts = <String>[
-    for (final entry in request.query.entries)
-      queryIsCredential(entry.key)
-          ? '${entry.key}=[redacted]'
-          : '${entry.key}=${entry.value}',
-    for (final entry in request.headers.entries)
-      headerIsCredential(entry.key)
-          ? '${entry.key}: [redacted]'
-          : '${entry.key}: ${entry.value}',
-  ];
-  final buffer = StringBuffer('${request.method} ${request.path}');
-  if (parts.isNotEmpty) buffer.write(' · ${parts.join('&')}');
-  final body = request.body;
-  if (body != null) {
-    // P-34：**逐字段**输出 —— POST 类能力的核心排查动作是"我配的字段名服务端到底认不认"，
-    // 以前整块写成"已省略（可能含凭据）"，这件事在界面上根本做不了。
-    final fields = <String>[];
-    if (body is Map) {
-      for (final entry in body.entries) {
-        final name = '${entry.key}';
-        fields.add(
-          bodyIsCredential(name, entry.value)
-              ? '$name=[redacted]'
-              : '$name=${_diagnosticValueText(entry.value)}',
-        );
-      }
-    }
-    buffer.write(
-      fields.isEmpty ? ' · 请求体：（空对象）' : ' · 请求体：${fields.join('&')}',
-    );
-  }
-  return buffer.toString();
-}
-
-/// 摘要里单个值的字符上限（值来自输入或配置，长度不可控）。
-const requestSummaryValueMaxChars = 200;
-
-String _diagnosticValueText(Object? value) {
-  if (value == null) return 'null';
-  final text = value is String ? value : '$value';
-  return text.length > requestSummaryValueMaxChars
-      ? '${text.substring(0, requestSummaryValueMaxChars)}…'
-      : text;
-}
-
 /// 探测/试跑用的传输层工厂；默认按条目 baseUrl 建一个**不跟随重定向**的 Dio。
 typedef DeclarativeProbeTransportFactory =
     DeclarativeHttpTransport Function(OnlineMusicProviderDefinition definition);
 
 /// 单项试跑播放解析时的默认音质（与内置实现的默认档位一致）。
 const defaultDeclarativeTestQuality = 'lossless';
-
-/// 结果区展示响应片段时的字符上限。
-///
-/// 结果区现在是限高可滚动的，所以这个上限只管"别把超大响应整个塞进内存/界面"，
-/// 不影响正常阅读；超出时会明确写出完整长度。
-const responsePreviewMaxChars = 20000;
 
 /// 已保存配置的读写出口。
 abstract interface class OnlineMusicSettingsStore {
@@ -570,6 +462,8 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     }
     return probeDeclarativeSearch(
       transport: _transportFor(definition),
+      // F3-S1：探测与试跑**共用**同一条执行路径（含敏感请求头凭据读取）。
+      headerCredentialReader: _headerCredentialReader,
       platform: definition.contentPlatform,
       credential: await _readCredential(definition),
       cancelToken: cancelToken,
@@ -662,69 +556,62 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     }
 
     final token = cancelToken ?? OnlineMusicCancelToken();
-    // F0：敏感请求头的值同样来自安全槽位；试跑**与运行期共用**同一条请求构造与凭据
-    // 读取路径，因此同一个配置在两边会得到同一个结论（"试跑成功、运行期报错"那种
-    // 两份说法不会出现）。
-    //
-    // 存储读取失败**不当成**"试试网络"（那会把配置/存储问题误报成网络问题）：
-    // 这里单独收敛成配置大类，并且**不发任何请求**。
-    // ⚠️ 已知差异（既有，未在 F0 修）：运行期遇到凭据存储**读取异常**时会落进
-    // `catch (_)` 归为 unknown，而这里是"配置"分类 —— 两处分类并不完全一致。
-    final Map<String, String> headerCredentials;
-    try {
-      headerCredentials = await readHeaderCredentialValues(
-        spec: binding.request,
-        reader: _headerCredentialReader,
-      );
-    } catch (_) {
-      return const DeclarativeCapabilityTestResult(
+    // F3-S1（P-07）：探测与试跑**共用同一个执行引擎** ——
+    // 构造请求（含敏感请求头凭据）→ 发送 → 成功判定 → **唯一分类表** → 脱敏诊断。
+    // 试跑只保留"自己的那一半"：按能力做字段映射。
+    // 这样同一个响应在探测与试跑里不可能再得到两个结论（审计的"第四处分类"已删除）。
+    final execution = await executeDeclarativeRequest(
+      spec: binding.request,
+      success: binding.response.success,
+      inputs: DeclarativeInputs(
+        keyword: keyword,
+        limit: 1,
+        offset: 0,
+        page: 1,
+        trackId: trackId,
+        playlistId: effectivePlaylistId,
+        quality: quality,
+      ),
+      transport: _transportFor(definition),
+      headerCredentialReader: _headerCredentialReader,
+      credential: await _readCredential(definition),
+      cancelToken: token,
+    );
+    final requestSummary = execution.requestSummary;
+    if (execution.stage == DeclarativeExecutionStage.notSent) {
+      // 凭据读取失败 / 请求构造失败：都是**配置**问题，而且**一个请求都没发**。
+      return DeclarativeCapabilityTestResult(
         ok: false,
-        failureReason: '无法读取该请求头引用的安全凭据（凭据存储读取失败）',
+        failureReason: execution.failureReason,
         failureKind: DeclarativeTestFailureKind.config,
+        requestSummary: requestSummary,
       );
     }
-    String? preview;
-    String? requestSummary;
-    try {
-      final request = buildDeclarativeRequest(
-        spec: binding.request,
-        inputs: DeclarativeInputs(
-          keyword: keyword,
-          limit: 1,
-          offset: 0,
-          page: 1,
-          trackId: trackId,
-          playlistId: effectivePlaylistId,
-          quality: quality,
-        ),
-        credential: await _readCredential(definition),
-        headerCredentials: headerCredentials,
+    if (!execution.isSuccess) {
+      return DeclarativeCapabilityTestResult(
+        ok: false,
+        statusCode: execution.statusCode,
+        responsePreview: execution.responsePreview,
+        failureReason: execution.failureReason,
+        failureKind: declarativeTestFailureKindFor(execution.failureKind!),
+        requestSummary: requestSummary,
       );
-      // 请求摘要在**发出去之前**就记下来：失败时它是唯一的排查依据。
-      requestSummary = describeDeclarativeRequest(request);
-      final response = await _transportFor(
-        definition,
-      ).send(request, cancelToken: token);
-      preview = _redactPreview(response.data);
-
+    }
+    final preview = execution.responsePreview;
+    try {
       return _evaluateCapabilityResponse(
         definition: definition,
         capability: capability,
         binding: binding,
-        response: response,
+        response: DeclarativeHttpResponse(
+          statusCode: execution.statusCode!,
+          data: execution.body,
+        ),
         preview: preview,
         trackId: trackId,
         requestedPlaylistId: effectivePlaylistId,
         quality: quality,
       ).withRequestSummary(requestSummary);
-    } on DeclarativeRequestException catch (error) {
-      // 请求都没构造出来：这是**配置**问题，不是服务问题。
-      return DeclarativeCapabilityTestResult(
-        ok: false,
-        failureReason: error.safeMessage,
-        failureKind: DeclarativeTestFailureKind.config,
-        requestSummary: requestSummary,
-      );
     } on DeclarativeMappingException catch (error) {
       return DeclarativeCapabilityTestResult(
         ok: false,
@@ -1011,78 +898,6 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   /// 而不是**假装成功**（这类假阳性正是反模式 3）。
   OnlineMusicCredentialReader get _headerCredentialReader =>
       _credentialReader ?? const _UnavailableCredentialReader();
-
-  /// 结果区展示的响应片段：**先按结构脱敏，再格式化，再补文本脱敏，最后才考虑截断**。
-  ///
-  /// - 结构脱敏（P-35）：解码后的 JSON 逐层走一遍，把敏感键的**值**换成 `[redacted]`。
-  ///   这覆盖了正则做不到的部分：**非字符串值**（`"token": 12345`）、
-  ///   **嵌套 JSON**、**数组元素**。上一步之后文本正则只是补刀。
-  /// - 格式化：JSON 用 2 空格缩进，界面里才看得出层次（此前是压成一行的 `jsonEncode`）。
-  /// - 文本脱敏：同时覆盖查询串（`apikey=…`、`?h=…&sid=…`）、JSON 键值对（`"token":"…"`）
-  ///   与**敏感请求头**（`Authorization: …`、`Cookie: …`，W5 补充）。
-  ///   宁可多脱敏，也不要把签名串渲染到界面上。
-  /// - 截断：上限 [responsePreviewMaxChars]；超出时**明确写出完整长度**，
-  ///   而不是让用户以为响应本来就只有这么长。
-  String? _redactPreview(Object? data) {
-    if (data == null) return null;
-    var text = _prettyJson(_redactStructured(data, 0));
-    text = text.replaceAllMapped(
-      RegExp(
-        '\\b($sensitiveDiagnosticNamePattern)=[^&"\\s,}]+',
-        caseSensitive: false,
-      ),
-      (match) => '${match.group(1)}=[redacted]',
-    );
-    // JSON 键值对：**字符串与非字符串值都要挡**（`"token": 123` / `"jwt": null`）。
-    text = text.replaceAllMapped(
-      RegExp(
-        '"($sensitiveDiagnosticNamePattern)"\\s*:\\s*'
-        '(?:"[^"]*"|[^,}\\]\\s][^,}\\]]*)',
-        caseSensitive: false,
-      ),
-      (match) => '"${match.group(1)}":"[redacted]"',
-    );
-    // 请求/响应头形态：`Authorization: Bearer …` / `Cookie: a=b`。
-    text = text.replaceAllMapped(
-      RegExp(
-        '^\\s*($sensitiveDiagnosticNamePattern)\\s*:\\s*.*\$',
-        caseSensitive: false,
-        multiLine: true,
-      ),
-      (match) => '${match.group(1)}: [redacted]',
-    );
-    if (text.length <= responsePreviewMaxChars) return text;
-    return '${text.substring(0, responsePreviewMaxChars)}\n'
-        '…（已截断展示：完整响应共 ${text.length} 字符）';
-  }
-
-  /// 逐层把敏感键的**值**换成 `[redacted]`。
-  ///
-  /// [depth] 只是防御性上限：解码后的 JSON 不会有环，但预览不该被刻意做深的响应拖垮。
-  static Object? _redactStructured(Object? data, int depth) {
-    if (depth > 32) return '[redacted：层级过深]';
-    if (data is Map) {
-      return <String, Object?>{
-        for (final entry in data.entries)
-          '${entry.key}': isSensitiveDiagnosticName('${entry.key}')
-              ? '[redacted]'
-              : _redactStructured(entry.value, depth + 1),
-      };
-    }
-    if (data is List) {
-      return [for (final item in data) _redactStructured(item, depth + 1)];
-    }
-    return data;
-  }
-
-  String _prettyJson(Object? data) {
-    if (data is String) return data;
-    try {
-      return const JsonEncoder.withIndent('  ').convert(data);
-    } catch (_) {
-      return '$data';
-    }
-  }
 
   void _notify() {
     if (_disposed) return;
