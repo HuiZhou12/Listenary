@@ -27,7 +27,9 @@ final class OnlineMusicProviderRegistry {
     Map<OnlineMusicCapability, String> capabilityProviders = const {},
     OnlineMusicExplicitCandidates? explicitCandidates,
     Iterable<MusicPlatform> enabledPlatforms = const {},
+    Map<String, PlatformIdentity> providerIdentities = const {},
   }) : _explicitCapabilityProviders = Map.unmodifiable(capabilityProviders),
+       _identities = Map.unmodifiable(providerIdentities),
        _explicitCandidates = explicitCandidates,
        _enabledPlatforms = Set.unmodifiable(enabledPlatforms) {
     for (final provider in providers) {
@@ -59,6 +61,13 @@ final class OnlineMusicProviderRegistry {
   /// （与 `OnlineMusicSettings.enabledPlatforms` 同义 —— P-55：这里以前也写成"被停用"，
   /// 与字段语义相反，见那边的详细说明）。
   final Set<MusicPlatform> _enabledPlatforms;
+
+  /// F5-P-39（P2）：`providerId → 平台身份`。由装配层从各条目的
+  /// `OnlineMusicProviderDefinition.identity` 派生（**配置是唯一事实源**）。
+  ///
+  /// 为什么需要注入而不是加接口：运行期 `OnlineMusicProvider` 只暴露 `providerId`，
+  /// 若给它加身份访问器会波及**全部实现与测试替身**（F4 教训：`implements` 不继承实现）。
+  final Map<String, PlatformIdentity> _identities;
   late final OnlineMusicProvider _defaultProvider;
   late final Map<OnlineMusicCapability, OnlineMusicProvider> _selectedProviders;
 
@@ -87,6 +96,30 @@ final class OnlineMusicProviderRegistry {
   ///
   /// 与 [providerFor] 的区别：前者是平台无关的单值 + 默认回落；这里是平台感知的候选
   /// 列表，**不含**任何默认回落。空列表是合法结果。
+  /// F5-P-39（P2）：按**平台身份**取候选 —— 平台级路由/聚合/日志都必须用它，
+  /// 否则所有自定义平台共享 `MusicPlatform.custom` 会互相串台。
+  ///
+  /// - 身份**无效**（自定义平台缺稳定 ID）⇒ 返回空（**fail-closed**，不路由）；
+  /// - 内置平台 ⇒ 完全等价于 [providersFor]（走同一停用判定与显式候选）；
+  /// - 自定义平台 ⇒ 在 `_supports` 基础上要求该 provider 的注入身份**等于**本身份。
+  List<OnlineMusicProvider> providersForIdentity(
+    PlatformIdentity identity,
+    OnlineMusicCapability capability,
+  ) {
+    if (!identity.isValid) return const [];
+    if (!identity.isCustom) return providersFor(identity.platform, capability);
+    if (_enabledPlatforms.isNotEmpty &&
+        !_enabledPlatforms.contains(identity.platform)) {
+      return const [];
+    }
+    return List.unmodifiable([
+      for (final provider in _providers.values)
+        if (_supports(provider, identity.platform, capability) &&
+            _identities[provider.providerId] == identity)
+          provider,
+    ]);
+  }
+
   List<OnlineMusicProvider> providersFor(
     MusicPlatform platform,
     OnlineMusicCapability capability,

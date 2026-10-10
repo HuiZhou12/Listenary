@@ -184,6 +184,14 @@ OnlineMusicComposition createOnlineMusicComposition({
 
   final registry = OnlineMusicProviderRegistry(
     providers: providers,
+    // F5-P-39（P2）：把各条目的**平台身份**注入注册表（配置是唯一事实源）。
+    // 只登记"能在配置里找到同名条目"的 provider；找不到的（如内置兜底）身份未知 ⇒
+    // 自定义平台的身份过滤不会匹配它们（安全方向）。
+    providerIdentities: {
+      for (final provider in providers)
+        for (final definition in settings.providers)
+          if (definition.id == provider.providerId) provider.providerId: definition.identity,
+    },
     defaultProviderId: settings.defaultProviderId,
     capabilityProviders: settings.capabilityProviders,
     // 平台感知路由（D4:A / D14）：候选由配置层的 (platform, capability) 查询决定，
