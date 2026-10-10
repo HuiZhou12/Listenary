@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_execution.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_verification.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_templates.dart';
@@ -615,8 +616,7 @@ void main() {
       );
     });
 
-    test('源码守卫：探测不得再长出"第二套分类"', () {
-      // 审计点名的"第四处分类逻辑"就是这样长出来的：探测自带 401/403 判断、
+    test('源码守卫：探测不得再长出"第二套分类"', () {      // 审计点名的"第四处分类逻辑"就是这样长出来的：探测自带 401/403 判断、
       // 自带成功判定、自带兜底 `catch (_)`。这里用源码扫描把它钉死 ——
       // 一旦有人再写一遍，这个测试就会红。
       final source = File(
@@ -711,6 +711,65 @@ void main() {
           'parameterName',
           'apikey',
         ),
+      );
+    });
+
+    test('★ F3-S6 探测结论落在**同一套三态**里（有数据 / 空结果 / 明确失败 / 缺凭据）', () async {
+      transport.responder = (options) async => _chkszBody;
+      Future<ProviderProbeOutcome> probe({String? credential}) async {
+        final report = await probeDeclarativeSearch(
+          transport: transport,
+          headerCredentialReader: noHeaderCredentials,
+          platform: MusicPlatform.netease,
+          candidates: chkszCandidate(),
+          credential: credential,
+        );
+        return report.outcomes.single;
+      }
+
+      // ① 有数据 + 有凭据 ⇒ 已验证可用
+      expect(
+        (await probe(credential: 'chksz_KEY_TEST_ONLY')).confidence,
+        DeclarativeVerificationConfidence.verified,
+      );
+
+      // ② 结构合法但没有数据 ⇒ **未能确认**（既不是成功、也不是失败）
+      transport.responder = (options) async => const {
+        // ⚠️ 必须满足模板的成功判定（`code` **与** `msg`）—— 第一版漏了 `msg`，
+        // 于是判定不过、按"业务失败"正确判成 failed，而不是我要验的"空结果 ⇒ 未能确认"。
+        'code': 200,
+        'msg': 'success',
+        'data': {'songs': <Object?>[], 'total': 0},
+      };
+      final empty = await probe(credential: 'chksz_KEY_TEST_ONLY');
+      expect(
+        empty.confidence,
+        DeclarativeVerificationConfidence.unconfirmed,
+        reason:
+            'D-F3-3：空结果不能算可用 '
+            '(status=${empty.status} kind=${empty.failureKind} code=${empty.statusCode} '
+            'mapped=${empty.mappedTrackCount} needsAuth=${empty.needsAuthentication} '
+            'credMissing=${empty.credentialMissingForAuth} score=${empty.score} '
+            'why=${empty.failureReason})',
+      );
+      expect(empty.failureKind, isNull, reason: '也不该捏造失败大类');
+
+      // ③ 明确的 HTTP 失败 ⇒ 验证失败
+      transport
+        ..statusCode = 500
+        ..responder = (options) async => const {'oops': true};
+      expect(
+        (await probe(credential: 'chksz_KEY_TEST_ONLY')).confidence,
+        DeclarativeVerificationConfidence.failed,
+      );
+
+      // ④ 声明了认证但没有凭据 ⇒ **未能确认**（服务可能可达，但没证明能力可用）
+      transport
+        ..statusCode = 200
+        ..responder = (options) async => _chkszBody;
+      expect(
+        (await probe()).confidence,
+        DeclarativeVerificationConfidence.unconfirmed,
       );
     });
 

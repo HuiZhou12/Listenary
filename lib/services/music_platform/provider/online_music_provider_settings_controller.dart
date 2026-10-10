@@ -7,6 +7,7 @@ import 'package:pure_music/services/music_platform/declarative/declarative_execu
 import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_response_mapper.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_verification.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_credentials.dart';
@@ -46,6 +47,16 @@ enum DeclarativeTestFailureKind {
   config,
 }
 
+/// 空结果的**统一措辞**（F3-S6 / D-F3-3）。
+///
+/// 既说明"响应有效但没有可验证的数据"，也**保留**"可能是合法空结果"这一合法性说明
+/// （空歌单、空榜单、纯音乐没有歌词都是正常的），并给出"也可能是列表路径 / 字段映射
+/// 配置有误"的方向 —— 但**不武断**地断言"配置错误"：
+/// 这次试跑拿到的证据不足以区分这两者，所以结论只能是"未能确认"。
+String declarativeEmptyResultNote(String what) =>
+    '响应有效，但$what —— 没有可验证的数据：可能是合法空结果，'
+    '也可能是列表路径 / 字段映射配置有误；这次无法确认该能力可用';
+
 /// 试跑失败大类的界面文案。
 String declarativeTestFailureLabel(DeclarativeTestFailureKind kind) =>
     switch (kind) {
@@ -62,6 +73,7 @@ String declarativeTestFailureLabel(DeclarativeTestFailureKind kind) =>
 final class DeclarativeCapabilityTestResult {
   const DeclarativeCapabilityTestResult({
     required this.ok,
+    this.explicitConfidence,
     this.statusCode,
     this.mappedSummary,
     this.failureReason,
@@ -71,6 +83,21 @@ final class DeclarativeCapabilityTestResult {
   });
 
   final bool ok;
+
+  /// 显式的可信度结论（F3-S6 / D-F3-3）；为 null 时按 [ok] 推得。
+  ///
+  /// "**未能确认**"（请求完成但结果为空/证据不足）必须**显式**给出 ——
+  /// 它既不是成功（空结果什么也没证明）也不是失败（可能只是合法空结果），
+  /// 靠 `ok` 猜不出来。
+  final DeclarativeVerificationConfidence? explicitConfidence;
+
+  /// 这次试跑的**结论可信度**（D-F3-3 的三态）。
+  DeclarativeVerificationConfidence get confidence =>
+      explicitConfidence ??
+      (ok
+          ? DeclarativeVerificationConfidence.verified
+          : DeclarativeVerificationConfidence.failed);
+
   final int? statusCode;
 
   /// 映射结果的**非敏感**摘要（例如「1 首曲目 / 第 1 首：海阔天空」）。
@@ -95,6 +122,7 @@ final class DeclarativeCapabilityTestResult {
     if (summary == null || requestSummary != null) return this;
     return DeclarativeCapabilityTestResult(
       ok: ok,
+      explicitConfidence: explicitConfidence,
       statusCode: statusCode,
       mappedSummary: mappedSummary,
       failureReason: failureReason,
@@ -692,11 +720,13 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
             statusCode: response.statusCode,
             responsePreview: preview,
             mappedSummary: page.items.isEmpty
-                ? '解析成功，但没有曲目'
+                ? '没有可验证的数据（空结果）'
                 : '${page.items.length} 首曲目 · 第 1 首：$first',
-            failureReason: page.items.isEmpty ? '没有解析出曲目' : null,
-            failureKind: page.items.isEmpty
-                ? DeclarativeTestFailureKind.mapping
+            explicitConfidence: page.items.isEmpty
+                ? DeclarativeVerificationConfidence.unconfirmed
+                : null,
+            failureReason: page.items.isEmpty
+                ? declarativeEmptyResultNote('没有解析出曲目')
                 : null,
           );
         }
@@ -704,8 +734,9 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       case OnlineMusicCapability.playlist:
         {
           // P-01：曲目数组路径**没配**时曲目必然为空 —— 那是"配置缺项"，不是"这个歌单
-          // 没有曲目"。以前这里恒 `ok: true`，于是配置写漏了也报「试跑成功」（假阳性）。
-          // 注意：配了列表路径但数组为空 ⇒ 仍然算成功（合法的空歌单）。
+          // 没有曲目"（**配置错误**与**空结果**必须用不同判据，D-F3-3）。
+          // ⚠️ F3-S6 修正：配了列表路径但数组为空，**不再**算"成功"——
+          // 合法性说明保留，但结论只能是"未能确认"（见下）。
           if (binding.response.listPath == null) {
             return DeclarativeCapabilityTestResult(
               ok: false,
@@ -721,12 +752,22 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
             platform: definition.contentPlatform,
             requestedPlaylistId: requestedPlaylistId!,
           );
+          final isEmpty = playlist.tracks.isEmpty;
           return DeclarativeCapabilityTestResult(
-            ok: true,
+            ok: !isEmpty,
+            // D-F3-3：空歌单是**合法**的，但它同样**没有证明**这份配置可用
+            // ⇒ 结论是"未能确认"，且不给失败大类。
+            explicitConfidence: isEmpty
+                ? DeclarativeVerificationConfidence.unconfirmed
+                : null,
             statusCode: response.statusCode,
             responsePreview: preview,
-            mappedSummary:
-                '歌单「${playlist.name}」· ${playlist.tracks.length} 首曲目',
+            mappedSummary: isEmpty
+                ? '没有可验证的数据（空结果）'
+                : '歌单「${playlist.name}」· ${playlist.tracks.length} 首曲目',
+            failureReason: isEmpty
+                ? declarativeEmptyResultNote('没有解析出任何曲目')
+                : null,
           );
         }
 
@@ -743,11 +784,13 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
             statusCode: response.statusCode,
             responsePreview: preview,
             mappedSummary: playlists.isEmpty
-                ? '解析成功，但没有歌单'
+                ? '没有可验证的数据（空结果）'
                 : '${playlists.length} 个歌单 · 第一个：$first',
-            failureReason: playlists.isEmpty ? '没有解析出歌单' : null,
-            failureKind: playlists.isEmpty
-                ? DeclarativeTestFailureKind.mapping
+            explicitConfidence: playlists.isEmpty
+                ? DeclarativeVerificationConfidence.unconfirmed
+                : null,
+            failureReason: playlists.isEmpty
+                ? declarativeEmptyResultNote('没有解析出歌单')
                 : null,
           );
         }
@@ -766,11 +809,13 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
             statusCode: response.statusCode,
             responsePreview: preview,
             mappedSummary: charts.isEmpty
-                ? '解析成功，但没有榜单'
+                ? '没有可验证的数据（空结果）'
                 : '${charts.length} 个榜单 · 第一个：$first',
-            failureReason: charts.isEmpty ? '没有解析出榜单' : null,
-            failureKind: charts.isEmpty
-                ? DeclarativeTestFailureKind.mapping
+            explicitConfidence: charts.isEmpty
+                ? DeclarativeVerificationConfidence.unconfirmed
+                : null,
+            failureReason: charts.isEmpty
+                ? declarativeEmptyResultNote('没有解析出榜单')
                 : null,
           );
         }
@@ -788,11 +833,13 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
             statusCode: response.statusCode,
             responsePreview: preview,
             mappedSummary: categories.isEmpty
-                ? '解析成功，但没有分类'
+                ? '没有可验证的数据（空结果）'
                 : '${categories.length} 个分类 · 第一个：$first',
-            failureReason: categories.isEmpty ? '没有解析出分类' : null,
-            failureKind: categories.isEmpty
-                ? DeclarativeTestFailureKind.mapping
+            explicitConfidence: categories.isEmpty
+                ? DeclarativeVerificationConfidence.unconfirmed
+                : null,
+            failureReason: categories.isEmpty
+                ? declarativeEmptyResultNote('没有解析出分类')
                 : null,
           );
         }
@@ -813,11 +860,13 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
             statusCode: response.statusCode,
             responsePreview: preview,
             mappedSummary: tracks.isEmpty
-                ? '解析成功，但没有新歌'
+                ? '没有可验证的数据（空结果）'
                 : '${tracks.length} 首曲目 · 第一首：$first',
-            failureReason: tracks.isEmpty ? '没有解析出曲目' : null,
-            failureKind: tracks.isEmpty
-                ? DeclarativeTestFailureKind.mapping
+            explicitConfidence: tracks.isEmpty
+                ? DeclarativeVerificationConfidence.unconfirmed
+                : null,
+            failureReason: tracks.isEmpty
+                ? declarativeEmptyResultNote('没有解析出曲目')
                 : null,
           );
         }
@@ -833,14 +882,24 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
             ),
           );
           // 空歌词**不是失败**：纯音乐/间奏本来就没有歌词，配置可能是对的。
+          // ⚠️ F3-S6（D-F3-3）：但"没有歌词"也**不能**证明歌词接口配置正确
+          // —— 它同样可能是字段路径配错。因此结论是"未能确认"（既非可用、也非失败），
+          // 并在说明里同时保留合法性与"可能是配置问题"两个方向。
+          final isEmpty = lyrics.isEmpty;
           return DeclarativeCapabilityTestResult(
-            ok: true,
+            ok: !isEmpty,
+            explicitConfidence: isEmpty
+                ? DeclarativeVerificationConfidence.unconfirmed
+                : null,
             statusCode: response.statusCode,
             responsePreview: preview,
-            mappedSummary: lyrics.isEmpty
-                ? '解析成功，但这份响应里没有歌词（纯音乐？）'
+            mappedSummary: isEmpty
+                ? '没有可验证的数据（空结果）'
                 : '歌词：原文${lyrics.original != null ? '有' : '无'}'
                       '${lyrics.translation != null ? ' · 翻译有' : ''}',
+            failureReason: isEmpty
+                ? declarativeEmptyResultNote('没有解析出歌词（纯音乐 / 间奏本来就没有歌词）')
+                : null,
           );
         }
 

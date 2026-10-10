@@ -6,6 +6,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_verification.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
 import 'package:pure_music/services/music_platform/online_music_credentials.dart';
 import 'package:pure_music/services/music_platform/online_music_diagnostics.dart';
@@ -612,8 +613,10 @@ class _OnlineMusicCapabilityEditorDialogState
         detail.writeln(
           // F3-S3（D-F3-1 第 3 条）：**来源与能力必须写在结论旁边** ——
           // "探测成功"本身不说明什么，得说清验的是"谁的哪个能力"。
+          // F3-S6（D-F3-3）：结论用**三态词表**（与试跑同一套），不再只报"得分 N"
+          //（那既读不出"能不能用"，也读不出"没确认"）。
           '· ${outcome.sourceLabel}（${outcome.candidateId}）：'
-          '${outcome.status == ProviderProbeStatus.notSent ? '请求未发出（配置问题）' : '得分 ${outcome.score}'}'
+          '${outcome.status == ProviderProbeStatus.notSent ? '请求未发出（配置问题）' : declarativeVerificationConfidenceLabel(outcome.confidence)}'
           '${outcome.statusCode == null ? '' : ' · HTTP ${outcome.statusCode}'}'
           '${outcome.mappedTrackCount > 0 ? ' · 解析出 ${outcome.mappedTrackCount} 首' : ''}'
           '${outcome.needsAuthentication ? ' · 需要认证' : ''}'
@@ -720,12 +723,25 @@ class _OnlineMusicCapabilityEditorDialogState
       final suffix = result.statusCode == null
           ? ''
           : ' · HTTP ${result.statusCode}';
-      final kindSuffix = result.ok || result.failureKind == null
+      final kindSuffix = result.failureKind == null
           ? ''
           : ' · ${declarativeTestFailureLabel(result.failureKind!)}';
+      // F3-S6（D-F3-3）：标题必须对应**真实判定状态** ——
+      // 「未能确认」（响应有效但没有可验证的数据）既不能渲染成成功，
+      // 也不能渲染成失败/网络故障；中间态用中性色（`ok: null`）。
+      final confidence = result.confidence;
+      final headline = switch (confidence) {
+        DeclarativeVerificationConfidence.verified => '试跑成功',
+        DeclarativeVerificationConfidence.unconfirmed => '未能确认',
+        DeclarativeVerificationConfidence.failed => '试跑失败',
+      };
       _setResult(
-        headline: '${result.ok ? '试跑成功' : '试跑失败'}$suffix$kindSuffix',
-        ok: result.ok,
+        headline: '$headline$suffix$kindSuffix',
+        ok: switch (confidence) {
+          DeclarativeVerificationConfidence.verified => true,
+          DeclarativeVerificationConfidence.unconfirmed => null,
+          DeclarativeVerificationConfidence.failed => false,
+        },
         detail: detail.toString().trimRight(),
       );
     } catch (_) {

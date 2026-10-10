@@ -26,6 +26,7 @@ import 'package:pure_music/services/music_platform/declarative/declarative_execu
 import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_response_mapper.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_verification.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_templates.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_error.dart';
@@ -187,6 +188,32 @@ final class ProviderProbeOutcome {
 
   /// 是否真的发出过请求。
   bool get wasAttempted => status != ProviderProbeStatus.notAttempted;
+
+  /// 这次探测的**结论可信度**（F3-S6 / D-F3-3，与试跑**同一套词表**）。
+  ///
+  /// - [DeclarativeVerificationConfidence.failed]：未尝试 / 请求没发出去 / 明确的失败；
+  /// - [DeclarativeVerificationConfidence.unconfirmed]：认证条件未满足（服务可能可达，
+  ///   但没证明能力可用）、响应有效但没解析出任何曲目（空结果）、或字段映射不全
+  ///   （能取到列表，但不足以证明这份配置可用）；
+  /// - [DeclarativeVerificationConfidence.verified]：解析出了曲目且字段/身份都通过。
+  DeclarativeVerificationConfidence get confidence {
+    if (status != ProviderProbeStatus.attempted) {
+      return DeclarativeVerificationConfidence.failed;
+    }
+    if (credentialMissingForAuth) {
+      return DeclarativeVerificationConfidence.unconfirmed;
+    }
+    if (failureKind != null) return DeclarativeVerificationConfidence.failed;
+    if (mappedTrackCount == 0) {
+      // 响应有效但没有可验证的数据（空结果）⇒ 不能算"可用"。
+      return DeclarativeVerificationConfidence.unconfirmed;
+    }
+    if (score < 2) {
+      // 能取到列表但字段映射不全 ⇒ 同样不足以证明可用。
+      return DeclarativeVerificationConfidence.unconfirmed;
+    }
+    return DeclarativeVerificationConfidence.verified;
+  }
 
   /// 界面上「来源（能力）」这一段，例如 `条目自身配置（搜索）`。
   String get sourceLabel =>

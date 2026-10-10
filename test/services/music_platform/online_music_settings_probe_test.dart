@@ -5,6 +5,7 @@ import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_diagnostics.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_verification.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_templates.dart';
@@ -678,6 +679,148 @@ void main() {
       expect(AppPreference.instance.defaultQuality, qualityBefore);
       expect(AppPreference.instance.onlineMusicSettings, preferenceBefore);
     });
+
+    // ---------------------------------------------------------------- F3-S6（D-F3-3）
+
+    test('★ F3-S6 合法空结果 ⇒ **未能确认**（既不是成功，也不是映射失败）', () async {
+      // 七个"列表 / 文本"型能力各给一份**结构合法但没有数据**的响应。
+      transport
+        ..statusCode = 200
+        ..error = null
+        ..responder = (request) async => _emptyCapabilitiesBody;
+      final settings = _allCapabilitiesSettings();
+      final controller = controllerFor(settings, credential: 'SECRET_API_KEY');
+      final definition = settings.providers.single;
+
+      const listCapabilities = [
+        OnlineMusicCapability.search,
+        OnlineMusicCapability.newSongs,
+        OnlineMusicCapability.playlist,
+        OnlineMusicCapability.playlistCollection,
+        OnlineMusicCapability.chartList,
+        OnlineMusicCapability.playlistCategories,
+        OnlineMusicCapability.lyric,
+      ];
+      for (final capability in listCapabilities) {
+        final result = await controller.testCapability(
+          definition,
+          capability,
+          trackId: 'track-1',
+          playlistId: 'playlist-1',
+        );
+        expect(
+          result.confidence,
+          DeclarativeVerificationConfidence.unconfirmed,
+          reason: '${capability.name}：空结果不能算"可用"，也不能一律当"映射失败"',
+        );
+        expect(result.ok, isFalse, reason: '空列表什么也没证明');
+        expect(
+          result.failureKind,
+          isNull,
+          reason: '${capability.name}：这是"未能确认"，不该捏造一个失败大类',
+        );
+        expect(result.failureReason, contains('合法空结果'));
+        expect(result.failureReason, contains('配置'));
+      }
+
+      // 对照组：同一份配置**有数据**时是"已验证可用" ⇒ 判据确实在区分两种情形。
+      transport.responder = (request) async => _allCapabilitiesBody;
+      final verified = await controller.testCapability(
+        definition,
+        OnlineMusicCapability.search,
+      );
+      expect(verified.confidence, DeclarativeVerificationConfidence.verified);
+      expect(verified.ok, isTrue);
+    });
+
+    test('★ F3-S6 字段缺失 / 映射错误 ⇒ **验证失败**（与合法空结果不同判据）', () async {
+      transport
+        ..statusCode = 200
+        ..error = null
+        ..responder = (request) async => _allCapabilitiesBody;
+      final settings = _allCapabilitiesSettings();
+      final controller = controllerFor(settings, credential: 'SECRET_API_KEY');
+
+      // ① 配置缺项（歌单详情没配列表路径）⇒ 明确的**配置**失败，不是"空歌单"。
+      final withoutListPath = settings.providers.single.withCapabilityBinding(
+        OnlineMusicCapability.playlist,
+        OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(path: '/playlist/detail'),
+          response: OnlineMusicResponseSpec(),
+        ),
+      );
+      final missingListPath = await controller.testCapability(
+        withoutListPath,
+        OnlineMusicCapability.playlist,
+        playlistId: 'playlist-1',
+      );
+      expect(
+        missingListPath.confidence,
+        DeclarativeVerificationConfidence.failed,
+      );
+      expect(missingListPath.failureKind, DeclarativeTestFailureKind.config);
+
+      // ② 字段映射错误（必填的 id 取不到）⇒ 映射失败。
+      transport.responder = (request) async => const {
+        'code': 200,
+        'data': [
+          {'name': 'A'},
+        ],
+      };
+      final mapping = await controller.testCapability(
+        settings.providers.single,
+        OnlineMusicCapability.search,
+      );
+      expect(mapping.confidence, DeclarativeVerificationConfidence.failed);
+      expect(mapping.failureKind, DeclarativeTestFailureKind.mapping);
+    });
+
+    test('★ F3-S6 三态词表**只有一处**（探测与试跑同一套）', () {
+      expect(
+        declarativeVerificationConfidenceLabel(
+          DeclarativeVerificationConfidence.verified,
+        ),
+        '已验证可用',
+      );
+      expect(
+        declarativeVerificationConfidenceLabel(
+          DeclarativeVerificationConfidence.unconfirmed,
+        ),
+        '未能确认',
+      );
+      expect(
+        declarativeVerificationConfidenceLabel(
+          DeclarativeVerificationConfidence.failed,
+        ),
+        '验证失败',
+      );
+      expect(DeclarativeVerificationConfidence.values, hasLength(3));
+    });
+
+    test('★ F3-S6 界面词表与判定**同源**（源码守卫）', () {
+      // 试跑标题与探测逐行都必须按**三态**分支；以前是 `result.ok ? 成功 : 失败`，
+      // 于是"未能确认"会被渲染成"失败"（或反过来被渲染成成功）—— D-F3-3 明令禁止。
+      final source = File(
+        'lib/page/settings_page/online_music_capability_editor.dart',
+      ).readAsStringSync();
+
+      expect(
+        source,
+        contains('DeclarativeVerificationConfidence.unconfirmed'),
+        reason: '标题必须按三态分支，而不是布尔',
+      );
+      expect(source, contains('未能确认'));
+      expect(
+        source,
+        isNot(contains("result.ok ? '试跑成功' : '试跑失败'")),
+        reason: 'D-F3-3：不能把"未能确认"渲染成失败（也不能渲染成成功）',
+      );
+      expect(
+        source,
+        contains('declarativeVerificationConfidenceLabel(outcome.confidence)'),
+        reason: '探测逐行与试跑必须用**同一套**词表',
+      );
+    });
   });
 }
 
@@ -703,6 +846,22 @@ const _allCapabilitiesBody = <String, Object?>{
     ],
   },
   'lrc': {'lyric': '[00:01.00]line'},
+  'stream': {'id': 'track-1', 'url': 'https://media.invalid/a.flac'},
+};
+
+/// 七能力共用的**合法空结果**：结构与成功判定都对，只是没有任何可验证的数据。
+///
+/// 空歌单 / 空榜单 / 纯音乐没有歌词都是**合法**的 ⇒ 结论必须是"未能确认"，
+/// 既不能算"可用"，也不能一律当"映射失败"（D-F3-3）。
+const _emptyCapabilitiesBody = <String, Object?>{
+  'code': 200,
+  'data': <Object?>[],
+  'detail': {
+    'id': 9,
+    'name': 'P',
+    'tracks': <Object?>[],
+  },
+  'lrc': <String, Object?>{},
   'stream': {'id': 'track-1', 'url': 'https://media.invalid/a.flac'},
 };
 
