@@ -239,6 +239,9 @@ final class CompositeOnlineMusicService
   }) => _dispatch(
     ref.platform,
     OnlineMusicCapability.stream,
+    // F5-P-39（P2）：曲目引用**自带身份**（custom + 稳定 ID）⇒ 播放解析按身份路由；
+    // 自定义平台缺稳定 ID 时身份无效 ⇒ 候选为空 ⇒ unavailable（fail-closed，不串台）。
+    identity: ref.identity,
     // D2:A / D10:A + §19.7：`requestedQuality` 是**内部偏好档位**（跨平台语义），
     // 发给平台之前必须按**该 Track 所属平台自己的档位声明**转换成平台请求值。
     // 网易云的 requestValue 就是内部键，因此这条转换对既有行为零影响；
@@ -344,7 +347,12 @@ final class CompositeOnlineMusicService
   );
 
   List<OnlineMusicProvider> _streamCandidates(MusicPlatform platform) =>
-      registry.providersFor(platform, OnlineMusicCapability.stream);
+    _streamCandidatesForIdentity(PlatformIdentity.builtin(platform));
+
+  /// F5-P-39（P2）：按**平台身份**取 stream 候选（自定义平台靠稳定 ID 区分，不串台）。
+  List<OnlineMusicProvider> _streamCandidatesForIdentity(
+    PlatformIdentity identity,
+  ) => registry.providersForIdentity(identity, OnlineMusicCapability.stream);
 
   /// 多平台聚合搜索（D6:A / D6b:a / D6c:a）。
   ///
