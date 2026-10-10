@@ -1639,3 +1639,22 @@ _parsePlatformFields(Object? rawContentPlatform, Object? rawPlatformId) {
         '（在成功配置前，该条目不参与路由，也不会发出任何请求）',
   );
 }
+
+/// F5-P-39（P3）：按**平台身份**解析展示名 —— 界面收口的单一事实源。
+///
+/// 与 [platformDisplayLabel] 的分工：后者只看身份（无法知道条目声明的名字），
+/// 本函数会先在**已保存配置**里找同身份的条目，用它的 `platformName`（F4-S5 语义：声明名优先）。
+///
+/// 规则（P0）：找不到同名条目、或身份无效 ⇒ 交回 [platformDisplayLabel] 的兜底
+/// （「自定义平台」/「未知平台」），**绝不回落网易云**、也不用名称/URL 反推身份。
+String platformLabelForIdentity(
+  OnlineMusicSettings settings,
+  PlatformIdentity identity,
+) {
+  if (identity.isCustom) {
+    for (final definition in settings.providers) {
+      if (definition.identity == identity) return definition.displayPlatformName;
+    }
+  }
+  return platformDisplayLabel(identity);
+}
