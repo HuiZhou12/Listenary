@@ -105,10 +105,10 @@ class OnlineMusicCapabilityEditorDialog extends StatefulWidget {
   /// 探测整个服务（仅 search 提供）。
   final Future<ProviderProbeReport> Function() onProbe;
 
-  /// 用**当前编辑中的**绑定试跑一次；[trackId] 供播放解析试跑使用。
+  /// 用**当前编辑中的**绑定试跑一次；[inputs] 是**用户给的**真实输入（P-49）。
   final Future<DeclarativeCapabilityTestResult> Function(
     OnlineMusicDeclarativeCapabilityBinding binding,
-    String? trackId,
+    DeclarativeTestInputs inputs,
   )
   onTest;
 
@@ -151,6 +151,9 @@ class _OnlineMusicCapabilityEditorDialogState
   late TextEditingController _json;
   late OnlineMusicHttpVerb _verb;
   final _testTrackId = TextEditingController();
+  // P-49：关键词与每页数量也由用户给（以前分别写死成探测常量与 1/30）。
+  final _testKeyword = TextEditingController();
+  final _testLimit = TextEditingController();
 
   bool _showJson = false;
   bool _bound = false;
@@ -207,6 +210,8 @@ class _OnlineMusicCapabilityEditorDialogState
     _json.dispose();
     _resultController.dispose();
     _testTrackId.dispose();
+    _testKeyword.dispose();
+    _testLimit.dispose();
     for (final row in _queryRows) {
       row.dispose();
     }
@@ -695,10 +700,22 @@ class _OnlineMusicCapabilityEditorDialogState
       _resultController.clear();
     });
     try {
-      final result = await widget.onTest(
-        binding,
-        _testTrackId.text.trim().isEmpty ? null : _testTrackId.text.trim(),
+      // P-49：把**用户填的**真实输入按能力送到正确的入口 ——
+      // 以前无论填什么都当 trackId 传（搜索的关键词因此永远用不上）。
+      final idText = _testTrackId.text.trim();
+      final keywordText = _testKeyword.text.trim();
+      final fields = testInputFieldsFor(widget.capability);
+      final inputs = (
+        keyword: fields.keyword && keywordText.isNotEmpty ? keywordText : null,
+        limit: fields.limit ? int.tryParse(_testLimit.text.trim()) : null,
+        trackId: fields.id && widget.capability != OnlineMusicCapability.playlist
+            ? (idText.isEmpty ? null : idText)
+            : null,
+        playlistId: fields.id && widget.capability == OnlineMusicCapability.playlist
+            ? (idText.isEmpty ? null : idText)
+            : null,
       );
+      final result = await widget.onTest(binding, inputs);
       if (!mounted) return;
       final detail = StringBuffer();
       // W5：先写"实际发了什么请求" —— 未知服务无法自动探测时，这是唯一的排查依据。
@@ -906,6 +923,7 @@ class _OnlineMusicCapabilityEditorDialogState
   Widget _buildForm() {
     final pathFields = responsePathFieldsFor(widget.capability);
     final testId = testIdFieldFor(widget.capability);
+    final testInputs = testInputFieldsFor(widget.capability);
     return ListView(
       key: capabilityFormKey,
       padding: EdgeInsets.zero,
@@ -1104,20 +1122,20 @@ class _OnlineMusicCapabilityEditorDialogState
         ),
         for (final field in domainFieldsFor(widget.capability))
           _fieldRow(field, _fieldRows[field]!),
-        if (!_isSearch) ...[
-          const SizedBox(height: 12.0),
-          const _SectionTitle('试跑'),
-          if (testId.needed)
-            _textRow(testId.label, _testTrackId)
-          else
-            // P-64：以前只对 `playlistCollection` 特判，于是**歌单分类 / 榜单 / 新歌**
-            // 也显示一个用不到的「试跑用的 ID（曲目 / 歌单）」输入框
-            // （它们和歌单列表一样，一次请求拿一个数组）。现在由能力决定。
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8.0),
-              child: _Hint('这个能力不需要额外 ID：试跑会直接请求一次列表。'),
-            ),
-        ],
+        const SizedBox(height: 12.0),
+        const _SectionTitle('试跑'),
+        // P-49：**搜索也有输入框**（以前整个"试跑"区块对搜索直接隐藏，关键词只能写死）。
+        if (testInputs.keyword) _textRow('试跑用的关键词', _testKeyword),
+        if (testInputs.limit) _textRow('试跑用的每页数量', _testLimit),
+        if (testInputs.id)
+          _textRow(testId.label, _testTrackId)
+        else if (!testInputs.keyword && !testInputs.limit)
+          // 兜底说明：正常不会走到（可试跑的能力至少有一种输入），
+          // 但"新增能力漏改"时界面上仍要说明清楚，而不是一片空白。
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8.0),
+            child: _Hint('这个能力不需要额外输入：试跑会直接请求一次。'),
+          ),
       ],
     );
   }
@@ -1665,26 +1683,69 @@ OnlineMusicInputSource defaultInputSourceFor(
   OnlineMusicCapability.newSongs => OnlineMusicInputSource.limit,
 };
 
+/// 试跑要用的**真实输入**（P-49）：由编辑器按能力决定填哪些，控制器只看值。
+///
+/// 每个字段为 null 表示"用户没给" ⇒ 控制器回落到既有默认值（默认行为不变）。
+typedef DeclarativeTestInputs = ({
+  String? keyword,
+  int? limit,
+  String? trackId,
+  String? playlistId,
+});
+/// 试跑需要的**真实输入**（P-49）：关键词 / 每页数量 / 额外 ID。
+///
+/// 以前试跑把关键词写死成探测用的常量、把数量写死成 1（搜索）/ 30（新歌），
+/// 界面上**根本没有**输入关键词的地方 ⇒ 用户无法用自己的词验证配置。
+///
+/// 穷举 switch：新增能力漏改即**编译失败**。
+({bool keyword, bool limit, bool id, String idLabel}) testInputFieldsFor(
+  OnlineMusicCapability capability,
+) => switch (capability) {
+  // 搜索：关键词 + 每页数量。
+  OnlineMusicCapability.search => (
+    keyword: true,
+    limit: true,
+    id: false,
+    idLabel: '',
+  ),
+  // 这四个能力一次请求拿一个数组：最可能用到的是每页数量，不需要额外 ID。
+  OnlineMusicCapability.playlistCollection ||
+  OnlineMusicCapability.playlistCategories ||
+  OnlineMusicCapability.chartList ||
+  OnlineMusicCapability.newSongs => (
+    keyword: false,
+    limit: true,
+    id: false,
+    idLabel: '',
+  ),
+  OnlineMusicCapability.playlist => (
+    keyword: false,
+    limit: false,
+    id: true,
+    idLabel: '试跑用的歌单 ID',
+  ),
+  OnlineMusicCapability.lyric ||
+  OnlineMusicCapability.stream => (
+    keyword: false,
+    limit: false,
+    id: true,
+    idLabel: '试跑用的曲目 ID',
+  ),
+};
+
 /// 试跑是否需要"额外 ID"输入，以及那个 ID 是什么（P-64）。
 ///
 /// 旧写法只对 `playlistCollection` 特判，于是**歌单分类 / 榜单 / 新歌**也显示
 /// 一个用不到的 ID 输入框；而歌单详情与播放解析的输入**含义不同**（歌单 ID vs 曲目 ID），
 /// 却共用一句「试跑用的 ID（曲目 / 歌单）」。
 ///
-/// 穷举 switch：新增能力漏改即**编译失败**。
+/// 现在它**派生**自 [testInputFieldsFor] —— 两处口径不会分叉。
 ({bool needed, String label}) testIdFieldFor(
   OnlineMusicCapability capability,
-) => switch (capability) {
-  OnlineMusicCapability.search => (needed: false, label: ''),
-  OnlineMusicCapability.playlist => (needed: true, label: '试跑用的歌单 ID'),
-  OnlineMusicCapability.lyric ||
-  OnlineMusicCapability.stream => (needed: true, label: '试跑用的曲目 ID'),
-  // 这四个能力一次请求拿一个数组：试跑不需要额外 ID。
-  OnlineMusicCapability.playlistCollection ||
-  OnlineMusicCapability.playlistCategories ||
-  OnlineMusicCapability.chartList ||
-  OnlineMusicCapability.newSongs => (needed: false, label: ''),
-};
+) {
+  final fields = testInputFieldsFor(capability);
+  return (needed: fields.id, label: fields.idLabel);
+}
 
 /// 查询参数取值来源的界面标签。
 ///

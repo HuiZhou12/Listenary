@@ -237,10 +237,14 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
         capability: capability,
         initialBinding: provider.bindingFor(capability),
         onProbe: () => _controller.probeSearch(provider),
-        onTest: (binding, trackId) => _controller.testCapability(
+        onTest: (binding, inputs) => _controller.testCapability(
           provider.withCapabilityBinding(capability, binding),
           capability,
-          trackId: trackId,
+          // P-49：把用户填的真实输入原样送进去；没填的用控制器的既有默认值。
+          keyword: inputs.keyword,
+          limit: inputs.limit,
+          trackId: inputs.trackId,
+          playlistId: inputs.playlistId,
         ),
         // F0-4：敏感请求头的凭据按**槽位名**读写，与条目级 API Key 同一个出口。
         onIsCredentialConfigured: _controller.isReferencedCredentialConfigured,

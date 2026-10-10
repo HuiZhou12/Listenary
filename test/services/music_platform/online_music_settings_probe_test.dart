@@ -797,6 +797,112 @@ void main() {
       expect(DeclarativeVerificationConfidence.values, hasLength(3));
     });
 
+    test('★ F3-S7 试跑用**用户给的**关键词与数量，不再写死（默认值仍然保留）', () async {
+      transport
+        ..statusCode = 200
+        ..error = null
+        ..responder = (request) async => _allCapabilitiesBody;
+      // ⚠️ 用**本用例自带**的绑定：它显式声明了 `keywords` 与 `limit` 两个查询参数 ——
+      // 只有绑定声明了某个参数，用户的输入才可能出现在请求里（这正是要验的那条链路）。
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'selfData',
+            'baseUrl': 'https://self.invalid',
+            'auth': {'kind': 'apiKey', 'reference': 'self/APIKey'},
+            'capabilities': {
+              'search': OnlineMusicDeclarativeCapabilityBinding(
+                request: const OnlineMusicRequestSpec(
+                  path: '/search',
+                  query: [
+                    OnlineMusicParamBinding(
+                      name: 'keywords',
+                      source: OnlineMusicInputSource.keyword,
+                      required: true,
+                    ),
+                    OnlineMusicParamBinding(
+                      name: 'limit',
+                      source: OnlineMusicInputSource.limit,
+                    ),
+                  ],
+                ),
+                response: OnlineMusicResponseSpec(
+                  success: _codeSuccess,
+                  listPath: JsonPathForTest.data,
+                  fields: {
+                    OnlineMusicDomainField.trackId: _intField(
+                      JsonPathForTest.id,
+                      required: true,
+                    ),
+                    OnlineMusicDomainField.title: _stringField(
+                      JsonPathForTest.name,
+                      required: true,
+                    ),
+                  },
+                ),
+              ).toJson(),
+              'newSongs': OnlineMusicDeclarativeCapabilityBinding(
+                request: const OnlineMusicRequestSpec(
+                  path: '/new',
+                  query: [
+                    OnlineMusicParamBinding(
+                      name: 'limit',
+                      source: OnlineMusicInputSource.limit,
+                    ),
+                  ],
+                ),
+                response: OnlineMusicResponseSpec(
+                  success: _codeSuccess,
+                  listPath: JsonPathForTest.data,
+                  fields: {
+                    OnlineMusicDomainField.trackId: _intField(
+                      JsonPathForTest.id,
+                      required: true,
+                    ),
+                    OnlineMusicDomainField.title: _stringField(
+                      JsonPathForTest.name,
+                      required: true,
+                    ),
+                  },
+                ),
+              ).toJson(),
+            },
+          },
+        ],
+      });
+      final controller = controllerFor(settings, credential: 'SECRET_API_KEY');
+      final definition = settings.providers.single;
+
+      // ① 自定义关键词与数量**真的**进了请求。
+      await controller.testCapability(
+        definition,
+        OnlineMusicCapability.search,
+        keyword: '自定义关键词',
+        limit: 7,
+      );
+      final sent = transport.requests.last.query;
+      expect(sent['keywords'], '自定义关键词', reason: 'P-49：以前恒为探测用的常量');
+      expect(sent['limit'], '7', reason: 'P-49：搜索以前恒为 1');
+
+      // ② 不传时行为不变（仍然是既有默认值）。
+      await controller.testCapability(definition, OnlineMusicCapability.search);
+      final defaults = transport.requests.last.query;
+      expect(defaults['keywords'], providerProbeKeyword);
+      expect(defaults['limit'], '$providerProbeLimit');
+
+      // ③ 新歌同理（以前把 30 写死，用户给的数量被忽略）。
+      //
+      // ⚠️ 只断言**请求**里的 limit：映射器拿到 limit 后只用于分页元数据
+      //（`hasMore` 之类），**不截断**解析出的条目 ⇒ 结果摘要在 limit=3 与 limit=30 下
+      // 完全一样、没有可观察差异。因此"映射侧也用用户的 limit"这条**今日无独立覆盖**，
+      // 如实记录（不为它编造断言）。
+      await controller.testCapability(
+        definition,
+        OnlineMusicCapability.newSongs,
+        limit: 3,
+      );
+      expect(transport.requests.last.query['limit'], '3');
+    });
     test('★ F3-S6 界面词表与判定**同源**（源码守卫）', () {
       // 试跑标题与探测逐行都必须按**三态**分支；以前是 `result.ok ? 成功 : 失败`，
       // 于是"未能确认"会被渲染成"失败"（或反过来被渲染成成功）—— D-F3-3 明令禁止。

@@ -1925,21 +1925,28 @@ void main() {
     );
   });
 
-  testWidgets('F1 P-64 数组类能力的试跑不再要求 ID', (tester) async {
+  testWidgets('F1 P-64 数组类能力的试跑**不要求 ID**（F3-S7 起给出每页数量）', (tester) async {
     final controller = _controller();
     addTearDown(controller.dispose);
     await pumpPanel(tester, controller);
     await openCapabilityEditorFor(tester, OnlineMusicCapability.chartList);
 
     // ⚠️ 不能滚到「试跑」：操作栏上的「试跑」按钮永远可见，锚点会立刻命中而根本不滚动。
-    // 直接滚到那句提示本身（表单最下方，惰性 ListView）⇒ 多给几次机会。
-    await scrollCapabilityFormTo(
-      tester,
-      '这个能力不需要额外 ID：试跑会直接请求一次列表。',
-      maxAttempts: 30,
+    // 直接滚到那句输入标签本身（表单最下方，惰性 ListView）⇒ 多给几次机会。
+    await scrollCapabilityFormTo(tester, '试跑用的每页数量', maxAttempts: 30);
+
+    // P-64 的不变量仍然成立：数组类能力**不要求"试跑用的 ID"**。
+    expect(find.textContaining('试跑用的 ID'), findsNothing);
+    expect(find.textContaining('试跑用的曲目 ID'), findsNothing);
+    expect(find.textContaining('试跑用的歌单 ID'), findsNothing);
+    expect(testIdFieldFor(OnlineMusicCapability.chartList).needed, isFalse);
+    // F3-S7（P-49）：改为给出**真正会被用到**的输入 —— 每页数量（以前写死）。
+    expect(find.text('试跑用的每页数量'), findsOneWidget);
+    expect(
+      testInputFieldsFor(OnlineMusicCapability.chartList).limit,
+      isTrue,
+      reason: '数组类能力最可能用到 limit；它以前是写死的 1 / 30',
     );
-    expect(find.textContaining('这个能力不需要额外 ID'), findsOneWidget);
-    expect(find.textContaining('试跑用的'), findsNothing);
   });
 
   testWidgets('F1 P-64 用户可见处不再露英文平台枚举名', (tester) async {
@@ -2376,6 +2383,77 @@ void main() {
     );
     expect(probeTransport.probeCalls, greaterThan(0));
   });
+
+  testWidgets('★ F3-S7 界面上填的关键词/数量真的进了试跑请求（P-49）', (tester) async {
+    // 夹具必须**显式声明** keywords / limit 两个查询参数：只有声明了，用户的输入
+    // 才可能出现在请求里 —— 这正是要验的那条链路（以前界面上根本没有关键词输入）。
+    final binding = OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(
+        path: '/search',
+        query: [
+          OnlineMusicParamBinding(
+            name: 'keywords',
+            source: OnlineMusicInputSource.keyword,
+            required: true,
+          ),
+          OnlineMusicParamBinding(
+            name: 'limit',
+            source: OnlineMusicInputSource.limit,
+          ),
+        ],
+      ),
+      response: OnlineMusicResponseSpec(
+        listPath: JsonPath.tryParse('result.songs')!,
+        fields: {
+          OnlineMusicDomainField.trackId: OnlineMusicFieldSpec(
+            candidates: [JsonPath.tryParse('id')!],
+            transform: OnlineMusicFieldTransform.asInt,
+            required: true,
+          ),
+          OnlineMusicDomainField.title: OnlineMusicFieldSpec(
+            candidates: [JsonPath.tryParse('name')!],
+            transform: OnlineMusicFieldTransform.asString,
+            required: true,
+          ),
+        },
+      ),
+    );
+    final settings = settingsWithBinding(OnlineMusicCapability.search, binding);
+    final transport = _StubTransport();
+    final controller = _controller(
+      configured: settings,
+      active: settings,
+      probeTransportFactory: (_) => transport,
+    );
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+    await openCapabilityEditorFor(tester, OnlineMusicCapability.search);
+
+    // 试跑输入区在表单最下方（惰性 ListView）⇒ 先把它滚出来。
+    await scrollCapabilityFormTo(tester, '试跑用的关键词', maxAttempts: 30);
+    Future<void> enter(String label, String text) async {
+      final field = find.ancestor(
+        of: find.text(label),
+        matching: find.byType(TextField),
+      );
+      expect(field, findsOneWidget, reason: '应能找到「$label」输入框');
+      await tester.enterText(field, text);
+    }
+
+    await enter('试跑用的关键词', '自定义词');
+    await enter('试跑用的每页数量', '7');
+
+    await tester.tap(find.widgetWithText(TextButton, '试跑'));
+    await tester.pumpAndSettle();
+
+    final sent = transport.requests.last.query;
+    expect(
+      sent['keywords'],
+      '自定义词',
+      reason: 'P-49：界面上填的关键词必须真的进请求（以前恒为探测常量）',
+    );
+    expect(sent['limit'], '7', reason: 'P-49：以前恒为 1');
+  });
 }
 
 /// 读出 JSON 高级视图里的文本（JSON 视图是编辑器里唯一含 `"path"` 的输入框）。
@@ -2662,12 +2740,16 @@ final class _StubTransport implements DeclarativeHttpTransport {
 
   int probeCalls = 0;
 
+  /// F3-S7：把发出去的请求记下来（用来断言"用户填的输入真的进了请求"）。
+  final List<BuiltDeclarativeRequest> requests = [];
+
   @override
   Future<DeclarativeHttpResponse> send(
     BuiltDeclarativeRequest request, {
     required OnlineMusicCancelToken cancelToken,
   }) async {
     probeCalls++;
+    requests.add(request);
     return DeclarativeHttpResponse(
       statusCode: 200,
       data:

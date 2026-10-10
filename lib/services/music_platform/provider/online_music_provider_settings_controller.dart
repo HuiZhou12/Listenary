@@ -516,7 +516,9 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   Future<DeclarativeCapabilityTestResult> testCapability(
     OnlineMusicProviderDefinition definition,
     OnlineMusicCapability capability, {
-    String keyword = providerProbeKeyword,
+    String? keyword,
+    /// P-49：试跑的"每页数量"由调用方给（默认值与探测一致，默认行为不变）。
+    int? limit,
     String? trackId,
     String? playlistId,
     String quality = defaultDeclarativeTestQuality,
@@ -597,6 +599,9 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       );
     }
 
+    // P-49：没给就用既有默认值（默认行为不变）。
+    final effectiveKeyword = keyword ?? providerProbeKeyword;
+    final effectiveLimit = limit ?? providerProbeLimit;
     final token = cancelToken ?? OnlineMusicCancelToken();
     // F3-S1（P-07）：探测与试跑**共用同一个执行引擎** ——
     // 构造请求（含敏感请求头凭据）→ 发送 → 成功判定 → **唯一分类表** → 脱敏诊断。
@@ -606,8 +611,8 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       spec: binding.request,
       success: binding.response.success,
       inputs: DeclarativeInputs(
-        keyword: keyword,
-        limit: 1,
+        keyword: effectiveKeyword,
+        limit: effectiveLimit,
         offset: 0,
         page: 1,
         trackId: trackId,
@@ -644,6 +649,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       return _evaluateCapabilityResponse(
         definition: definition,
         capability: capability,
+        limit: effectiveLimit,
         binding: binding,
         response: DeclarativeHttpResponse(
           statusCode: execution.statusCode!,
@@ -680,6 +686,8 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   DeclarativeCapabilityTestResult _evaluateCapabilityResponse({
     required OnlineMusicProviderDefinition definition,
     required OnlineMusicCapability capability,
+    /// P-49：映射时用的"每页数量"（与请求里发出去的**同一个**值）。
+    required int limit,
     required OnlineMusicDeclarativeCapabilityBinding binding,
     required DeclarativeHttpResponse response,
     required String? preview,
@@ -711,7 +719,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
             spec: binding.response,
             body: response.data,
             platform: definition.contentPlatform,
-            limit: 1,
+            limit: limit,
             offset: 0,
           );
           final first = page.items.isEmpty ? null : page.items.first.title;
@@ -851,7 +859,8 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
             spec: binding.response,
             body: response.data,
             platform: definition.contentPlatform,
-            limit: 30,
+            // P-49：以前写死 30，用户给的数量被忽略。
+            limit: limit,
             offset: 0,
           ).items;
           final first = tracks.isEmpty ? null : tracks.first.title;
