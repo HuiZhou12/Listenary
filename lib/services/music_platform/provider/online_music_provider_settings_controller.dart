@@ -178,6 +178,13 @@ DeclarativeTestFailureKind classifyUnsuccessfulTestResponse(
 typedef DeclarativeProbeTransportFactory =
     DeclarativeHttpTransport Function(OnlineMusicProviderDefinition definition);
 
+/// F5（P-28）：探测/试跑**默认路径**里 Dio 的创建口。
+///
+/// 存在的唯一理由是**可观测**：注入一个计数用的 Dio，就能断言
+/// "默认路径创建的 Dio 在成功与异常退出时都被释放"（旧实现每次新建且从不关闭）。
+typedef DeclarativeProbeDioFactory =
+    Dio Function(OnlineMusicProviderDefinition definition);
+
 /// 单项试跑播放解析时的默认音质（与内置实现的默认档位一致）。
 const defaultDeclarativeTestQuality = 'lossless';
 
@@ -224,6 +231,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     required OnlineMusicCredentialAccess fallbackCredentials,
     Map<String, OnlineMusicCredentialController> runningCredentials = const {},
     DeclarativeProbeTransportFactory? probeTransportFactory,
+    DeclarativeProbeDioFactory? probeDioFactory,
     OnlineMusicCredentialReader? credentialReader,
     this.isPortableBuild = portableBuild,
   }) : _activeSettings = activeSettings,
@@ -231,6 +239,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
        _fallbackCredentials = fallbackCredentials,
        _runningCredentials = Map.unmodifiable(runningCredentials),
        _probeTransportFactory = probeTransportFactory,
+       _probeDioFactory = probeDioFactory,
        _credentialReader = credentialReader,
        _settings = store.read();
 
@@ -239,6 +248,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   final OnlineMusicCredentialAccess _fallbackCredentials;
   final Map<String, OnlineMusicCredentialController> _runningCredentials;
   final DeclarativeProbeTransportFactory? _probeTransportFactory;
+  final DeclarativeProbeDioFactory? _probeDioFactory;
 
   /// 探测/试跑时需要凭据值（界面层拿不到），因此单独注入一个读取口。
   final OnlineMusicCredentialReader? _credentialReader;
@@ -501,15 +511,16 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
         blockedReason: noProbeCandidateReason(definition),
       );
     }
-    return probeDeclarativeSearch(
-      transport: _transportFor(definition),
+    // F5（P-28）：默认路径创建的 Dio 用完即释放（成功与异常都释放）。
+    return _withTransport(definition, (transport) async => probeDeclarativeSearch(
+      transport: transport,
       // F3-S1：探测与试跑**共用**同一条执行路径（含敏感请求头凭据读取）。
       headerCredentialReader: _headerCredentialReader,
       platform: definition.contentPlatform,
       candidates: candidates,
       credential: await _readCredential(definition),
       cancelToken: cancelToken,
-    );
+    ));
   }
 
   /// 单项试跑：只跑这一个能力，把 HTTP 结果与映射结果一起回报。
@@ -607,7 +618,9 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     // 构造请求（含敏感请求头凭据）→ 发送 → 成功判定 → **唯一分类表** → 脱敏诊断。
     // 试跑只保留"自己的那一半"：按能力做字段映射。
     // 这样同一个响应在探测与试跑里不可能再得到两个结论（审计的"第四处分类"已删除）。
-    final execution = await executeDeclarativeRequest(
+    final execution = await _withTransport(
+      definition,
+      (transport) async => executeDeclarativeRequest(
       spec: binding.request,
       success: binding.response.success,
       inputs: DeclarativeInputs(
@@ -619,11 +632,11 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
         playlistId: effectivePlaylistId,
         quality: quality,
       ),
-      transport: _transportFor(definition),
+      transport: transport,
       headerCredentialReader: _headerCredentialReader,
       credential: await _readCredential(definition),
       cancelToken: token,
-    );
+    ));
     final requestSummary = execution.requestSummary;
     if (execution.stage == DeclarativeExecutionStage.notSent) {
       // 凭据读取失败 / 请求构造失败：都是**配置**问题，而且**一个请求都没发**。
@@ -949,24 +962,53 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     }
   }
 
-  DeclarativeHttpTransport _transportFor(
+  /// F5（P-28）**所有权约定**（谁创建、谁拥有、谁释放）：
+  ///
+  /// - 注入了 `probeTransportFactory` ⇒ 传输由**外部**拥有（可能是共享实例）⇒
+  ///   控制器**不关闭任何东西**，绝不无条件关闭别人的资源；
+  /// - 否则由本方法**创建** `Dio` ⇒ 由 `_withTransport` 在用完后 `close(force: true)`，
+  ///   成功与异常路径都释放。
+  ({DeclarativeHttpTransport transport, Dio? ownedDio}) _transportFor(
     OnlineMusicProviderDefinition definition,
   ) {
     final factory = _probeTransportFactory;
-    if (factory != null) return factory(definition);
-    return DioDeclarativeHttpTransport(
-      dio: Dio(
-        BaseOptions(
-          // 缺失 ⇒ 默认地址；显式提供的非法值根本走不到这里（见上面的两处拦截）。
-          baseUrl: definition.effectiveBaseUrl,
-          connectTimeout: definition.connectTimeout,
-          sendTimeout: definition.sendTimeout,
-          receiveTimeout: definition.receiveTimeout,
-        ),
+    if (factory != null) {
+      return (transport: factory(definition), ownedDio: null);
+    }
+    final dio = (_probeDioFactory ?? _defaultProbeDio)(definition);
+    return (
+      transport: DioDeclarativeHttpTransport(
+        dio: dio,
+        // P3：探测/试跑不跟随重定向，避免打到用户没有提供的主机。
+        followRedirects: false,
       ),
-      // P3：探测/试跑不跟随重定向，避免打到用户没有提供的主机。
-      followRedirects: false,
+      // 这个 Dio 是**我们创建的** ⇒ 由本控制器负责释放。
+      ownedDio: dio,
     );
+  }
+
+  Dio _defaultProbeDio(OnlineMusicProviderDefinition definition) => Dio(
+    BaseOptions(
+      // 缺失 ⇒ 默认地址；显式提供的非法值根本走不到这里（见上面的两处拦截）。
+      baseUrl: definition.effectiveBaseUrl,
+      connectTimeout: definition.connectTimeout,
+      sendTimeout: definition.sendTimeout,
+      receiveTimeout: definition.receiveTimeout,
+    ),
+  );
+
+  /// 在「用完即释放」的边界内执行探测/试跑（F5-P-28：成功与异常退出都不泄漏）。
+  Future<T> _withTransport<T>(
+    OnlineMusicProviderDefinition definition,
+    Future<T> Function(DeclarativeHttpTransport transport) body,
+  ) async {
+    final resolved = _transportFor(definition);
+    try {
+      return await body(resolved.transport);
+    } finally {
+      // 只释放**自己创建的** Dio；外部注入的传输不归我们管。
+      resolved.ownedDio?.close(force: true);
+    }
   }
 
   Future<String?> _readCredential(
