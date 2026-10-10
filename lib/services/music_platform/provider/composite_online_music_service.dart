@@ -102,9 +102,11 @@ final class CompositeOnlineMusicService
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
+    PlatformIdentity? identity,
   }) => _dispatch(
     platform,
     OnlineMusicCapability.search,
+    identity: identity,
     (provider) => provider.search(
       platform: platform,
       keyword: keyword,
@@ -445,8 +447,12 @@ final class CompositeOnlineMusicService
     OnlineMusicCapability capability,
     Future<T> Function(OnlineMusicProvider provider) run, {
     T Function(T result, String providerId)? stamp,
+    /// F5-P-39（P2）：平台身份。省略 ⇒ builtin(platform)（既有行为完全不变）；
+    /// 自定义平台必须传 custom + 稳定 ID，否则身份无效 ⇒ 候选为空 ⇒ unavailable（fail-closed）。
+    PlatformIdentity? identity,
   }) async {
-    final candidates = registry.providersFor(platform, capability);
+    final resolvedIdentity = identity ?? PlatformIdentity.builtin(platform);
+    final candidates = registry.providersForIdentity(resolvedIdentity, capability);
     if (candidates.isEmpty) throw unsupportedCapability();
 
     final attempts = <OnlineMusicRouteAttempt>[];
@@ -454,7 +460,7 @@ final class CompositeOnlineMusicService
     for (final provider in candidates) {
       try {
         final result = await run(provider);
-        _record(platform, capability, attempts, provider.providerId);
+        _record(platform, capability, attempts, provider.providerId, resolvedIdentity);
         return stamp == null ? result : stamp(result, provider.providerId);
       } on OnlineMusicException catch (error) {
         attempts.add(
@@ -465,12 +471,12 @@ final class CompositeOnlineMusicService
         );
         lastError = error;
         if (!allowsProviderFallback(error.kind)) {
-          _record(platform, capability, attempts, null);
+          _record(platform, capability, attempts, null, resolvedIdentity);
           rethrow;
         }
       }
     }
-    _record(platform, capability, attempts, null);
+    _record(platform, capability, attempts, null, resolvedIdentity);
     throw lastError ?? unsupportedCapability();
   }
 
@@ -479,6 +485,7 @@ final class CompositeOnlineMusicService
     OnlineMusicCapability capability,
     List<OnlineMusicRouteAttempt> attempts,
     String? winnerProviderId,
+    PlatformIdentity? identity,
   ) {
     // P-56：档位清单/文案的**声明者**是候选里的第一个（`_qualityDeclaringProvider`）。
     // 正常情况下它就是服务者；一旦回落让二者分叉，就把它记下来 —— 否则用户看到的
@@ -489,6 +496,7 @@ final class CompositeOnlineMusicService
     _routeLog.add(
       OnlineMusicRouteRecord(
         platform: platform,
+        identity: identity,
         capability: capability,
         attempts: List.unmodifiable(attempts),
         winnerProviderId: winnerProviderId,

@@ -20,6 +20,7 @@ final class OnlineMusicRouteAttempt {
 final class OnlineMusicRouteRecord {
   const OnlineMusicRouteRecord({
     required this.platform,
+    this.identity,
     required this.capability,
     required this.attempts,
     this.winnerProviderId,
@@ -27,6 +28,10 @@ final class OnlineMusicRouteRecord {
   });
 
   final MusicPlatform platform;
+
+  /// F5-P-39（P2）：该条路由的**平台身份**（内置平台为 builtin(platform)）。
+  /// 自定义平台靠它区分：只比较枚举会让所有自定义平台串成同一条。
+  final PlatformIdentity? identity;
   final OnlineMusicCapability capability;
 
   /// 按尝试顺序记录的失败项；最后一项之后若成功，则 [winnerProviderId] 非空。
