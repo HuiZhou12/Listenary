@@ -1667,3 +1667,8 @@ String platformLabelForIdentity(
 /// **绝不回落网易云**。
 String platformLabelForRef(PlatformTrackRef ref) =>
     platformLabelForIdentity(AppPreference.instance.onlineMusicSettings, ref.identity);
+
+/// F5-P-39（P3）：**应用层可直接调用**的身份版展示名（签名只有 `PlatformIdentity`，
+/// 不含 provider 类型 ⇒ 满足依赖边界守卫）。
+String platformLabelForIdentityOnly(PlatformIdentity identity) =>
+    platformLabelForIdentity(AppPreference.instance.onlineMusicSettings, identity);

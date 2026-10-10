@@ -1,3 +1,4 @@
+export 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart' show platformLabelForIdentityOnly;
 export 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart' show platformLabelForRef;
 export 'models/music_models.dart';
 export 'online_music_credentials.dart';
