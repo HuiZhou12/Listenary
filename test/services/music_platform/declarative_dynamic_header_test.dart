@@ -107,12 +107,14 @@ void main() {
         ],
       );
 
+      // ⚠️ F4-S8 起：**非 ASCII 头值**在构造期就明确报错（不再留给传输层）。
+      // 本用例验的是"值来自输入 / 缺失则不发送" ⇒ 改用 ASCII 值。
       final request = buildDeclarativeRequest(
         spec: spec,
-        inputs: const DeclarativeInputs(keyword: '海阔天空'),
+        inputs: const DeclarativeInputs(keyword: 'sea-sky'),
       );
 
-      expect(request.headers['X-Keyword'], '海阔天空');
+      expect(request.headers['X-Keyword'], 'sea-sky');
       expect(
         request.headers.containsKey('X-Quality'),
         isFalse,

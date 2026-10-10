@@ -436,6 +436,14 @@ final class OnlineMusicRequestSpec {
           '请改用安全凭据引用',
         );
       }
+      // F4-S8：HTTP 头只能放 ASCII ⇒ **静态值**在保存阶段就拦下
+      //（动态值要等运行期才知道，那里另有明确报错）。
+      if (header.value.codeUnits.any((unit) => unit > 0x7F)) {
+        issues.add(
+          '请求头 ${header.name} 的值包含非 ASCII 字符：HTTP 头只能放 ASCII'
+          '（中文等内容请改用查询参数）',
+        );
+      }
     }
     // Spec §11.3：header 名归一化后碰撞（`X-Token` 与 `x_token`）必须失败并报告，
     // 否则两者会派生同一个凭据槽位、互相覆盖。
@@ -463,10 +471,28 @@ final class OnlineMusicRequestSpec {
         break;
       case OnlineMusicQueryAuthPlacement(:final parameterName):
         if (parameterName.trim().isEmpty) issues.add('认证查询参数名不能为空');
+        // F4-S8（P-65）：认证注入与声明的参数**同名 ⇒ 一律报错**（不静默覆盖）。
+        if (query.any((entry) => entry.name == parameterName)) {
+          issues.add(
+            '认证查询参数 $parameterName 与声明的查询参数同名：会互相覆盖，请改名其中一个',
+          );
+        }
       case OnlineMusicHeaderAuthPlacement(:final headerName):
         if (headerName.trim().isEmpty) issues.add('认证请求头名不能为空');
+        if (headers.any(
+          (entry) => entry.name.toLowerCase() == headerName.toLowerCase(),
+        )) {
+          issues.add(
+            '认证请求头 $headerName 与声明的请求头同名：会互相覆盖，请改名其中一个',
+          );
+        }
       case OnlineMusicBodyAuthPlacement(:final fieldName):
         if (fieldName.trim().isEmpty) issues.add('认证请求体字段名不能为空');
+        if (body?.fields.any((entry) => entry.name == fieldName) ?? false) {
+          issues.add(
+            '认证请求体字段 $fieldName 与声明的请求体字段同名：会互相覆盖，请改名其中一个',
+          );
+        }
         if (verb != OnlineMusicHttpVerb.post) {
           issues.add('认证放在请求体时必须是 POST');
         }

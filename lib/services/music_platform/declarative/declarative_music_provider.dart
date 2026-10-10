@@ -397,6 +397,12 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
           // "换个 Provider 试试"，把真正该修的配置问题盖掉。
           DeclarativeRequestErrorKind.invalidParameterBinding =>
             OnlineMusicErrorKind.badRequest,
+          // F4-S8（P-65 认证冲突 / 非 ASCII 头值）：都是**配置**问题（要用户去改配置）
+          // ⇒ badRequest；同上**不能**归成 notConfigured。
+          DeclarativeRequestErrorKind.authParameterConflict =>
+            OnlineMusicErrorKind.badRequest,
+          DeclarativeRequestErrorKind.invalidHeaderValue =>
+            OnlineMusicErrorKind.badRequest,
         },
         safeMessage: error.safeMessage,
       );

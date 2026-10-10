@@ -533,7 +533,11 @@ Future<ProviderProbeOutcome> _send({
       // （F3-S2：超时 / 无法连接 / DNS / TLS / 取消 / 非传输异常），
       // 以前这里会写成"成功判定未通过（HTTP null）"，等于把网络问题说成了业务判定问题。
       // 有状态码时才用既有口径（认证 / 成功判定），分类仍取自**统一表**。
+      // F4-S8：**响应格式**类（2xx 却不是 JSON）改用引擎给出的**明确**说明 ——
+      // 那比"成功判定未通过（HTTP 200）"更说明真实原因，也不会把人引去补字段配置。
       failureReason: statusCode == null
+          ? execution.failureReason
+          : kind == OnlineMusicErrorKind.endpointMismatch
           ? execution.failureReason
           : kind == OnlineMusicErrorKind.notConfigured ||
                 kind == OnlineMusicErrorKind.forbidden
@@ -544,6 +548,8 @@ Future<ProviderProbeOutcome> _send({
     );
   }
 
+  // F4-S8："2xx 却不是结构化 JSON"的判定**统一在共享引擎里做**
+  //（`executeDeclarativeRequest`）⇒ 探测与试跑是同一套分类，这里不再重复判定。
   try {
     // 用户裁定第 2 条：**按候选自己的能力**判定响应 ——
     // 曲目列表 / 歌单列表 / 歌单分类 / 榜单各自用**自己的**结构与映射，

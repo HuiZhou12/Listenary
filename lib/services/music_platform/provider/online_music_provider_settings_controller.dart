@@ -712,6 +712,20 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       );
     }
 
+    // F4-S8：响应根本不是 JSON（HTML / 纯文本）时**明确**说清 —— 以前会被笼统报成
+    // "字段映射不完整"，把人引去补字段配置，而真正的问题是接口定义与返回不匹配。
+    final nonStructured = nonStructuredResponseReason(response.data);
+    if (nonStructured != null) {
+      return DeclarativeCapabilityTestResult(
+        ok: false,
+        explicitConfidence: DeclarativeVerificationConfidence.failed,
+        statusCode: response.statusCode,
+        failureKind: DeclarativeTestFailureKind.responseFormat,
+        failureReason: nonStructured,
+        responsePreview: preview,
+      );
+    }
+
     switch (capability) {
       case OnlineMusicCapability.search:
         {

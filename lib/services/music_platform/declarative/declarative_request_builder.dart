@@ -227,6 +227,18 @@ BuiltDeclarativeRequest buildDeclarativeRequest({
     headers[header.name] = header.value;
   }
 
+  // F4-S8：HTTP 头只能放 ASCII。真实环境实测：非 ASCII 头值会让传输层直接抛错，
+  // 而用户只看到"失败"、看不出原因 ⇒ 这里**明确报错**（静态 / 动态 / 凭据值一并覆盖）。
+  for (final entry in headers.entries) {
+    if (entry.value.codeUnits.any((unit) => unit > 0x7F)) {
+      throw DeclarativeRequestException(
+        DeclarativeRequestErrorKind.invalidHeaderValue,
+        '请求头 ${entry.key} 的值包含非 ASCII 字符：HTTP 头只能放 ASCII'
+        '（例如中文关键词请改用查询参数，而不是请求头）',
+      );
+    }
+  }
+
   Map<String, Object?>? jsonBody;
   Map<String, String>? formBody;
   if (spec.body != null) {
@@ -245,12 +257,35 @@ BuiltDeclarativeRequest buildDeclarativeRequest({
     case OnlineMusicNoAuthPlacement():
       break;
     case OnlineMusicQueryAuthPlacement(:final parameterName):
+      // F4-S8（P-65）：与声明的查询参数同名 ⇒ **一律报错**（以前静默覆盖）。
+      if (spec.query.any((binding) => binding.name == parameterName)) {
+        throw DeclarativeRequestException(
+          DeclarativeRequestErrorKind.authParameterConflict,
+          '认证参数 $parameterName 与声明的查询参数同名：会互相覆盖，请改名其中一个',
+        );
+      }
       query[parameterName] = credential!;
       credentialQueryNames.add(parameterName);
     case OnlineMusicHeaderAuthPlacement(:final headerName, :final prefix):
+      // F4-S8（P-65）：与声明的请求头同名（HTTP 头名**不区分大小写**）⇒ 一律报错。
+      if (spec.headers.any(
+        (header) => header.name.toLowerCase() == headerName.toLowerCase(),
+      )) {
+        throw DeclarativeRequestException(
+          DeclarativeRequestErrorKind.authParameterConflict,
+          '认证请求头 $headerName 与声明的请求头同名：会互相覆盖，请改名其中一个',
+        );
+      }
       headers[headerName] = '${prefix ?? ''}$credential';
       credentialHeaderNames.add(headerName);
     case OnlineMusicBodyAuthPlacement(:final fieldName):
+      // F4-S8（P-65）：与声明的请求体字段同名 ⇒ 一律报错。
+      if (spec.body?.fields.any((field) => field.name == fieldName) ?? false) {
+        throw DeclarativeRequestException(
+          DeclarativeRequestErrorKind.authParameterConflict,
+          '认证字段 $fieldName 与声明的请求体字段同名：会互相覆盖，请改名其中一个',
+        );
+      }
       if (spec.body != null && spec.body!.isForm) {
         (formBody ??= <String, String>{})[fieldName] = credential!;
       } else {

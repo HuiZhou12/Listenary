@@ -797,6 +797,28 @@ void main() {
       expect(DeclarativeVerificationConfidence.values, hasLength(3));
     });
 
+    test('★ F4-S8 试跑遇到 HTML 响应 ⇒ 归"响应格式"并说明不是 JSON（不是映射失败）', () async {
+      transport
+        ..statusCode = 200
+        ..error = null
+        ..responder = (request) async => '<!DOCTYPE html><html></html>';
+      final settings = _searchOnlySettingsWithSecrets();
+      final controller = controllerFor(settings, credential: 'SECRET_API_KEY');
+
+      final result = await controller.testCapability(
+        settings.providers.single,
+        OnlineMusicCapability.search,
+      );
+
+      expect(result.confidence, DeclarativeVerificationConfidence.failed);
+      expect(
+        result.failureKind,
+        DeclarativeTestFailureKind.responseFormat,
+        reason: '不是 mapping（那会把人引去补字段配置）',
+      );
+      expect(result.failureReason, allOf(contains('不是 JSON'), contains('不匹配')));
+    });
+
     test('★ F3-S7 试跑用**用户给的**关键词与数量，不再写死（默认值仍然保留）', () async {
       transport
         ..statusCode = 200

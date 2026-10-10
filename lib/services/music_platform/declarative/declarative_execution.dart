@@ -276,6 +276,23 @@ Future<DeclarativeExecutionResult> executeDeclarativeRequest({
   }
 
   final preview = redactResponsePreview(response.data);
+  // F4-S8：**2xx 却不是结构化 JSON**（HTML 错误页 / 纯文本）⇒ 明确判定为"接口不匹配"。
+  // 这比"成功判定未通过（HTTP 200）"或"字段映射不完整：列表路径没有取到数组"更能说明真实原因。
+  // ⚠️ 非 2xx **仍按既有口径**分类（认证 / 业务 / HTTP）—— 不改 F2 的判定表。
+  final nonStructured = nonStructuredResponseReason(response.data);
+  if (nonStructured != null &&
+      response.statusCode >= 200 &&
+      response.statusCode < 300) {
+    return DeclarativeExecutionResult._(
+      stage: DeclarativeExecutionStage.sent,
+      statusCode: response.statusCode,
+      body: response.data,
+      requestSummary: summary,
+      responsePreview: preview,
+      failureKind: OnlineMusicErrorKind.endpointMismatch,
+      failureReason: nonStructured,
+    );
+  }
   final passed = declarativeResponseIsSuccess(
     spec: success,
     statusCode: response.statusCode,
