@@ -19,6 +19,20 @@
 /// 失败分类与脱敏诊断全部交给共享引擎
 /// [executeDeclarativeRequest]（试跑走的是**同一条**路径）。此前这里的 401/403 判断、
 /// 成功判定与兜底 `catch (_)` 是审计点名的"**第四处分类逻辑**"，已删除。
+/// **F3 落地（S1–S7，按用户裁定的 D-F3-1…D-F3-5）**：
+/// - 执行与判定**只有一份**：构造 / 发送 / 成功判定 / 失败分类 / 脱敏摘要与片段都在
+///   [executeDeclarativeRequest]（`declarative_execution.dart`），探测与试跑共用；
+///   本文件**不再自带**任何分类逻辑（有源码守卫盯着）。
+/// - 候选由调用方给（`online_music_probe_candidates.dart`）：**条目自身绑定优先**，
+///   只有条目完全没有声明式绑定时才用兼容模板，并如实标注来源（D-F3-1）。
+/// - **服务级探测的可验能力范围**：只收"不需要用户再给 ID、且返回曲目列表"的能力
+///   （`search` / `newSongs`）。其余能力要么必须带 trackId/playlistId、要么返回的不是
+///   曲目列表 ⇒ **交给试跑**（Spec §19.5 的"探测 = 服务级 / 试跑 = 按能力"）。
+///   要扩展这个范围需要先裁定（见 F3 验收报告 §8.1）。
+/// - 缺凭据时只对**那一次请求**剥认证；这种探测**不计为可用、不产出初稿**，
+///   并如实标注"需要 Key"（D-F3-2）。
+/// - 结论用**三态**词表（`declarative_verification.dart`）：已验证可用 / 未能确认 /
+///   验证失败 —— 空结果既不算可用，也不一律当映射失败（D-F3-3）。
 library;
 
 import 'package:pure_music/services/music_platform/declarative/declarative_errors.dart';
