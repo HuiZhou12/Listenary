@@ -24,7 +24,7 @@ void main() {
   OnlineMusicDeclarativeCapabilityBinding binding(String path) =>
       OnlineMusicDeclarativeCapabilityBinding(
         request: OnlineMusicRequestSpec(path: path),
-        response: OnlineMusicResponseSpec(),
+        response: const OnlineMusicResponseSpec(),
       );
 
   test('★ 条目自己配了 search ⇒ 只探它，并标为"条目自身配置"', () {
@@ -135,8 +135,8 @@ void main() {
     final definition = settingsWith({
       // "写坏了"的**声明式**绑定：路径合法、能解析成声明式，但缺必填字段映射
       // ⇒ 校验会报问题（下面断言），而观测目标是"探测仍然只打它、不换模板"。
-      'search': OnlineMusicDeclarativeCapabilityBinding(
-        request: const OnlineMusicRequestSpec(path: '/search'),
+      'search': const OnlineMusicDeclarativeCapabilityBinding(
+        request: OnlineMusicRequestSpec(path: '/search'),
         response: OnlineMusicResponseSpec(),
       ).toJson(),
     }).providers.single;

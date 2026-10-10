@@ -744,8 +744,8 @@ void main() {
       // ① 配置缺项（歌单详情没配列表路径）⇒ 明确的**配置**失败，不是"空歌单"。
       final withoutListPath = settings.providers.single.withCapabilityBinding(
         OnlineMusicCapability.playlist,
-        OnlineMusicDeclarativeCapabilityBinding(
-          request: const OnlineMusicRequestSpec(path: '/playlist/detail'),
+        const OnlineMusicDeclarativeCapabilityBinding(
+          request: OnlineMusicRequestSpec(path: '/playlist/detail'),
           response: OnlineMusicResponseSpec(),
         ),
       );
