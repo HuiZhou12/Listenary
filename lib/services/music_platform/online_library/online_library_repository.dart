@@ -109,7 +109,7 @@ final class OnlineLibraryRepository {
     final rows = _db.select(
       'SELECT platform, track_id, title, album, cover_uri, duration_ms, '
       'availability FROM online_tracks WHERE platform = ? AND track_id = ?',
-      [_platformValue(ref.platform), _requiredTrackId(ref.trackId)],
+      [_platformIdentityValue(ref.identity), _requiredTrackId(ref.trackId)],
     );
     if (rows.isEmpty) return null;
     return _readTrack(rows.single);
@@ -127,7 +127,7 @@ final class OnlineLibraryRepository {
     final timestamp = (playedAt ?? DateTime.now()).toUtc();
     _transaction(() {
       _upsertTrack(track, lastQuality: lastQuality, updatedAt: timestamp);
-      final platform = _platformValue(track.ref.platform);
+      final platform = _platformIdentityValue(track.ref.identity);
       final trackId = _requiredTrackId(track.ref.trackId);
       _db.execute(
         'INSERT INTO online_play_history('
@@ -145,7 +145,7 @@ final class OnlineLibraryRepository {
     final changed = _db.select(
       'UPDATE online_play_history SET play_count = play_count + 1 '
       'WHERE platform = ? AND track_id = ? RETURNING play_count',
-      [_platformValue(ref.platform), _requiredTrackId(ref.trackId)],
+      [_platformIdentityValue(ref.identity), _requiredTrackId(ref.trackId)],
     );
     return changed.isNotEmpty;
   }
@@ -530,7 +530,7 @@ final class OnlineLibraryRepository {
       'AND i.platform = ? AND i.track_id = ?',
       [
         personalFavoritesPlaylistName,
-        _platformValue(ref.platform),
+        _platformIdentityValue(ref.identity),
         _requiredTrackId(ref.trackId),
       ],
     );
@@ -561,7 +561,7 @@ final class OnlineLibraryRepository {
         [localId],
       );
       if (playlist.isEmpty) return;
-      final platform = _platformValue(track.ref.platform);
+      final platform = _platformIdentityValue(track.ref.identity);
       final trackId = _requiredTrackId(track.ref.trackId);
       final already = _db.select(
         'SELECT 1 FROM online_playlist_items '
@@ -607,13 +607,13 @@ final class OnlineLibraryRepository {
       final item = _db.select(
         'SELECT 1 FROM online_playlist_items '
         'WHERE playlist_id = ? AND platform = ? AND track_id = ?',
-        [localId, _platformValue(ref.platform), _requiredTrackId(ref.trackId)],
+        [localId, _platformIdentityValue(ref.identity), _requiredTrackId(ref.trackId)],
       );
       if (item.isEmpty) return;
       _db.execute(
         'DELETE FROM online_playlist_items '
         'WHERE playlist_id = ? AND platform = ? AND track_id = ?',
-        [localId, _platformValue(ref.platform), _requiredTrackId(ref.trackId)],
+        [localId, _platformIdentityValue(ref.identity), _requiredTrackId(ref.trackId)],
       );
       _db.execute('UPDATE online_playlists SET updated_at = ? WHERE id = ?', [
         DateTime.now().toUtc().toIso8601String(),
@@ -640,7 +640,7 @@ final class OnlineLibraryRepository {
       final target = ordered
           .map(
             (ref) =>
-                '${_platformValue(ref.platform)}:${_requiredTrackId(ref.trackId)}',
+                '${_platformIdentityValue(ref.identity)}:${_requiredTrackId(ref.trackId)}',
           )
           .toSet();
       if (current.length != ordered.length || !current.containsAll(target)) {
@@ -661,7 +661,7 @@ final class OnlineLibraryRepository {
           statement.execute([
             index,
             localId,
-            _platformValue(ordered[index].platform),
+            _platformIdentityValue(ordered[index].identity),
             _requiredTrackId(ordered[index].trackId),
           ]);
         }
@@ -712,7 +712,7 @@ final class OnlineLibraryRepository {
     required String? lastQuality,
     required DateTime updatedAt,
   }) {
-    final platform = _platformValue(track.ref.platform);
+    final platform = _platformIdentityValue(track.ref.identity);
     final trackId = _requiredTrackId(track.ref.trackId);
     final title = track.title.trim();
     if (title.isEmpty) throw ArgumentError.value(track.title, 'track.title');
@@ -777,7 +777,11 @@ final class OnlineLibraryRepository {
   }
 
   OnlinePlaylistSnapshot _readPlaylistSnapshot(Row row) {
-    final platform = _parsePlatform(row['platform'] as String);
+    // F5-P-39（P4）：读回平台时**必须**用身份解析（`_parsePlatform` 只认内置名，
+// 遇到自定义平台的稳定 ID 会抛 FormatException ⇒ 数据可读不回来）。
+    final platform =
+        _parsePlatformIdentity(row['platform'] as String)?.platform ??
+        MusicPlatform.custom;
     final remoteId = row['remote_playlist_id'] as String;
     final cover = row['cover_uri'] as String?;
     final refreshed = row['last_refreshed_at'] as String?;
@@ -798,7 +802,11 @@ final class OnlineLibraryRepository {
   }
 
   MusicTrack _readTrack(Row row, {List<String>? artists}) {
-    final platform = _parsePlatform(row['platform'] as String);
+    // F5-P-39（P4）：读回平台时**必须**用身份解析（`_parsePlatform` 只认内置名，
+// 遇到自定义平台的稳定 ID 会抛 FormatException ⇒ 数据可读不回来）。
+    final platform =
+        _parsePlatformIdentity(row['platform'] as String)?.platform ??
+        MusicPlatform.custom;
     final trackId = row['track_id'] as String;
     final resolvedArtists =
         artists ??
@@ -812,7 +820,11 @@ final class OnlineLibraryRepository {
             .toList(growable: false);
     final rawCoverUri = row['cover_uri'] as String?;
     return MusicTrack(
-      ref: PlatformTrackRef(platform: platform, trackId: trackId),
+      ref: PlatformTrackRef(
+        platform: platform,
+        platformId: _parsePlatformIdentity(row['platform'] as String)?.platformId,
+        trackId: trackId,
+      ),
       title: row['title'] as String,
       artists: resolvedArtists,
       album: row['album'] as String,
@@ -941,8 +953,18 @@ final class OnlineLibraryRepository {
 ///
 /// - 内置平台 ⇒ 枚举名（与旧数据完全一致 ⇒ **零迁移**）；
 /// - 自定义平台 ⇒ **稳定 ID**（复用既有 `platform TEXT` 列 ⇒ 无需迁移）。
-String _platformIdentityValue(PlatformIdentity identity) =>
-    identity.storageValue;
+String _platformIdentityValue(PlatformIdentity identity) {
+  // P0 规则⑩：身份缺失（自定义平台没有稳定 ID）⇒ **明确报错**，绝不写一个空/伪造的平台值
+  // （否则会写出"读不回"的行，等于把损坏写进库）。
+  if (!identity.isValid) {
+    throw ArgumentError.value(
+      identity,
+      'identity',
+      '平台身份无效：自定义平台必须有稳定的 platformId（否则不应落库）',
+    );
+  }
+  return identity.storageValue;
+}
 
 /// F5-P-39（P0 规则④）：**落库值 → 平台身份**。
 ///
