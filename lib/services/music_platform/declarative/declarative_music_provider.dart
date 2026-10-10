@@ -33,6 +33,8 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
     required OnlineMusicCredentialReader credentials,
     this.credentialReference,
     this.contentPlatform = MusicPlatform.netease,
+    /// F5-P-39（P3）：稳定平台 ID，透传给摘要/搜索页（界面按身份显示名字）。
+    this.platformId,
     /// F4-S4（P-13 / D10b:a）：Provider **静态声明**的档位表（内部级别 → 平台取值 + 展示名）。
     /// 缺省空 = 不声明档位 ⇒ 与修复前完全一致。
     this.qualityTiers = const [],
@@ -53,6 +55,7 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
   final OnlineMusicCredentialReader _credentials;
   final String? credentialReference;
   final MusicPlatform contentPlatform;
+  final String? platformId;
 
   /// F4-S4：静态声明的档位表；空表表示"不声明"。
   final List<PlatformQualityTier> qualityTiers;
@@ -95,6 +98,7 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
         spec: binding.response,
         body: body,
         platform: contentPlatform,
+        platformId: platformId,
         limit: limit,
         offset: offset,
       ),
@@ -140,6 +144,7 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
         spec: binding.response,
         body: body,
         platform: contentPlatform,
+        platformId: platformId,
         requestedPlaylistId: playlistId,
       ),
     );
@@ -190,6 +195,7 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
         spec: binding.response,
         body: body,
         platform: platform,
+        platformId: platformId,
       ),
     );
   }
@@ -213,6 +219,7 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
         spec: binding.response,
         body: body,
         platform: platform,
+        platformId: platformId,
       ),
     );
   }
@@ -237,6 +244,7 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
         spec: binding.response,
         body: body,
         platform: platform,
+        platformId: platformId,
       ),
     );
   }
@@ -258,6 +266,7 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
         spec: binding.response,
         body: body,
         platform: platform,
+        platformId: platformId,
         limit: limit,
         offset: offset,
       ).items,

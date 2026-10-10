@@ -141,6 +141,7 @@ OnlineMusicComposition createOnlineMusicComposition({
       declarative = DeclarativeMusicProvider(
         providerId: definition.id,
         bindings: declarativeBindings,
+        platformId: definition.identity.platformId,
         transport: DioDeclarativeHttpTransport(dio: ownedDio),
         credentials: access,
         // P-54：**唯一**的"凭据是否可用"口径（`declarativeCredentialAvailable`），

@@ -48,6 +48,7 @@ MusicSearchPage mapDeclarativeSearchResponse({
   required OnlineMusicResponseSpec spec,
   required Object? body,
   required MusicPlatform platform,
+  String? platformId,
   required int limit,
   required int offset,
 }) {
@@ -67,6 +68,7 @@ MusicSearchPage mapDeclarativeSearchResponse({
 
   return MusicSearchPage(
     platform: platform,
+    platformId: platformId,
     items: items,
     offset: offset,
     limit: limit,
@@ -183,6 +185,7 @@ RemotePlaylist mapDeclarativePlaylistResponse({
   required OnlineMusicResponseSpec spec,
   required Object? body,
   required MusicPlatform platform,
+  String? platformId,
   required String requestedPlaylistId,
 }) {
   final root = spec.fieldsRootPath?.read(body) ?? body;
@@ -208,6 +211,7 @@ RemotePlaylist mapDeclarativePlaylistResponse({
 
   return RemotePlaylist(
     platform: platform,
+    platformId: platformId,
     id: id,
     name: _readString(spec, OnlineMusicDomainField.playlistName, root) ?? id,
     coverUri: _readUri(spec, OnlineMusicDomainField.playlistCoverUri, root),
@@ -240,6 +244,7 @@ List<RemotePlaylistSummary> mapDeclarativePlaylistCollectionResponse({
   required OnlineMusicResponseSpec spec,
   required Object? body,
   required MusicPlatform platform,
+  String? platformId,
 }) {
   final listPath = spec.listPath;
   if (listPath == null) {
@@ -254,6 +259,7 @@ List<RemotePlaylistSummary> mapDeclarativePlaylistCollectionResponse({
     for (final element in rawList)
       RemotePlaylistSummary(
         platform: platform,
+        platformId: platformId,
         id: '${_readRequired(spec, OnlineMusicDomainField.playlistId, element)}',
         name:
             '${_readRequired(spec, OnlineMusicDomainField.playlistName, element)}',
@@ -290,6 +296,7 @@ List<RemotePlaylistCategory> mapDeclarativePlaylistCategoriesResponse({
   required OnlineMusicResponseSpec spec,
   required Object? body,
   required MusicPlatform platform,
+  String? platformId,
 }) {
   final listPath = spec.listPath;
   if (listPath == null) {
@@ -304,6 +311,7 @@ List<RemotePlaylistCategory> mapDeclarativePlaylistCategoriesResponse({
     for (final element in rawList)
       RemotePlaylistCategory(
         platform: platform,
+        platformId: platformId,
         id: '${_readRequired(spec, OnlineMusicDomainField.categoryId, element)}',
         name:
             '${_readRequired(spec, OnlineMusicDomainField.categoryName, element)}',
