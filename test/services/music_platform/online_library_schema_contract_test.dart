@@ -39,7 +39,10 @@ void main() {
   });
 
   test('provider 不在内容身份里（D1）：在线表不得出现 provider 列', () {
-    final start = source.indexOf('CREATE TABLE online_tracks');
+    // ⚠️ F5-S2 起 v5 的 DDL 是 `CREATE TABLE IF NOT EXISTS …`（幂等化）
+    // ⇒ 锚点改用 `online_tracks (`：外键引用写的是 `online_tracks(platform, …)`（无空格），
+    // 因此带空格的那个只出现在建表语句处，对"是否幂等"的写法变化保持鲁棒。
+    final start = source.indexOf('online_tracks (');
     final end = source.indexOf('PRAGMA user_version = 5');
     expect(start, greaterThanOrEqualTo(0), reason: '找不到在线表定义段');
     expect(end, greaterThan(start), reason: '找不到 v5 迁移的结束位置');

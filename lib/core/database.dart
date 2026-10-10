@@ -119,7 +119,7 @@ void _migrateAppDatabase(Database db) {
     }
     if (version < 5) {
       db.execute('''
-CREATE TABLE online_tracks (
+CREATE TABLE IF NOT EXISTS online_tracks (
   platform TEXT NOT NULL,
   track_id TEXT NOT NULL,
   title TEXT NOT NULL,
@@ -133,7 +133,7 @@ CREATE TABLE online_tracks (
   PRIMARY KEY (platform, track_id)
 );
 
-CREATE TABLE online_track_artists (
+CREATE TABLE IF NOT EXISTS online_track_artists (
   platform TEXT NOT NULL,
   track_id TEXT NOT NULL,
   ordinal INTEGER NOT NULL CHECK(ordinal >= 0),
@@ -143,7 +143,7 @@ CREATE TABLE online_track_artists (
     REFERENCES online_tracks(platform, track_id) ON DELETE CASCADE
 );
 
-CREATE TABLE online_play_history (
+CREATE TABLE IF NOT EXISTS online_play_history (
   platform TEXT NOT NULL,
   track_id TEXT NOT NULL,
   play_count INTEGER NOT NULL DEFAULT 0 CHECK(play_count >= 0),
@@ -153,12 +153,12 @@ CREATE TABLE online_play_history (
     REFERENCES online_tracks(platform, track_id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_online_history_last_played
+CREATE INDEX IF NOT EXISTS idx_online_history_last_played
   ON online_play_history(last_played_at DESC);
-CREATE INDEX idx_online_history_play_count
+CREATE INDEX IF NOT EXISTS idx_online_history_play_count
   ON online_play_history(play_count DESC);
 
-CREATE TABLE online_playlists (
+CREATE TABLE IF NOT EXISTS online_playlists (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   kind TEXT NOT NULL CHECK(kind IN ('subscription', 'personal')),
   name TEXT NOT NULL,
@@ -182,14 +182,14 @@ CREATE TABLE online_playlists (
   )
 );
 
-CREATE UNIQUE INDEX idx_online_subscription_identity
+CREATE UNIQUE INDEX IF NOT EXISTS idx_online_subscription_identity
   ON online_playlists(platform, remote_playlist_id)
   WHERE kind = 'subscription';
-CREATE UNIQUE INDEX idx_online_personal_name
+CREATE UNIQUE INDEX IF NOT EXISTS idx_online_personal_name
   ON online_playlists(name COLLATE NOCASE)
   WHERE kind = 'personal';
 
-CREATE TABLE online_playlist_items (
+CREATE TABLE IF NOT EXISTS online_playlist_items (
   playlist_id INTEGER NOT NULL,
   platform TEXT NOT NULL,
   track_id TEXT NOT NULL,
@@ -203,14 +203,81 @@ CREATE TABLE online_playlist_items (
     REFERENCES online_tracks(platform, track_id)
 );
 
-CREATE INDEX idx_online_playlist_items_playlist
+CREATE INDEX IF NOT EXISTS idx_online_playlist_items_playlist
   ON online_playlist_items(playlist_id, sort_order);
 ''');
+      // F5-S2（P-43）：幂等只保证「表在」，**不代表结构对**（可能是早期错误形态、
+      // 被外部改过或已损坏）。这里补一次结构核对：缺列就明确抛错 ⇒
+      // 由外层事务回滚、原库不被改动 —— 绝不把损坏掩盖成「迁移成功」。
+      _ensureOnlineSchemaShape(db);
       db.execute('PRAGMA user_version = 5');
     }
     db.execute('COMMIT');
   } catch (_) {
     db.execute('ROLLBACK');
     rethrow;
+  }
+}
+
+
+/// F5-S2（P-43）：v5 在线表的**期望列**。
+///
+/// 为什么需要它：把 DDL 改成 `IF NOT EXISTS` 之后，「表已存在但 `user_version` 落后」
+/// 的库能继续升级 —— 但**幂等只保证「表在」，不代表结构对**（可能是早期的错误形态、
+/// 被外部改过、或已损坏）。若不核对结构就照常推进到 v5，会把损坏**掩盖**成「迁移成功」。
+const _onlineTableExpectedColumns = <String, List<String>>{
+  'online_tracks': [
+    'platform',
+    'track_id',
+    'title',
+    'album',
+    'cover_uri',
+    'duration_ms',
+    'availability',
+    'last_quality',
+    'created_at',
+    'updated_at',
+  ],
+  'online_track_artists': ['platform', 'track_id', 'ordinal', 'name'],
+  'online_play_history': ['platform', 'track_id', 'play_count', 'last_played_at'],
+  'online_playlists': [
+    'id',
+    'kind',
+    'name',
+    'platform',
+    'remote_playlist_id',
+    'cover_uri',
+    'creator',
+    'description',
+    'remote_track_count',
+    'last_refreshed_at',
+    'created_at',
+    'updated_at',
+  ],
+  'online_playlist_items': [
+    'playlist_id',
+    'platform',
+    'track_id',
+    'sort_order',
+    'added_at',
+  ],
+};
+
+/// 核对 v5 在线表的列是否齐全；缺列 ⇒ **明确失败**（由调用方的事务回滚）。
+void _ensureOnlineSchemaShape(Database db) {
+  for (final entry in _onlineTableExpectedColumns.entries) {
+    final columns = db
+        .select('PRAGMA table_info(${entry.key})')
+        .map((row) => row['name'] as String)
+        .toSet();
+    final missing = entry.value
+        .where((column) => !columns.contains(column))
+        .toList(growable: false);
+    if (missing.isNotEmpty) {
+      throw StateError(
+        '在线表 ${entry.key} 的结构不符合预期（缺少列：${missing.join('、')}）。'
+        '为避免在损坏或不兼容的库上继续升级，已中止迁移；原库未被修改。',
+      );
+    }
   }
 }
