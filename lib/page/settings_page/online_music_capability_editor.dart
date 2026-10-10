@@ -254,6 +254,14 @@ class _OnlineMusicCapabilityEditorDialogState
       );
 
   void _loadFromBinding(OnlineMusicDeclarativeCapabilityBinding binding) {
+    // F3-S5（P-25）：`_binding` 是**单一事实源** —— 表单行、JSON 视图
+    //（`_jsonPreview()` = `_binding.toJson()`）与 `_collect()`（分页等**没有**表单行的字段
+    // 直接取自 `_binding`）都必须从同一份绑定出发。
+    //
+    // 以前这里只回填表单行、**不**更新 `_binding`，于是"探测初稿"之后：
+    // JSON 视图仍是旧绑定（在空编辑器里就是空绑定），而初稿里的**分页**会在保存时丢失
+    // —— 两条路径（应用初稿 / 应用 JSON）行为不一致。
+    _binding = binding;
     // 重载（应用 JSON / 探测初稿）时先释放上一批标量控制器，避免泄漏。
     if (_bound) {
       _path.dispose();

@@ -2299,7 +2299,90 @@ void main() {
       reason: 'P-37：运行中的事实必须**同时**说清，不能被展示优先级吃掉',
     );
   });
+
+  // ------------------------------------------------------------------ F3（P-25）
+
+  testWidgets('★ F3-S5 应用探测初稿会**同时**更新 _binding（JSON 视图与分页不再丢）', (
+    tester,
+  ) async {
+    // 这个条目**没有任何**声明式绑定 ⇒ 编辑器是空的；而探测按 D-F3-1 走兼容模板
+    //（内置 chksz 模板带 offsetLimit **分页**）—— 这正好能观测"初稿有没有真的进入
+    // 单一事实源 `_binding`"：若只回填表单行，JSON 视图会停在**空绑定**、
+    // 分页也会在保存时被 `_collect()` 丢掉（P-25）。
+    //
+    // ⚠️ 必须**备好凭据**：chksz 模板声明了认证，按 F3-S4（D-F3-2）"没有凭据 ⇒
+    // 不计为可用、不产出初稿"，所以没凭据时本用例根本走不到初稿那一步。
+    final credentials = _FakeCredentialAccess()
+      ..saved['self/APIKey'] = 'chksz_PROBE_KEY_TEST_ONLY';
+    final settings = OnlineMusicSettings.fromJson({
+      'providers': [
+        {
+          'id': 'selfData',
+          'baseUrl': 'https://self.invalid',
+          'auth': {'kind': 'apiKey', 'reference': 'self/APIKey'},
+        },
+      ],
+    });
+    // 响应必须是**可解析出曲目**的 chksz 形状，否则探测不会产出初稿（也就观测不到本片）。
+    final probeTransport = _StubTransport(const {
+      'code': 200,
+      'msg': 'success',
+      'data': {
+        'songs': [
+          {'id': 65800, 'name': '最佳损友', 'artists': '陈奕迅', 'duration': 233560},
+        ],
+        'total': 1,
+      },
+    });
+    final controller = _controller(
+      configured: settings,
+      active: settings,
+      credentials: credentials,
+      credentialReader: credentials,
+      probeTransportFactory: (_) => probeTransport,
+    );
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+    await openCapabilityEditorFor(tester, OnlineMusicCapability.search);
+
+    // JSON 视图默认隐藏（`_showJson`）。先在**表单态**读一次基线：编辑器里的绑定是空的。
+    final jsonToggle = find.widgetWithText(TextButton, 'JSON');
+    expect(jsonToggle, findsOneWidget, reason: '编辑器应提供 JSON 视图切换');
+    await tester.tap(jsonToggle);
+    await tester.pumpAndSettle();
+    expect(_jsonViewText(tester), isNot(contains('/api/163_search')));
+    // 切回表单态再探测（探测按钮在任何视图下都在，但这样步骤更直白）。
+    await tester.tap(find.widgetWithText(TextButton, '表单'));
+    await tester.pumpAndSettle();
+
+    final probeButton = find.widgetWithText(TextButton, '探测该服务');
+    expect(probeButton, findsOneWidget, reason: '搜索能力应提供「探测该服务」');
+    await tester.tap(probeButton);
+    await tester.pumpAndSettle();
+
+    // 应用初稿会把视图切回表单（`_loadFromBinding` 里 `_showJson = false`），因此再切到 JSON。
+    await tester.tap(find.widgetWithText(TextButton, 'JSON'));
+    await tester.pumpAndSettle();
+    final json = _jsonViewText(tester);
+    expect(
+      json,
+      contains('/api/163_search'),
+      reason: 'P-25：初稿必须进入 `_binding`（JSON 视图随之更新），而不是只填表单行',
+    );
+    expect(
+      json,
+      contains('"pagination"'),
+      reason: 'P-25：初稿的分页属于"没有表单行"的字段，只填行就会丢',
+    );
+    expect(probeTransport.probeCalls, greaterThan(0));
+  });
 }
+
+/// 读出 JSON 高级视图里的文本（JSON 视图是编辑器里唯一含 `"path"` 的输入框）。
+String _jsonViewText(WidgetTester tester) => tester
+    .widgetList<TextField>(find.byType(TextField))
+    .map((field) => field.controller?.text ?? '')
+    .firstWhere((text) => text.contains('"path"'), orElse: () => '');
 
 /// 只提供诊断的最小替身：其余成员用 `noSuchMethod` 兜住
 /// （这正是"诊断是**可选**出口"的体现 —— 不实现它就等于这一版没有诊断）。
@@ -2605,12 +2688,14 @@ OnlineMusicProviderSettingsController _controller({
   OnlineMusicSettings active = OnlineMusicSettings.defaults,
   _FakeCredentialAccess? credentials,
   DeclarativeProbeTransportFactory? probeTransportFactory,
+  OnlineMusicCredentialReader? credentialReader,
 }) {
   return OnlineMusicProviderSettingsController(
     activeSettings: active,
     store: _MemorySettingsStore(configured),
     fallbackCredentials: credentials ?? _FakeCredentialAccess(),
     probeTransportFactory: probeTransportFactory,
+    credentialReader: credentialReader,
   );
 }
 
