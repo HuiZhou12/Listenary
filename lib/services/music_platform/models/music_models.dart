@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:pure_music/lyric/lyric.dart';
 
 enum MusicPlatform {
@@ -70,6 +72,13 @@ final class PlatformIdentity {
 
   /// 通用构造（兼容既有调用：内置平台不传 [platformId]）。
   const PlatformIdentity(this.platform, {this.platformId});
+
+  /// **新建**一个自定义平台身份（P0 规则③：生成标准 UUID v4 作稳定 ID）。
+  ///
+  /// ⚠️ 只用于"用户新建自定义平台"这一条路径；读取既有配置时一律走 [tryParse]，
+  /// **不得**用它重新生成 ID（那会改掉已有平台的身份）。
+  factory PlatformIdentity.newCustom([Random? random]) =>
+      PlatformIdentity.custom(generateCustomPlatformId(random));
 
   /// 从**持久化 / 配置里的平台值**解析（P0 裁定的读回规则）：
   ///
@@ -351,4 +360,23 @@ final class MusicSearchPage {
   final int? limit;
   final int? total;
   final String? nextCursor;
+}
+
+
+/// 生成标准 **UUID v4**（小写带连字符）——P0 规则③：**新建**自定义平台时用它作稳定 ID。
+///
+/// ⚠️ 只用于新建：已有配置里的非空 `platformId` 必须**兼容读取、不得重写**（规则④）；
+/// 也不得在每次加载时随机生成（那会让身份不稳定）。
+///
+/// [random] 仅用于测试注入（默认 `Random.secure()`）。
+String generateCustomPlatformId([Random? random]) {
+  final source = random ?? Random.secure();
+  final bytes = List<int>.generate(16, (_) => source.nextInt(256));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version = 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant = 10xx
+  String hex(int start, int end) => bytes
+      .sublist(start, end)
+      .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+      .join();
+  return '${hex(0, 4)}-${hex(4, 6)}-${hex(6, 8)}-${hex(8, 10)}-${hex(10, 16)}';
 }
