@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
@@ -517,9 +519,27 @@ void main() {
         );
       }
 
+      // ⚠️ 断言随 F3-S2（D-F3-4）更新，**不是放宽**：`StateError` 是**编程错误**，
+      // 不是传输异常 —— D-F3-4 明令"不得将编程错误或非传输异常一律吞成'网络不可达'"。
+      // 因此这里改用**真正的传输异常**（`SocketException`）验证网络大类，
+      // 并把"非传输异常"单独钉住（它必须与网络**不同**结论）。
+      expect(
+        (await run(error: const SocketException('connection refused'))).failureKind,
+        DeclarativeTestFailureKind.network,
+      );
       expect(
         (await run(error: StateError('offline'))).failureKind,
-        DeclarativeTestFailureKind.network,
+        isNot(DeclarativeTestFailureKind.network),
+        reason: 'D-F3-4：编程错误不得再被吞成"网络不可达"',
+      );
+      expect(
+        (await run(error: const SocketException('connection refused'))).failureReason,
+        contains('无法连接'),
+        reason: 'F3-S2：传输失败要说出**底层类型**，而不是一句"网络不可达"',
+      );
+      expect(
+        (await run(error: StateError('offline'))).failureReason,
+        contains('非传输异常'),
       );
       expect(
         (await run(statusCode: 500)).failureKind,

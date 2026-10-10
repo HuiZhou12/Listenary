@@ -624,8 +624,11 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       return DeclarativeCapabilityTestResult(
         ok: false,
         responsePreview: preview,
-        failureReason: '请求失败（网络或服务不可达）',
-        failureKind: DeclarativeTestFailureKind.network,
+        // F3-S2（D-F3-4）：这条兜底只覆盖**映射/处理响应**阶段的非预期异常，
+        // 它们**不是**网络问题 —— 以前一律写成"网络或服务不可达"是把编程错误
+        // 误诊成传输故障。传输异常已经由共享引擎分类（超时/连接/DNS/TLS/取消）。
+        failureReason: '处理响应时出现非预期异常（不是网络问题）',
+        failureKind: DeclarativeTestFailureKind.http,
         requestSummary: requestSummary,
       );
     }

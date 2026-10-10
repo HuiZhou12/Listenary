@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_execution.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
@@ -459,6 +460,39 @@ void main() {
       expect(report.didNotSendAnyRequest, isTrue);
     });
 
+    test('传输失败带上**结构化详情**：超时 ≠ 连不上 ≠ 域名打错（D-F3-4）', () async {
+      transport.error = DioException(
+        requestOptions: RequestOptions(path: '/search'),
+        type: DioExceptionType.connectionTimeout,
+      );
+
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        platform: MusicPlatform.netease,
+        templates: [onlineMusicProviderTemplates().first],
+      );
+
+      final outcome = report.outcomes.single;
+      expect(outcome.status, ProviderProbeStatus.attempted);
+      expect(
+        outcome.failureKind,
+        OnlineMusicErrorKind.network,
+        reason: 'D-F3-4：顶层类别不变，超时仍在既有传输失败大类下',
+      );
+      expect(
+        outcome.transportFailure,
+        DeclarativeTransportFailure.timeout,
+        reason: '但**底层类型**必须真的读出来',
+      );
+      expect(outcome.failureReason, contains('超时'));
+      expect(
+        outcome.failureReason,
+        isNot(contains('不可达')),
+        reason: 'P-50：不得再把超时说成笼统的"网络不可达"',
+      );
+    });
+
     test('源码守卫：探测不得再长出"第二套分类"', () {
       // 审计点名的"第四处分类逻辑"就是这样长出来的：探测自带 401/403 判断、
       // 自带成功判定、自带兜底 `catch (_)`。这里用源码扫描把它钉死 ——
@@ -493,6 +527,9 @@ final class _FakeProbeTransport implements DeclarativeHttpTransport {
   final List<BuiltDeclarativeRequest> requests = [];
   int statusCode = 200;
 
+  /// 非空时所有发送都以该异常失败（F3-S2：用来覆盖传输异常分类）。
+  Object? error;
+
   /// 响应体故意放宽成 `Object?`：F3-S1 要覆盖"**不可读**响应"（HTML 错误页/纯文本）
   /// 与"可读 JSON"的分类差异，而真实服务端确实会回这些东西。
   Future<Object?> Function(RequestOptionsLike options) responder =
@@ -504,6 +541,8 @@ final class _FakeProbeTransport implements DeclarativeHttpTransport {
     required OnlineMusicCancelToken cancelToken,
   }) async {
     requests.add(request);
+    final failure = error;
+    if (failure != null) throw failure;
     final body = await responder(_Options(request));
     return DeclarativeHttpResponse(statusCode: statusCode, data: body);
   }

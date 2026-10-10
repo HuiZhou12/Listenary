@@ -70,6 +70,7 @@ final class ProviderProbeOutcome {
     this.failureReason,
     this.notAttemptedReason,
     this.failureKind,
+    this.transportFailure,
     this.requestSummary,
     this.responsePreview,
   });
@@ -98,6 +99,10 @@ final class ProviderProbeOutcome {
 
   /// **统一判定表**给出的失败分类（F3-S1：与试跑同一套，不再自带第二套分类）。
   final OnlineMusicErrorKind? failureKind;
+
+  /// 传输失败的**结构化详情**（F3-S2 / D-F3-4）：超时 / 无法连接 / DNS / TLS / 取消 /
+  /// 非传输异常。顶层类别仍是 [failureKind]，这里只把底层真相说清楚。
+  final DeclarativeTransportFailure? transportFailure;
 
   /// **已脱敏**的请求摘要（P-07：失败时它是唯一的排查依据）。
   final String? requestSummary;
@@ -336,9 +341,15 @@ Future<ProviderProbeOutcome> _send({
           kind == OnlineMusicErrorKind.notConfigured ||
           kind == OnlineMusicErrorKind.forbidden,
       failureKind: kind,
-      // 文案沿用既有口径（认证 / 成功判定），分类取自**统一表**。
-      failureReason: kind == OnlineMusicErrorKind.notConfigured ||
-              kind == OnlineMusicErrorKind.forbidden
+      transportFailure: execution.transportFailure,
+      // 文案：**没有状态码**（传输失败/取消/非传输异常）时用引擎给出的**底层详情**
+      // （F3-S2：超时 / 无法连接 / DNS / TLS / 取消 / 非传输异常），
+      // 以前这里会写成"成功判定未通过（HTTP null）"，等于把网络问题说成了业务判定问题。
+      // 有状态码时才用既有口径（认证 / 成功判定），分类仍取自**统一表**。
+      failureReason: statusCode == null
+          ? execution.failureReason
+          : kind == OnlineMusicErrorKind.notConfigured ||
+                kind == OnlineMusicErrorKind.forbidden
           ? '该接口需要认证（HTTP $statusCode）'
           : '成功判定未通过（HTTP $statusCode）',
       requestSummary: execution.requestSummary,
