@@ -296,6 +296,16 @@ Object? _resolve(OnlineMusicParamBinding binding, DeclarativeInputs inputs) {
       '参数 ${binding.name} 既没有取值来源也没有固定值',
     );
   }
+  if (source == OnlineMusicInputSource.cursor && inputs.cursor == null) {
+    // F4-S3（P-11）：**游标分页暂不支持** —— 服务层契约里没有"上一页游标"的位置，
+    // 运行期提供不出游标。按 D4「不支持的必须明确报出、不得静默」：明确失败，
+    // 而不是把参数悄悄省掉、让调用方把第二页当成第一页。
+    throw DeclarativeRequestException(
+      DeclarativeRequestErrorKind.invalidParameterBinding,
+      '参数 ${binding.name} 使用"游标"取值，但当前版本无法提供游标'
+      '（请改用 offset/limit 或 pageSize 分页）',
+    );
+  }
   final value = inputs.valueOf(source);
   if (value != null) return value;
   if (binding.defaultValue != null) return binding.defaultValue;

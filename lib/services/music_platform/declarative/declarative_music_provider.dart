@@ -20,6 +20,7 @@ import 'package:pure_music/services/music_platform/provider/online_music_provide
 import 'package:pure_music/services/music_platform/provider/online_music_quality_tiers.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_credentials.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_request_spec.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_response_spec.dart';
 
 typedef DeclarativeTransportDispose = void Function();
 
@@ -71,6 +72,7 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
     required OnlineMusicCancelToken cancelToken,
   }) async {
     final binding = _requireBinding(OnlineMusicCapability.search, platform);
+    _ensurePaginationSupported(binding);
     return _run(
       binding: binding,
       cancelToken: cancelToken,
@@ -78,7 +80,9 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
         keyword: keyword,
         limit: limit,
         offset: offset,
-        page: 1,
+        // F4-S3（P-11）：页码**由 offset/limit 派生**（以前恒 1 ⇒ 任何按 `page` 取值的绑定
+        // 都会永远请求第一页）。`limit <= 0` 时按第一页处理。
+        page: limit > 0 ? (offset ~/ limit) + 1 : 1,
       ),
       map: (body) => mapDeclarativeSearchResponse(
         spec: binding.response,
@@ -265,6 +269,24 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
 
   @override
   void dispose() => _disposeTransport?.call();
+
+  /// F4-S3（P-11）：**游标分页暂不支持** —— 服务层契约里没有"上一页游标"的位置
+  /// （`search` 只有 `offset` / `limit`），运行期无法把映射出的 `nextCursor` 传回请求。
+  ///
+  /// 按 D4「不支持的必须明确报出、不得静默」：这里**明确失败**，而不是静默发出一个
+  /// 不带游标的请求、把第二页当成第一页（那会让"加载更多"永远返回同一批结果）。
+  void _ensurePaginationSupported(
+    OnlineMusicDeclarativeCapabilityBinding binding,
+  ) {
+    if (binding.response.pagination.kind == OnlineMusicPaginationKind.cursor) {
+      throw const OnlineMusicException(
+        kind: OnlineMusicErrorKind.badRequest,
+        safeMessage:
+            '该能力声明了游标分页，但当前版本无法把游标传回请求（服务层只支持 offset/limit）：'
+            '请改用 offset/limit 或 pageSize 分页',
+      );
+    }
+  }
 
   OnlineMusicDeclarativeCapabilityBinding _requireBinding(
     OnlineMusicCapability capability,

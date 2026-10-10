@@ -324,6 +324,22 @@ final class OnlineMusicFieldSpec {
   );
 }
 
+/// 分页种类：`none` / `offsetLimit` / `pageSize` / `cursor`。
+///
+/// **F4-S3 定下的分页契约（P-11 + 延期 A）** —— 四条一起看才有意义：
+/// 1. **`limit`**：进请求参数（每页条数），**同时**参与分页元数据判定；
+///    但它**不裁剪**映射结果 —— 服务端返回多少条就映射多少条
+///    （有些第三方接口不按 limit 裁剪；截断会丢数据且掩盖配置问题）。
+/// 2. **`offset`**：每平台独立透传（D6c:a：各平台各自加载），老行为不变。
+/// 3. **`page`**：运行期**由 `offset ~/ limit + 1` 派生**（`limit <= 0` 时按第 1 页）。
+///    以前恒 1 ⇒ 任何按 `page` 取值的绑定都会永远请求第一页。
+/// 4. **`cursor`**：**暂不支持** —— 服务层契约里没有"上一页游标"的位置（只有 offset/limit），
+///    运行期提供不出游标。按 D4「不支持的必须明确报出、不得静默」：
+///    `kind == cursor` 或参数用了 `cursor` 取值来源时，运行期/试跑**明确失败**，
+///    绝不静默发出不带游标的请求（那会把第二页当成第一页）。
+///
+/// ⚠️ 另：搜索页的「加载更多」用 `totalPath`（已加载数 < total）**且**上一页原始条数 == 每页条数
+/// 双重判定 ⇒ **没配 `totalPath` 时声明式能力的"加载更多"不会出现**（如实记录，见 F4 验收报告）。
 enum OnlineMusicPaginationKind { none, offsetLimit, pageSize, cursor }
 
 final class OnlineMusicPaginationSpec {
