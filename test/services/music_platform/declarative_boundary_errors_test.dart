@@ -1,7 +1,32 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_errors.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_music_provider.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
+
+/// 记录请求的假传输（用来证明"构造期就拒绝 ⇒ 一个请求都不发"）。
+final class _RecordingTransport implements DeclarativeHttpTransport {
+  final List<BuiltDeclarativeRequest> requests = [];
+
+  @override
+  Future<DeclarativeHttpResponse> send(
+    BuiltDeclarativeRequest request, {
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    requests.add(request);
+    return const DeclarativeHttpResponse(
+      statusCode: 200,
+      data: <String, Object?>{},
+    );
+  }
+}
+
+final class _NoCredentialReader implements OnlineMusicCredentialReader {
+  const _NoCredentialReader();
+  @override
+  Future<String?> readCredential(String reference) async => null;
+}
 
 /// F4-S8：把"边界"**明确报出来**（D3 / D4 / P-65 的裁定）——
 /// - P-65：认证注入与声明的参数同名 ⇒ **一律报错**（以前静默覆盖）；
@@ -158,6 +183,72 @@ void main() {
 
       expect(request.headers['X-Client'], 'pure-music/1.0');
       expect(spec.validationIssues(), isEmpty);
+    });
+
+    test('★ 运行期：非 ASCII 头值归**配置错误**，绝不被误判为网络故障（且 0 请求）', () async {
+      // 用户要求核实的那条：不是"网络不可达"，而是"配置里写了不能用的东西"。
+      // 真实环境实测（S2）正是中文头值让传输层直接抛错 ⇒ 现在应当在**发请求之前**明确失败。
+      final transport = _RecordingTransport();
+      final provider = DeclarativeMusicProvider(
+        providerId: 'p',
+        bindings: {
+          OnlineMusicCapability.search:
+              const OnlineMusicDeclarativeCapabilityBinding(
+                request: OnlineMusicRequestSpec(
+                  path: '/s',
+                  query: [
+                    OnlineMusicParamBinding(
+                      name: 'keywords',
+                      source: OnlineMusicInputSource.keyword,
+                      required: true,
+                    ),
+                  ],
+                  headers: [
+                    OnlineMusicHeaderSpec(
+                      name: 'X-Keyword',
+                      value: '',
+                      source: OnlineMusicInputSource.keyword,
+                    ),
+                  ],
+                ),
+                response: OnlineMusicResponseSpec(),
+              ),
+        },
+        transport: transport,
+        credentials: const _NoCredentialReader(),
+        contentPlatform: MusicPlatform.netease,
+      );
+
+      await expectLater(
+        provider.search(
+          platform: MusicPlatform.netease,
+          keyword: '海阔天空',
+          cancelToken: OnlineMusicCancelToken(),
+        ),
+        throwsA(
+          isA<OnlineMusicException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                isNot(OnlineMusicErrorKind.network),
+              )
+              .having(
+                (error) => error.kind,
+                'kind',
+                OnlineMusicErrorKind.badRequest,
+              )
+              .having(
+                (error) => error.safeMessage,
+                'safeMessage',
+                contains('非 ASCII'),
+              ),
+        ),
+      );
+      expect(
+        transport.requests,
+        isEmpty,
+        reason: '构造期就拒绝 ⇒ 一个请求都不发（不是"发出去失败了"）',
+      );
     });
   });
 

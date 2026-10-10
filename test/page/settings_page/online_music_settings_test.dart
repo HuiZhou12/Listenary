@@ -1444,7 +1444,9 @@ void main() {
 
     // 表单是惰性 ListView：先滚到路径区（总数路径）把相邻行建出来，
     // 否则"找不到"可能只是因为没构建 ⇒ 否定断言会变成假绿。
-    await scrollCapabilityFormTo(tester, '总数路径（可选）');
+    // ⚠️ 惰性列表：说明在「总数路径」下方、滚动锚点用**精确匹配** ⇒ 滚到它下方的区块标题，
+    // 保证说明已经进入 widget 树（是否可见不影响 contains 断言）。
+    await scrollCapabilityFormTo(tester, '字段映射', maxAttempts: 40);
     expect(find.text('列表路径（如 data.songs）'), findsOneWidget);
     expect(find.text('字段根路径（如 data）'), findsNothing);
   });
@@ -1455,7 +1457,9 @@ void main() {
     await pumpPanel(tester, controller);
     await openCapabilityEditorFor(tester, OnlineMusicCapability.playlist);
 
-    await scrollCapabilityFormTo(tester, '总数路径（可选）');
+    // ⚠️ 惰性列表：说明在「总数路径」下方、滚动锚点用**精确匹配** ⇒ 滚到它下方的区块标题，
+    // 保证说明已经进入 widget 树（是否可见不影响 contains 断言）。
+    await scrollCapabilityFormTo(tester, '字段映射', maxAttempts: 40);
     expect(find.text('列表路径（如 data.songs）'), findsOneWidget);
     expect(find.text('字段根路径（如 data）'), findsOneWidget);
     expect(find.textContaining('元数据在「字段根路径」'), findsOneWidget);
@@ -2038,20 +2042,36 @@ void main() {
     });
   });
 
-  testWidgets('F1 P-21 分页刻意不给控件，但如实说明它当前不生效', (tester) async {
+  testWidgets('★ F4 收口 分页说明与当前事实一致（含"总数路径缺失 ⇒ 加载更多不会出现"）', (tester) async {
     final controller = _controller();
     addTearDown(controller.dispose);
     await pumpPanel(tester, controller);
     await openCapabilityEditorFor(tester, OnlineMusicCapability.search);
 
-    // 分页字段没有任何消费方 ⇒ 做成可编辑项就是"无效果选项"（反模式 7）。
-    // 这里断言的是"**说明**存在、**控件**不存在"。
-    await scrollCapabilityFormTo(tester, '游标路径（可选）');
+    // ⚠️ 惰性列表：说明在「总数路径」下方、滚动锚点用**精确匹配** ⇒ 滚到它下方的区块标题，
+    // 保证说明已经进入 widget 树（是否可见不影响 contains 断言）。
+    await scrollCapabilityFormTo(tester, '字段映射', maxAttempts: 40);
+
+    // ① 说明必须与 **F4-S3 之后的事实**一致（旧文案写"目前不参与请求构造 / 还不生效"，
+    //    S3 起 `offset`/`limit`/`page` 已经真的进请求 ⇒ 旧文案是错的）。
     expect(
-      find.textContaining('分页：目前不参与请求构造'),
+      find.textContaining('按每页数量与偏移量分页的接口现在真的会生效'),
       findsOneWidget,
-      reason: '必须如实告知，而不是让用户以为改了就有用',
+      reason: '必须如实告知"哪些生效、哪些不生效"',
     );
+    // ② 游标分页的不支持要写明"会明确报错"，而不是让人以为填了就能用。
+    expect(find.textContaining('使用「游标」分页的接口暂不支持'), findsOneWidget);
+    expect(find.textContaining('不会悄悄当成第一页'), findsOneWidget);
+    // ③ 本条的核心：`totalPath` 缺失 ⇒ 无法可靠判断"还有更多" ⇒ 必须说清并给出去处。
+    expect(
+      find.textContaining('没配「总数路径」'),
+      findsOneWidget,
+      reason: '无法可靠判断"还有更多"时不得沉默（否则用户只会看到"没有加载更多"）',
+    );
+    expect(find.textContaining('「加载更多」不会出现'), findsOneWidget);
+    expect(find.textContaining('配好总数路径即可'), findsOneWidget);
+
+    // 控件仍**刻意不给**：「分页类型 / 默认每页数量」是可点却无效果的选项（反模式 7）。
     expect(find.text('分页类型'), findsNothing);
     expect(find.text('默认每页数量'), findsNothing);
   });

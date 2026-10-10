@@ -457,6 +457,66 @@ void main() {
       );
     });
 
+    test('★ F4 收口 Search 服务者 ≠ Stream 实际服务者 ⇒ 档位跟随**实际服务者**', () async {
+      // A：只对 **search** 失败（`resolve` 照常成功），声明档位 `flac`；
+      // B：搜索的正常服务者，声明档位 `sq`。
+      final streamOwner = _ScriptedProvider(
+        'neteaseA',
+        neteaseSearchAndStream,
+        searchFailure: OnlineMusicErrorKind.network,
+        tiers: const [
+          PlatformQualityTier(
+            internalLevel: 'lossless',
+            displayLabel: 'SQ',
+            requestValue: 'flac',
+          ),
+        ],
+      );
+      final searchServer = _ScriptedProvider(
+        'neteaseB',
+        neteaseSearchAndStream,
+        tiers: const [
+          PlatformQualityTier(
+            internalLevel: 'lossless',
+            displayLabel: 'SQ',
+            requestValue: 'sq',
+          ),
+        ],
+      );
+      final service = serviceWith([streamOwner, searchServer]);
+      addTearDown(service.dispose);
+
+      // **先**播放解析（stream 由 A 服务），**后**搜索（回退到 B）——
+      // 这样"最后一次路由记录"是 **search**，正好能证明档位表**只看 stream**：
+      // 若实现改成"取最后一条路由记录"，这里就会用 B 的 `sq`（错误）。
+      await service.resolve(
+        const PlatformTrackRef(platform: netease, trackId: 't1'),
+        requestedQuality: 'lossless',
+        cancelToken: OnlineMusicCancelToken(),
+      );
+      await searchWith(service);
+
+      final entries = (service as OnlineMusicDiagnosticsSource).routeDiagnostics;
+      final streamEntry = entries.firstWhere(
+        (entry) =>
+            entry.capabilityLabel ==
+            onlineMusicCapabilityLabel(OnlineMusicCapability.stream),
+      );
+      final searchEntry = entries.firstWhere(
+        (entry) =>
+            entry.capabilityLabel ==
+            onlineMusicCapabilityLabel(OnlineMusicCapability.search),
+      );
+      expect(streamEntry.winnerProviderId, 'neteaseA', reason: 'stream 仍由 A 服务');
+      expect(searchEntry.winnerProviderId, 'neteaseB', reason: 'search 回退到 B');
+
+      expect(
+        service.qualityTiersFor(MusicPlatform.netease).single.requestValue,
+        'flac',
+        reason: '档位表必须跟随**实际服务者 A（stream）**，而不是最后一条路由记录（search 的 B）',
+      );
+    });
+
     test('未回落时声明者就是服务者 ⇒ 诊断不补那句话（不制造噪音）', () async {
       final only = _ScriptedProvider('neteaseA', neteaseSearchAndStream);
       final service = serviceWith([only]);
@@ -483,6 +543,7 @@ final class _ScriptedProvider extends UnsupportedOnlineMusicProvider {
     this._platforms, {
     this.failure,
     this.tiers = const [],
+    this.searchFailure,
   });
 
   @override
@@ -492,6 +553,12 @@ final class _ScriptedProvider extends UnsupportedOnlineMusicProvider {
 
   /// 非空时，该 Provider 的所有调用都以这个 kind 失败。
   final OnlineMusicErrorKind? failure;
+
+  /// F4 收口：**只有 `search` 失败**（`resolve` 照常成功）。
+  ///
+  /// 用来制造"**Search 服务者 ≠ Stream 实际服务者**"：搜索回退到别人，
+  /// 而播放仍由本 Provider 服务 —— 档位表必须跟随**实际服务者**（stream 的那个）。
+  final OnlineMusicErrorKind? searchFailure;
 
   /// 该 Provider 声明的平台档位（P-56：用来制造"声明者 ≠ 服务者"）。
   final List<PlatformQualityTier> tiers;
@@ -517,7 +584,9 @@ final class _ScriptedProvider extends UnsupportedOnlineMusicProvider {
     required OnlineMusicCancelToken cancelToken,
   }) async {
     searchCalls++;
-    final kind = failure;
+    // F4 收口：`searchFailure` 只影响搜索（`resolve` 仍成功）⇒ 可制造
+    // "Search 服务者 ≠ Stream 实际服务者"。
+    final kind = searchFailure ?? failure;
     if (kind != null) {
       throw OnlineMusicException(
         kind: kind,
