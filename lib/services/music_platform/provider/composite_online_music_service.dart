@@ -370,6 +370,8 @@ final class CompositeOnlineMusicService
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
+    /// F5-P-39（P2）：各平台的**平台身份**（自定义平台必传；缺省按 builtin 处理 ⇒ fail-closed）。
+    Map<MusicPlatform, PlatformIdentity> identities = const {},
   }) async {
     final requested = {
       for (final platform in platforms)
@@ -377,6 +379,10 @@ final class CompositeOnlineMusicService
     };
     final perPlatform = <MusicPlatform, MusicSearchPage>{};
     final failures = <MusicPlatform, OnlineMusicException>{};
+    // F5-P-39（P2）：身份键结果 + 同键不同身份的守卫（见 _recordAggregatedPage/_recordAggregatedFailure）。
+    final perPlatformIdentity = <PlatformIdentity, MusicSearchPage>{};
+    final failuresByIdentity = <PlatformIdentity, OnlineMusicException>{};
+    final legacyOwner = <MusicPlatform, PlatformIdentity>{};
 
     await Future.wait([
       for (final platform in requested)
@@ -386,9 +392,13 @@ final class CompositeOnlineMusicService
           limit: limit,
           offset: offset,
           cancelToken: cancelToken,
-          perPlatform: perPlatform,
-          failures: failures,
-        ),
+        perPlatform: perPlatform,
+        failures: failures,
+        perPlatformIdentity: perPlatformIdentity,
+        failuresByIdentity: failuresByIdentity,
+        legacyOwner: legacyOwner,
+        identity: identities[platform] ?? PlatformIdentity.builtin(platform),
+      ),
     ]);
 
     // 取消要如实向上传播，而不是被收进 failures 假装成"某个平台失败了"。
@@ -411,32 +421,70 @@ final class CompositeOnlineMusicService
     required OnlineMusicCancelToken cancelToken,
     required Map<MusicPlatform, MusicSearchPage> perPlatform,
     required Map<MusicPlatform, OnlineMusicException> failures,
+    required Map<PlatformIdentity, MusicSearchPage> perPlatformIdentity,
+    required Map<PlatformIdentity, OnlineMusicException> failuresByIdentity,
+    required Map<MusicPlatform, PlatformIdentity> legacyOwner,
+    required PlatformIdentity identity,
   }) async {
     try {
-      perPlatform[platform] = await search(
+      final page = await search(
         platform: platform,
         keyword: keyword,
         limit: limit,
         offset: offset,
         cancelToken: cancelToken,
+        identity: identity,
       );
+      _recordAggregatedPage(legacyOwner, perPlatform, platform, identity, page);
+      perPlatformIdentity[identity] = page;
     } on OnlineMusicException catch (error) {
-      failures[platform] = error;
+      _recordAggregatedFailure(legacyOwner, failures, platform, identity, error);
+      failuresByIdentity[identity] = error;
     } catch (error) {
-      // F5（P-58）：平台级隔离边界。**非归一化异常**（`StateError` / `TypeError` /
-      // 依赖抛出的任意对象）以前会逃出 `Future.wait`，把**其它平台已经成功的**结果一并吞掉。
-      // 这里按平台兜住，并明确标注为「非归一化异常」（含运行时类型）——
-      // **绝不**伪装成网络故障（D-F3-4 同桌口径），也不把程序缺陷混进普通网络错误里。
-      // ⚠️ 只带运行时类型，不带 `error.toString()`：异常文本可能含请求细节/凭据。
-      failures[platform] = OnlineMusicException(
+      final wrapped = OnlineMusicException(
         kind: OnlineMusicErrorKind.unknown,
         safeMessage:
             '该平台抛出了非归一化异常（${error.runtimeType}）；'
             '其它平台的结果不受影响，请按此类型定位',
       );
+      _recordAggregatedFailure(legacyOwner, failures, platform, identity, wrapped);
+      failuresByIdentity[identity] = wrapped;
     }
   }
 
+  /// F5-P-39（P2）：写旧枚举键 map 时，若该键已被**不同身份**占用 ⇒ 移除该键，
+  /// 绝不静默覆盖（自定义平台之间不得串台）；身份键 map 始终是权威来源。
+  void _recordAggregatedPage(
+    Map<MusicPlatform, PlatformIdentity> legacyOwner,
+    Map<MusicPlatform, MusicSearchPage> perPlatform,
+    MusicPlatform platform,
+    PlatformIdentity identity,
+    MusicSearchPage page,
+  ) {
+    final owner = legacyOwner[platform];
+    if (owner != null && owner != identity) {
+      perPlatform.remove(platform);
+      return;
+    }
+    legacyOwner[platform] = identity;
+    perPlatform[platform] = page;
+  }
+
+  void _recordAggregatedFailure(
+    Map<MusicPlatform, PlatformIdentity> legacyOwner,
+    Map<MusicPlatform, OnlineMusicException> failures,
+    MusicPlatform platform,
+    PlatformIdentity identity,
+    OnlineMusicException error,
+  ) {
+    final owner = legacyOwner[platform];
+    if (owner != null && owner != identity) {
+      failures.remove(platform);
+      return;
+    }
+    legacyOwner[platform] = identity;
+    failures[platform] = error;
+  }
   @override
   void dispose() {
     for (final provider in registry.providers) {

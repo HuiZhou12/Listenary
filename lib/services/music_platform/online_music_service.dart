@@ -110,8 +110,20 @@ final class AggregatedSearchResult {
   AggregatedSearchResult({
     required Map<MusicPlatform, MusicSearchPage> perPlatform,
     required Map<MusicPlatform, OnlineMusicException> failures,
+    Map<PlatformIdentity, MusicSearchPage> perPlatformIdentity = const {},
+    Map<PlatformIdentity, OnlineMusicException> failuresByIdentity = const {},
   }) : perPlatform = Map.unmodifiable(perPlatform),
-       failures = Map.unmodifiable(failures);
+       failures = Map.unmodifiable(failures),
+       perPlatformIdentity = Map.unmodifiable(perPlatformIdentity),
+       failuresByIdentity = Map.unmodifiable(failuresByIdentity);
+
+  /// F5-P-39（P2）：按**平台身份**索引的成功结果 —— 自定义平台必须读这一份。
+  /// perPlatform 以 MusicPlatform 为键 ⇒ 所有自定义平台共用一个键；聚合时若同一键被
+  /// **不同身份**写入，旧 map 会**移除**该键（绝不静默覆盖），改由本 map 承载。
+  final Map<PlatformIdentity, MusicSearchPage> perPlatformIdentity;
+
+  /// F5-P-39（P2）：按**平台身份**索引的失败信息（语义同 [perPlatformIdentity]）。
+  final Map<PlatformIdentity, OnlineMusicException> failuresByIdentity;
 
   /// 成功返回的平台 → 该平台的搜索页（含各自的分页信息与来源身份）。
   final Map<MusicPlatform, MusicSearchPage> perPlatform;
