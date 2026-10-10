@@ -24,6 +24,14 @@ enum OnlineMusicDomainField {
   playlistCreator,
   playlistTrackCount,
 
+  /// 集合的**更新节奏**（平台自己的文案）。榜单这类名次集合靠它说明多久变一次。
+  playlistUpdateFrequency,
+
+  // 歌单分类（playlistCategories）
+  categoryId,
+  categoryName,
+  categoryCount,
+
   // lyric
   lyricOriginal,
   lyricTranslation,
@@ -55,6 +63,121 @@ enum OnlineMusicFieldTransform {
   asBool,
 }
 
+/// 领域字段**由映射层的哪一类读取器消费**（P-30 的唯一契约来源）。
+///
+/// 为什么要有它：此前 `expectedFieldKinds` 是一张**手写清单**，与映射层真正的读取器
+/// 各自维护 ⇒ 出现两类静默失败：
+/// - **清单里没有的字段**（`playlistCoverUri`/`playlistCreator`/`playlistId`/
+///   `playlistName`/`categoryId`/`categoryName`/lyric 三字段）⇒ 任何转换都放行，
+///   而编辑器默认给 `asString`，读取器却要求 `Uri`/`String` ⇒ **字段恒 null**；
+/// - **清单比读取器宽**（`playlistTrackCount`/`categoryCount`/`streamExpiresAt`
+///   允许 `asString`，读取器只要 `int`）⇒ 同上。
+/// 现在改为"**读取器 → 允许的转换**"派生，校验与映射不可能再各说各话。
+enum OnlineMusicFieldReader {
+  /// `'$v'` 插值成身份/标题字符串：只接受能产出 String/int 的转换 ——
+  /// `asBool`/`asDuration*`/`asStringList` 虽然也产出非 null 值，但会写成
+  /// `'true'`/`'0:03:00.000000'`/`'[a, b]'` 这类**垃圾身份**（违反 I1）。
+  scalar,
+
+  /// 要求非空 `String`。
+  text,
+
+  /// 要求 `List<String>`。
+  textList,
+
+  /// 要求 http(s) `Uri`。
+  uri,
+
+  /// 要求 `int`。
+  integer,
+
+  /// 要求 `Duration`。
+  duration,
+
+  /// 要求 `int`（秒级时间戳）。
+  epochSeconds,
+}
+
+/// 每类读取器**真正能消费**的转换集合（P-30 的契约本体）。
+const _transformsForReader = <OnlineMusicFieldReader, Set<OnlineMusicFieldTransform>>{
+  OnlineMusicFieldReader.scalar: {
+    OnlineMusicFieldTransform.asString,
+    OnlineMusicFieldTransform.asInt,
+  },
+  OnlineMusicFieldReader.text: {OnlineMusicFieldTransform.asString},
+  OnlineMusicFieldReader.textList: {
+    OnlineMusicFieldTransform.asSingleStringList,
+    OnlineMusicFieldTransform.asStringList,
+  },
+  OnlineMusicFieldReader.uri: {
+    OnlineMusicFieldTransform.asUri,
+    OnlineMusicFieldTransform.asHttpsUri,
+  },
+  OnlineMusicFieldReader.integer: {OnlineMusicFieldTransform.asInt},
+  OnlineMusicFieldReader.duration: {
+    OnlineMusicFieldTransform.asDurationMs,
+    OnlineMusicFieldTransform.asDurationSeconds,
+  },
+  OnlineMusicFieldReader.epochSeconds: {OnlineMusicFieldTransform.asInt},
+};
+
+/// 每个领域字段用哪一类读取器（**穷举 switch**：新增字段漏声明即编译失败）。
+///
+/// 依据是 `lib/services/music_platform/declarative/declarative_response_mapper.dart`
+/// 里各字段实际的读取调用（行号见 `docs/history/f2-admission-review.md` §1.1 P-30）。
+OnlineMusicFieldReader fieldReaderOf(OnlineMusicDomainField field) =>
+    switch (field) {
+      OnlineMusicDomainField.trackId ||
+      OnlineMusicDomainField.title ||
+      OnlineMusicDomainField.playlistId ||
+      OnlineMusicDomainField.categoryId ||
+      OnlineMusicDomainField.categoryName => OnlineMusicFieldReader.scalar,
+      OnlineMusicDomainField.album ||
+      // 歌单名在"详情"路径由 `_readString` 读、在"集合"路径由 `_readRequired` 插值读
+      // ⇒ 取**交集**（只要 `asString`），两条路径都安全。
+      OnlineMusicDomainField.playlistName ||
+      OnlineMusicDomainField.playlistCreator ||
+      OnlineMusicDomainField.playlistUpdateFrequency ||
+      OnlineMusicDomainField.streamQuality ||
+      OnlineMusicDomainField.lyricOriginal ||
+      OnlineMusicDomainField.lyricTranslation ||
+      OnlineMusicDomainField.lyricRomanization => OnlineMusicFieldReader.text,
+      OnlineMusicDomainField.artists => OnlineMusicFieldReader.textList,
+      OnlineMusicDomainField.coverUri ||
+      OnlineMusicDomainField.playlistCoverUri ||
+      OnlineMusicDomainField.streamUrl => OnlineMusicFieldReader.uri,
+      OnlineMusicDomainField.playlistTrackCount ||
+      OnlineMusicDomainField.categoryCount ||
+      OnlineMusicDomainField.streamBitrate => OnlineMusicFieldReader.integer,
+      OnlineMusicDomainField.duration => OnlineMusicFieldReader.duration,
+      OnlineMusicDomainField.streamExpiresAt =>
+        OnlineMusicFieldReader.epochSeconds,
+    };
+
+/// 少数**有意的收紧**：读取器本身也接受，但业务上不该允许。
+///
+/// 每条都必须给出理由 —— 这是"派生"之外唯一的例外清单。
+const _fieldTransformOverrides =
+    <OnlineMusicDomainField, Set<OnlineMusicFieldTransform>>{
+      OnlineMusicDomainField.streamUrl: {
+        // 播放地址**只允许原样解析**：`asHttpsUri` 会把 http 源改写成 https，
+        // 对不支持 https 的源直接把"本来能播"变成"播不了"。
+        OnlineMusicFieldTransform.asUri,
+      },
+    };
+
+/// 领域字段可接受的类型转换：**由读取器契约派生**（不再是手写清单）。
+///
+/// 语义（Spec D4:A）：不支持的转换必须在**保存/试跑**时明确报错，
+/// 不得放行后在映射层静默返回 null。
+final Map<OnlineMusicDomainField, Set<OnlineMusicFieldTransform>>
+expectedFieldKinds = Map.unmodifiable({
+  for (final field in OnlineMusicDomainField.values)
+    field:
+        _fieldTransformOverrides[field] ??
+        _transformsForReader[fieldReaderOf(field)]!,
+});
+
 enum OnlineMusicPredicateOp { eq, inList, exists }
 
 final class OnlineMusicSuccessPredicate {
@@ -78,11 +201,7 @@ final class OnlineMusicSuccessPredicate {
     final map = _requireMap(value, '成功判定谓词');
     return OnlineMusicSuccessPredicate(
       path: _requirePath(map['path'], '成功判定路径'),
-      op: _requireEnum(
-        map['op'],
-        OnlineMusicPredicateOp.values,
-        '成功判定运算符',
-      ),
+      op: _requireEnum(map['op'], OnlineMusicPredicateOp.values, '成功判定运算符'),
       value: map['value'],
     );
   }
@@ -116,12 +235,12 @@ final class OnlineMusicSuccessSpec {
   static OnlineMusicSuccessSpec fromJson(Object? value) {
     final map = _requireMap(value, '成功判定');
     return OnlineMusicSuccessSpec(
-      okStatusCodes: _optionalList(map['statusCodes'])
-          .map((entry) => _requireInt(entry, '成功状态码'))
-          .toList(growable: false),
-      allOf: _optionalList(map['allOf'])
-          .map(OnlineMusicSuccessPredicate.fromJson)
-          .toList(growable: false),
+      okStatusCodes: _optionalList(
+        map['statusCodes'],
+      ).map((entry) => _requireInt(entry, '成功状态码')).toList(growable: false),
+      allOf: _optionalList(
+        map['allOf'],
+      ).map(OnlineMusicSuccessPredicate.fromJson).toList(growable: false),
     );
   }
 
@@ -152,7 +271,17 @@ final class OnlineMusicFieldSpec {
   /// 按序取第一个存在的路径（firstOf）。
   final List<JsonPath> candidates;
   final OnlineMusicFieldTransform transform;
+
+  /// 该字段是否必填。
+  ///
+  /// ⚠️ **界面/兼容元数据，不参与运行期判定**（P-31 归位）：
+  /// - 运行期的必填性来自**能力级**的 [requiredFieldsFor]（保存与试跑都按它校验）；
+  ///   映射层是按调用点决定用 `_readRequired` 还是 `_readOptional`，不看这个字段；
+  /// - 编辑器显示的"（必填）"同样取自 [requiredFieldsFor]；
+  /// - 本字段只用于与既有配置**往返**（`toJson`/`fromJson`），且保存时由
+  ///   [requiredFieldsFor] 派生，因此不会出现"界面标必填、文件里写 false"的自相矛盾。
   final bool required;
+
   final Object? defaultValue;
 
   Map<String, dynamic> toJson() => {
@@ -165,9 +294,9 @@ final class OnlineMusicFieldSpec {
   static OnlineMusicFieldSpec fromJson(Object? value) {
     final map = _requireMap(value, '字段映射');
     return OnlineMusicFieldSpec(
-      candidates: _optionalList(map['paths'])
-          .map((entry) => _requirePath(entry, '字段路径'))
-          .toList(growable: false),
+      candidates: _optionalList(
+        map['paths'],
+      ).map((entry) => _requirePath(entry, '字段路径')).toList(growable: false),
       transform: _requireEnum(
         map['transform'],
         OnlineMusicFieldTransform.values,
@@ -187,10 +316,30 @@ final class OnlineMusicFieldSpec {
       other.defaultValue == defaultValue;
 
   @override
-  int get hashCode =>
-      Object.hash(Object.hashAll(candidates), transform, required, defaultValue);
+  int get hashCode => Object.hash(
+    Object.hashAll(candidates),
+    transform,
+    required,
+    defaultValue,
+  );
 }
 
+/// 分页种类：`none` / `offsetLimit` / `pageSize` / `cursor`。
+///
+/// **F4-S3 定下的分页契约（P-11 + 延期 A）** —— 四条一起看才有意义：
+/// 1. **`limit`**：进请求参数（每页条数），**同时**参与分页元数据判定；
+///    但它**不裁剪**映射结果 —— 服务端返回多少条就映射多少条
+///    （有些第三方接口不按 limit 裁剪；截断会丢数据且掩盖配置问题）。
+/// 2. **`offset`**：每平台独立透传（D6c:a：各平台各自加载），老行为不变。
+/// 3. **`page`**：运行期**由 `offset ~/ limit + 1` 派生**（`limit <= 0` 时按第 1 页）。
+///    以前恒 1 ⇒ 任何按 `page` 取值的绑定都会永远请求第一页。
+/// 4. **`cursor`**：**暂不支持** —— 服务层契约里没有"上一页游标"的位置（只有 offset/limit），
+///    运行期提供不出游标。按 D4「不支持的必须明确报出、不得静默」：
+///    `kind == cursor` 或参数用了 `cursor` 取值来源时，运行期/试跑**明确失败**，
+///    绝不静默发出不带游标的请求（那会把第二页当成第一页）。
+///
+/// ⚠️ 另：搜索页的「加载更多」用 `totalPath`（已加载数 < total）**且**上一页原始条数 == 每页条数
+/// 双重判定 ⇒ **没配 `totalPath` 时声明式能力的"加载更多"不会出现**（如实记录，见 F4 验收报告）。
 enum OnlineMusicPaginationKind { none, offsetLimit, pageSize, cursor }
 
 final class OnlineMusicPaginationSpec {
@@ -211,11 +360,7 @@ final class OnlineMusicPaginationSpec {
     if (value == null) return const OnlineMusicPaginationSpec();
     final map = _requireMap(value, '分页配置');
     return OnlineMusicPaginationSpec(
-      kind: _requireEnum(
-        map['kind'],
-        OnlineMusicPaginationKind.values,
-        '分页类型',
-      ),
+      kind: _requireEnum(map['kind'], OnlineMusicPaginationKind.values, '分页类型'),
       defaultLimit: map['defaultLimit'] == null
           ? 30
           : _requireInt(map['defaultLimit'], '默认每页数量'),
@@ -292,11 +437,8 @@ final class OnlineMusicResponseSpec {
       fields: rawFields is Map
           ? Map.unmodifiable({
               for (final entry in rawFields.entries)
-                _requireEnum(
-                  entry.key,
-                  OnlineMusicDomainField.values,
-                  '领域字段',
-                ): OnlineMusicFieldSpec.fromJson(entry.value),
+                _requireEnum(entry.key, OnlineMusicDomainField.values, '领域字段'):
+                    OnlineMusicFieldSpec.fromJson(entry.value),
             })
           : const {},
       pagination: OnlineMusicPaginationSpec.fromJson(map['pagination']),
@@ -314,11 +456,10 @@ final class OnlineMusicResponseSpec {
       if (entry.value.candidates.isEmpty) {
         issues.add('${entry.key.name} 至少要有一个字段路径');
       }
+      // P-30：表是**派生**的，必然覆盖全部字段 ⇒ 不再有"未列出 ⇒ 不限制"的放行口。
       final expected = expectedFieldKinds[entry.key];
       if (expected != null && !expected.contains(entry.value.transform)) {
-        issues.add(
-          '${entry.key.name} 的类型转换 ${entry.value.transform.name} 不合适',
-        );
+        issues.add('${entry.key.name} 的类型转换 ${entry.value.transform.name} 不合适');
       }
     }
     for (final required in requiredFieldsFor(capability)) {
@@ -333,8 +474,41 @@ final class OnlineMusicResponseSpec {
         if (listPath == null && fieldsRootPath == null) {
           issues.add('播放解析能力必须配置字段根路径');
         }
-      case OnlineMusicCapability.playlist || OnlineMusicCapability.lyric:
-        issues.add('${capability.name} 能力的声明式配置属于第二阶段，尚未开放');
+      case OnlineMusicCapability.playlist:
+        // S7b：不再是"第二阶段"，改为**真实校验** —— 歌单元数据在 fieldsRootPath、
+        // 曲目数组在 listPath，两者都没有就必然映射不出来。
+        if (listPath == null && fieldsRootPath == null) {
+          issues.add('歌单详情能力必须配置字段根路径或列表路径');
+        }
+      case OnlineMusicCapability.playlistCollection:
+        // 歌单集合只需要一个数组（每个元素是一个歌单摘要），元数据都在元素内部。
+        if (listPath == null) {
+          issues.add('歌单列表能力必须配置列表路径');
+        }
+      case OnlineMusicCapability.chartList:
+        // 榜单索引与歌单列表同构：一个数组，每个元素是一个名次集合的元数据。
+        if (listPath == null) {
+          issues.add('榜单能力必须配置列表路径');
+        }
+      case OnlineMusicCapability.playlistCategories:
+        // 分类索引同样只是一个数组，每个元素是一个分类。
+        if (listPath == null) {
+          issues.add('歌单分类能力必须配置列表路径');
+        }
+      case OnlineMusicCapability.newSongs:
+        // 新歌就是一个曲目数组，与搜索同构。
+        if (listPath == null) {
+          issues.add('新歌能力必须配置列表路径');
+        }
+      case OnlineMusicCapability.lyric:
+        // 至少要有一个歌词字段，否则永远取不到歌词（配置错误，不是"这首没歌词"）。
+        if (!const [
+          OnlineMusicDomainField.lyricOriginal,
+          OnlineMusicDomainField.lyricTranslation,
+          OnlineMusicDomainField.lyricRomanization,
+        ].any(fields.containsKey)) {
+          issues.add('歌词能力至少需要配置一个歌词字段');
+        }
     }
     if (pagination.kind == OnlineMusicPaginationKind.cursor &&
         nextCursorPath == null) {
@@ -409,6 +583,45 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.coverUri,
         OnlineMusicDomainField.duration,
       };
+    case OnlineMusicCapability.playlistCollection:
+      // 歌单集合只有歌单自身的字段，**没有任何曲目字段**（Spec §19.2）。
+      return const {
+        OnlineMusicDomainField.playlistId,
+        OnlineMusicDomainField.playlistName,
+        OnlineMusicDomainField.playlistCoverUri,
+        OnlineMusicDomainField.playlistCreator,
+        OnlineMusicDomainField.playlistTrackCount,
+        OnlineMusicDomainField.playlistUpdateFrequency,
+      };
+    case OnlineMusicCapability.chartList:
+      // 榜单索引与歌单集合同构：只有集合自身的字段，没有曲目字段。
+      return const {
+        OnlineMusicDomainField.playlistId,
+        OnlineMusicDomainField.playlistName,
+        OnlineMusicDomainField.playlistCoverUri,
+        OnlineMusicDomainField.playlistCreator,
+        OnlineMusicDomainField.playlistTrackCount,
+        OnlineMusicDomainField.playlistUpdateFrequency,
+      };
+    case OnlineMusicCapability.playlistCategories:
+      // 分类只有分类自身：标识、名字、数量。**没有分组的字段** ——
+      // 分组名在真实服务里是"以分组 id 为键的另一张表"，拼接它属于逻辑而非映射
+      // （见能力枚举的说明）。
+      return const {
+        OnlineMusicDomainField.categoryId,
+        OnlineMusicDomainField.categoryName,
+        OnlineMusicDomainField.categoryCount,
+      };
+    case OnlineMusicCapability.newSongs:
+      // 新歌就是一个曲目数组：字段集与搜索**完全相同**（不新增领域字段）。
+      return const {
+        OnlineMusicDomainField.trackId,
+        OnlineMusicDomainField.title,
+        OnlineMusicDomainField.artists,
+        OnlineMusicDomainField.album,
+        OnlineMusicDomainField.coverUri,
+        OnlineMusicDomainField.duration,
+      };
     case OnlineMusicCapability.lyric:
       return const {
         OnlineMusicDomainField.lyricOriginal,
@@ -419,55 +632,57 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
 }
 
 /// 每个能力必须映射哪些字段。
-Set<OnlineMusicDomainField> requiredFieldsFor(OnlineMusicCapability capability) {
+Set<OnlineMusicDomainField> requiredFieldsFor(
+  OnlineMusicCapability capability,
+) {
   switch (capability) {
     case OnlineMusicCapability.search:
-      return const {OnlineMusicDomainField.trackId, OnlineMusicDomainField.title};
+      return const {
+        OnlineMusicDomainField.trackId,
+        OnlineMusicDomainField.title,
+      };
     case OnlineMusicCapability.stream:
-      return const {OnlineMusicDomainField.streamUrl};
+      // P-42：**播放入口必须能证明身份**（D-F1-2「跨 Provider 解析必须可证明同一内容
+      // 或直接失败」）。没有 trackId 映射时，我们无法判断返回的地址是不是请求的那首歌，
+      // 而同平台多 Provider 回退会让"错歌"真实发生（身份是请求方回填的，看不出来）。
+      // 因此这里要求必须有 trackId 映射：保存/试跑时就会被拦住并说清怎么修。
+      return const {
+        OnlineMusicDomainField.streamUrl,
+        OnlineMusicDomainField.trackId,
+      };
     case OnlineMusicCapability.playlist:
+      return const {
+        OnlineMusicDomainField.playlistName,
+        OnlineMusicDomainField.playlistId,
+      };
+    case OnlineMusicCapability.playlistCollection:
+      // 每个歌单摘要至少要有 id 与名字，否则列表里出现空条目。
       return const {
         OnlineMusicDomainField.playlistId,
         OnlineMusicDomainField.playlistName,
+      };
+    case OnlineMusicCapability.chartList:
+      // 同理：榜单摘要至少要有 id 与名字，否则列表里出现空条目。
+      return const {
+        OnlineMusicDomainField.playlistId,
+        OnlineMusicDomainField.playlistName,
+      };
+    case OnlineMusicCapability.playlistCategories:
+      // 分类至少要有 id 与名字，否则 chip 墙上出现空 chip。
+      return const {
+        OnlineMusicDomainField.categoryId,
+        OnlineMusicDomainField.categoryName,
+      };
+    case OnlineMusicCapability.newSongs:
+      // 与搜索同样的最低要求：至少能确定"是哪首歌、叫什么"。
+      return const {
+        OnlineMusicDomainField.trackId,
+        OnlineMusicDomainField.title,
       };
     case OnlineMusicCapability.lyric:
       return const {};
   }
 }
-
-/// 领域字段可接受的类型转换；未列出的字段表示不限制。
-const Map<OnlineMusicDomainField, Set<OnlineMusicFieldTransform>>
-expectedFieldKinds = {
-  OnlineMusicDomainField.trackId: {
-    OnlineMusicFieldTransform.asString,
-    OnlineMusicFieldTransform.asInt,
-  },
-  OnlineMusicDomainField.title: {OnlineMusicFieldTransform.asString},
-  OnlineMusicDomainField.artists: {
-    OnlineMusicFieldTransform.asSingleStringList,
-    OnlineMusicFieldTransform.asStringList,
-  },
-  OnlineMusicDomainField.album: {OnlineMusicFieldTransform.asString},
-  OnlineMusicDomainField.coverUri: {
-    OnlineMusicFieldTransform.asUri,
-    OnlineMusicFieldTransform.asHttpsUri,
-  },
-  OnlineMusicDomainField.duration: {
-    OnlineMusicFieldTransform.asDurationMs,
-    OnlineMusicFieldTransform.asDurationSeconds,
-  },
-  OnlineMusicDomainField.playlistTrackCount: {
-    OnlineMusicFieldTransform.asInt,
-    OnlineMusicFieldTransform.asString,
-  },
-  OnlineMusicDomainField.streamUrl: {OnlineMusicFieldTransform.asUri},
-  OnlineMusicDomainField.streamQuality: {OnlineMusicFieldTransform.asString},
-  OnlineMusicDomainField.streamBitrate: {OnlineMusicFieldTransform.asInt},
-  OnlineMusicDomainField.streamExpiresAt: {
-    OnlineMusicFieldTransform.asInt,
-    OnlineMusicFieldTransform.asString,
-  },
-};
 
 Map<Object?, Object?> _requireMap(Object? value, String label) {
   if (value is Map) return value;

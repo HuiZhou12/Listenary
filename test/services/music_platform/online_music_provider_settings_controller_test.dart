@@ -71,7 +71,10 @@ void main() {
       controller.dispose();
     });
 
-    test('keeps an unusable base URL at the documented default', () async {
+    // ⚠️ 语义变更（F0-3 / P-18）：旧行为把非法 baseUrl 静默改写为默认地址。
+    // 现在非法值原样保留并明确报错 —— 静默替换正是被修掉的缺陷，
+    // 因此这条断言被改写（详见 F0-3 提交说明）。
+    test('keeps an explicitly invalid base URL and reports it', () async {
       final controller = _controller();
       await controller.updateProvider(
         controller.settings.providers.single.editedBy(
@@ -80,9 +83,14 @@ void main() {
         ),
       );
 
+      final provider = controller.settings.providers.single;
+      // 保存路径本身不做替换（模型层保留原值，界面层另有保存前校验）。
+      expect(provider.baseUrl, 'ftp://invalid');
+      expect(provider.baseUrlIssue, isNotNull);
+      expect(provider.effectiveBaseUrl, 'ftp://invalid');
       expect(
-        controller.settings.providers.single.baseUrl,
-        defaultOnlineMusicBaseUrl,
+        provider.validationIssues().join(),
+        contains('不会回落到默认服务地址'),
       );
       controller.dispose();
     });
@@ -144,6 +152,77 @@ void main() {
       await controller.removeProvider('selfData');
       expect(controller.hasPendingRestart, isFalse);
       controller.dispose();
+    });
+
+    test('★ P-04 逐项粒度：只有**改了的那一项**需要重启', () async {
+      final controller = _controller();
+      addTearDown(controller.dispose);
+
+      // 起点：全部一致 ⇒ 没有任何一项"未生效"。
+      expect(controller.providerNeedsRestart(defaultOnlineMusicProviderId), isFalse);
+      expect(controller.platformNeedsRestart(MusicPlatform.netease), isFalse);
+      expect(
+        controller.capabilityNeedsRestart(
+          MusicPlatform.netease,
+          OnlineMusicCapability.search,
+        ),
+        isFalse,
+      );
+
+      // 新增一个条目 ⇒ 只有它自己"未生效"；原有条目不背这个锅。
+      await controller.addProvider(
+        OnlineMusicProviderDefinition.custom(
+          id: 'selfData',
+          baseUrl: 'http://127.0.0.1:8080',
+          requiresCredential: false,
+        ),
+      );
+      expect(controller.providerNeedsRestart('selfData'), isTrue);
+      expect(
+        controller.providerNeedsRestart(defaultOnlineMusicProviderId),
+        isFalse,
+        reason: '没改过的条目不应当被标成"未生效"',
+      );
+
+      // 改回原状（删掉新条目）⇒ 标记自动消失。
+      await controller.removeProvider('selfData');
+      expect(controller.providerNeedsRestart('selfData'), isFalse);
+    });
+
+    test('★ P-04 平台/能力粒度：候选来源变了才标记', () async {
+      final settings = _twoProviderSettings();
+      // configured 与 active 用**同一份**配置起点，才谈得上"哪一项变了"。
+      final controller = _controller(configured: settings, active: settings);
+      addTearDown(controller.dispose);
+
+      // 只改 `netease/search` 的来源 ⇒ 该能力被标记，隔壁能力不受影响。
+      await controller.assignPlatformCapability(
+        MusicPlatform.netease,
+        OnlineMusicCapability.search,
+        'selfData',
+      );
+
+      expect(
+        controller.capabilityNeedsRestart(
+          MusicPlatform.netease,
+          OnlineMusicCapability.search,
+        ),
+        isTrue,
+      );
+      expect(
+        controller.capabilityNeedsRestart(
+          MusicPlatform.netease,
+          OnlineMusicCapability.playlist,
+        ),
+        isFalse,
+        reason: '没动过的能力不该被标成"未生效"',
+      );
+      expect(controller.platformNeedsRestart(MusicPlatform.netease), isTrue);
+      expect(
+        controller.platformNeedsRestart(MusicPlatform.qq),
+        isFalse,
+        reason: '别的平台不该被牵连',
+      );
     });
 
     test('rolls back and reports failure when the store refuses to write', () async {
@@ -498,12 +577,31 @@ void main() {
   });
 }
 
+/// P-04 用：两个条目（内置 chksz + 一个自建声明式），供"逐项待重启"用例比较。
+OnlineMusicSettings _twoProviderSettings() => OnlineMusicSettings.fromJson({
+  'providers': [
+    {'id': 'chksz', 'protocol': 'chksz'},
+    {
+      'id': 'selfData',
+      'baseUrl': 'http://127.0.0.1:8080',
+      'auth': {'kind': 'none'},
+      'capabilities': {
+        'search': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(path: '/search'),
+          response: OnlineMusicResponseSpec(
+            listPath: JsonPath.tryParse('data')!,
+          ),
+        ).toJson(),
+      },
+    },
+  ],
+});
+
 OnlineMusicProviderSettingsController _controller({
   OnlineMusicSettings configured = OnlineMusicSettings.defaults,
   OnlineMusicSettings active = OnlineMusicSettings.defaults,
   _FakeCredentialAccess? credentials,
-}) {
-  return OnlineMusicProviderSettingsController(
+}) {  return OnlineMusicProviderSettingsController(
     activeSettings: active,
     store: _MemorySettingsStore(configured),
     fallbackCredentials: credentials ?? _FakeCredentialAccess(),

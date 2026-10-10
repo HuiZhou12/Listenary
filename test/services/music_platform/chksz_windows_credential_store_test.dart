@@ -7,6 +7,9 @@ import 'package:pure_music/services/music_platform/chksz/chksz_windows_credentia
 const _fakeApiKey = 'chksz_TEST_ONLY';
 const _notFoundError = 1168;
 
+/// 真机实测：全新进程里第一个凭据调用可能报 `GetLastError() == 0`。
+const _successError = 0;
+
 void main() {
   group('WindowsChkszCredentialStore', () {
     test('can be constructed on non-Windows without loading a DLL', () {
@@ -79,6 +82,30 @@ void main() {
         ]);
       },
     );
+
+    // ⚠️ **真机实测**（F0 验证，2026-10-09）：全新进程里的**第一个**凭据调用，
+    // CredRead/CredDelete 会返回 FALSE 而 GetLastError() 是 0（ERROR_SUCCESS）；
+    // 从第二次调用起才正确返回 ERROR_NOT_FOUND(1168)。
+    // 这条测试把"自相矛盾的结果按'不存在'处理"钉住 —— 它是 F0 迁移能在真机跑通的前提。
+    test('treats FALSE + ERROR_SUCCESS as "not found" (real-machine behaviour)', () async {
+      final api = _FakeCredentialManagerApi(
+        readResult: const ChkszCredentialManagerReadResult.failure(
+          _successError,
+        ),
+        clearErrorCode: _successError,
+      );
+      final store = WindowsChkszCredentialStore(api: api);
+
+      // 读取：不得抛错，必须报"没有"
+      expect(await store.read(), isNull);
+      // 清除：幂等，不得抛错
+      await store.clear();
+
+      expect(api.targetNames, [
+        chkszWindowsCredentialTargetName,
+        chkszWindowsCredentialTargetName,
+      ]);
+    });
 
     test('maps operation failures to safe errors with numeric codes', () async {
       final api = _FakeCredentialManagerApi(

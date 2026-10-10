@@ -2421,7 +2421,11 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SettingsTile(
-          description: '首选歌词来源',
+          // P-15：作用域必须写明 —— 这一项只作用于**本地歌曲**（库里的文件）。
+          // 在线曲目的歌词按曲目所属平台取，不受这里影响（以前没有任何说明，
+          // 用户会以为它决定所有歌曲的歌词来源）。
+          description: '首选歌词来源（仅本地歌曲）',
+          subtitle: '在线曲目的歌词按曲目所属平台获取，不受这里影响',
           action: SegmentedButton<bool>(
             showSelectedIcon: false,
             segments: const [
@@ -2446,7 +2450,8 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
           Padding(
             padding: const EdgeInsets.only(left: 16),
             child: SettingsTile(
-              description: '默认在线源',
+              // P-15：同上 —— 它是本地库那一套子系统的来源，**只对本地歌曲生效**。
+              description: '默认在线源（仅本地歌曲）',
               action: SegmentedButton<LyricSourceType>(
                 showSelectedIcon: false,
                 segments: const [

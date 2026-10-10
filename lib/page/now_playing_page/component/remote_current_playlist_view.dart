@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:pure_music/component/online_source_label.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
@@ -390,14 +391,33 @@ class _RemotePlaylistItemState extends State<_RemotePlaylistItem> {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: AppType.caption,
-                          color: widget.isCurrent
-                              ? scheme.primary.withAlpha(179)
-                              : scheme.onSecondaryContainer.withAlpha(179),
-                        ),
+                      // 副标题行：详情先省略，**来源标记留在行尾**（与其它在线列表同一套规则）。
+                      // 本地队列的 item 不带 sourceLabel，因此这里什么都不会渲染。
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              subtitle,
+                              style: TextStyle(
+                                fontSize: AppType.caption,
+                                color: widget.isCurrent
+                                    ? scheme.primary.withAlpha(179)
+                                    : scheme.onSecondaryContainer.withAlpha(
+                                        179,
+                                      ),
+                              ),
+                            ),
+                          ),
+                          if (widget.item.sourceLabel case final label?) ...[
+                            const SizedBox(width: Spacing.sm),
+                            OnlineSourceLabel(
+                              label: label,
+                              color: widget.isCurrent
+                                  ? scheme.primary.withAlpha(179)
+                                  : scheme.onSecondaryContainer.withAlpha(179),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                   ),

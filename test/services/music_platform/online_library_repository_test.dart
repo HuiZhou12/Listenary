@@ -210,15 +210,125 @@ void main() {
   });
 
   test('rolls back invalid replacement and keeps the previous snapshot', () {
-    final original = repository.replaceSubscriptionSnapshot(_playlist());
+    final originalAt = DateTime.utc(2026, 8, 18, 9);
+    final original = repository.replaceSubscriptionSnapshot(
+      _playlist(),
+      refreshedAt: originalAt,
+    );
     expect(
-      () => repository.replaceSubscriptionSnapshot(_playlist(trackCount: 1)),
+      () => repository.replaceSubscriptionSnapshot(
+        _playlist(trackCount: 1),
+        refreshedAt: originalAt.add(const Duration(hours: 1)),
+      ),
       throwsArgumentError,
     );
 
     final stored = repository.readSubscriptionSnapshot(original.localId)!;
     expect(stored.playlist.name, 'Remote Playlist');
     expect(stored.playlist.tracks, hasLength(2));
+    // ★ F5-S3：失败的刷新**不得留下部分更新** —— 加入时间与刷新时间都必须是旧快照的值。
+    expect(stored.lastRefreshedAt, originalAt);
+    expect(_addedAtByTrackId(database), {
+      '100': originalAt.toIso8601String(),
+      '200': originalAt.toIso8601String(),
+    });
+  });
+
+  test('★ F5-S3 刷新保留既有条目的加入时间（不再重置为刷新时刻）', () {
+    final firstAt = DateTime.utc(2026, 8, 18, 10);
+    final snapshot = repository.replaceSubscriptionSnapshot(
+      _playlist(),
+      refreshedAt: firstAt,
+    );
+    final laterAt = firstAt.add(const Duration(days: 3));
+
+    repository.replaceSubscriptionSnapshot(
+      _playlist(name: 'Renamed'),
+      refreshedAt: laterAt,
+    );
+
+    final stored = repository.readSubscriptionSnapshot(snapshot.localId)!;
+    // P-62：旧实现会在每次刷新时 `DELETE` 全部条目并按当前时间重插 ⇒ 这里会变成 laterAt。
+    expect(
+      _addedAtByTrackId(database),
+      {
+        '100': firstAt.toIso8601String(),
+        '200': firstAt.toIso8601String(),
+      },
+      reason: '老歌的加入时间必须是**首次加入**的时刻（订阅快照不暴露该字段 ⇒ 直接核对库值）',
+    );
+    // 刷新时间本身仍要更新（两件事不能混）。
+    expect(stored.lastRefreshedAt, laterAt);
+    expect(stored.playlist.name, 'Renamed');
+  });
+
+  test('★ F5-S3 刷新中新出现的条目使用**本次刷新时刻**', () {
+    final firstAt = DateTime.utc(2026, 8, 18, 10);
+    final snapshot = repository.replaceSubscriptionSnapshot(
+      _playlist(),
+      refreshedAt: firstAt,
+    );
+    final laterAt = firstAt.add(const Duration(days: 1));
+
+    repository.replaceSubscriptionSnapshot(
+      _playlist(
+        tracks: [
+          _track(id: '100', title: 'First'),
+          _track(id: '200', title: 'Second'),
+          _track(id: '300', title: 'Third'),
+        ],
+      ),
+      refreshedAt: laterAt,
+    );
+
+    final stored = repository.readSubscriptionSnapshot(snapshot.localId)!;
+    expect(stored.playlist.tracks.map((track) => track.ref.trackId), [
+      '100',
+      '200',
+      '300',
+    ]);
+    expect(_addedAtByTrackId(database), {
+      '100': firstAt.toIso8601String(),
+      '200': firstAt.toIso8601String(),
+      '300': laterAt.toIso8601String(),
+    }, reason: '老条目保持原时间，只有本次新出现的条目才写刷新时刻');
+  });
+
+  test('★ F5-S3 刷新移除的条目按**现有清理规则**处理（不扩大删除范围）', () {
+    final firstAt = DateTime.utc(2026, 8, 18, 10);
+    final snapshot = repository.replaceSubscriptionSnapshot(
+      _playlist(),
+      refreshedAt: firstAt,
+    );
+    expect(repository.findTrack(_ref('200')), isNotNull);
+
+    repository.replaceSubscriptionSnapshot(
+      _playlist(tracks: [_track(id: '100', title: 'First')]),
+      refreshedAt: firstAt.add(const Duration(hours: 1)),
+    );
+
+    final stored = repository.readSubscriptionSnapshot(snapshot.localId)!;
+    expect(stored.playlist.tracks.map((track) => track.ref.trackId), ['100']);
+    expect(
+      _addedAtByTrackId(database).containsKey('200'),
+      isFalse,
+      reason: '被移除的条目不再有加入时间',
+    );
+    expect(
+      repository.findTrack(_ref('200')),
+      isNull,
+      reason: '不再被任何歌单/历史引用 ⇒ 按既有 _removeUnreferencedTracks 规则回收',
+    );
+    expect(
+      repository.findTrack(_ref('100')),
+      isNotNull,
+      reason: '仍在歌单里的元数据必须保留',
+    );
+    expect(
+      _addedAtByTrackId(database)['100'],
+      firstAt.toIso8601String(),
+      reason: '留下的条目时间不变',
+    );
   });
 
   test('deletes a subscription without retaining unreferenced metadata', () {
@@ -422,15 +532,28 @@ MusicTrack _track({
 
 RemotePlaylist _playlist({
   String name = 'Remote Playlist',
-  int trackCount = 2,
+  int? trackCount,
+  List<MusicTrack>? tracks,
 }) => RemotePlaylist(
   platform: MusicPlatform.netease,
   id: '500',
   name: name,
   creator: 'Remote Creator',
-  trackCount: trackCount,
-  tracks: [
-    _track(id: '100', title: 'First'),
-    _track(id: '200', title: 'Second'),
-  ],
+  // F5-S3 起可显式给 `tracks`（刷新测试需要"多一首 / 少一首"）；
+  // 显式 `trackCount` 仍可用于制造"数量与清单不符"以触发快照校验失败。
+  trackCount: trackCount ?? (tracks ?? _defaultPlaylistTracks).length,
+  tracks: tracks ?? _defaultPlaylistTracks,
 );
+
+final List<MusicTrack> _defaultPlaylistTracks = [
+  _track(id: '100', title: 'First'),
+  _track(id: '200', title: 'Second'),
+];
+
+/// 直接读库核对加入时间（订阅快照**不暴露** `added_at` ⇒ 这是最直接的证据）。
+Map<String, String> _addedAtByTrackId(Database database) => {
+  for (final row in database.select(
+    'SELECT track_id, added_at FROM online_playlist_items',
+  ))
+    row['track_id'] as String: row['added_at'] as String,
+};

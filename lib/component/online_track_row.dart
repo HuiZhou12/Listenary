@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/motion.dart';
+import 'package:pure_music/component/online_source_label.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
@@ -53,6 +54,7 @@ class OnlineTrackRow extends StatefulWidget {
     this.favorite = false,
     this.onToggleFavorite,
     this.isNowPlaying = false,
+    this.sourceLabel,
   });
 
   final MusicTrack track;
@@ -67,6 +69,11 @@ class OnlineTrackRow extends StatefulWidget {
 
   /// 本行是否为当前在线播放曲目；由调用方判定（见 [isOnlineTrackNowPlaying]）。
   final bool isNowPlaying;
+
+  /// **来源标签**（平台展示名，D6/D8）：多平台聚合结果里同一行必须能看出它来自哪个平台。
+  ///
+  /// 为 null 时不渲染任何标签（单平台列表沿用既有观感）。
+  final String? sourceLabel;
 
   @override
   State<OnlineTrackRow> createState() => _OnlineTrackRowState();
@@ -132,6 +139,7 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // 标题独占一行：来源标记不在这里占位（W6：不得挤压标题）。
                           Text(
                             track.title,
                             maxLines: 1,
@@ -143,11 +151,27 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                             ),
                           ),
                           const SizedBox(height: 2),
-                          Text(
-                            widget.details,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: metadataColor),
+                          // 副标题行：详情 + **轻量的来源标记**（W6）。
+                          // 来源不做成固定宽度的徽章（那会把详情挤成一小条），
+                          // 而是行尾的小圆点 + 小号低对比文字，详情用 Flexible 先省略。
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  widget.details,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: metadataColor),
+                                ),
+                              ),
+                              if (widget.sourceLabel case final label?) ...[
+                                const SizedBox(width: Spacing.sm),
+                                OnlineSourceLabel(
+                                  label: label,
+                                  color: metadataColor,
+                                ),
+                              ],
+                            ],
                           ),
                         ],
                       ),
@@ -218,6 +242,10 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
   }
 }
 
+/// 结果行的**来源标签**：告诉用户这一行来自哪个平台（D6 / I1）。
+///
+/// W6 之后不再是固定宽度的徽章：它改成副标题行尾的"小圆点 + 小号低对比文字"，
+/// 见 [_OnlineTrackRowState.build]；详情文本用 Flexible 先省略，标题行完全不受影响。
 class _OnlineTrackCover extends StatelessWidget {
   const _OnlineTrackCover({super.key, required this.coverUri});
 

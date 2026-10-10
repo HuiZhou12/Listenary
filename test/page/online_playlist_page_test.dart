@@ -53,7 +53,74 @@ void main() {
 
     await tester.tap(find.byTooltip('添加在线歌单'));
     await tester.pump();
-    expect(find.text('网易歌单 ID'), findsOneWidget);
+    expect(find.text('网易云歌单 ID'), findsOneWidget);
+  });
+
+  testWidgets('多平台时可选择来源平台，并把手选的 (平台, ID) 交给控制器', (tester) async {
+    final service = _FakeOnlineMusicService(
+      playlistPlatforms: const {MusicPlatform.netease, MusicPlatform.qq},
+    );
+    final multiController = OnlinePlaylistController(
+      repository: SynchronousFuture(repository),
+      service: service,
+    );
+    addTearDown(multiController.dispose);
+
+    await _pump(
+      tester,
+      multiController,
+      personalController,
+      const OnlinePlaylistsPage(),
+      service: service,
+    );
+    await tester.tap(find.byTooltip('添加在线歌单'));
+    await tester.pumpAndSettle();
+
+    // 两个平台都能提供歌单详情 ⇒ 出现来源选择，默认是列表里的第一个（网易云）。
+    expect(find.byType(SegmentedButton<MusicPlatform>), findsOneWidget);
+    expect(find.text('网易云歌单 ID'), findsOneWidget);
+
+    await tester.tap(find.text('QQ音乐'));
+    await tester.pumpAndSettle();
+    expect(find.text('QQ音乐歌单 ID'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '7729596131');
+    await tester.tap(find.text('添加'));
+    await tester.pumpAndSettle();
+
+    // 来源身份不能丢：控制器拿到的是**用户选的平台**，不是硬编码的网易云。
+    expect(service.requestedPlaylists, hasLength(1));
+    expect(service.requestedPlaylists.single.platform, MusicPlatform.qq);
+    expect(service.requestedPlaylists.single.id, '7729596131');
+  });
+
+  testWidgets('单平台时不摆来源选择控件，且校验平台自己的 ID 形状', (tester) async {
+    final service = _FakeOnlineMusicService();
+    final singleController = OnlinePlaylistController(
+      repository: SynchronousFuture(repository),
+      service: service,
+    );
+    addTearDown(singleController.dispose);
+
+    await _pump(
+      tester,
+      singleController,
+      personalController,
+      const OnlinePlaylistsPage(),
+      service: service,
+    );
+    await tester.tap(find.byTooltip('添加在线歌单'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SegmentedButton<MusicPlatform>), findsNothing);
+    expect(find.text('网易云歌单 ID'), findsOneWidget);
+
+    // 网易云的 ID 是数字：填字母时内联报错且不发请求。
+    await tester.enterText(find.byType(TextField), 'abc');
+    await tester.tap(find.text('添加'));
+    await tester.pumpAndSettle();
+    expect(find.text('网易云歌单 ID 是数字'), findsOneWidget);
+    expect(service.requestedPlaylists, isEmpty);
   });
 
   testWidgets('subscription list shows safe metadata and read-only actions', (
@@ -102,6 +169,92 @@ void main() {
       expect(find.byTooltip('编辑'), findsNothing);
     },
   );
+
+  testWidgets('★ 订阅歌单详情里点「添加到歌单」→ 曲目真的进自建歌单', (tester) async {
+    final saved = repository.replaceSubscriptionSnapshot(_playlist());
+    await controller.loadSubscriptions();
+    final targetId = repository.createPersonalPlaylist('目标歌单');
+
+    await _pump(
+      tester,
+      controller,
+      personalController,
+      OnlinePlaylistDetailPage(localId: saved.localId),
+    );
+    await _pumpUntilFound(tester, find.text('Remote Track'));
+
+    final hover = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await hover.addPointer(location: Offset.zero);
+    await hover.moveTo(tester.getCenter(find.text('Remote Track')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('添加到歌单'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('收藏到歌单'), findsOneWidget);
+    await tester.tap(find.text('目标歌单'));
+    await tester.pumpAndSettle();
+
+    // 只断言"弹窗出现"不够：回调没接上时用户看到的过程一模一样。
+    // 断言**用户点的那一行**（按标题）真的进了目标歌单，而不是记一个魔法 id。
+    final added = repository.readPersonalPlaylist(targetId)!.tracks;
+    expect(added.map((item) => item.title), contains('Remote Track'));
+    expect(added, hasLength(1));
+    // 本 harness 没接应用根部的全局 key，因此不断言 Toast（见 R12 报告 §3）。
+    expect(tester.takeException(), isNull);
+    await hover.removePointer();
+  });
+
+  testWidgets('★ 已加载页上的「刷新」要真的去平台重新拉（不是只重读本地快照）', (tester) async {
+    final service = _FakeOnlineMusicService();
+    final localController = OnlinePlaylistController(
+      repository: SynchronousFuture(repository),
+      service: service,
+    );
+    addTearDown(localController.dispose);
+
+    final saved = repository.replaceSubscriptionSnapshot(_playlist());
+    await localController.loadSubscriptions();
+
+    await _pump(
+      tester,
+      localController,
+      personalController,
+      OnlinePlaylistDetailPage(localId: saved.localId),
+    );
+    await _pumpUntilFound(tester, find.text('Remote Track'));
+    expect(find.text('平台上新增的歌'), findsNothing);
+
+    // 平台那边多了一首（用户去平台网页上加了歌，回来点刷新）。
+    service.playlistBuilder = () => RemotePlaylist(
+      platform: MusicPlatform.netease,
+      id: '500',
+      name: 'Remote Playlist',
+      creator: 'Remote Creator',
+      trackCount: 2,
+      tracks: [
+        ..._playlist().tracks,
+        MusicTrack(
+          ref: const PlatformTrackRef(
+            platform: MusicPlatform.netease,
+            trackId: '200',
+          ),
+          title: '平台上新增的歌',
+          artists: const ['Remote Artist'],
+          album: 'Remote Album',
+        ),
+      ],
+    );
+
+    await tester.tap(find.text('刷新'));
+    await tester.pumpAndSettle();
+
+    // 只断言"按钮点了没报错"是不够的：**刷新必须把平台的新内容带回来**。
+    expect(
+      find.text('平台上新增的歌'),
+      findsOneWidget,
+      reason: '「刷新」必须真的去平台重新拉，否则它对用户就是个空按钮',
+    );
+  });
 
   testWidgets('unified playlist entry opens the online detail page', (
     tester,
@@ -153,6 +306,11 @@ void main() {
     // 两首：排序控件按 hasEnoughItemsToSort（>1）显示，单曲歌单本就不显示排序。
     repository.addTrackToPersonalPlaylist(id, _track('200'));
     repository.addTrackToPersonalPlaylist(id, _track('201'));
+    // 自建在线歌单允许**混平台**（D11）：第三首来自 QQ，UI 必须写明来源（I1）。
+    repository.addTrackToPersonalPlaylist(
+      id,
+      _track('q1', platform: MusicPlatform.qq),
+    );
 
     await tester.binding.setSurfaceSize(const Size(1280, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -183,11 +341,26 @@ void main() {
     );
     await _pumpUntilFound(tester, find.text('私人歌单'));
     expect(tester.takeException(), isNull);
-    expect(find.text('2首乐曲 · 我的在线歌单'), findsOneWidget);
+    expect(find.text('3首乐曲 · 我的在线歌单'), findsOneWidget);
 
     await tester.tap(find.text('私人歌单'));
-    await _pumpUntilFound(tester, find.text('2 首歌曲 · 我的在线歌单'));
+    await _pumpUntilFound(tester, find.text('3 首歌曲 · 我的在线歌单'));
     expect(find.byType(PersonalPlaylistDetailPage), findsOneWidget);
+    // 混平台歌单：每一行都带自己的来源标签（网易云 ×2 + QQ音乐 ×1）。
+    expect(
+      find.descendant(
+        of: find.byType(PersonalPlaylistDetailPage),
+        matching: find.text('网易云'),
+      ),
+      findsNWidgets(2),
+    );
+    expect(
+      find.descendant(
+        of: find.byType(PersonalPlaylistDetailPage),
+        matching: find.text('QQ音乐'),
+      ),
+      findsOneWidget,
+    );
     // 详情页只保留一个标题（去掉 PageScaffold 双标题）。
     expect(
       find.descendant(
@@ -233,14 +406,18 @@ Future<void> _pump(
   WidgetTester tester,
   OnlinePlaylistController controller,
   PersonalOnlinePlaylistController personalController,
-  Widget child,
-) {
+  Widget child, {
+  OnlineMusicService? service,
+}) {
+  final page = MaterialApp(home: Scaffold(body: child));
   return tester.pumpWidget(
     ChangeNotifierProvider<OnlinePlaylistController>.value(
       value: controller,
       child: ChangeNotifierProvider<PersonalOnlinePlaylistController>.value(
         value: personalController,
-        child: MaterialApp(home: Scaffold(body: child)),
+        child: service == null
+            ? page
+            : Provider<OnlineMusicService>.value(value: service, child: page),
       ),
     ),
   );
@@ -263,12 +440,23 @@ Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
 }
 
 final class _FakeOnlineMusicService implements OnlineMusicService {
+  _FakeOnlineMusicService({
+    Set<MusicPlatform> playlistPlatforms = const {MusicPlatform.netease},
+  }) : capabilities = OnlineMusicCapabilities(
+         searchablePlatforms: const [],
+         resolvablePlatforms: const [],
+         playlistPlatforms: playlistPlatforms,
+       );
+
   @override
-  final capabilities = OnlineMusicCapabilities(
-    searchablePlatforms: [],
-    resolvablePlatforms: [],
-    playlistPlatforms: [MusicPlatform.netease],
-  );
+  final OnlineMusicCapabilities capabilities;
+
+  /// 记录真实发出去的 `(platform, playlistId)`：用来证明 UI 把来源身份传对了（I1）。
+  final requestedPlaylists = <({MusicPlatform platform, String id})>[];
+
+  /// 平台那边返回的歌单内容。测试可以中途换掉它，用来模拟
+  /// **"平台上新增了曲目"** —— 这是"刷新到底有没有去平台重新拉"的唯一判别方式。
+  RemotePlaylist Function() playlistBuilder = _playlist;
 
   @override
   Future<MusicSearchPage> search({
@@ -291,7 +479,43 @@ final class _FakeOnlineMusicService implements OnlineMusicService {
     required MusicPlatform platform,
     required String playlistId,
     required OnlineMusicCancelToken cancelToken,
-  }) async => _playlist();
+  }) async {
+    requestedPlaylists.add((platform: platform, id: playlistId));
+    return playlistBuilder();
+  }
+
+  @override
+  Future<List<RemotePlaylistSummary>> fetchPlaylistCollection({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    String? categoryId,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => const [];
+
+  @override
+  Future<List<RemotePlaylistCategory>> fetchPlaylistCategories({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('categories');
+
+  @override
+  Future<List<RemotePlaylistSummary>> fetchChartList({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('charts');
+
+  @override
+  Future<List<MusicTrack>> fetchNewSongs({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('new songs');
 
   @override
   Future<MusicLyrics> fetchLyrics(
@@ -303,13 +527,38 @@ final class _FakeOnlineMusicService implements OnlineMusicService {
   String defaultQualityFor(MusicPlatform platform) => 'lossless';
 
   @override
+  Future<AggregatedSearchResult> searchAggregated({
+    required Iterable<MusicPlatform> platforms,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => AggregatedSearchResult(perPlatform: const {}, failures: const {});
+
+  @override
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) => const [];
+
+  @override
+  PlatformQualitySelection selectQualityFor(
+    MusicPlatform platform, {
+    required String preference,
+  }) => PlatformQualitySelection(
+    requestValue: preference,
+    displayLabel: preference,
+    internalLevel: preference,
+  );
+
+  @override
   void dispose() {}
 }
 
 final _playlistCoverUri = Uri.parse('https://cover.invalid/playlist.jpg');
 
-MusicTrack _track(String id) => MusicTrack(
-  ref: PlatformTrackRef(platform: MusicPlatform.netease, trackId: id),
+MusicTrack _track(
+  String id, {
+  MusicPlatform platform = MusicPlatform.netease,
+}) => MusicTrack(
+  ref: PlatformTrackRef(platform: platform, trackId: id),
   title: 'Personal Track',
   artists: const ['Personal Artist'],
 );

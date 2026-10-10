@@ -649,7 +649,11 @@ class AppPreference {
     ContentView.list,
   );
 
-  int startPage = 0;
+  /// 启动页默认落在**聚合主页**（`paths.START_PAGES` 的末位）。
+  ///
+  /// 用户已确认主页作为多平台聚合体系的主要入口。注意这是**默认值**：
+  /// 已经存过该键的安装仍沿用用户自己的选择（不做迁移，避免配置语义破坏）。
+  int startPage = app_paths.HOME_START_PAGE_INDEX;
 
   bool sidebarExpanded = true;
 
@@ -768,7 +772,9 @@ class AppPreference {
     }
     startPage = _normalizedBoundedInt(
       prefMap['startPage'],
-      defaultValue: 0,
+      // 缺键时落到**聚合主页**（与字段默认值一致，见 `startPage` 的声明）。
+      // 已有安装若已存过该键，仍沿用用户自己的选择 —— 这里不做迁移。
+      defaultValue: app_paths.HOME_START_PAGE_INDEX,
       min: 0,
       max: app_paths.START_PAGES.length - 1,
     );

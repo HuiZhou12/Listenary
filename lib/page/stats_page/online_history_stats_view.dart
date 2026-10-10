@@ -5,11 +5,13 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
+import 'package:pure_music/component/online_source_label.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/stats_page/stats_components.dart';
+import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_library/online_history_controller.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 
@@ -103,9 +105,7 @@ class _OnlineHistoryStatsViewState extends State<OnlineHistoryStatsView> {
           ),
         ),
         if (artists.isNotEmpty)
-          SliverToBoxAdapter(
-            child: _OnlineArtistSection(artists: artists),
-          ),
+          SliverToBoxAdapter(child: _OnlineArtistSection(artists: artists)),
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(
@@ -135,8 +135,7 @@ class _OnlineHistoryStatsViewState extends State<OnlineHistoryStatsView> {
                 const SizedBox(width: Spacing.sm),
                 IconButton(
                   tooltip: '清空在线播放历史',
-                  onPressed:
-                      snapshot.status == OnlineHistoryLoadStatus.loading
+                  onPressed: snapshot.status == OnlineHistoryLoadStatus.loading
                       ? null
                       : () => _confirmClear(context, controller),
                   icon: const Icon(Symbols.delete_sweep),
@@ -170,9 +169,7 @@ class _OnlineHistoryStatsViewState extends State<OnlineHistoryStatsView> {
               ),
             ),
           ),
-        const SliverToBoxAdapter(
-          child: SizedBox(height: Spacing.bottomNav),
-        ),
+        const SliverToBoxAdapter(child: SizedBox(height: Spacing.bottomNav)),
       ],
     );
   }
@@ -406,11 +403,25 @@ class _OnlineHistoryRow extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          track.artistDisplay,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: scheme.onSurfaceVariant),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                track.artistDisplay,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                            // 历史记录按曲目自己的来源标注平台（I1）。
+                            const SizedBox(width: Spacing.sm),
+                            OnlineSourceLabel(
+                              label: musicPlatformLabel(track.ref.platform),
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -636,9 +647,7 @@ class _OnlineArtistPlayStat {
   final int playCount;
 }
 
-List<_OnlineArtistPlayStat> _buildTopArtists(
-  List<OnlineHistoryEntry> entries,
-) {
+List<_OnlineArtistPlayStat> _buildTopArtists(List<OnlineHistoryEntry> entries) {
   final counts = <String, int>{};
   for (final entry in entries) {
     for (final artist in entry.track.artists) {

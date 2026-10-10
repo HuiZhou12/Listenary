@@ -11,6 +11,7 @@ import 'package:pure_music/services/music_platform/provider/online_music_capabil
 import 'package:pure_music/services/music_platform/provider/online_music_provider.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_quality_tiers.dart';
 
 /// ChkSz 作为「一个 Provider」的实现。
 ///
@@ -103,6 +104,47 @@ final class ChkszOnlineMusicProvider
     }
   }
 
+  /// ChkSz 这条链路在当前契约里**没有**歌单集合（歌单列表）接口。
+  ///
+  /// 这里刻意**不猜路径**：不声明该能力就是"不支持"，由平台卡与能力配置如实呈现；
+  /// 需要浏览歌单集合时，用户可以声明式配置一个真正支持它的服务。
+  @override
+  Future<List<RemotePlaylistSummary>> fetchPlaylistCollection({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    String? categoryId,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => throw unsupportedCapability();
+
+  /// 同理：ChkSz 这条链路也没有分类索引接口，不猜路径。
+  @override
+  Future<List<RemotePlaylistCategory>> fetchPlaylistCategories({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => throw unsupportedCapability();
+
+  /// ChkSz 这条链路在当前契约里同样**没有**榜单索引接口。
+  ///
+  /// 与歌单集合一样刻意**不猜路径**：不声明该能力就是"不支持"。
+  @override
+  Future<List<RemotePlaylistSummary>> fetchChartList({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => throw unsupportedCapability();
+
+  @override
+  Future<List<MusicTrack>> fetchNewSongs({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => throw unsupportedCapability();
+
   @override
   Future<MusicLyrics> fetchLyrics(
     PlatformTrackRef ref, {
@@ -121,6 +163,16 @@ final class ChkszOnlineMusicProvider
     _ensurePlatform(platform, OnlineMusicCapability.stream);
     return AppPreference.instance.defaultQuality;
   }
+
+  /// 网易云档位：7 档，文案与请求值都来自 [MusicQuality]。
+  ///
+  /// 之所以要显式声明而不是留空：留空表示"不声明档位"，UI 就只能拿内部键当文案；
+  /// 而内置 ChkSz 的档位就是网易云的那 7 档，声明的结果与今天完全一致（行为不变）。
+  @override
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) =>
+      platformsFor(OnlineMusicCapability.stream).contains(platform)
+      ? neteaseQualityTiers
+      : const [];
 
   @override
   String get credentialDisplayName => 'API Key';
@@ -169,7 +221,10 @@ final class ChkszOnlineMusicProvider
   @override
   void dispose() => _runtime.dispose();
 
-  void _ensurePlatform(MusicPlatform platform, OnlineMusicCapability capability) {
+  void _ensurePlatform(
+    MusicPlatform platform,
+    OnlineMusicCapability capability,
+  ) {
     if (!platformsFor(capability).contains(platform)) {
       throw const OnlineMusicException(
         kind: OnlineMusicErrorKind.unavailable,
@@ -185,20 +240,28 @@ final class ChkszOnlineMusicProvider
         safeMessage: '音乐服务请求失败',
       );
     }
-    final kind = switch (error.kind) {
-      ChkszErrorKind.badRequest => OnlineMusicErrorKind.badRequest,
-      ChkszErrorKind.unauthorized => OnlineMusicErrorKind.notConfigured,
-      ChkszErrorKind.quotaExhausted => OnlineMusicErrorKind.quotaExhausted,
-      ChkszErrorKind.forbidden => OnlineMusicErrorKind.forbidden,
-      ChkszErrorKind.notFound => OnlineMusicErrorKind.notFound,
-      ChkszErrorKind.rateLimited => OnlineMusicErrorKind.rateLimited,
-      ChkszErrorKind.unavailable => OnlineMusicErrorKind.unavailable,
-      ChkszErrorKind.businessFailure => OnlineMusicErrorKind.businessFailure,
-      ChkszErrorKind.invalidResponse => OnlineMusicErrorKind.invalidResponse,
-      ChkszErrorKind.cancelled => OnlineMusicErrorKind.cancelled,
-      ChkszErrorKind.network => OnlineMusicErrorKind.network,
-      ChkszErrorKind.unknown => OnlineMusicErrorKind.unknown,
-    };
+    // P-16：**带状态码**的失败一律交给唯一的状态码表分类（内置实现 ⇒ origin: builtin，
+    // 因此 404 仍然是"资源不存在"）。此前这里有一张与声明式**不同**的映射表，
+    // 同一个 404/500 在两层的结论不一致。
+    //
+    // 没有状态码的（取消 / 网络 / 业务失败 / 响应无法识别）才用 chksz 自己的信号 ——
+    // 它们是"传输层发生了什么"，不是"HTTP 说了什么"。
+    final kind = error.statusCode != null
+        ? classifyHttpStatus(
+            error.statusCode!,
+            origin: OnlineMusicErrorOrigin.builtin,
+          )
+        : switch (error.kind) {
+            ChkszErrorKind.businessFailure =>
+              OnlineMusicErrorKind.businessFailure,
+            ChkszErrorKind.invalidResponse =>
+              OnlineMusicErrorKind.invalidResponse,
+            ChkszErrorKind.cancelled => OnlineMusicErrorKind.cancelled,
+            ChkszErrorKind.network => OnlineMusicErrorKind.network,
+            // 客户端在**没有 HTTP 状态码**时给出的"凭据无效"信号（例如响应体里的业务码）。
+            ChkszErrorKind.unauthorized => OnlineMusicErrorKind.notConfigured,
+            _ => OnlineMusicErrorKind.unknown,
+          };
     return OnlineMusicException(
       kind: kind,
       safeMessage: error.safeMessage,

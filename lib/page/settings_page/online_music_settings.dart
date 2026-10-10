@@ -6,12 +6,12 @@ import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/preference.dart';
-import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/settings_page/online_music_capability_editor.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_header_migration.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings_controller.dart';
 
@@ -31,7 +31,16 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   final Map<String, bool> _configured = {};
   bool _hasLoaded = false;
   bool _loading = false;
+
+  /// 迁移正在进行（防止按钮重入）。
+  bool _migrating = false;
   String? _error;
+
+  /// 当前**运行中**的能力集合（D3b:a）：平台卡据此解释"为什么这个平台不能搜"。
+  ///
+  /// 它来自启动时装配的 service，反映的是 `activeSettings`；用户刚改的配置要重启后
+  /// 才会体现在这里，因此卡片上的开关另有"下次启动生效"的提示。
+  OnlineMusicCapabilities? _capabilities;
 
   @override
   void initState() {
@@ -39,6 +48,12 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     _controller = context.read<OnlineMusicProviderSettingsController>();
     _controller.addListener(_onSettingsChanged);
     if (widget.active) _load();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _capabilities = context.read<OnlineMusicService>().capabilities;
   }
 
   @override
@@ -150,7 +165,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     if (_controller.settings.providers.length <= 1) return;
     final confirmed = await showDangerConfirmDialog(
       context: context,
-      title: '删除提供商 ${provider.id}？',
+      title: '删除提供商 ${provider.label}？',
       message:
           '指向它的能力分配与默认提供商都会回落到列表中的第一个条目。'
           '已保存的 API Key 不会被删除。',
@@ -173,15 +188,43 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
         },
         onFillChkszCompatible: () {
           Navigator.of(dialogContext).pop();
-          _apply(
-            _controller.updateProvider(
-              provider.withChkszCompatibleCapabilities(),
-            ),
-          );
+          _fillChkszCompatible(provider);
         },
       ),
     );
   }
+
+  /// 「一键按 ChkSz 兼容方式填充」（P-20）。
+  ///
+  /// 两件事必须同时做到：
+  /// 1. **动手前确认**，并在确认框里逐项说清"哪几个会被覆盖、哪几个保持不变"
+  ///    （旧实现直接改配置：无确认、无撤销）；
+  /// 2. 填充是**合并**（见 `withChkszCompatibleCapabilities`），
+  ///    不再把用户已经配好的其它能力整表丢掉。
+  Future<void> _fillChkszCompatible(
+    OnlineMusicProviderDefinition provider,
+  ) async {
+    final overwrites = provider.chkszFillOverwrites();
+    final keeps = provider.chkszFillKeeps();
+    final confirmed = await showDangerConfirmDialog(
+      context: context,
+      title: '按 ChkSz 兼容方式填充？',
+      message:
+          '会把「${_capabilityNames(overwrites)}」改成内置 ChkSz 实现'
+          '（这四项当前的配置会被覆盖）。'
+          '${keeps.isEmpty ? '' : '其它已配置的能力（${_capabilityNames(keeps)}）保持不变。'}'
+          '改动在重启后生效。',
+      confirmLabel: '填充',
+    );
+    if (!confirmed || !mounted) return;
+    final saved = await _apply(
+      _controller.updateProvider(provider.withChkszCompatibleCapabilities()),
+    );
+    if (saved && mounted) showTextOnSnackBar('已按 ChkSz 兼容方式填充；重启后生效');
+  }
+
+  String _capabilityNames(List<OnlineMusicCapability> capabilities) =>
+      capabilities.map(onlineMusicCapabilityLabel).join('、');
 
   Future<void> _openCapabilityEditor(
     OnlineMusicProviderDefinition provider,
@@ -194,11 +237,18 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
         capability: capability,
         initialBinding: provider.bindingFor(capability),
         onProbe: () => _controller.probeSearch(provider),
-        onTest: (binding, trackId) => _controller.testCapability(
+        onTest: (binding, inputs) => _controller.testCapability(
           provider.withCapabilityBinding(capability, binding),
           capability,
-          trackId: trackId,
+          // P-49：把用户填的真实输入原样送进去；没填的用控制器的既有默认值。
+          keyword: inputs.keyword,
+          limit: inputs.limit,
+          trackId: inputs.trackId,
+          playlistId: inputs.playlistId,
         ),
+        // F0-4：敏感请求头的凭据按**槽位名**读写，与条目级 API Key 同一个出口。
+        onIsCredentialConfigured: _controller.isReferencedCredentialConfigured,
+        onSaveCredential: _controller.saveReferencedCredential,
       ),
     );
     if (result == null || !mounted) return;
@@ -208,6 +258,63 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
       ),
     );
     if (saved && mounted) showTextOnSnackBar('能力配置已保存；重启后生效');
+  }
+
+  /// F0-5：明文敏感请求头的迁移入口。
+  ///
+  /// **先只报告识别结果**，用户明确放行后才执行 —— 也就是说，
+  /// "改动用户配置"这件事永远发生在一次明确的点击之后（Spec §4.1/§4.2）。
+  Future<void> _migrateSensitiveHeaders() async {
+    // 迁移过程中不让按钮可重入：并发触发会产生两份报告与两个对话框
+    //（写入本身是幂等的，但用户看到的是自相矛盾的两份"结果"）。
+    if (_migrating) return;
+    setState(() => _migrating = true);
+    try {
+      await _runSensitiveHeaderMigration();
+    } finally {
+      if (mounted) setState(() => _migrating = false);
+    }
+  }
+
+  Future<void> _runSensitiveHeaderMigration() async {
+    final findings = _controller.identifySensitiveHeaders();
+    final sensitive = [
+      for (final finding in findings)
+        if (finding.disposition == OnlineMusicHeaderDisposition.sensitive)
+          finding,
+    ];
+    final needsUser = [
+      for (final finding in findings)
+        if (finding.disposition == OnlineMusicHeaderDisposition.needsUser)
+          finding,
+    ];
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => _MigrationPreviewDialog(
+        sensitive: sensitive,
+        needsUser: needsUser,
+        portable: _controller.isPortableBuild,
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final report = await _controller.migrateSensitiveHeaders();
+    if (!mounted) return;
+    if (report == null) {
+      // 前置条件不成立（没有凭据读取口 ⇒ 无法回读校验）：**宁可不迁移**。
+      showTextOnSnackBar(
+        '无法回读校验凭据写入，已取消迁移（未改动任何配置）',
+        variant: ToastVariant.error,
+      );
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _MigrationOutcomeDialog(report: report),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _openCredentialDialog(
@@ -229,8 +336,8 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   Future<void> _clearCredential(OnlineMusicProviderDefinition provider) async {
     final confirmed = await showDangerConfirmDialog(
       context: context,
-      title: '清除 ${provider.id} 的 ${_controller.credentialDisplayName}？',
-      message: portableBuild
+      title: '清除 ${provider.label} 的 ${_controller.credentialDisplayName}？',
+      message: _controller.isPortableBuild
           ? '这会清除本次运行中的 API Key，关闭应用后也不会保留。'
           : '这会删除当前 Windows 用户凭据中的该槽位。',
       confirmLabel: '清除',
@@ -311,26 +418,6 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     );
   }
 
-  /// 能力分配与默认提供商共用的选择控件。
-  Widget _buildProviderSelector({
-    required List<String> providerIds,
-    required String selected,
-    required ValueChanged<String> onChanged,
-  }) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: SegmentedButton<String>(
-        showSelectedIcon: false,
-        segments: [
-          for (final id in providerIds)
-            ButtonSegment(value: id, label: Text(id)),
-        ],
-        selected: {selected},
-        onSelectionChanged: (selection) => onChanged(selection.first),
-      ),
-    );
-  }
-
   /// 凭据读取**静默进行**，不为"读取中"做任何占位。
   ///
   /// 上一轮验收反馈：固定高度的空占位只留下一条没有意义的空白间距，而
@@ -371,7 +458,6 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   @override
   Widget build(BuildContext context) {
     final settings = _controller.settings;
-    final providerIds = settings.providers.map((p) => p.id).toList();
     return ListView(
       padding: const EdgeInsets.only(bottom: 96.0, right: 20),
       children: [
@@ -380,20 +466,38 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
           const _SettingsHint('修改将在下次启动时生效'),
           const SizedBox(height: 8),
         ],
-        if (portableBuild) ...[
+        if (_controller.isPortableBuild) ...[
           const _SettingsHint('便携版：API Key 只在本次运行内有效，重启后需要重新配置'),
           const SizedBox(height: 8),
         ],
         _buildLoadErrorRow(),
         for (final provider in settings.providers) ...[
           SettingsTile(
-            description: provider.id == settings.defaultProviderId
-                ? '${provider.label} · 默认'
-                : provider.label,
+            // W8：不再标「· 默认」—— D14 之后 defaultProvider 不参与任何路由，
+            // 留着这个标记只会让用户以为它还在决定什么（字段本身仍兼容可读）。
+            description: provider.label,
             subtitle:
-                '${_hostOf(provider.baseUrl)} · ${provider.contentPlatform.name} · ${_authDescription(provider)}',
+                '${_hostOf(provider.effectiveBaseUrl)} · '
+                // P-64：内容来源也用中文平台名（以前这里露英文枚举名）。
+                '${musicPlatformLabel(provider.contentPlatform)} · '
+                '${_authDescription(provider)}',
             action: _buildProviderAction(provider),
           ),
+          // P-32：这个条目有**配置问题**（能力 JSON 损坏 / 服务地址非法 / 标识非法）时
+          // 如实列出来。以前"能力配置写坏了"会被静默当成"这个能力就是不支持"，
+          // 用户完全看不出是自己的配置坏了 —— 与"从未配置"长得一模一样。
+          if (provider.validationIssues().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            _SettingsHint(
+              '配置问题：${provider.validationIssues().join('；')}',
+            ),
+          ],
+          // P-04：**逐条目**的"未生效"标记（以前只有页面顶部一句全局提示，
+          // 用户看不出到底是哪一项改了还没生效）。
+          if (_controller.providerNeedsRestart(provider.id)) ...[
+            const SizedBox(height: 4),
+            const _SettingsHint('未生效：这个条目的改动要重启后才进入运行时'),
+          ],
           const SizedBox(height: 12),
         ],
         SettingsTile(
@@ -406,46 +510,323 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
           ),
         ),
         const SizedBox(height: 24),
-        const _SettingsSectionTitle('能力分配'),
-        for (final capability in OnlineMusicCapability.values) ...[
-          SettingsTile(
-            description: _capabilityLabel(capability),
-            subtitle: '当前使用 ${settings.resolvedProviderIdFor(capability)}',
-            action: _buildProviderSelector(
-              providerIds: providerIds,
-              selected: settings.resolvedProviderIdFor(capability),
-              onChanged: (id) =>
-                  _apply(_controller.assignCapability(capability, id)),
+        // P-14：**设置级**的旧旋钮提示（旧的能力分配 / 默认提供商仍在这份配置里）。
+        // 它们不在单个条目上，因此单独列在这里 —— 以前它们在界面上完全看不到。
+        for (final issue in settings.legacyKnobIssues()) _SettingsHint(issue),
+        if (settings.legacyKnobIssues().isNotEmpty) const SizedBox(height: 12),
+        const _SettingsSectionTitle('凭据安全'),
+        SettingsTile(
+          description: '检查并迁移敏感请求头',
+          subtitle:
+              '把配置里以明文保存的敏感请求头（Cookie / Authorization 等）'
+              '搬进系统凭据管理器，配置里只留引用；先给你看识别结果，确认后才动手',
+          action: FilledButton.icon(
+            onPressed: _migrating ? null : _migrateSensitiveHeaders,
+            icon: const Icon(Symbols.security),
+            label: Text(_migrating ? '迁移中' : '检查'),
+          ),
+        ),
+        const SizedBox(height: 24),
+        const _SettingsSectionTitle('平台'),
+        if (_controller.hasPendingRestart)
+          const _SettingsHint('平台与能力的改动将在下次启动时生效'),
+        for (final platform in builtinMusicPlatforms) ...[
+          _PlatformCard(
+            platform: platform,
+            settings: settings,
+            enabled: settings.isPlatformEnabled(platform),
+            // 空集 = 全部启用；不允许把最后一个启用的平台关掉（否则"全部停用"会退化成
+            // "全部启用"，见 `OnlineMusicSettings.enabledPlatforms` 的约定）。
+            canToggle:
+                !settings.isPlatformEnabled(platform) ||
+                _enabledPlatformCount(settings) > 1,
+            unavailableReason: _capabilities?.unavailableSearchReasonFor(
+              platform,
+            ),
+            // P-37：两个事实源各自标注来源。运行中的 service 是否**仍在服务**这个平台
+            // （从它的能力集合推导），用来回答"配置里停用了、但运行中其实还能用"。
+            runtimeServesPlatform: _runtimeServesPlatform(
+              _capabilities,
+              platform,
+            ),
+            needsRestart: _controller.platformNeedsRestart(platform),
+            capabilityNeedsRestart: (capability) =>
+                _controller.capabilityNeedsRestart(platform, capability),
+            onEnabledChanged: (value) => _apply(
+              _controller.setPlatformEnabled(platform, enabled: value),
+            ),
+            onCapabilityChanged: (capability, providerId) => _apply(
+              _controller.assignPlatformCapability(
+                platform,
+                capability,
+                providerId,
+              ),
             ),
           ),
           const SizedBox(height: 12),
         ],
-        const SizedBox(height: 12),
-        const _SettingsSectionTitle('默认提供商'),
-        SettingsTile(
-          description: '默认提供商',
-          subtitle: '能力没有单独指定时使用；也是能力分配回落的目标',
-          action: _buildProviderSelector(
-            providerIds: providerIds,
-            selected: settings.defaultProviderId,
-            onChanged: (id) => _apply(_controller.setDefaultProvider(id)),
-          ),
-        ),
         const SizedBox(height: 24),
         const _SettingsSectionTitle('播放音质'),
         const _DefaultQualityTile(),
+        const SizedBox(height: 24),
+        _buildRouteDiagnosticsSection(),
+      ],
+    );
+  }
+
+  /// P-29：**诊断出口**（Spec §6.4：回退静默但必须可观测）。
+  ///
+  /// 内容全部由服务层拼成"人类可读且已脱敏"的行（平台名 / 能力名 / 试过谁 / 为什么换 /
+  /// 最后谁成功），界面只做渲染 —— 应用层不得引用 Provider 层的配置与能力枚举符号。
+  /// 拿不到诊断源（例如测试替身）或还没有记录时，整段不渲染。
+  Widget _buildRouteDiagnosticsSection() {
+    final service = context.read<OnlineMusicService?>();
+    // 用模式匹配取（而不是 `is` + 三元）：窄接口与 `OnlineMusicService` 无继承关系，
+    // 这里只关心"这个 service 顺带实现了诊断接口吗"。
+    final entries = switch (service) {
+      OnlineMusicDiagnosticsSource(:final routeDiagnostics) => routeDiagnostics,
+      _ => const <OnlineMusicDiagnosticsEntry>[],
+    };
+    if (entries.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SettingsSectionTitle('路由诊断'),
+        const _SettingsHint(
+          '回退是静默的，但必须可查：下面是最近几次「平台 / 能力」分发，'
+          '按"试过谁（失败原因）→ 最后谁成功"排列。只读，不含任何凭据。',
+        ),
+        const SizedBox(height: 8),
+        for (final entry in entries.take(_diagnosticsDisplayLimit))
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              entry.summary,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        if (entries.length > _diagnosticsDisplayLimit)
+          _SettingsHint(
+            '仅显示最近 $_diagnosticsDisplayLimit 条（共 ${entries.length} 条）。',
+          ),
       ],
     );
   }
 }
 
+/// 诊断区块最多显示多少条（内存里保留 32 条，界面不必全铺开）。
+const _diagnosticsDisplayLimit = 8;
+
+int _enabledPlatformCount(OnlineMusicSettings settings) =>
+    builtinMusicPlatforms.where(settings.isPlatformEnabled).length;
+
+/// 能力文案与能力编辑器共用 [onlineMusicCapabilityLabel]，避免两处走偏。
 String _capabilityLabel(OnlineMusicCapability capability) =>
-    switch (capability) {
-      OnlineMusicCapability.search => '搜索',
-      OnlineMusicCapability.playlist => '歌曲列表',
-      OnlineMusicCapability.lyric => '歌词',
-      OnlineMusicCapability.stream => '播放解析',
-    };
+    onlineMusicCapabilityLabel(capability);
+
+/// 选择"自动"时使用的哨兵值。
+///
+/// 真实 Provider 标识不可能为空（创建时校验非空），因此不会与条目冲突；
+/// 选它等价于清除该 `(platform, capability)` 的显式候选（D17:b 之后，
+/// "显式指定过"意味着隐式条目不再救场，所以必须给用户一条回到"自动"的路）。
+const _autoProviderValue = '';
+
+/// 一个平台一张卡（D8:A）：卡头 = 平台名 + 启用开关 + 不可用原因；
+/// 卡内每个能力一行，选择该平台下支持该能力的 Provider。
+class _PlatformCard extends StatelessWidget {
+  const _PlatformCard({
+    required this.platform,
+    required this.settings,
+    required this.enabled,
+    required this.canToggle,
+    required this.unavailableReason,
+    required this.runtimeServesPlatform,
+    required this.needsRestart,
+    required this.capabilityNeedsRestart,
+    required this.onEnabledChanged,
+    required this.onCapabilityChanged,
+  });
+
+  final MusicPlatform platform;
+  final OnlineMusicSettings settings;
+  final bool enabled;
+
+  /// 是否允许切换启用状态（最后一个启用的平台不允许关掉）。
+  final bool canToggle;
+
+  /// 运行中的 service 给出的"为什么不能搜"；停用或未涉及时为 null。
+  final String? unavailableReason;
+
+  /// 运行中的 service 是否**仍在**这个平台提供服务（P-37）。
+  ///
+  /// 用来识别"配置里已停用、但运行中其实还能用"这种状态：
+  /// 两边都要说出来，而不是让展示优先级吃掉其中一个。
+  final bool runtimeServesPlatform;
+
+  /// 该平台是否有尚未生效的改动（P-04）。
+  final bool needsRestart;
+
+  /// 该能力的候选来源是否有尚未生效的改动（P-04）。
+  final bool Function(OnlineMusicCapability capability) capabilityNeedsRestart;
+
+  final ValueChanged<bool> onEnabledChanged;
+  final void Function(OnlineMusicCapability capability, String? providerId)
+  onCapabilityChanged;
+
+  /// P-37：卡上的状态行，**每条都标注事实来源**。
+  ///
+  /// 以前这里只显示一句、且用优先级把另一个事实吃掉（运行中原因优先，其次才是
+  /// "已停用"）—— 用户看到"已停用"就以为运行中也停了，反之亦然。
+  /// 现在：运行中的事实带「运行中：」前缀；配置态用「已停用」（配合卡片级的
+  /// "未生效"提示说明它要下次启动才生效）。
+  List<String> get _statusLines {
+    final lines = <String>[];
+    final reason = unavailableReason;
+    if (reason != null && reason.isNotEmpty) {
+      lines.add('运行中：$reason');
+    } else if (!enabled && runtimeServesPlatform) {
+      // 配置说停用、运行中却仍能服务 ⇒ 明说这是"下次启动才生效"，不冒充。
+      lines.add('运行中：仍可用（停用要下次启动才生效）');
+    }
+    if (!enabled) lines.add('已停用');
+    return lines;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final statusLines = _statusLines;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        musicPlatformLabel(platform),
+                        style: const TextStyle(
+                          fontSize: AppType.body,
+                          fontWeight: AppType.weightSemibold,
+                        ),
+                      ),
+                      for (final line in statusLines)
+                        Text(
+                          line,
+                          style: TextStyle(
+                            fontSize: AppType.caption,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Tooltip(
+                  message: canToggle ? '启用 / 停用该平台' : '至少保留一个启用的平台',
+                  child: Switch(
+                    value: enabled,
+                    onChanged: canToggle
+                        ? (value) => onEnabledChanged(value)
+                        : null,
+                  ),
+                ),
+              ],
+            ),
+            // P-04：平台级"未生效"标记（启用状态或任一能力来源有改动）。
+            if (needsRestart)
+              const Padding(
+                padding: EdgeInsets.only(top: 4.0),
+                child: _SettingsHint('该平台的改动尚未生效（下次启动）'),
+              ),
+            for (final capability in OnlineMusicCapability.values)
+              _buildCapabilityRow(context, capability),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCapabilityRow(
+    BuildContext context,
+    OnlineMusicCapability capability,
+  ) {
+    final candidates = settings.capableProviderIdsFor(platform, capability);
+    // P-04：**逐能力**的"未生效"标记。
+    final pending = capabilityNeedsRestart(capability);
+    if (candidates.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SettingsTile(
+            description: _capabilityLabel(capability),
+            subtitle: '未配置：该平台下没有支持此能力的条目',
+            action: const Text('未配置'),
+          ),
+          if (pending)
+            const _SettingsHint('这里的改动尚未生效（下次启动）'),
+        ],
+      );
+    }
+    final selected = settings.selectedProviderIdFor(platform, capability);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SettingsTile(
+          description: _capabilityLabel(capability),
+          subtitle: selected == null
+              ? '自动：按条目顺序使用 ${candidates.first}'
+              : '已指定 $selected',
+          action: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: [
+                const ButtonSegment(
+                  value: _autoProviderValue,
+                  label: Text('自动'),
+                ),
+                for (final id in candidates)
+                  ButtonSegment(value: id, label: Text(id)),
+              ],
+              selected: {selected ?? _autoProviderValue},
+              onSelectionChanged: (selection) {
+                final value = selection.first;
+                onCapabilityChanged(
+                  capability,
+                  value == _autoProviderValue ? null : value,
+                );
+              },
+            ),
+          ),
+        ),
+        if (pending)
+          const _SettingsHint('这里的改动尚未生效（下次启动）'),
+      ],
+    );
+  }
+}
+
+/// 运行中的能力集合是否**仍在这个平台提供服务**（P-37 的"配置停用但运行中可用"）。
+bool _runtimeServesPlatform(
+  OnlineMusicCapabilities? capabilities,
+  MusicPlatform platform,
+) {
+  if (capabilities == null) return false;
+  return capabilities.searchablePlatforms.contains(platform) ||
+      capabilities.resolvablePlatforms.contains(platform) ||
+      capabilities.playlistPlatforms.contains(platform) ||
+      capabilities.playlistCollectionPlatforms.contains(platform) ||
+      capabilities.playlistCategoryPlatforms.contains(platform) ||
+      capabilities.chartPlatforms.contains(platform) ||
+      capabilities.newSongPlatforms.contains(platform) ||
+      capabilities.lyricPlatforms.contains(platform);
+}
 
 /// 设置分块标题：本页有多个设置项，用标题把它们分开。
 class _SettingsSectionTitle extends StatelessWidget {
@@ -483,13 +864,18 @@ class _SettingsHint extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 4),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(Symbols.info, size: 16, color: scheme.primary),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(color: scheme.primary, fontSize: AppType.body),
+          // 文本必须能换行：提示文案长短不一（P-04 的逐项"未生效"标记、
+          // P-32 的配置问题列表都可能很长），而 Row 里的裸 Text 不会自动换行 ——
+          // 这曾让长提示直接把整行撑出屏幕。
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(color: scheme.primary, fontSize: AppType.body),
+            ),
           ),
         ],
       ),
@@ -497,7 +883,10 @@ class _SettingsHint extends StatelessWidget {
   }
 }
 
-/// 在线播放的默认音质：新建远程会话时使用（会话内手动切换的档位优先）。
+/// 在线播放的默认音质**偏好级别**（新建远程会话时使用；会话内手动切换优先）。
+///
+/// Spec §7.3（W7）：这里选的是**内部偏好级别**（跨平台语义），不是某个平台的档位名；
+/// 各平台实际会用哪一档由各平台的档位声明换算，因此下面同时给出**只读**的映射说明。
 class _DefaultQualityTile extends StatefulWidget {
   const _DefaultQualityTile();
 
@@ -523,12 +912,34 @@ class _DefaultQualityTileState extends State<_DefaultQualityTile> {
     }
   }
 
+  /// "各平台对应档位"的只读映射：只列**有档位声明**的平台，用平台自己的文案。
+  ///
+  /// 没有档位声明的平台（自建声明式 Provider）不列：它的 `quality` 取值由用户自己
+  /// 的接口决定，我们无从推断，硬编一个映射只会误导（补充口径④）。
+  List<String> _platformMappings(BuildContext context) {
+    final service = context.watch<OnlineMusicService?>();
+    if (service == null) return const [];
+    final mappings = <String>[];
+    for (final platform in builtinMusicPlatforms) {
+      final tiers = service.qualityTiersFor(platform);
+      if (tiers.isEmpty) continue;
+      final labels = tiers.map((tier) => tier.displayLabel).join(' / ');
+      mappings.add('${musicPlatformLabel(platform)}：$labels');
+    }
+    return mappings;
+  }
+
   @override
   Widget build(BuildContext context) {
     final current = _current;
+    final mappings = _platformMappings(context);
+    final subtitle = StringBuffer('在线播放未手动切换时使用；播放中手动选择的档位优先。');
+    if (mappings.isNotEmpty) {
+      subtitle.write('\n各平台对应档位（只读）：${mappings.join('；')}');
+    }
     return SettingsTile(
-      description: '默认音质',
-      subtitle: '在线播放未手动切换时使用；播放中手动选择的档位优先',
+      description: '偏好级别',
+      subtitle: subtitle.toString(),
       // 与其他多选设置项保持一致（同「顶部歌词切换动画」的 SegmentedButton 写法）。
       action: Row(
         mainAxisSize: MainAxisSize.min,
@@ -595,7 +1006,9 @@ class _ProviderDialogState extends State<_ProviderDialog> {
     final editing = widget.editing;
     _idController = TextEditingController(text: editing?.id ?? '');
     _baseUrlController = TextEditingController(
-      text: editing?.baseUrl ?? defaultOnlineMusicBaseUrl,
+      // 配置里没有这一项时显示**实际生效**的默认地址（它是可编辑的原值，
+      // 用户看到的就是运行时真正会用的地址）。
+      text: editing?.effectiveBaseUrl ?? defaultOnlineMusicBaseUrl,
     );
     _displayNameController = TextEditingController(
       text: editing?.displayName ?? '',
@@ -636,20 +1049,18 @@ class _ProviderDialogState extends State<_ProviderDialog> {
   }
 
   String? _validateBaseUrl(String value) {
-    if (value.isEmpty) return '请填写服务地址';
-    final uri = Uri.tryParse(value);
-    if (uri == null) return '服务地址无效';
-    if (uri.scheme != 'http' && uri.scheme != 'https') {
-      return '服务地址必须以 http:// 或 https:// 开头';
-    }
-    if (uri.host.isEmpty) return '服务地址缺少主机名';
-    return null;
+    if (value.trim().isEmpty) return '请填写服务地址';
+    // 非空值的判据只有一份（`onlineMusicBaseUrlIssue`），避免界面与模型各说一套。
+    return onlineMusicBaseUrlIssue(value);
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(_isEditing ? '编辑提供商 ${widget.editing!.id}' : '添加提供商'),
+      // P-64：用户可见文案统一用**展示名**（label 优先 displayName），与列表里的称呼一致。
+      title: Text(
+        _isEditing ? '编辑提供商 ${widget.editing!.label}' : '添加提供商',
+      ),
       content: SizedBox(
         width: 420,
         child: Column(
@@ -698,16 +1109,27 @@ class _ProviderDialogState extends State<_ProviderDialog> {
             const SizedBox(height: 16),
             SettingsTile(
               description: '内容来源',
-              subtitle: '该服务代理哪一家的内容；非网易云来源属于当前模型边界',
+              // D8b:b：平台已参与来源语义，改平台会让已有内容与 Provider 语义不一致，
+              // 所以创建后只读；需要别的平台请新建条目。
+              subtitle: _isEditing
+                  ? '创建后不可修改；需要其它平台请新建条目'
+                  : '该服务代理哪一家的内容；非网易云来源属于当前模型边界',
               action: SegmentedButton<MusicPlatform>(
                 showSelectedIcon: false,
                 segments: [
-                  for (final platform in MusicPlatform.values)
-                    ButtonSegment(value: platform, label: Text(platform.name)),
+                  for (final platform in builtinMusicPlatforms)
+                    ButtonSegment(
+                value: platform,
+                // P-64：这里以前直接显示英文枚举名（netease/qq/kugou），
+                // 而平台卡用的是 `musicPlatformLabel`。同一个平台两种称呼 ⇒ 统一成中文。
+                label: Text(musicPlatformLabel(platform)),
+              ),
                 ],
                 selected: {_contentPlatform},
-                onSelectionChanged: (selection) =>
-                    setState(() => _contentPlatform = selection.first),
+                onSelectionChanged: _isEditing
+                    ? null
+                    : (selection) =>
+                          setState(() => _contentPlatform = selection.first),
               ),
             ),
             const SizedBox(height: 16),
@@ -733,6 +1155,153 @@ class _ProviderDialogState extends State<_ProviderDialog> {
           child: const Text('取消'),
         ),
         FilledButton(onPressed: _submit, child: const Text('保存')),
+      ],
+    );
+  }
+}
+
+/// 迁移前的**识别结果**（只列名称/槽位/判定，绝不显示值）。
+///
+/// 用户在这里放行之前，一个字节都不会被写。
+class _MigrationPreviewDialog extends StatelessWidget {
+  const _MigrationPreviewDialog({
+    required this.sensitive,
+    required this.needsUser,
+    required this.portable,
+  });
+
+  final List<OnlineMusicHeaderFinding> sensitive;
+  final List<OnlineMusicHeaderFinding> needsUser;
+
+  /// 便携版：无法持久保存秘密 ⇒ 不给"迁移"这个按钮，并说明明文仍在。
+  final bool portable;
+
+  @override
+  Widget build(BuildContext context) {
+    // 只有 `actionable` 的项**这次真的会被搬**（已带引用/空值的会被跳过）——
+    // 与迁移计划共用同一个判据，避免"先说将迁移 N 项、结果报无需迁移"。
+    final toMigrate = [
+      for (final finding in sensitive)
+        if (finding.actionable) finding,
+    ];
+    final alreadyReferenced = [
+      for (final finding in sensitive)
+        if (!finding.actionable) finding,
+    ];
+    return AlertDialog(
+      title: const Text('敏感请求头：识别结果'),
+      content: SizedBox(
+        width: 560,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('将迁移（${toMigrate.length} 项）：'),
+              const SizedBox(height: 4),
+              if (toMigrate.isEmpty)
+                const Text('（没有需要迁移的明文敏感请求头）')
+              else
+                for (final finding in toMigrate) Text('· ${finding.summary}'),
+              if (alreadyReferenced.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text('已用安全凭据引用（${alreadyReferenced.length} 项，本次不动）：'),
+                const SizedBox(height: 4),
+                for (final finding in alreadyReferenced)
+                  Text('· ${finding.summary}'),
+              ],
+              if (needsUser.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text('待你裁定（${needsUser.length} 项，本次不会迁移）：'),
+                const SizedBox(height: 4),
+                for (final finding in needsUser) Text('· ${finding.summary}'),
+                const Text(
+                  '这些请求头的名字不在已知敏感名单里，只是"值看起来像秘密"。'
+                  '要迁移它们，请在对应能力编辑器里手动勾选「敏感」。',
+                ),
+              ],
+              const SizedBox(height: 12),
+              if (portable)
+                const Text(
+                  '便携版无法安全持久保存秘密：本次不做迁移，'
+                  '配置里的明文会原样保留。请改用安装版后再迁移。',
+                )
+              else
+                const Text(
+                  '确认后：先写入系统凭据管理器 → 立即回读逐字节校验 → '
+                  '全部成功才改写配置并移除明文。任何一步失败都会整条回滚；'
+                  '回滚失败会停止整个迁移并报告。',
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(portable ? '知道了' : '取消'),
+        ),
+        if (!portable)
+          FilledButton(
+            onPressed: toMigrate.isEmpty
+                ? null
+                : () => Navigator.of(context).pop(true),
+            child: const Text('开始迁移'),
+          ),
+      ],
+    );
+  }
+}
+
+/// 迁移结果：逐条目状态 + 停止原因（都只含名称与判定）。
+class _MigrationOutcomeDialog extends StatelessWidget {
+  const _MigrationOutcomeDialog({required this.report});
+
+  final OnlineMusicHeaderMigrationReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = <String>[
+      for (final outcome in report.entries)
+        '· ${outcome.providerId}：${onlineMusicMigrationEntryLabel(outcome.status)}'
+            '${outcome.migratedHeaderNames.isEmpty ? '' : '（${outcome.migratedHeaderNames.join('、')}）'}'
+            '${outcome.reason == null ? '' : '\n    ${outcome.reason}'}',
+    ];
+    return AlertDialog(
+      title: Text(
+        // **失败优先**：全条目都写失败（回滚成功后 stopped 为 false、migratedCount 为 0）时
+        // 不能说"没有需要迁移的内容" —— 那是假阳性成功（反模式 3）。
+        report.anyFailure
+            ? '迁移未完成'
+            : report.stopped
+            ? '迁移已停止'
+            : (report.migratedCount > 0 ? '迁移完成' : '没有需要迁移的内容'),
+      ),
+      content: SizedBox(
+        width: 560,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (report.stopReason != null) ...[
+                Text('停止原因：${report.stopReason}'),
+                const SizedBox(height: 8),
+              ],
+              if (report.portable)
+                const Text('便携版：本次未做任何迁移，明文仍在配置里。'),
+              for (final line in lines) Text(line),
+              const SizedBox(height: 8),
+              const Text('改动会在下次启动时生效。'),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('关闭'),
+        ),
       ],
     );
   }

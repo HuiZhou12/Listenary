@@ -2,6 +2,7 @@ import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 
 import 'package:pure_music/component/danger_confirm_dialog.dart';
+import 'package:pure_music/component/online_playlist_source.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/hotkeys.dart';
@@ -134,14 +135,21 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
   }
 
   Future<void> _addOnlinePlaylist() async {
-    final remoteId = await showDialog<String>(
+    // 来源平台由**实际能力**决定（不再假设"在线歌单就是网易云"，I1）。
+    final platforms = onlinePlaylistPlatformsOf(context);
+    if (platforms.isEmpty) {
+      // fail-closed：没有候选就不要假装能添加。
+      showTextOnSnackBar('当前没有可用的歌单服务，请先在设置里配置', variant: ToastVariant.error);
+      return;
+    }
+    final draft = await showDialog<OnlinePlaylistDraft>(
       context: context,
-      builder: (_) => const _OnlinePlaylistIdDialog(),
+      builder: (_) => _OnlinePlaylistIdDialog(platforms: platforms),
     );
-    if (remoteId == null || !mounted) return;
+    if (draft == null || !mounted) return;
     final saved = await context.read<OnlinePlaylistController>().addOrRefresh(
-      platform: MusicPlatform.netease,
-      remotePlaylistId: remoteId,
+      platform: draft.platform,
+      remotePlaylistId: draft.id,
     );
     if (!mounted) return;
     if (saved == null) {
@@ -595,6 +603,8 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                         const SizedBox(height: 4.0),
                         Text(
                           [
+                            // 订阅歌单有明确来源：平台名放在最前（I1）。
+                            musicPlatformLabel(item.playlist.platform),
                             if (item.playlist.creator?.isNotEmpty == true)
                               item.playlist.creator!,
                             '${item.playlist.trackCount ?? item.playlist.tracks.length}首乐曲',
@@ -1220,8 +1230,10 @@ class _PersonalPlaylistCover extends StatelessWidget {
 }
 
 class _OnlinePlaylistIdDialog extends StatefulWidget {
-  const _OnlinePlaylistIdDialog();
+  const _OnlinePlaylistIdDialog({required this.platforms});
 
+  /// 可选的来源平台（≥1）。只有 1 个时不摆选择控件。
+  final List<MusicPlatform> platforms;
   @override
   State<_OnlinePlaylistIdDialog> createState() =>
       _OnlinePlaylistIdDialogState();
@@ -1229,6 +1241,8 @@ class _OnlinePlaylistIdDialog extends StatefulWidget {
 
 class _OnlinePlaylistIdDialogState extends State<_OnlinePlaylistIdDialog> {
   final _controller = TextEditingController();
+  late MusicPlatform _platform = widget.platforms.first;
+  String? _error;
 
   @override
   void dispose() {
@@ -1238,8 +1252,12 @@ class _OnlinePlaylistIdDialogState extends State<_OnlinePlaylistIdDialog> {
 
   void _submit() {
     final value = _controller.text.trim();
-    if (!RegExp(r'^[1-9][0-9]*$').hasMatch(value)) return;
-    Navigator.of(context).pop(value);
+    final error = validateOnlinePlaylistId(_platform, value);
+    setState(() => _error = error);
+    if (error != null) return;
+    Navigator.of(
+      context,
+    ).pop(OnlinePlaylistDraft(platform: _platform, id: value));
   }
 
   @override
@@ -1273,16 +1291,37 @@ class _OnlinePlaylistIdDialogState extends State<_OnlinePlaylistIdDialog> {
                   ),
                 ),
               ),
+              if (widget.platforms.length > 1) ...[
+                SegmentedButton<MusicPlatform>(
+                  showSelectedIcon: false,
+                  segments: [
+                    for (final platform in widget.platforms)
+                      ButtonSegment(
+                        value: platform,
+                        label: Text(musicPlatformLabel(platform)),
+                      ),
+                  ],
+                  selected: {_platform},
+                  onSelectionChanged: (selection) => setState(() {
+                    _platform = selection.first;
+                    _error = null;
+                  }),
+                ),
+                const SizedBox(height: 12.0),
+              ],
               Focus(
                 onFocusChange: HotkeysHelper.onFocusChanges,
                 child: TextField(
                   autofocus: true,
                   controller: _controller,
-                  keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.done,
-                  decoration: const InputDecoration(
-                    labelText: '网易歌单 ID',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: '${musicPlatformLabel(_platform)}歌单 ID',
+                    hintText: _platform == MusicPlatform.netease
+                        ? '输入数字 ID'
+                        : '输入该平台的歌单 ID',
+                    errorText: _error,
+                    border: const OutlineInputBorder(),
                   ),
                   onSubmitted: (_) => _submit(),
                 ),

@@ -157,15 +157,11 @@ class _RemoteLyricHorizontalScrollAreaState
 
   /// 无行可显示时的占位文案。
   ///
-  /// 加载中 / 无歌词 / 失败是三种不同状态，不能都塌成「暂无歌词」，
-  /// 否则用户会把「正在加载」误读成「这首歌没有歌词」。
-  String _placeholderFor(RemoteLyricStatus status) => switch (status) {
-    RemoteLyricStatus.loading => '歌词加载中…',
-    RemoteLyricStatus.failed => '歌词加载失败',
-    RemoteLyricStatus.ready ||
-    RemoteLyricStatus.empty ||
-    RemoteLyricStatus.inactive => '暂无歌词',
-  };
+  /// 文案本身是**唯一来源** `remoteLyricPlaceholderFor`（可单测的纯函数），
+  /// 这里只做委托 —— 三个问题必须分开答：加载中 / 失败 / 「这首歌没歌词」与
+  /// 「这个平台不支持歌词」（P-63：最后两者以前塌成同一句，用户只会反复换歌）。
+  String _placeholderFor(RemoteLyricStatus status) =>
+      remoteLyricPlaceholderFor(status);
 
   void _onLyricChanged() {
     if (!mounted) return;

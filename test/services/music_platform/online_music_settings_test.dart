@@ -40,24 +40,27 @@ void main() {
   });
 
   group('OnlineMusicSettings providers', () {
-    test('an empty or fully invalid provider list falls back to the default', () {
-      expect(
-        OnlineMusicSettings.fromJson({
-          'providers': <Object?>[],
-        }).providers.single.id,
-        defaultOnlineMusicProviderId,
-      );
-      expect(
-        OnlineMusicSettings.fromJson({
-          'providers': [
-            'text',
-            {'protocol': 'chksz'},
-            {'id': '   '},
-          ],
-        }).providers.single.id,
-        defaultOnlineMusicProviderId,
-      );
-    });
+    test(
+      'an empty or fully invalid provider list falls back to the default',
+      () {
+        expect(
+          OnlineMusicSettings.fromJson({
+            'providers': <Object?>[],
+          }).providers.single.id,
+          defaultOnlineMusicProviderId,
+        );
+        expect(
+          OnlineMusicSettings.fromJson({
+            'providers': [
+              'text',
+              {'protocol': 'chksz'},
+              {'id': '   '},
+            ],
+          }).providers.single.id,
+          defaultOnlineMusicProviderId,
+        );
+      },
+    );
 
     test('an unknown protocol is ignored', () {
       final settings = OnlineMusicSettings.fromJson({
@@ -82,7 +85,11 @@ void main() {
       expect(settings.providers.single.baseUrl, 'https://first.invalid');
     });
 
-    test('normalizes an unusable base URL and timeouts per entry', () {
+    // ⚠️ 语义变更（F0-3 / P-18）：旧行为把**非法** baseUrl 静默改写成
+    // `https://api.chksz.com`，于是用户带着自己的凭据打到了一台他从未指定的主机上。
+    // 现在非法值**原样保留并报错**（`baseUrlIssue`），只有"缺失"才回落默认值。
+    // 这条断言固化的正是被修掉的缺陷，因此被改写（详见 F0-3 提交说明）。
+    test('keeps an unusable base URL as written and reports it', () {
       final settings = OnlineMusicSettings.fromJson({
         'providers': [
           {
@@ -102,13 +109,20 @@ void main() {
       });
 
       final first = settings.providers.first;
-      expect(first.baseUrl, defaultOnlineMusicBaseUrl);
+      expect(first.baseUrl, 'ftp://invalid', reason: '不替换、不丢用户的输入');
+      expect(first.baseUrlIssue, isNotNull);
+      expect(first.effectiveBaseUrl, 'ftp://invalid');
+      expect(
+        first.validationIssues().join(),
+        contains('不会回落到默认服务地址'),
+      );
       expect(first.connectTimeout, defaultOnlineMusicConnectTimeout);
       expect(first.sendTimeout, defaultOnlineMusicSendTimeout);
       expect(first.receiveTimeout, defaultOnlineMusicReceiveTimeout);
 
       final second = settings.providers.last;
       expect(second.baseUrl, 'http://127.0.0.1:9000');
+      expect(second.baseUrlIssue, isNull);
       expect(second.connectTimeout, const Duration(milliseconds: 2500));
       expect(second.sendTimeout, const Duration(milliseconds: 3000));
       expect(second.receiveTimeout, defaultOnlineMusicReceiveTimeout);
@@ -165,7 +179,10 @@ void main() {
         ],
       });
 
-      expect(settings.providers.first.credentialReference, 'PureMusic/A/APIKey');
+      expect(
+        settings.providers.first.credentialReference,
+        'PureMusic/A/APIKey',
+      );
       expect(
         settings.providers.first.authFor(OnlineMusicCapability.search),
         isA<OnlineMusicApiKeyAuth>().having(
@@ -242,9 +259,7 @@ void main() {
         },
       });
 
-      expect(settings.capabilityProviders, {
-        OnlineMusicCapability.search: 'b',
-      });
+      expect(settings.capabilityProviders, {OnlineMusicCapability.search: 'b'});
     });
 
     test('a non-map capability section is ignored', () {
@@ -269,10 +284,9 @@ void main() {
       expect(capabilities.playlistPlatforms, {MusicPlatform.netease});
       expect(capabilities.lyricPlatforms, {MusicPlatform.netease});
       expect(capabilities.resolvablePlatforms, {MusicPlatform.netease});
-      expect(
-        composition.credentialControllers.keys,
-        [defaultOnlineMusicProviderId],
-      );
+      expect(composition.credentialControllers.keys, [
+        defaultOnlineMusicProviderId,
+      ]);
     });
 
     test('data and playback providers can be configured separately', () {
@@ -285,7 +299,10 @@ void main() {
           },
           {
             'id': 'playback',
-            'auth': {'kind': 'apiKey', 'reference': 'PureMusic/Playback/APIKey'},
+            'auth': {
+              'kind': 'apiKey',
+              'reference': 'PureMusic/Playback/APIKey',
+            },
           },
         ],
         'capabilities': {
@@ -304,12 +321,12 @@ void main() {
       final registry =
           (composition.service as CompositeOnlineMusicService).registry;
       expect(registry.providerIdFor(OnlineMusicCapability.search), 'selfData');
-      expect(registry.providerIdFor(OnlineMusicCapability.playlist), 'selfData');
-      expect(registry.providerIdFor(OnlineMusicCapability.lyric), 'selfData');
       expect(
-        registry.providerIdFor(OnlineMusicCapability.stream),
-        'playback',
+        registry.providerIdFor(OnlineMusicCapability.playlist),
+        'selfData',
       );
+      expect(registry.providerIdFor(OnlineMusicCapability.lyric), 'selfData');
+      expect(registry.providerIdFor(OnlineMusicCapability.stream), 'playback');
 
       expect(composition.service.capabilities.searchablePlatforms, {
         MusicPlatform.netease,
@@ -340,6 +357,113 @@ void main() {
     });
   });
 
+  group('平台启用开关（D8:A）', () {
+    test('默认全部启用，且不写盘', () {
+      const settings = OnlineMusicSettings.defaults;
+
+      for (final platform in builtinMusicPlatforms) {
+        expect(settings.isPlatformEnabled(platform), isTrue);
+      }
+      expect(
+        settings.toJson().containsKey('enabledPlatforms'),
+        isFalse,
+        reason: '全部启用 = 空集，不写该键（D13:A：默认配置落盘内容不变）',
+      );
+    });
+
+    test('停用平台会写盘，并可从 JSON 读回', () {
+      final settings = OnlineMusicSettings.defaults.withPlatformEnabled(
+        MusicPlatform.kugou,
+        enabled: false,
+      );
+
+      expect(settings.isPlatformEnabled(MusicPlatform.kugou), isFalse);
+      expect(settings.isPlatformEnabled(MusicPlatform.netease), isTrue);
+      expect(settings.toJson()['enabledPlatforms'], ['netease', 'qq']);
+
+      final restored = OnlineMusicSettings.fromJson(settings.toJson());
+      expect(restored, settings);
+      expect(restored.isPlatformEnabled(MusicPlatform.kugou), isFalse);
+    });
+
+    test('重新启用所有平台后回到空集（落盘不再带该键）', () {
+      final disabled = OnlineMusicSettings.defaults.withPlatformEnabled(
+        MusicPlatform.qq,
+        enabled: false,
+      );
+      final restored = disabled.withPlatformEnabled(
+        MusicPlatform.qq,
+        enabled: true,
+      );
+
+      expect(restored.enabledPlatforms, isEmpty);
+      expect(restored.toJson().containsKey('enabledPlatforms'), isFalse);
+    });
+
+    test('不允许停用最后一个启用的平台（空集只能表示"全部启用"）', () {
+      var settings = OnlineMusicSettings.defaults;
+      settings = settings.withPlatformEnabled(MusicPlatform.qq, enabled: false);
+      settings = settings.withPlatformEnabled(
+        MusicPlatform.kugou,
+        enabled: false,
+      );
+      expect(settings.enabledPlatforms, {MusicPlatform.netease});
+
+      final blocked = settings.withPlatformEnabled(
+        MusicPlatform.netease,
+        enabled: false,
+      );
+      expect(blocked, same(settings));
+      expect(blocked.isPlatformEnabled(MusicPlatform.netease), isTrue);
+    });
+
+    test('无法识别的平台名被忽略，覆盖全部平台时归一化为空集', () {
+      expect(
+        OnlineMusicSettings.fromJson({
+          'providers': [
+            {'id': 'chksz', 'protocol': 'chksz'},
+          ],
+          'enabledPlatforms': ['netease', 'qq', 'kugou', 'bilibili'],
+        }).enabledPlatforms,
+        isEmpty,
+      );
+      expect(
+        OnlineMusicSettings.fromJson({
+          'providers': [
+            {'id': 'chksz', 'protocol': 'chksz'},
+          ],
+          'enabledPlatforms': ['netease'],
+        }).enabledPlatforms,
+        {MusicPlatform.netease},
+      );
+    });
+
+    test('被停用的平台不进入组合出的可搜索集合', () {
+      final settings = OnlineMusicSettings.fromJson({
+        'providers': [
+          {
+            'id': 'full',
+            'contentPlatform': 'netease',
+            'auth': {'kind': 'none'},
+            'capabilities': {
+              'search': {'kind': 'builtin', 'builtin': 'chksz'},
+              'stream': {'kind': 'builtin', 'builtin': 'chksz'},
+            },
+          },
+        ],
+        'enabledPlatforms': ['qq'],
+      });
+      final composition = createOnlineMusicComposition(
+        settings: settings,
+        portableBuild: true,
+      );
+      addTearDown(composition.service.dispose);
+
+      // 条目代理的是 netease，而 netease 被停用 ⇒ 没有任何可搜索平台。
+      expect(composition.service.capabilities.searchablePlatforms, isEmpty);
+    });
+  });
+
   group('AppPreference onlineMusic key', () {
     test('reads the key and falls back to defaults when absent', () {
       final preference = AppPreference();
@@ -347,7 +471,10 @@ void main() {
         'onlineMusic': {
           'defaultProvider': 'selfData',
           'providers': [
-            {'id': 'selfData', 'auth': {'kind': 'none'}},
+            {
+              'id': 'selfData',
+              'auth': {'kind': 'none'},
+            },
           ],
           'capabilities': {'stream': 'selfData'},
         },
@@ -457,8 +584,10 @@ void main() {
         reason: '播放条目声明 auth.kind = none，不应注入凭据',
       );
 
-      // 搜索被配置到 data 条目，它需要 Key；portable 内存凭据为空，
-      // 因此必须在发出请求前就报「未配置」，而不是偷偷落到 playback 条目。
+      // 搜索被显式配置到 data 条目，它需要 Key；portable 内存凭据为空，
+      // 因此 data 一定失败。**D17:b**：用户显式指给 (netease, search) 的候选只有 data，
+      // 隐式条目（playback）不参与救场 —— 于是搜索以 notConfigured 失败，
+      // 而**不会**偷偷落到用户从未指派给搜索的 playback 条目。
       await expectLater(
         composition.service.search(
           platform: MusicPlatform.netease,
@@ -473,14 +602,27 @@ void main() {
           ),
         ),
       );
-      expect(dataDio.adapter.requests, isEmpty);
-      expect(playbackDio.adapter.requests, hasLength(1));
+      expect(dataDio.adapter.requests, isEmpty, reason: '缺凭据时不应发出请求');
+
+      final route =
+          (composition.service as CompositeOnlineMusicService).lastRoute!;
+      expect(route.attempts.single.providerId, 'data');
+      expect(route.attempts.single.kind, OnlineMusicErrorKind.notConfigured);
+      expect(route.winnerProviderId, isNull, reason: '隐式候选不参与救场（D17:b）');
+      expect(
+        playbackDio.adapter.requests,
+        hasLength(1),
+        reason: '仍然只有 resolve 那一次请求：搜索不得改用 playback 条目',
+      );
     });
 
     test('a credential-free entry reports why saving is impossible', () async {
       final settings = OnlineMusicSettings.fromJson({
         'providers': [
-          {'id': 'selfData', 'auth': {'kind': 'none'}},
+          {
+            'id': 'selfData',
+            'auth': {'kind': 'none'},
+          },
         ],
       });
       final composition = createOnlineMusicComposition(

@@ -6,6 +6,7 @@ export '../online_music_service.dart';
 export '../provider/composite_online_music_service.dart';
 export '../provider/online_music_binding.dart';
 export '../provider/online_music_capability.dart';
+export '../provider/online_music_header_slot.dart';
 export '../provider/online_music_json_path.dart';
 export '../provider/online_music_provider.dart';
 export '../provider/online_music_provider_auth.dart';

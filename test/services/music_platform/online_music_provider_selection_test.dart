@@ -58,7 +58,10 @@ void main() {
         },
       );
 
-      expect(registry.providerIdFor(OnlineMusicCapability.search), 'search-only');
+      expect(
+        registry.providerIdFor(OnlineMusicCapability.search),
+        'search-only',
+      );
       expect(
         registry.providerIdFor(OnlineMusicCapability.playlist),
         'playlist-only',
@@ -75,9 +78,7 @@ void main() {
       final registry = OnlineMusicProviderRegistry(
         providers: [data],
         defaultProviderId: 'a',
-        capabilityProviders: {
-          OnlineMusicCapability.stream: 'missing',
-        },
+        capabilityProviders: {OnlineMusicCapability.stream: 'missing'},
       );
 
       expect(registry.providerIdFor(OnlineMusicCapability.stream), 'a');
@@ -99,7 +100,9 @@ void main() {
     test('keeps the first registration for a duplicated provider id', () {
       final first = _RecordingProvider('a');
       final duplicate = _RecordingProvider('a');
-      final registry = OnlineMusicProviderRegistry(providers: [first, duplicate]);
+      final registry = OnlineMusicProviderRegistry(
+        providers: [first, duplicate],
+      );
 
       expect(registry.providers, hasLength(1));
       expect(registry.defaultProvider, same(first));
@@ -112,24 +115,40 @@ void main() {
       );
     });
 
-    test('aggregates capabilities from the selected providers', () {
-      final data = _RecordingProvider('a');
-      final playback = _RecordingProvider(
+    test('aggregates capability platforms from every usable provider', () {
+      final neteaseProvider = _RecordingProvider('a');
+      final qqProvider = _RecordingProvider(
         'b',
         platforms: const {MusicPlatform.qq},
       );
       final registry = OnlineMusicProviderRegistry(
-        providers: [data, playback],
+        providers: [neteaseProvider, qqProvider],
         capabilityProviders: {OnlineMusicCapability.stream: 'b'},
       );
 
       final service = CompositeOnlineMusicService(registry: registry);
       final capabilities = service.capabilities;
 
-      expect(capabilities.searchablePlatforms, {MusicPlatform.netease});
-      expect(capabilities.playlistPlatforms, {MusicPlatform.netease});
-      expect(capabilities.lyricPlatforms, {MusicPlatform.netease});
-      expect(capabilities.resolvablePlatforms, {MusicPlatform.qq});
+      // S3：平台集合按 `(platform, capability)` **候选求并集**，而不是"只看被选中的
+      // 那一个 Provider 声明了什么"。旧语义下 qq 只会出现在 stream 一项里，netease
+      // 也不会同时出现在 stream 上 —— 多平台聚合下这是错的。
+      expect(capabilities.searchablePlatforms, {
+        MusicPlatform.netease,
+        MusicPlatform.qq,
+      });
+      expect(capabilities.playlistPlatforms, {
+        MusicPlatform.netease,
+        MusicPlatform.qq,
+      });
+      expect(capabilities.lyricPlatforms, {
+        MusicPlatform.netease,
+        MusicPlatform.qq,
+      });
+      expect(capabilities.resolvablePlatforms, {
+        MusicPlatform.netease,
+        MusicPlatform.qq,
+      });
+      expect(capabilities.unavailableSearchReasons, isEmpty);
     });
 
     test('disposes every registered provider exactly once', () {
@@ -174,8 +193,7 @@ void main() {
             initialApiKey: _fakeApiKey,
           ),
         ),
-        authResolver: (capability) =>
-            capability == OnlineMusicCapability.search
+        authResolver: (capability) => capability == OnlineMusicCapability.search
             ? const OnlineMusicNoAuth()
             : const OnlineMusicApiKeyAuth(),
       );
@@ -191,30 +209,33 @@ void main() {
       expect(transport.requests.last.queryParameters['apikey'], _fakeApiKey);
     });
 
-    test('a credential-free provider never touches the credential source', () async {
-      final credentials = _UnusedCredentialProvider();
-      final transport = _RecordingTransport();
-      final runtime = ChkszRuntime(
-        credentialProvider: credentials,
-        transport: transport,
-        authResolver: (capability) => const OnlineMusicNoAuth(),
-      );
-      final provider = ChkszOnlineMusicProvider(runtime: runtime);
+    test(
+      'a credential-free provider never touches the credential source',
+      () async {
+        final credentials = _UnusedCredentialProvider();
+        final transport = _RecordingTransport();
+        final runtime = ChkszRuntime(
+          credentialProvider: credentials,
+          transport: transport,
+          authResolver: (capability) => const OnlineMusicNoAuth(),
+        );
+        final provider = ChkszOnlineMusicProvider(runtime: runtime);
 
-      await provider.search(
-        platform: MusicPlatform.netease,
-        keyword: 'test',
-        cancelToken: OnlineMusicCancelToken(),
-      );
+        await provider.search(
+          platform: MusicPlatform.netease,
+          keyword: 'test',
+          cancelToken: OnlineMusicCancelToken(),
+        );
 
-      expect(credentials.readCount, 0);
-      expect(transport.requests.single.queryParameters, {
-        'keyword': 'test',
-        'limit': '30',
-        'offset': '0',
-      });
-      provider.dispose();
-    });
+        expect(credentials.readCount, 0);
+        expect(transport.requests.single.queryParameters, {
+          'keyword': 'test',
+          'limit': '30',
+          'offset': '0',
+        });
+        provider.dispose();
+      },
+    );
 
     test('the provider reports its own per-capability auth', () {
       final runtime = ChkszRuntime(
@@ -243,10 +264,7 @@ void main() {
 
       await expectLater(
         provider.fetchLyrics(
-          const PlatformTrackRef(
-            platform: MusicPlatform.qq,
-            trackId: '123456',
-          ),
+          const PlatformTrackRef(platform: MusicPlatform.qq, trackId: '123456'),
           cancelToken: OnlineMusicCancelToken(),
         ),
         throwsA(
@@ -278,7 +296,8 @@ final class _RecordingProvider extends UnsupportedOnlineMusicProvider {
   int disposeCount = 0;
 
   @override
-  Set<MusicPlatform> platformsFor(OnlineMusicCapability capability) => platforms;
+  Set<MusicPlatform> platformsFor(OnlineMusicCapability capability) =>
+      platforms;
 
   @override
   Future<MusicSearchPage> search({
@@ -347,11 +366,7 @@ final class _RecordingTransport implements ChkszTransport {
       data: const {
         'code': 200,
         'msg': 'success',
-        'data': {
-          'songs': <Object?>[],
-          'total': 0,
-          'lrc': '[00:01.00]line',
-        },
+        'data': {'songs': <Object?>[], 'total': 0, 'lrc': '[00:01.00]line'},
       },
     );
   }

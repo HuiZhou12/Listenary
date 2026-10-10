@@ -27,6 +27,19 @@ class DestinationDesc {
 }
 
 const destinations = <DestinationDesc>[
+  // 聚合主页放在第一位：它是多平台内容与各平台状态的统一入口。
+  DestinationDesc(
+    Symbols.home,
+    '主页',
+    app_paths.HOME_PAGE,
+    // 启动页下标**必须与 paths.START_PAGES 对齐**；主页追加在表尾，
+    // 因此用 paths.HOME_START_PAGE_INDEX（改动 START_PAGES 时要同步）。
+    startPageIndex: app_paths.HOME_START_PAGE_INDEX,
+  ),
+  // 探索紧随主页：两者是并列的一级入口（主页="与你有关"，探索="按目录浏览"）。
+  // **刻意不给 startPageIndex**：与在线音乐/收藏/统计/设置一致，避免新增一个
+  // 会改写用户启动页偏好的目的地，也避免再动 START_PAGES 的下标语义。
+  DestinationDesc(Symbols.explore, '探索', app_paths.EXPLORE_PAGE),
   DestinationDesc(Symbols.cloud, '在线音乐', app_paths.ONLINE_MUSIC_PAGE),
   DestinationDesc(Symbols.favorite, '我的收藏', app_paths.FAVORITES_PAGE),
   DestinationDesc(
@@ -71,10 +84,12 @@ class DestinationGroupDesc {
 }
 
 const destinationGroups = <DestinationGroupDesc>[
-  DestinationGroupDesc('在线音乐', [0, 1]),
-  DestinationGroupDesc('本地曲库', [2, 3, 4, 5]),
-  DestinationGroupDesc('收藏与回顾', [6, 7]),
-  DestinationGroupDesc('系统', [8]),
+  // 四个分组**数量不变**（几何按"组头数量"计算，见下面的 extent 函数）；
+  // 探索归入「聚合」组：它与主页/在线音乐/收藏都是聚合入口。
+  DestinationGroupDesc('聚合', [0, 1, 2, 3]),
+  DestinationGroupDesc('本地曲库', [4, 5, 6, 7]),
+  DestinationGroupDesc('收藏与回顾', [8, 9]),
+  DestinationGroupDesc('系统', [10]),
 ];
 
 const double sideNavItemHeight = 54.0;

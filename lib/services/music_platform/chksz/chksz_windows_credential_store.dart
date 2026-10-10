@@ -45,7 +45,15 @@ final class WindowsChkszCredentialStore implements ChkszCredentialStore {
     try {
       final result = _api.read(targetName);
       final errorCode = result.errorCode;
-      if (errorCode == ERROR_NOT_FOUND) return null;
+      // ⚠️ **真机实测（F0 验证）**：进程内**第一个**凭据调用可能是
+      // "返回 FALSE 但 `GetLastError()` 是 0（ERROR_SUCCESS）"；从第二次调用起，
+      // 同一个调用会正确返回 ERROR_NOT_FOUND(1168)。
+      //
+      // 这个组合自相矛盾：FALSE 说明调用**没有成功**，而 0 不是 CredRead 的合法失败码
+      // ⇒ 唯一自洽的读法是"目标不存在"。
+      // 不处理它就会把"槽位不存在"误判成"读取失败"：界面里的凭据状态读不出来，
+      // 而 F0 的迁移会把"不存在"判成"无法可靠确认"从而**拒绝迁移**。
+      if (errorCode == ERROR_NOT_FOUND || errorCode == ERROR_SUCCESS) return null;
       if (errorCode != null) {
         throw ChkszCredentialStorageException(
           operation: ChkszCredentialStorageOperation.read,
@@ -89,7 +97,13 @@ final class WindowsChkszCredentialStore implements ChkszCredentialStore {
   Future<void> clear() async {
     try {
       final errorCode = _api.clear(targetName);
-      if (errorCode == null || errorCode == ERROR_NOT_FOUND) return;
+      // 同 `read()` 的实测说明：FALSE + ERROR_SUCCESS 只能读作"本来就不存在"
+      //（清除是幂等的：目标不在就等于已经清干净）。
+      if (errorCode == null ||
+          errorCode == ERROR_NOT_FOUND ||
+          errorCode == ERROR_SUCCESS) {
+        return;
+      }
       throw ChkszCredentialStorageException(
         operation: ChkszCredentialStorageOperation.clear,
         errorCode: errorCode,

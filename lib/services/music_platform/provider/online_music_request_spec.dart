@@ -5,6 +5,8 @@
 /// 因此这套配置永远长不成一门脚本语言。
 library;
 
+import 'package:pure_music/services/music_platform/provider/online_music_header_slot.dart';
+
 enum OnlineMusicHttpVerb { get, post }
 
 /// 业务输入来源（闭集）。这是能力的输入契约，用户不能发明新的来源。
@@ -16,21 +18,41 @@ enum OnlineMusicInputSource {
   cursor,
   trackId,
   playlistId,
+
+  /// 歌单分类（`playlistCollection` 的可选筛选条件）。
+  ///
+  /// 取值是**该平台自己的分类标识**：网易云实测用分类名（`/top/playlist?cat=华语`），
+  /// 所以界面必须把平台返回的分类 id 原样回传，不能自己拼。
+  categoryId,
   quality,
 }
 
 /// 一个可映射参数的来源说明。
+///
+/// 取值有**两种互斥**的来法（D1:A：「来源封闭 **+** 允许静态常量」）：
+/// - [source]：来自闭集输入来源（只有用户操作时才可能有值）；
+/// - [value]：写死的**静态常量**（例如平台要求的固定 `device` / `format` / `limit`）。
+///
+/// 两者**恰好给一个**：都给或都不给都会被 [OnlineMusicRequestSpec.validationIssues]
+/// 在保存与试跑阶段拦下（与请求头"引用 vs 明文"同一套风格），构造请求时也会兜底报错。
 final class OnlineMusicParamBinding {
   const OnlineMusicParamBinding({
     required this.name,
-    required this.source,
+    this.source,
+    this.value,
     this.required = false,
     this.defaultValue,
   });
 
   final String name;
-  final OnlineMusicInputSource source;
 
+  /// 取值来源（闭集）；与 [value] **互斥**。
+  final OnlineMusicInputSource? source;
+
+  /// **静态常量值**；与 [source] **互斥**。
+  ///
+  /// 有常量时 [required] / [defaultValue] 都不再参与判定（常量必然有值）。
+  final String? value;
   /// 输入缺失时是否算配置错误（否则用 [defaultValue] / 直接省略）。
   final bool required;
 
@@ -39,20 +61,25 @@ final class OnlineMusicParamBinding {
 
   Map<String, dynamic> toJson() => {
     'name': name,
-    'source': source.name,
+    if (source != null) 'source': source!.name,
+    if (value != null) 'value': value,
     'required': required,
     if (defaultValue != null) 'default': defaultValue,
   };
 
   static OnlineMusicParamBinding fromJson(Object? value) {
     final map = _requireMap(value, 'query/body 参数');
+    final rawSource = map['source'];
     return OnlineMusicParamBinding(
       name: _requireText(map['name'], 'query/body 参数名'),
-      source: _requireEnum(
-        map['source'],
-        OnlineMusicInputSource.values,
-        'query/body 参数来源',
-      ),
+      source: rawSource == null
+          ? null
+          : _requireEnum(
+              rawSource,
+              OnlineMusicInputSource.values,
+              'query/body 参数来源',
+            ),
+      value: _optionalText(map['value']),
       required: map['required'] == true,
       defaultValue: _optionalScalar(map['default'], 'query/body 参数默认值'),
     );
@@ -63,30 +90,90 @@ final class OnlineMusicParamBinding {
       other is OnlineMusicParamBinding &&
       other.name == name &&
       other.source == source &&
+      other.value == value &&
       other.required == required &&
       other.defaultValue == defaultValue;
 
   @override
-  int get hashCode => Object.hash(name, source, required, defaultValue);
+  int get hashCode => Object.hash(name, source, value, required, defaultValue);
 
   @override
-  String toString() => '$name<-${source.name}';
+  String toString() =>
+      '$name<-${source?.name ?? (value == null ? '未设置' : '固定值')}';
 }
 
 /// 常量请求头（不支持动态值：时间戳/签名属于"需要代码实现"的边界）。
 final class OnlineMusicHeaderSpec {
-  const OnlineMusicHeaderSpec({required this.name, required this.value});
+  const OnlineMusicHeaderSpec({
+    required this.name,
+    required this.value,
+    this.source,
+    this.sensitive = false,
+    this.credentialReference,
+  });
 
   final String name;
   final String value;
 
-  Map<String, dynamic> toJson() => {'name': name, 'value': value};
+  /// 值来自**闭集输入来源**（动态头，F4-S2 / P-09）；与 [value] / [credentialReference] **互斥**。
+  ///
+  /// ⚠️ **敏感头绝不能使用它**：那等于把凭据放进普通输入通道（`validationIssues` 会拒绝，
+  /// 运行期构造请求时也会兜底拒绝）—— F0 的边界**只加强、不削弱**。
+  ///
+  /// **缺省 `null`，且为 `null` 时不写盘** ⇒ 旧配置往返后语义与字节都不变。
+  final OnlineMusicInputSource? source;
+
+  /// 是否**明确标记为敏感**（F0 / 决策 A）。
+  ///
+  /// 标记后该请求头**必须**走安全凭据存储与引用流程：用明文 [value] 保存会被
+  /// `validationIssues` 拒绝（保存时拒绝，见用户 2026-10-09 裁定），
+  /// 运行期也不得以明文发送。
+  ///
+  /// **缺省 `false`，且为 `false` 时不写盘** ⇒ 旧配置往返后语义与字节都不变。
+  final bool sensitive;
+
+  /// 安全凭据**槽位名**（只是引用，不是值）；`null` 表示该头不走安全存储。
+  ///
+  /// 由 [onlineMusicHeaderSlotName] 派生（`<providerId>/<capability>/<归一化名>`），
+  /// 也可被用户显式改成别的槽位 —— 那是"多个能力共享同一凭据"的**唯一**合法方式
+  /// （Spec §3：不得按值相同自动合并）。
+  ///
+  /// 有引用时 [value] **必须为空**：引用是值的**替代**，不是补充。
+  final String? credentialReference;
+
+  /// 是否**必须**从安全凭据槽位取值（运行期据此拒绝明文发送）。
+  bool get requiresCredentialReference => sensitive || credentialReference != null;
+
+  /// 引用形式（迁移成功后写入配置的形态）。
+  OnlineMusicHeaderSpec asCredentialReference(String reference) =>
+      OnlineMusicHeaderSpec(
+        name: name,
+        value: '',
+        sensitive: true,
+        credentialReference: reference,
+      );
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'value': value,
+    // 缺省不写盘（同 sensitive）⇒ 旧配置往返后语义与字节都不变。
+    if (source != null) 'source': source!.name,
+    if (sensitive) 'sensitive': true,
+    // 缺省不写盘 ⇒ 旧配置往返后语义与字节都不变。
+    if (credentialReference != null) 'reference': credentialReference,
+  };
 
   static OnlineMusicHeaderSpec fromJson(Object? value) {
     final map = _requireMap(value, '请求头');
+    final rawSource = map['source'];
     return OnlineMusicHeaderSpec(
       name: _requireText(map['name'], '请求头名称'),
       value: map['value'] == null ? '' : '${map['value']}',
+      source: rawSource == null
+          ? null
+          : _requireEnum(rawSource, OnlineMusicInputSource.values, '请求头取值来源'),
+      sensitive: map['sensitive'] == true,
+      credentialReference: _optionalText(map['reference']),
     );
   }
 
@@ -94,10 +181,14 @@ final class OnlineMusicHeaderSpec {
   bool operator ==(Object other) =>
       other is OnlineMusicHeaderSpec &&
       other.name == name &&
-      other.value == value;
+      other.value == value &&
+      other.source == source &&
+      other.sensitive == sensitive &&
+      other.credentialReference == credentialReference;
 
   @override
-  int get hashCode => Object.hash(name, value);
+  int get hashCode =>
+      Object.hash(name, value, source, sensitive, credentialReference);
 }
 
 /// 请求体：扁平 JSON 或 form-urlencoded，字段同样来自闭集输入。
@@ -117,15 +208,18 @@ final class OnlineMusicRequestBodySpec {
 
   static OnlineMusicRequestBodySpec fromJson(Object? value) {
     final map = _requireMap(value, '请求体');
-    final kind = map['kind'] == null ? 'json' : _requireText(map['kind'], '请求体类型');
+    final kind = map['kind'] == null
+        ? 'json'
+        : _requireText(map['kind'], '请求体类型');
     if (kind != 'json' && kind != 'form') {
       throw FormatException('请求体类型只支持 json / form，收到 "$kind"');
     }
     return OnlineMusicRequestBodySpec(
       isForm: kind == 'form',
-      fields: _requireList(map['fields'], '请求体字段')
-          .map(OnlineMusicParamBinding.fromJson)
-          .toList(growable: false),
+      fields: _requireList(
+        map['fields'],
+        '请求体字段',
+      ).map(OnlineMusicParamBinding.fromJson).toList(growable: false),
     );
   }
 }
@@ -188,10 +282,7 @@ final class OnlineMusicQueryAuthPlacement extends OnlineMusicAuthPlacement {
 }
 
 final class OnlineMusicHeaderAuthPlacement extends OnlineMusicAuthPlacement {
-  const OnlineMusicHeaderAuthPlacement({
-    required this.headerName,
-    this.prefix,
-  });
+  const OnlineMusicHeaderAuthPlacement({required this.headerName, this.prefix});
 
   final String headerName;
 
@@ -265,12 +356,12 @@ final class OnlineMusicRequestSpec {
     return OnlineMusicRequestSpec(
       verb: _requireEnum(map['verb'], OnlineMusicHttpVerb.values, 'HTTP 方法'),
       path: _requireText(map['path'], '请求路径'),
-      query: _optionalList(map['query'])
-          .map(OnlineMusicParamBinding.fromJson)
-          .toList(growable: false),
-      headers: _optionalList(map['headers'])
-          .map(OnlineMusicHeaderSpec.fromJson)
-          .toList(growable: false),
+      query: _optionalList(
+        map['query'],
+      ).map(OnlineMusicParamBinding.fromJson).toList(growable: false),
+      headers: _optionalList(
+        map['headers'],
+      ).map(OnlineMusicHeaderSpec.fromJson).toList(growable: false),
       body: map['body'] == null
           ? null
           : OnlineMusicRequestBodySpec.fromJson(map['body']),
@@ -302,9 +393,64 @@ final class OnlineMusicRequestSpec {
       } else if (!names.add(entry.name)) {
         issues.add('查询参数 ${entry.name} 重复');
       }
+      issues.addAll(_paramValueIssues(entry, '查询参数'));
     }
     for (final header in headers) {
-      if (header.name.trim().isEmpty) issues.add('请求头名称不能为空');
+      if (header.name.trim().isEmpty) {
+        issues.add('请求头名称不能为空');
+        continue;
+      }
+      final reference = header.credentialReference;
+      // F4-S2（P-09 / D3 边界）：动态头的三条硬约束 ——
+      // ① 敏感头**绝不能**来自输入（那等于把凭据放进普通输入通道）；
+      // ② 与凭据引用互斥；③ 与固定值互斥（与参数同一套"恰好一种取值"风格）。
+      final headerSource = header.source;
+      if (headerSource != null) {
+        if (header.sensitive) {
+          issues.add(
+            '请求头 ${header.name} 已标记为敏感，不能来自输入；'
+            '敏感值只能走安全凭据引用',
+          );
+        }
+        if (reference != null) {
+          issues.add('请求头 ${header.name} 已有凭据引用，不能再来自输入');
+        }
+        if (header.value.trim().isNotEmpty) {
+          issues.add('请求头 ${header.name} 同时有固定值，只能留一个');
+        }
+      }
+      if (reference != null) {
+        // 引用是值的**替代**：有引用还留着明文 ⇒ 迁移没做完，必须拦住，
+        // 否则"旧配置里不再有明文"这条不变式无法成立（Spec §4.5）。
+        if (header.value.trim().isNotEmpty) {
+          issues.add('请求头 ${header.name} 已有凭据引用，明文值必须清空');
+        }
+        if (!header.sensitive) {
+          issues.add('请求头 ${header.name} 使用了凭据引用，但没有标记为敏感');
+        }
+      } else if (header.sensitive && header.value.trim().isNotEmpty) {
+        // F0 / 决策 A（用户 2026-10-09 裁定"保存时拒绝"）：
+        // 明确标记为敏感的请求头**不得**以明文值保存；它必须改走安全凭据引用。
+        issues.add(
+          '请求头 ${header.name} 已标记为敏感，不能以明文值保存；'
+          '请改用安全凭据引用',
+        );
+      }
+      // F4-S8：HTTP 头只能放 ASCII ⇒ **静态值**在保存阶段就拦下
+      //（动态值要等运行期才知道，那里另有明确报错）。
+      if (header.value.codeUnits.any((unit) => unit > 0x7F)) {
+        issues.add(
+          '请求头 ${header.name} 的值包含非 ASCII 字符：HTTP 头只能放 ASCII'
+          '（中文等内容请改用查询参数）',
+        );
+      }
+    }
+    // Spec §11.3：header 名归一化后碰撞（`X-Token` 与 `x_token`）必须失败并报告，
+    // 否则两者会派生同一个凭据槽位、互相覆盖。
+    for (final collision in onlineMusicHeaderNameCollisions(
+      headers.map((header) => header.name),
+    )) {
+      issues.add('请求头 ${collision.join(' 与 ')} 归一化后同名，会互相覆盖');
     }
     if (body != null) {
       if (verb != OnlineMusicHttpVerb.post) {
@@ -317,6 +463,7 @@ final class OnlineMusicRequestSpec {
         } else if (!bodyNames.add(field.name)) {
           issues.add('请求体字段 ${field.name} 重复');
         }
+        issues.addAll(_paramValueIssues(field, '请求体字段'));
       }
     }
     switch (auth) {
@@ -324,10 +471,28 @@ final class OnlineMusicRequestSpec {
         break;
       case OnlineMusicQueryAuthPlacement(:final parameterName):
         if (parameterName.trim().isEmpty) issues.add('认证查询参数名不能为空');
+        // F4-S8（P-65）：认证注入与声明的参数**同名 ⇒ 一律报错**（不静默覆盖）。
+        if (query.any((entry) => entry.name == parameterName)) {
+          issues.add(
+            '认证查询参数 $parameterName 与声明的查询参数同名：会互相覆盖，请改名其中一个',
+          );
+        }
       case OnlineMusicHeaderAuthPlacement(:final headerName):
         if (headerName.trim().isEmpty) issues.add('认证请求头名不能为空');
+        if (headers.any(
+          (entry) => entry.name.toLowerCase() == headerName.toLowerCase(),
+        )) {
+          issues.add(
+            '认证请求头 $headerName 与声明的请求头同名：会互相覆盖，请改名其中一个',
+          );
+        }
       case OnlineMusicBodyAuthPlacement(:final fieldName):
         if (fieldName.trim().isEmpty) issues.add('认证请求体字段名不能为空');
+        if (body?.fields.any((entry) => entry.name == fieldName) ?? false) {
+          issues.add(
+            '认证请求体字段 $fieldName 与声明的请求体字段同名：会互相覆盖，请改名其中一个',
+          );
+        }
         if (verb != OnlineMusicHttpVerb.post) {
           issues.add('认证放在请求体时必须是 POST');
         }
@@ -367,10 +532,9 @@ bool _sameBody(OnlineMusicRequestBodySpec? a, OnlineMusicRequestBodySpec? b) {
 }
 
 List<String> _placeholders(String path) {
-  return RegExp(r'\{([A-Za-z0-9_]+)\}')
-      .allMatches(path)
-      .map((match) => match.group(1)!)
-      .toList(growable: false);
+  return RegExp(
+    r'\{([A-Za-z0-9_]+)\}',
+  ).allMatches(path).map((match) => match.group(1)!).toList(growable: false);
 }
 
 Map<Object?, Object?> _requireMap(Object? value, String label) {
@@ -391,6 +555,29 @@ String _requireText(Object? value, String label) {
     throw FormatException('$label 必须是非空字符串');
   }
   return value.trim();
+}
+
+/// 可选文本：缺失 / 非字符串 / 仅空白一律视为**没有**。
+String? _optionalText(Object? value) {
+  if (value == null) return null;
+  final text = '$value'.trim();
+  return text.isEmpty ? null : text;
+}
+
+/// F4-S1（P-08 / D1:A）：一个参数必须**恰好**有一种取值来法 ——
+/// 要么来自闭集输入来源，要么是写死的静态常量。
+///
+/// 与请求头"凭据引用 vs 明文值"同一套风格：**不静默取其一**，在保存/试跑阶段拦下。
+List<String> _paramValueIssues(OnlineMusicParamBinding binding, String what) {
+  final hasSource = binding.source != null;
+  final hasValue = binding.value != null;
+  if (hasSource && hasValue) {
+    return ['$what ${binding.name} 同时声明了取值来源与固定值，只能留一个'];
+  }
+  if (!hasSource && !hasValue) {
+    return ['$what ${binding.name} 既没有取值来源也没有固定值'];
+  }
+  return const [];
 }
 
 T _requireEnum<T extends Enum>(Object? value, List<T> values, String label) {

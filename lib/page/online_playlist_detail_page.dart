@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
-import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
-import 'package:pure_music/component/online_track_row.dart';
-import 'package:pure_music/component/personal_playlist_picker.dart';
+import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_cover_cache.dart';
 import 'package:pure_music/core/enums.dart';
@@ -112,10 +110,7 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
     return CachedRemoteImageProvider(uri.toString());
   }
 
-  Future<void> _play(
-    Iterable<MusicTrack> tracks,
-    MusicTrack track,
-  ) async {
+  Future<void> _play(Iterable<MusicTrack> tracks, MusicTrack track) async {
     await playOnlineTrackSelection(
       context,
       OnlineTrackSelection.fromResultPage(
@@ -125,34 +120,15 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
     );
   }
 
-  Widget _buildTrackRow(
-    MusicTrack track,
-    Iterable<MusicTrack> playbackTracks,
-  ) {
-    final playable =
-        track.availability != TrackAvailability.unavailable &&
-        track.availability != TrackAvailability.paid;
-    final details = [
-      if (track.artistDisplay.isNotEmpty) track.artistDisplay,
-      if (track.album.isNotEmpty) track.album,
-    ].join(' · ');
-    final favorites = context.watch<PersonalOnlinePlaylistController>();
-    return DirectionalListItemEntrance(
-      identity: track.ref,
-      child: OnlineTrackRow(
+  /// 一行订阅歌单曲目。
+  ///
+  /// 组装、来源标记（取**曲目自己的 ref**，而不是歌单的字段）、收藏与操作
+  /// 都收敛在 [OnlineTrackEntry] 里。
+  Widget _buildTrackRow(MusicTrack track, Iterable<MusicTrack> playbackTracks) =>
+      OnlineTrackEntry(
         track: track,
-        details: details,
-        enabled: playable,
-        onTap: playable ? () => _play(playbackTracks, track) : null,
-        onAddToPlaylist: () =>
-            showPersonalPlaylistPicker(context, track: track),
-        showFavorite: true,
-        favorite: favorites.isFavorite(track.ref),
-        onToggleFavorite: () => favorites.toggleFavorite(track),
-        isNowPlaying: isOnlineTrackNowPlaying(context, track.ref),
-      ),
-    );
-  }
+        onTap: () => _play(playbackTracks, track),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -231,8 +207,9 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
     final playable = tracks
         .where(
           (track) =>
-              track.availability != TrackAvailability.unavailable &&
-              track.availability != TrackAvailability.paid,
+              track.ref.hasValidIdentity &&
+        track.availability != TrackAvailability.unavailable &&
+        track.availability != TrackAvailability.paid,
         )
         .toList(growable: false);
     const primaryActionStyle = ButtonStyle(
@@ -248,6 +225,8 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
       picShape: PicShape.rrect,
       title: snapshot.playlist.name,
       subtitle: [
+        // 来源平台紧跟标题：订阅歌单本身就有明确来源（I1）。
+        musicPlatformLabel(snapshot.playlist.platform),
         if (creator?.isNotEmpty == true) creator!,
         '${snapshot.playlist.trackCount ?? allTracks.length} 首歌曲 · 只读订阅',
       ].join(' · '),
@@ -272,7 +251,10 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
           style: primaryActionStyle,
         ),
         FilledButton.tonalIcon(
-          onPressed: _loading ? null : _load,
+          // 接 `_refresh` 而不是 `_load`：这是**已加载页**上的刷新，用户点它是因为
+          // "平台上改了内容，我要拉新的"。`_load` 只重读本地快照 ⇒ 对用户就是个空按钮
+          // （同一个页面里空歌单视图的刷新一直是接 `_refresh` 的，这里与它对齐）。
+          onPressed: _loading ? null : _refresh,
           icon: _loading
               ? const SizedBox.square(
                   dimension: 18,

@@ -3,9 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
-import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
-import 'package:pure_music/component/online_track_row.dart';
+import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_cover_cache.dart';
 import 'package:pure_music/core/enums.dart';
@@ -100,10 +99,7 @@ class _PersonalPlaylistDetailPageState
     });
   }
 
-  Future<void> _play(
-    Iterable<MusicTrack> tracks,
-    MusicTrack track,
-  ) async {
+  Future<void> _play(Iterable<MusicTrack> tracks, MusicTrack track) async {
     await playOnlineTrackSelection(
       context,
       OnlineTrackSelection.fromResultPage(
@@ -117,8 +113,9 @@ class _PersonalPlaylistDetailPageState
     final playable = tracks
         .where(
           (track) =>
-              track.availability != TrackAvailability.unavailable &&
-              track.availability != TrackAvailability.paid,
+              track.ref.hasValidIdentity &&
+        track.availability != TrackAvailability.unavailable &&
+        track.availability != TrackAvailability.paid,
         )
         .toList(growable: false);
     if (playable.isEmpty) return;
@@ -154,33 +151,21 @@ class _PersonalPlaylistDetailPageState
     }
   }
 
+  /// 一行自建歌单曲目。
+  ///
+  /// 组装、来源标记、收藏与操作都收敛在 [OnlineTrackEntry] 里。
+  /// 自建在线歌单**允许混平台**（D11），所以每一行都必须写明来源（I1）。
   Widget _buildTrackRow(
     MusicTrack track,
     Iterable<MusicTrack> playbackTracks, {
     bool animated = true,
-  }) {
-    final playable =
-        track.availability != TrackAvailability.unavailable &&
-        track.availability != TrackAvailability.paid;
-    final details = [
-      if (track.artistDisplay.isNotEmpty) track.artistDisplay,
-      if (track.album.isNotEmpty) track.album,
-    ].join(' · ');
-    final favorites = context.watch<PersonalOnlinePlaylistController>();
-    final row = OnlineTrackRow(
-      track: track,
-      details: details,
-      enabled: playable,
-      onTap: playable ? () => _play(playbackTracks, track) : null,
-      onRemove: () => _removeTrack(track.ref),
-      showFavorite: true,
-      favorite: favorites.isFavorite(track.ref),
-      onToggleFavorite: () => favorites.toggleFavorite(track),
-      isNowPlaying: isOnlineTrackNowPlaying(context, track.ref),
-    );
-    if (!animated) return row;
-    return DirectionalListItemEntrance(identity: track.ref, child: row);
-  }
+  }) => OnlineTrackEntry(
+    track: track,
+    onTap: () => _play(playbackTracks, track),
+    onRemove: () => _removeTrack(track.ref),
+    // 可重排列表里关掉进场动画，避免与拖拽/重排动画打架。
+    animateEntrance: animated,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -247,8 +232,9 @@ class _PersonalPlaylistDetailPageState
     final playable = tracks
         .where(
           (track) =>
-              track.availability != TrackAvailability.unavailable &&
-              track.availability != TrackAvailability.paid,
+              track.ref.hasValidIdentity &&
+        track.availability != TrackAvailability.unavailable &&
+        track.availability != TrackAvailability.paid,
         )
         .toList(growable: false);
     final scheme = Theme.of(context).colorScheme;
@@ -380,11 +366,8 @@ class _PersonalPlaylistDetailPageState
               break;
             case SortOrder.decending:
               list.sort(
-                (a, b) => snapshot.compareByAddedAt(
-                  a.ref,
-                  b.ref,
-                  descending: true,
-                ),
+                (a, b) =>
+                    snapshot.compareByAddedAt(a.ref, b.ref, descending: true),
               );
               break;
           }
@@ -427,9 +410,7 @@ class _PersonalPlaylistDetailPageState
                   ),
                 ),
               ),
-              Expanded(
-                child: _buildTrackRow(track, tracks, animated: false),
-              ),
+              Expanded(child: _buildTrackRow(track, tracks, animated: false)),
             ],
           ),
         );

@@ -1,25 +1,44 @@
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_quality_tiers.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_request_spec.dart';
 
 const defaultOnlineMusicBaseUrl = 'https://api.chksz.com';
 const defaultOnlineMusicConnectTimeout = Duration(seconds: 8);
 const defaultOnlineMusicSendTimeout = Duration(seconds: 8);
 const defaultOnlineMusicReceiveTimeout = Duration(seconds: 10);
 
-/// 只接受 http/https 且带 host 的绝对地址；其余一律回落默认值。
-String normalizeOnlineMusicBaseUrl(Object? value) {
-  if (value is! String) return defaultOnlineMusicBaseUrl;
-  final normalized = value.trim();
-  if (normalized.isEmpty) return defaultOnlineMusicBaseUrl;
-  final uri = Uri.tryParse(normalized);
-  if (uri == null) return defaultOnlineMusicBaseUrl;
+/// 用户**显式提供**且非空的 baseUrl；缺失 / 空串 / 非字符串一律 `null`。
+///
+/// "缺失"与"显式提供了非法值"必须分开（Spec §7.2）：
+/// 前者是旧配置没写这一项 ⇒ 允许使用默认值，行为与旧版一致；
+/// 后者是用户真的填错了 ⇒ **必须报错**，绝不允许悄悄换成别的主机。
+String? explicitOnlineMusicBaseUrl(Object? value) {
+  if (value is! String) return null;
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
+/// baseUrl 的**非法原因**；`null` 表示可用。
+///
+/// 空串 = **缺失**（走默认值），因此**不算非法** —— 这正是"不破坏合法旧配置"的那一半。
+///
+/// **刻意不做任何替换**（P-18）：旧实现的 `normalizeOnlineMusicBaseUrl` 会把
+/// `ftp://…` / `/relative/path` / `https://` 一律改写成 `https://api.chksz.com`，
+/// 于是用户带着自己的凭据打到了一台他从未指定的主机上。
+String? onlineMusicBaseUrlIssue(String baseUrl) {
+  final trimmed = baseUrl.trim();
+  if (trimmed.isEmpty) return null;
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null) return '服务地址无效';
   if (uri.scheme != 'http' && uri.scheme != 'https') {
-    return defaultOnlineMusicBaseUrl;
+    return '服务地址必须以 http:// 或 https:// 开头';
   }
-  if (uri.host.isEmpty) return defaultOnlineMusicBaseUrl;
-  return normalized;
+  if (uri.host.isEmpty) return '服务地址缺少主机名';
+  return null;
 }
 
 /// 非正数或不可解析的值回落默认超时。
@@ -43,6 +62,25 @@ String? _nonEmptyString(Object? value) {
   return normalized.isEmpty ? null : normalized;
 }
 
+/// 解析 `capabilities` 时发现的一个**损坏项**（P-32）。
+///
+/// 只描述"哪里坏了"，**不含配置里的原始值**（[reason] 会进界面文案）。
+final class OnlineMusicCapabilityConfigIssue {
+  const OnlineMusicCapabilityConfigIssue({
+    this.capability,
+    required this.reason,
+  });
+
+  /// 受影响的单个能力；`null` 表示整块 `capabilities` 都不是对象（影响全部能力）。
+  final OnlineMusicCapability? capability;
+
+  /// 原因描述（中文、无原始值）。
+  final String reason;
+
+  String get message =>
+      capability == null ? reason : '${capability!.name}：$reason';
+}
+
 /// 一个 Provider 条目的配置；不包含任何凭据值，只包含凭据槽位名。
 final class OnlineMusicProviderDefinition {
   const OnlineMusicProviderDefinition({
@@ -59,6 +97,16 @@ final class OnlineMusicProviderDefinition {
     this.capabilities,
     this.contentPlatform = MusicPlatform.netease,
     this.displayName = '',
+    // F4-S5（P-39 / D5:A）：**稳定唯一 ID + 展示名分离**（都可缺省 ⇒ 旧配置不变）。
+    this.platformId,
+    this.platformName,
+    // F4-S5：解析期"内容来源不是内置平台"的事实（不落盘、不参与相等性）。
+    this.platformConfigIssue,
+    // F4-S4（P-13 / D10b:a）：Provider **静态声明**的音质档位
+    // （内部级别 → 平台取值 + 展示名）。缺省空 = 不声明档位（内部偏好原样透传）。
+    this.qualityTiers = const [],
+    // P-32：解析期的损坏项，默认空；只有 `fromJson` 会填。
+    this.capabilityConfigIssues = const [],
   });
 
   static const defaultCredentialReference = 'PureMusic/ChKSz/APIKey';
@@ -79,7 +127,21 @@ final class OnlineMusicProviderDefinition {
 
   final String id;
   final String protocol;
+
+  /// 用户**显式提供**的服务地址；空串表示"配置里没这一项"（= 走 [effectiveBaseUrl] 的默认值）。
+  ///
+  /// 刻意保存**原值**而不是归一化后的值：只有这样才能区分"缺失"与"填错了"，
+  /// 也才谈得上"不静默替换"（P-18）。
   final String baseUrl;
+
+  /// 实际生效的服务地址：缺失 ⇒ [defaultOnlineMusicBaseUrl]；显式提供 ⇒ 原样。
+  String get effectiveBaseUrl {
+    final trimmed = baseUrl.trim();
+    return trimmed.isEmpty ? defaultOnlineMusicBaseUrl : trimmed;
+  }
+
+  /// 显式提供的地址是否非法（`null` = 可用，含"缺失 ⇒ 用默认值"）。
+  String? get baseUrlIssue => onlineMusicBaseUrlIssue(baseUrl);
 
   /// 展示名；留空时回落到 [id]。它只影响界面文案，不参与任何映射。
   final String displayName;
@@ -107,6 +169,48 @@ final class OnlineMusicProviderDefinition {
   /// 它代理哪一家的内容；非 netease 型来源属于当前模型的边界。
   final MusicPlatform contentPlatform;
 
+  /// F4-S5（P-39 / D5:A）：**稳定唯一 ID**（可缺省 ⇒ 用 [contentPlatform] 的名字）。
+  ///
+  /// 用途：让自建/代理服务有一个稳定的平台标识，同时**不改变**内容身份的形状
+  /// （I1 仍是 `(platform, remoteId)`；本字段不参与身份、不参与请求参数）。
+  final String? platformId;
+
+  /// F4-S5：**展示名**（可缺省 ⇒ 用内置平台的中文名）。只用于界面文案。
+  final String? platformName;
+
+  /// F4-S5：解析期"内容来源不是内置平台"的事实（**不落盘、不参与相等性**）。
+  ///
+  /// 非 null 表示该条目的平台**无法确定**：合成层据此把它建成"不可用但可见"的条目
+  /// （与 `baseUrlIssue` 同一套 fail-closed 口径），**绝不静默当成 netease**。
+  final String? platformConfigIssue;
+
+  /// **平台身份**（P-39 / P0 裁定）：`(contentPlatform, platformId)`。
+  ///
+  /// 为什么需要它：所有自定义平台共享 `MusicPlatform.custom` ⇒ 平台级索引/路由/日志
+  /// 不能拿枚举当唯一键。`platformId` 是**稳定 ID**（F4-S5 起就存在，语义即"稳定标识"）：
+  /// - 旧配置里**已有的非空值原样使用**（不归一、不重写成 UUID）；
+  /// - 缺省时，自定义平台的身份**无效**（`isValid == false`）⇒ 不得参与网络路由（fail-closed），
+  ///   内置平台不受影响（`platformId` 恒空）。
+  PlatformIdentity get identity =>
+      PlatformIdentity(contentPlatform, platformId: platformId?.trim());
+
+  /// F4-S5 / F5-P-39（P3）：界面展示用的平台名 —— 统一走 `platformDisplayLabel`
+  /// （内置 ⇒ 既有中文名；自定义 ⇒ 条目的 `platformName`，缺失时「自定义平台」；
+  /// 身份无效 ⇒ 「未知平台」，**绝不回落网易云**）。
+  String get displayPlatformName => platformDisplayLabel(
+    identity,
+    platformName: platformName,
+  );
+
+  /// **静态声明**的音质档位表（F4-S4 / P-13 / D10b:a）：内部级别 → 平台取值 + 展示名。
+  ///
+  /// - 空列表 = **不声明档位** ⇒ 与修复前完全一致（UI 只展示内部偏好，不伪造平台名称）；
+  /// - 非空 = 该平台自己的档位名称与请求值由配置给出（声明式 Provider 从此**不需要写代码**
+  ///   也能让档位菜单/回落提示显示平台自己的叫法）；
+  /// - 这是**Provider 级**声明（与 `contentPlatform` 同级）：档位是"这个服务怎么叫档位"，
+  ///   不是某个能力的属性。
+  final List<PlatformQualityTier> qualityTiers;
+
   /// 逐能力绑定。
   ///
   /// `null` 表示配置里**没有** `capabilities` 这个 key —— 那是旧条目，按 [protocol] 解释；
@@ -114,40 +218,172 @@ final class OnlineMusicProviderDefinition {
   /// 这个「key 是否存在」的判别式就是 §5.3 定义的唯一优先级规则。
   final Map<OnlineMusicCapability, OnlineMusicCapabilityBinding>? capabilities;
 
+  /// 解析 `capabilities` 时发现的**损坏项**（P-32）。
+  ///
+  /// 这不是用户配置的一部分，只是**解析期的事实**：
+  /// - **不落盘**（`toJson` 不写）、**不参与相等性**（两份只差"哪一项坏了"的配置在
+  ///   语义上是同一份配置，且相等性是既向往返/去重逻辑的基础）；
+  /// - 由 `fromJson` 在解析时填充，程序化编辑（`_copyWith` 系列）会**清空**它 ——
+  ///   用户从编辑器重新保存过这一项之后，它就不再是"损坏的旧数据"了；
+  /// - 唯一用途是让 [validationIssues] 如实报出"这一项坏了"，从而把
+  ///   **"配置损坏"与"从未配置"**区分开（两者运行期都是"不支持"，但该去哪儿改完全不同）。
+  final List<OnlineMusicCapabilityConfigIssue> capabilityConfigIssues;
+
   /// 该能力最终生效的绑定（含旧条目的兼容解释）。
+  ///
+  /// 旧条目（配置里没有 `capabilities` 键、`protocol=chksz`）按内置实现解释，
+  /// 但**只对它真正实现的那几个能力**（[builtinOnlineMusicCapabilities]）。
+  ///
+  /// P-19：这里以前对**任意**能力都返回内置实现 ⇒ 平台卡声称 8 个能力、
+  /// 运行时只服务 4 个，另外 4 项成了静默的 `unavailable`（界面说能、运行说不能）。
+  /// 现在"没实现"就如实是**不支持**：平台卡显示"未配置"，而不是给一个必然失败的候选。
+  /// 注意这只改**旧条目的解释**：自定义条目仍按各自 `capabilities` 里的实际绑定判断。
   OnlineMusicCapabilityBinding bindingFor(OnlineMusicCapability capability) {
     final explicit = capabilities;
     if (explicit != null) {
       return explicit[capability] ??
           const OnlineMusicUnsupportedCapabilityBinding();
     }
-    if (protocol == builtinOnlineMusicChkszId) {
+    if (protocol == builtinOnlineMusicChkszId &&
+        builtinOnlineMusicCapabilities.contains(capability)) {
       return const OnlineMusicBuiltinCapabilityBinding();
     }
     return const OnlineMusicUnsupportedCapabilityBinding();
   }
 
+  /// 该条目在 `(platform, capability)` 上**实际**能服务的平台集合。
+  ///
+  /// 刻意与运行时注册的平台保持一致（`createOnlineMusicComposition` + 各 Provider 的
+  /// `platformsFor`），这样设置页的平台卡能如实回答"这个平台下谁能做这件事"：
+  /// - 内置实现就是 ChkSz（网易云），**即使**条目把 [contentPlatform] 写成别的平台；
+  /// - 声明式实现服务它自己声明的 [contentPlatform]；
+  /// - 未配置 / `unsupported` 的能力不服务任何平台。
+  Set<MusicPlatform> platformsFor(OnlineMusicCapability capability) {
+    return switch (bindingFor(capability)) {
+      OnlineMusicUnsupportedCapabilityBinding() => const {},
+      OnlineMusicBuiltinCapabilityBinding() => const {MusicPlatform.netease},
+      OnlineMusicDeclarativeCapabilityBinding() => {contentPlatform},
+    };
+  }
+
   /// 条目级 + 能力级配置校验；空列表表示可用。
   List<String> validationIssues() {
-    final issues = <String>[];
+    // P-32：**解析期**就坏掉的能力项（JSON 写坏、kind 无效、整块不是对象）。
+    // 它们以前被静默降级成"不支持"，与"从未配置"在界面上完全同形 ——
+    // 用户只会看到"这个能力就是不支持"，无从知道是自己的配置坏了。
+    // 注意：运行期语义**没有**放宽（仍然是"不支持"、仍然不发请求）。
+    final corrupt = <OnlineMusicCapability>{
+      for (final issue in capabilityConfigIssues)
+        if (issue.capability != null) issue.capability!,
+    };
+    final issues = <String>[
+      for (final issue in capabilityConfigIssues) issue.message,
+    ];
     final idError = validateOnlineMusicProviderId(
       id,
       existingIds: const {},
       allowReserved: true,
     );
     if (idError != null) issues.add(idError);
-    if (normalizeOnlineMusicBaseUrl(baseUrl) != baseUrl) {
-      issues.add('服务地址无效或会被回落为默认值');
+    final baseUrlIssue = this.baseUrlIssue;
+    if (baseUrlIssue != null) {
+      // 必须说清"不会被替换"：旧行为会悄悄改成默认主机，这正是 P-18。
+      issues.add('$baseUrlIssue（不会回落到默认服务地址）');
     }
     final explicit = capabilities;
     if (explicit != null) {
       for (final entry in explicit.entries) {
+        // P-32：解析期坏掉的能力只报"损坏"那一句就够。它的绑定被降级成
+        // `unsupported`，会再报一句「尚未配置」—— 而对**配过、但写坏了**的项来说，
+        // 那句话恰恰是误导（用户明明配过，只是坏了）。
+        if (corrupt.contains(entry.key)) continue;
         for (final issue in entry.value.validationIssues(entry.key)) {
           issues.add('${entry.key.name}：$issue');
         }
       }
     }
+    issues.addAll(_capabilityAuthConsistencyIssues(corrupt));
+    issues.addAll(_capabilityAuthVisibilityIssues());
     return issues;
+  }
+
+  /// P-36：条目级「是否需要 Key」与能力级「认证方式」的**一致性**提示。
+  ///
+  /// 这是两层事实：条目级决定**有没有凭据可读**（装配时把槽位传不传下去），
+  /// 能力级决定**要不要注入**。组合出的矛盾能一路通过保存，却在运行期以
+  /// `notConfigured` 失败（而且 `notConfigured` 在回退白名单里，还会静默换个 Provider），
+  /// 界面上**全程没有任何提示**：
+  /// - 「不需要 Key」+ 某个能力声明了认证 ⇒ 运行期缺凭据；
+  /// - 「需要 Key」+ 已配置的能力里没有任何一个会用到它 ⇒ 这个槽位永远不会被读取。
+  ///
+  /// 只**提示**，不改变运行期语义（仍然 fail-closed，**不会**把 auth 静默降级成「无」）。
+  List<String> _capabilityAuthConsistencyIssues(
+    Set<OnlineMusicCapability> corrupt,
+  ) {
+    final issues = <String>[];
+    final explicit = capabilities;
+    // 旧条目（没有 `capabilities` 键）走内置实现，认证完全由条目级 `authFor` 决定
+    // ⇒ 结构上不可能矛盾，不需要检查。
+    if (explicit == null) return issues;
+
+    final declaring = <OnlineMusicCapability>[];
+    for (final entry in explicit.entries) {
+      if (corrupt.contains(entry.key)) continue;
+      final binding = entry.value;
+      if (binding is OnlineMusicDeclarativeCapabilityBinding &&
+          binding.request.auth is! OnlineMusicNoAuthPlacement) {
+        declaring.add(entry.key);
+      }
+    }
+
+    final hasCredential = requiresCredential && credentialReference != null;
+    if (!hasCredential) {
+      for (final capability in declaring) {
+        issues.add(
+          '${capability.name}：该能力声明了认证，但条目被设为「不需要 Key」'
+          '⇒ 运行期会因缺少凭据失败；请把条目改成「需要 Key」，或把该能力的认证改回「无」',
+        );
+      }
+      return issues;
+    }
+
+    // 「需要 Key」但一个都不会用到：只在这一条目**已经配了能力**时才提示 ——
+    // 刚新建、还没配任何能力的条目不该被这条噪音打扰（那只是"还没配"）。
+    if (explicit.isEmpty) return issues;
+    // ⚠️ 内置绑定的认证来自条目级 `authFor` ⇒ 它们**会**用到这个 Key。
+    final hasBuiltin = explicit.values.any(
+      (binding) => binding is OnlineMusicBuiltinCapabilityBinding,
+    );
+    if (declaring.isEmpty && !hasBuiltin) {
+      issues.add(
+        '需要 Key，但已配置的能力里没有任何一个会用到它（认证方式都是「无」）'
+        '⇒ 这个凭据槽位不会被读取',
+      );
+    }
+    return issues;
+  }
+
+  /// P-54：`capabilityAuth`（能力级认证覆盖）**对声明式绑定零效果**。
+  ///
+  /// 这个旋钮的唯一消费者是内置 ChkSz 链路（`authFor` → `authResolver`）；
+  /// 声明式绑定自己的认证在 `binding.request.auth` 里。它也没有界面入口，
+  /// 只能来自手写或旧版本的配置 ⇒ 非空且该条目**没有内置能力**时如实说明，
+  /// 免得用户以为设了它就有认证。
+  List<String> _capabilityAuthVisibilityIssues() {
+    if (capabilityAuth.isEmpty) return const [];
+    final explicit = capabilities;
+    // 旧条目（无 `capabilities` 键）按内置实现解释 ⇒ 这个旋钮**确实生效**。
+    final hasBuiltin =
+        explicit == null ||
+        explicit.values.any(
+          (binding) => binding is OnlineMusicBuiltinCapabilityBinding,
+        );
+    if (hasBuiltin) return const [];
+    return const [
+      'capabilityAuth（能力级认证覆盖）对声明式绑定无效：本条目没有内置能力，'
+      '因此这个旋钮不起作用。请改在各能力的「认证方式」里设置；'
+      '如需清理，可在该能力的 JSON 视图里删掉 capabilityAuth',
+    ];
   }
 
   /// 能力级认证覆盖；未列出的能力使用 Provider 默认要求。
@@ -176,7 +412,8 @@ final class OnlineMusicProviderDefinition {
     return OnlineMusicProviderDefinition(
       id: id,
       protocol: defaultOnlineMusicProtocol,
-      baseUrl: normalizeOnlineMusicBaseUrl(baseUrl),
+      // 原样保存（不归一化、不替换）：非法值由 validationIssues / 运行时拦下。
+      baseUrl: baseUrl.trim(),
       displayName: displayName.trim(),
       contentPlatform: contentPlatform,
       connectTimeout: defaultOnlineMusicConnectTimeout,
@@ -203,7 +440,7 @@ final class OnlineMusicProviderDefinition {
     return OnlineMusicProviderDefinition(
       id: id,
       protocol: protocol,
-      baseUrl: normalizeOnlineMusicBaseUrl(baseUrl),
+      baseUrl: baseUrl.trim(),
       displayName: displayName?.trim() ?? this.displayName,
       connectTimeout: connectTimeout,
       sendTimeout: sendTimeout,
@@ -215,6 +452,10 @@ final class OnlineMusicProviderDefinition {
       capabilityAuth: capabilityAuth,
       capabilities: capabilities,
       contentPlatform: contentPlatform ?? this.contentPlatform,
+      // F4-S4：编辑条目时**必须透传**档位声明，否则表单保存会把用户填的档位静默丢掉。
+      platformId: platformId,
+      platformName: platformName,
+      qualityTiers: qualityTiers,
     );
   }
 
@@ -244,11 +485,29 @@ final class OnlineMusicProviderDefinition {
       }),
       contentPlatform: contentPlatform,
       displayName: displayName,
+      // F4-S4：改能力绑定不得动档位声明。
+      platformId: platformId,
+      platformName: platformName,
+      qualityTiers: qualityTiers,
     );
   }
 
-  /// 一键按 ChkSz 兼容方式填充（D5）：四能力全部走内置实现，兼容 ChkSz mirror。
+  /// 一键按 ChkSz 兼容方式填充（D5）：**只把 ChkSz 真有实现的四条链路**改成内置实现，
+  /// **其余能力（歌单列表 / 分类 / 榜单 / 新歌）原样保留**。
+  ///
+  /// P-20：旧实现写成 `capabilities: const {四条}` —— 那是**整表替换**，
+  /// 用户已经配好的另外四项会被**静默丢弃**（无确认、无撤销）。
+  ///
+  /// 现在以**该条目现有的 capabilities 为基底**合并：
+  /// - 新条目（`capabilities` 为空 Map）⇒ 结果就是"四条内置 + 其余不支持"，
+  ///   与旧行为一致（它本来就没东西可丢）；
+  /// - 已配好其它能力的条目 ⇒ 那些能力**一个字节都不动**。
+  ///
+  /// 注意**不**用 `bindingFor` 当基底：对旧条目（`capabilities == null`）它会对
+  /// **任意**能力都返回内置实现，拿它当基底会凭空把"不支持"变成"内置"
+  /// （那正是 P-19 要修的问题）。
   OnlineMusicProviderDefinition withChkszCompatibleCapabilities() {
+    final kept = capabilities ?? const {};
     return OnlineMusicProviderDefinition(
       id: id,
       protocol: protocol,
@@ -260,22 +519,71 @@ final class OnlineMusicProviderDefinition {
       requiresCredential: requiresCredential,
       parameterName: parameterName,
       capabilityAuth: capabilityAuth,
-      capabilities: const {
-        OnlineMusicCapability.search: OnlineMusicBuiltinCapabilityBinding(),
-        OnlineMusicCapability.playlist: OnlineMusicBuiltinCapabilityBinding(),
-        OnlineMusicCapability.lyric: OnlineMusicBuiltinCapabilityBinding(),
-        OnlineMusicCapability.stream: OnlineMusicBuiltinCapabilityBinding(),
-      },
+      capabilities: Map.unmodifiable({
+        ...kept,
+        OnlineMusicCapability.search:
+            const OnlineMusicBuiltinCapabilityBinding(),
+        OnlineMusicCapability.playlist:
+            const OnlineMusicBuiltinCapabilityBinding(),
+        OnlineMusicCapability.lyric: const OnlineMusicBuiltinCapabilityBinding(),
+        OnlineMusicCapability.stream:
+            const OnlineMusicBuiltinCapabilityBinding(),
+      }),
       contentPlatform: contentPlatform,
       displayName: displayName,
+      // F4-S4：一键填充改的是能力实现，不该动档位声明。
+      platformId: platformId,
+      platformName: platformName,
+      qualityTiers: qualityTiers,
     );
+  }
+
+  /// 一键填充会**覆盖**哪几个能力当前的配置（用于界面确认框逐项说明）。
+  ///
+  /// 已经是内置实现的四项不算"会被覆盖"（它们本来就是这个值）。
+  List<OnlineMusicCapability> chkszFillOverwrites() {
+    const chkszCapabilities = {
+      OnlineMusicCapability.search,
+      OnlineMusicCapability.playlist,
+      OnlineMusicCapability.lyric,
+      OnlineMusicCapability.stream,
+    };
+    final explicit = capabilities;
+    if (explicit == null) return const [];
+    return [
+      for (final capability in chkszCapabilities)
+        if (explicit[capability] is! OnlineMusicBuiltinCapabilityBinding)
+          capability,
+    ];
+  }
+
+  /// 一键填充**不会动**的、且当前已配置的能力（用于界面确认框说明"哪些保持不变"）。
+  List<OnlineMusicCapability> chkszFillKeeps() {
+    const chkszCapabilities = {
+      OnlineMusicCapability.search,
+      OnlineMusicCapability.playlist,
+      OnlineMusicCapability.lyric,
+      OnlineMusicCapability.stream,
+    };
+    final explicit = capabilities;
+    if (explicit == null) return const [];
+    return [
+      for (final entry in explicit.entries)
+        if (!chkszCapabilities.contains(entry.key) &&
+            entry.value is! OnlineMusicUnsupportedCapabilityBinding)
+          entry.key,
+    ];
   }
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'protocol': protocol,
-    'baseUrl': baseUrl,
+    // 缺失（空串）时不写该键：旧配置里本来就没有它，写一个 `""` 只是噪声。
+    if (baseUrl.trim().isNotEmpty) 'baseUrl': baseUrl,
     if (displayName.trim().isNotEmpty) 'displayName': displayName,
+    // F4-S5：缺省不写盘 ⇒ 旧配置往返后字节不变。
+    if (platformId?.trim().isNotEmpty == true) 'platformId': platformId!.trim(),
+    if (platformName?.trim().isNotEmpty == true) 'platformName': platformName!.trim(),
     'contentPlatform': contentPlatform.name,
     'connectTimeoutMs': connectTimeout.inMilliseconds,
     'sendTimeoutMs': sendTimeout.inMilliseconds,
@@ -291,6 +599,16 @@ final class OnlineMusicProviderDefinition {
         for (final entry in capabilities!.entries)
           entry.key.name: entry.value.toJson(),
       },
+    // F4-S4：缺省（空表）时不写该键 ⇒ 旧配置往返后字节不变。
+    if (qualityTiers.isNotEmpty)
+      'qualityTiers': [
+        for (final tier in qualityTiers)
+          {
+            'internal': tier.internalLevel,
+            'label': tier.displayLabel,
+            'value': tier.requestValue,
+          },
+      ],
   };
 
   Map<String, dynamic> authToJson() {
@@ -316,6 +634,11 @@ final class OnlineMusicProviderDefinition {
       other.parameterName == parameterName &&
       other.contentPlatform == contentPlatform &&
       other.displayName == displayName &&
+      // F4-S5：平台标识/展示名是**真实配置** ⇒ 参与相等性（解析期 issue 不参与）。
+      other.platformId == platformId &&
+      other.platformName == platformName &&
+      // F4-S4：档位声明是**真实配置**，必须参与相等性（否则界面判断"有未保存改动"会出错）。
+      _sameQualityTiers(other.qualityTiers, qualityTiers) &&
       _sameBindings(other.capabilities, capabilities) &&
       _sameCapabilityAuth(other.capabilityAuth, capabilityAuth);
 
@@ -332,6 +655,8 @@ final class OnlineMusicProviderDefinition {
     parameterName,
     contentPlatform,
     displayName,
+    platformId,
+    platformName,
     // capabilities 为 null 与空 Map 语义不同（旧条目 vs 新条目），必须区分。
     capabilities == null
         ? -1
@@ -350,6 +675,16 @@ final class OnlineMusicProviderDefinition {
         );
       }),
     ),
+    // F4-S4：档位声明的顺序**有意义**（它就是菜单顺序）⇒ 用有序哈希。
+    Object.hashAll(
+      qualityTiers.map(
+        (tier) => Object.hash(
+          tier.internalLevel,
+          tier.displayLabel,
+          tier.requestValue,
+        ),
+      ),
+    ),
   );
 
   @override
@@ -357,6 +692,22 @@ final class OnlineMusicProviderDefinition {
       'OnlineMusicProviderDefinition($id, $baseUrl, '
       'requiresCredential=$requiresCredential, slot=${credentialReference != null}, '
       'capabilities=${capabilities == null ? 'legacy' : capabilities!.length})';
+}
+
+/// F4-S4：档位声明按**顺序**比较（顺序就是菜单顺序）。
+bool _sameQualityTiers(
+  List<PlatformQualityTier> a,
+  List<PlatformQualityTier> b,
+) {
+  if (a.length != b.length) return false;
+  for (var index = 0; index < a.length; index++) {
+    if (a[index].internalLevel != b[index].internalLevel ||
+        a[index].displayLabel != b[index].displayLabel ||
+        a[index].requestValue != b[index].requestValue) {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool _sameBindings(
@@ -426,25 +777,101 @@ String deriveOnlineMusicCredentialReference(String providerId) =>
     ? OnlineMusicProviderDefinition.defaultCredentialReference
     : 'PureMusic/$providerId/APIKey';
 
-/// 在线音乐 Provider 与能力映射的配置。
+/// 在线音乐 Provider、平台感知路由与旧单值能力映射的配置。
 final class OnlineMusicSettings {
   const OnlineMusicSettings({
     required this.providers,
     required this.defaultProviderId,
     required this.capabilityProviders,
+    required this.routing,
+    this.enabledPlatforms = const {},
   });
 
   static const defaults = OnlineMusicSettings(
     providers: [OnlineMusicProviderDefinition.defaults],
     defaultProviderId: defaultOnlineMusicProviderId,
     capabilityProviders: {},
+    routing: {},
   );
 
   final List<OnlineMusicProviderDefinition> providers;
+
+  /// 旧配置里的"默认 Provider"。**仅作兼容读取**：自 D14 起不再参与任何路由。
   final String defaultProviderId;
 
-  /// 能力 → Provider id；缺失或指向未注册 id 时回落默认 Provider。
+  /// 旧配置的**平台无关**单值能力选择（`capabilities{cap → providerId}`）。
+  /// 旧界面仍会读写它；解析候选时作为 [routing] 缺失项的回落（D13:A：不迁移、改写）。
   final Map<OnlineMusicCapability, String> capabilityProviders;
+
+  /// **平台感知**的显式候选：`platform → capability → 有序 providerId`（D4:A）。
+  ///
+  /// 与 [capabilityProviders] **并存**而非互相派生：`routing` 优先，缺失时回落到旧的
+  /// 单值映射（且仅当该 Provider 的 `contentPlatform` 等于查询平台时才生效）。
+  final Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> routing;
+
+  /// 已**启用**的平台集合（D8:A 平台卡的启用开关）；**空集 = 全部启用**。
+  ///
+  /// ⚠️ P-55：这段注释以前写的是"被**停用**的平台"，**与代码和落盘语义正好相反** ——
+  /// 字段名、[isPlatformEnabled] 与 `toJson`（写的是**启用名单**）都表明它是"已启用集合"，
+  /// 而"停用"只是它的**补集**。注释写反会直接误导下一处改动（甚至把开关语义改错）。
+  ///
+  /// 为什么不改名：`enabledPlatforms` 是**落盘键**，改名属配置格式变更、
+  /// 会牵出 F0 冻结的迁移与兼容边界（Spec §4 / D6）⇒ 本阶段只把注释改成与代码一致。
+  ///
+  /// 语义细节：停用的平台不参与搜索，其 `(platform, capability)` 候选一律按"空"处理
+  /// （调用时报 `unavailable`）。默认配置与旧配置都**不需要**这个键
+  /// （D13:A：不改写默认配置），只在用户真的停用过某些平台时才写盘。
+  ///
+  /// 代价：无法用同一个表示表达"全部停用"。因此界面**不允许**停用最后一个启用的平台
+  /// （见 `withPlatformEnabled`），以免"全部停用"退化成"全部启用"。
+  final Set<MusicPlatform> enabledPlatforms;
+
+  /// 该平台当前是否启用（空集 = 全部启用，因此默认返回 true）。
+  bool isPlatformEnabled(MusicPlatform platform) =>
+      enabledPlatforms.isEmpty || enabledPlatforms.contains(platform);
+
+  /// 把平台列表归一化：覆盖全部平台时回到"空集 = 全部启用"。
+  static Set<MusicPlatform> _normalizeEnabledPlatforms(
+    Iterable<MusicPlatform> platforms,
+  ) {
+    final kept = {
+      for (final platform in platforms)
+        if (builtinMusicPlatforms.contains(platform)) platform,
+    };
+    return kept.length == builtinMusicPlatforms.length ? const {} : kept;
+  }
+
+  /// 开/关一个平台；返回新配置（不落盘，由控制器决定）。
+  ///
+  /// 不允许把**最后一个**启用的平台关掉（`enabledPlatforms` 用空集表示"全部启用"，
+  /// 两者会撞在一起）；此时原样返回，界面也会禁用该开关。
+  OnlineMusicSettings withPlatformEnabled(
+    MusicPlatform platform, {
+    required bool enabled,
+  }) {
+    final current = enabledPlatforms.isEmpty
+        ? {for (final value in builtinMusicPlatforms) value}
+        : {...enabledPlatforms};
+    if (enabled) {
+      current.add(platform);
+    } else {
+      if (!current.contains(platform)) return this;
+      if (current.length <= 1) return this;
+      current.remove(platform);
+    }
+    return _copyWith(enabledPlatforms: _normalizeEnabledPlatforms(current));
+  }
+
+  /// 只替换 [enabledPlatforms]；其余字段原样带过。
+  OnlineMusicSettings _copyWith({
+    required Set<MusicPlatform> enabledPlatforms,
+  }) => OnlineMusicSettings(
+    providers: providers,
+    defaultProviderId: defaultProviderId,
+    capabilityProviders: capabilityProviders,
+    routing: routing,
+    enabledPlatforms: enabledPlatforms,
+  );
 
   Set<String> get providerIds => {for (final p in providers) p.id};
 
@@ -453,6 +880,89 @@ final class OnlineMusicSettings {
       if (provider.id == id) return provider;
     }
     return null;
+  }
+
+  /// 解析 `(platform, capability)` 的**显式**候选 id（D4:A + D13:A）。
+  ///
+  /// 顺序：`routing[platform][capability]`（过滤未注册 id）→ 旧单值映射
+  /// （仅当该 Provider 的 `contentPlatform` 恰为查询平台时生效）→ 空列表。
+  /// 空列表表示"没有显式候选"，由调用方按注册顺序补齐支持的 Provider；
+  /// 这里**不做**平台无关的默认回落（D14）。
+  List<String> explicitCandidateIdsFor(
+    MusicPlatform platform,
+    OnlineMusicCapability capability,
+  ) {
+    final configured = routing[platform]?[capability];
+    if (configured != null && configured.isNotEmpty) {
+      return [
+        for (final id in configured)
+          if (providerIds.contains(id)) id,
+      ];
+    }
+    final legacy = capabilityProviders[capability];
+    if (legacy == null) return const [];
+    final provider = providerById(legacy);
+    if (provider == null || !_legacyAffects(provider, capability, platform)) {
+      return const [];
+    }
+    return [legacy];
+  }
+
+  /// 旧单值 `capabilityProviders[capability]` 是否**影响**这一格。
+  ///
+  /// **唯一**判据，被两处共用（P-22 的教训：两处判据不同源时，"点自动"清不掉
+  /// 界面上真正在生效的那个旧值）：
+  /// - `explicitCandidateIdsFor` 的**回落**（决定界面上显示「已指定 X」还是「自动」）；
+  /// - `withRoutingCandidates` 的**清除**（用户点「自动」时该清哪个旧值）。
+  ///
+  /// 判据用**运行期同一条规则** `platformsFor`（而不是配置里声明的 `contentPlatform`）。
+  ///
+  /// P-59：此前一边用 `contentPlatform`（配置层）、一边用 `platformsFor`（运行期）——两套口径。
+  /// 于是**内置条目**把 `contentPlatform` 改成别的平台之后：运行期照旧服务网易云，
+  /// 而旧单值却因为"来源不匹配"被判为失效 ⇒ 用户的显式选择**被静默丢弃**
+  /// （界面从「已指定」变回「自动」，而功能看起来还是好的）。
+  /// 统一之后，"旧单值是否生效"与"这个条目运行时到底服务谁"**永远一致**。
+  static bool _legacyAffects(
+    OnlineMusicProviderDefinition provider,
+    OnlineMusicCapability capability,
+    MusicPlatform platform,
+  ) => provider.platformsFor(capability).contains(platform);
+
+  /// P-14：旧版旋钮仍在这份配置里时，如实说明（旧旋钮**可见可清**）。
+  ///
+  /// 两个旧旋钮的现状不同，必须分别说清：
+  /// - `capabilityProviders`（旧单值映射）**仍参与候选回落**（见 [explicitCandidateIdsFor]），
+  ///   但界面上看不到、也没有入口 —— F1 已经删掉了「能力分配」那块；
+  ///   清除路径：到「平台」区块把对应能力的来源选成「自动」
+  ///   （只清那一格，见 P-22 的实现）；
+  /// - `defaultProviderId` 自 D14 起**不参与候选选择**（`providersFor`），
+  ///   只在注册表的单值问答路径里保留历史行为（那条路径在生产里没有调用者）。
+  ///
+  /// 这是**设置级**的问题（旋钮在 [OnlineMusicSettings] 上，不在单个条目上）。
+  List<String> legacyKnobIssues() {
+    final issues = <String>[];
+    if (capabilityProviders.isNotEmpty) {
+      final parts = [
+        for (final entry in capabilityProviders.entries)
+          '${entry.key.name}→${entry.value}',
+      ];
+      issues.add(
+        '这份配置还带着旧版「能力分配」：${parts.join('、')}。'
+        '它仍按兼容规则参与候选回落，但界面上没有入口 —— '
+        '到「平台」区块把对应能力的来源选成「自动」即可清除（只清那一格）。',
+      );
+    }
+    if (defaultProviderId != defaultOnlineMusicProviderId &&
+        defaultProviderId != providers.first.id) {
+      // ⚠️ 判据要排除"合成值"：缺少该键时 `fromJson` 会把 `defaultProviderId`
+      // 合成成**第一个条目**（历史行为），那不是用户带着的旧旋钮 ⇒ 报它只会制造噪音。
+      // （这条误报是被"清掉那一格之后提示消失"的用例抓出来的。）
+      issues.add(
+        '这份配置还带着旧版「默认提供商」$defaultProviderId：'
+        '它自 D14 起不参与候选选择，仅作兼容读取',
+      );
+    }
+    return issues;
   }
 
   /// 某个能力实际会用到的 Provider id（缺失/未注册时回落默认）。
@@ -464,6 +974,29 @@ final class OnlineMusicSettings {
         : providers.first.id;
   }
 
+  /// 该平台下**能够**服务某能力的条目 id（按条目顺序）—— 平台卡的候选项。
+  ///
+  /// 与路由层的判定一致（[OnlineMusicProviderDefinition.platformsFor]），因此卡片里
+  /// 能选的条目就是运行时真正会被选中的那些。
+  List<String> capableProviderIdsFor(
+    MusicPlatform platform,
+    OnlineMusicCapability capability,
+  ) => [
+    for (final provider in providers)
+      if (provider.platformsFor(capability).contains(platform)) provider.id,
+  ];
+
+  /// 平台卡当前要显示的选中项：显式候选的第一个；没有显式配置时返回 null（= 自动）。
+  ///
+  /// 返回 null 表示"按注册顺序自动"，界面据此显示「自动」而不是假装用户选过什么。
+  String? selectedProviderIdFor(
+    MusicPlatform platform,
+    OnlineMusicCapability capability,
+  ) {
+    final explicit = explicitCandidateIdsFor(platform, capability);
+    return explicit.isEmpty ? null : explicit.first;
+  }
+
   /// 新增一个条目；标识重复时返回原值（界面已先行校验）。
   OnlineMusicSettings withAddedProvider(
     OnlineMusicProviderDefinition provider,
@@ -473,6 +1006,8 @@ final class OnlineMusicSettings {
       providers: List.unmodifiable([...providers, provider]),
       defaultProviderId: defaultProviderId,
       capabilityProviders: capabilityProviders,
+      routing: routing,
+      enabledPlatforms: enabledPlatforms,
     );
   }
 
@@ -488,10 +1023,12 @@ final class OnlineMusicSettings {
       ]),
       defaultProviderId: defaultProviderId,
       capabilityProviders: capabilityProviders,
+      routing: routing,
+      enabledPlatforms: enabledPlatforms,
     );
   }
 
-  /// 删除一个条目：默认 Provider 与指向它的能力分配一并回落到新的首项。
+  /// 删除一个条目：默认 Provider、旧单值映射与平台候选里的它一并清理。
   /// 列表只允许删到剩一个条目。
   OnlineMusicSettings withoutProvider(String providerId) {
     if (providers.length <= 1 || !providerIds.contains(providerId)) return this;
@@ -509,7 +1046,32 @@ final class OnlineMusicSettings {
         for (final entry in capabilityProviders.entries)
           if (entry.value != providerId) entry.key: entry.value,
       }),
+      routing: _routingWithoutProvider(routing, providerId),
+      enabledPlatforms: enabledPlatforms,
     );
+  }
+
+  /// 从所有平台候选中剔除某个 providerId；空掉的层级一并移除。
+  static Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>>
+  _routingWithoutProvider(
+    Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> routing,
+    String providerId,
+  ) {
+    final result = <MusicPlatform, Map<OnlineMusicCapability, List<String>>>{};
+    for (final platform in routing.entries) {
+      final capabilities = <OnlineMusicCapability, List<String>>{};
+      for (final entry in platform.value.entries) {
+        final kept = [
+          for (final id in entry.value)
+            if (id != providerId) id,
+        ];
+        if (kept.isNotEmpty) capabilities[entry.key] = List.unmodifiable(kept);
+      }
+      if (capabilities.isNotEmpty) {
+        result[platform.key] = Map.unmodifiable(capabilities);
+      }
+    }
+    return Map.unmodifiable(result);
   }
 
   OnlineMusicSettings withCapabilityProvider(
@@ -524,6 +1086,64 @@ final class OnlineMusicSettings {
         ...capabilityProviders,
         capability: providerId,
       }),
+      routing: routing,
+      enabledPlatforms: enabledPlatforms,
+    );
+  }
+
+  /// 设置某个 `(platform, capability)` 的**显式有序候选**（D4:A）。
+  /// 传入空列表等价于清除该组合的显式配置（回到按注册顺序推导）。
+  OnlineMusicSettings withRoutingCandidates(
+    MusicPlatform platform,
+    OnlineMusicCapability capability,
+    Iterable<String> providerIds,
+  ) {
+    final kept = [
+      for (final id in providerIds)
+        if (this.providerIds.contains(id)) id,
+    ];
+    // 显式写出类型：否则 `...?` 展开 + 条件元素会让字面量退化成 Map<dynamic, dynamic>，
+    // 运行时 Map.unmodifiable 的视图无法转回声明类型。
+    final Map<OnlineMusicCapability, List<String>> platformRouting = {
+      ...?routing[platform],
+      if (kept.isNotEmpty) capability: List.unmodifiable(kept),
+    };
+    if (kept.isEmpty) platformRouting.remove(capability);
+    final Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> next = {
+      ...routing,
+      if (platformRouting.isNotEmpty)
+        platform: Map.unmodifiable(platformRouting),
+    };
+    // 空列表 = 清除该组合的显式配置：把从 `...routing` 带过来的旧项删掉。
+    if (platformRouting.isEmpty) next.remove(platform);
+    // P-22：**「自动」必须真的清空**。
+    //
+    // 以前这里只清 `routing`，而候选解析紧接着回落到旧的 `capabilityProviders`
+    // ⇒ 该行**立刻又显示「已指定 X」**，用户的操作看起来无效（旧值也没有任何入口可清）。
+    // 现在：用户点「自动」（空列表）时，把**这一格**涉及的旧单值也清掉。
+    //
+    // 边界（D13:A：不擅自改写旧配置）：
+    // - 只清**用户点过的这一格**：判据是"该条目运行时**实际服务**的平台集合"
+    //   （`platformsFor`，与运行期同一条规则），因此清掉的正是真正在影响这一格的旧值；
+    // - 其它能力 / 其它平台上的旧值**原样保留**。
+    final Map<OnlineMusicCapability, String> nextCapabilityProviders = {
+      ...capabilityProviders,
+    };
+    if (kept.isEmpty) {
+      final legacyId = capabilityProviders[capability];
+      final legacy = legacyId == null ? null : providerById(legacyId);
+      // ⚠️ 判据必须与 `explicitCandidateIdsFor` 的**回落判据同源**（`_legacyAffects`），
+      // 否则"点自动"清不掉界面上真正在生效的那个旧值（P-22 就是这种不同源造成的）。
+      if (legacy != null && _legacyAffects(legacy, capability, platform)) {
+        nextCapabilityProviders.remove(capability);
+      }
+    }
+    return OnlineMusicSettings(
+      providers: providers,
+      defaultProviderId: defaultProviderId,
+      capabilityProviders: Map.unmodifiable(nextCapabilityProviders),
+      routing: Map.unmodifiable(next),
+      enabledPlatforms: enabledPlatforms,
     );
   }
 
@@ -533,10 +1153,15 @@ final class OnlineMusicSettings {
       providers: providers,
       defaultProviderId: providerId,
       capabilityProviders: capabilityProviders,
+      routing: routing,
+      enabledPlatforms: enabledPlatforms,
     );
   }
 
   /// 写回 `app_preference.json` 的结构；键名与 [OnlineMusicSettings.fromJson] 一致。
+  ///
+  /// `routing` 为空时不写该键 —— 默认配置与旧配置的落盘内容保持不变（D13:A：不迁移）。
+  /// `enabledPlatforms` 同理：**全部平台都启用**（= 空集）时不写该键。
   Map<String, dynamic> toJson() => {
     'defaultProvider': defaultProviderId,
     'providers': [for (final provider in providers) provider.toJson()],
@@ -544,6 +1169,19 @@ final class OnlineMusicSettings {
       for (final entry in capabilityProviders.entries)
         entry.key.name: entry.value,
     },
+    if (routing.isNotEmpty)
+      'routing': {
+        for (final platform in routing.entries)
+          platform.key.name: {
+            for (final entry in platform.value.entries)
+              entry.key.name: entry.value,
+          },
+      },
+    if (enabledPlatforms.isNotEmpty)
+      'enabledPlatforms': [
+        for (final platform in builtinMusicPlatforms)
+          if (enabledPlatforms.contains(platform)) platform.name,
+      ],
   };
 
   @override
@@ -551,23 +1189,48 @@ final class OnlineMusicSettings {
       other is OnlineMusicSettings &&
       other.defaultProviderId == defaultProviderId &&
       _sameProviders(other.providers, providers) &&
-      _sameCapabilityProviders(other.capabilityProviders, capabilityProviders);
+      _sameCapabilityProviders(
+        other.capabilityProviders,
+        capabilityProviders,
+      ) &&
+      _sameRouting(other.routing, routing) &&
+      _samePlatformSet(other.enabledPlatforms, enabledPlatforms);
 
   @override
   int get hashCode => Object.hash(
     defaultProviderId,
     Object.hashAll(providers),
-    Object.hashAllUnordered(capabilityProviders.entries.map(
-      (entry) => Object.hash(entry.key, entry.value),
-    )),
+    Object.hashAllUnordered(
+      capabilityProviders.entries.map(
+        (entry) => Object.hash(entry.key, entry.value),
+      ),
+    ),
+    Object.hashAll(
+      routing.entries.map(
+        (platform) => Object.hash(
+          platform.key,
+          Object.hashAll(
+            platform.value.entries.map(
+              (entry) => Object.hash(entry.key, Object.hashAll(entry.value)),
+            ),
+          ),
+        ),
+      ),
+    ),
+    Object.hashAllUnordered(enabledPlatforms),
   );
 
   @override
   String toString() =>
       'OnlineMusicSettings(${providers.length} providers, '
-      'default=$defaultProviderId, capabilities=${capabilityProviders.length})';
+      'default=$defaultProviderId, capabilities=${capabilityProviders.length}, '
+      'routing=${routing.length} platforms, '
+      'disabledPlatforms=${builtinMusicPlatforms.length - enabledPlatforms.length})';
 
   /// 解析 `onlineMusic` 配置；任何缺失、非法或未注册的内容逐项回落默认。
+  ///
+  /// D13:A：**不做一次性迁移** —— 旧 `capabilities{cap→providerId}` 与新的 `routing`
+  /// 各按各自语义读入，不互相改写、不回写用户文件。
   factory OnlineMusicSettings.fromJson(Object? value) {
     if (value is! Map) return defaults;
     final providers = _parseProviders(value['providers']);
@@ -575,14 +1238,83 @@ final class OnlineMusicSettings {
     final requestedDefault = _nonEmptyString(value['defaultProvider']);
     return OnlineMusicSettings(
       providers: providers,
-      defaultProviderId: (requestedDefault != null && ids.contains(requestedDefault))
+      defaultProviderId:
+          (requestedDefault != null && ids.contains(requestedDefault))
           ? requestedDefault
           : providers.first.id,
       capabilityProviders: _parseCapabilityProviders(
         value['capabilities'],
         ids,
       ),
+      routing: _parseRouting(value['routing'], ids),
+      enabledPlatforms: _parseEnabledPlatforms(value['enabledPlatforms']),
     );
+  }
+
+  /// 解析 `enabledPlatforms`：无法识别的名字直接丢弃；解析结果覆盖全部平台时归一化为
+  /// 空集（= 全部启用，与 [toJson] 的"全启用不写键"对称）。
+  static Set<MusicPlatform> _parseEnabledPlatforms(Object? value) {
+    if (value is! List) return const {};
+    final platforms = <MusicPlatform>[];
+    for (final raw in value) {
+      final platform = _matchPlatform(raw);
+      if (platform != null) platforms.add(platform);
+    }
+    return _normalizeEnabledPlatforms(platforms);
+  }
+
+  /// 解析 `routing{platform → capability → [providerId]}`。
+  ///
+  /// 逐项容错：平台名 / 能力名无法识别就跳过该项；未注册的 providerId 直接丢弃
+  /// （不是回落到默认 Provider —— D14）。整体为空时返回空表。
+  static Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>>
+  _parseRouting(Object? value, Set<String> ids) {
+    if (value is! Map) return const {};
+    final result = <MusicPlatform, Map<OnlineMusicCapability, List<String>>>{};
+    for (final platformEntry in value.entries) {
+      final platform = _matchPlatform(platformEntry.key);
+      if (platform == null) continue;
+      final rawCapabilities = platformEntry.value;
+      if (rawCapabilities is! Map) continue;
+      final capabilities = <OnlineMusicCapability, List<String>>{};
+      for (final capabilityEntry in rawCapabilities.entries) {
+        final capability = _matchCapability(capabilityEntry.key);
+        if (capability == null) continue;
+        final rawIds = capabilityEntry.value;
+        if (rawIds is! List) continue;
+        final kept = <String>[];
+        for (final raw in rawIds) {
+          final id = _nonEmptyString(raw);
+          if (id == null || !ids.contains(id) || kept.contains(id)) continue;
+          kept.add(id);
+        }
+        if (kept.isNotEmpty) capabilities[capability] = List.unmodifiable(kept);
+      }
+      if (capabilities.isNotEmpty) {
+        result[platform] = Map.unmodifiable(capabilities);
+      }
+    }
+    return Map.unmodifiable(result);
+  }
+
+  static MusicPlatform? _matchPlatform(Object? value) {
+    final name = _nonEmptyString(value);
+    if (name == null) return null;
+    // ⚠️ 这里**不能**用 `builtinMusicPlatforms`：内容来源/身份解析必须接受 `custom`
+    //（P-39 P0 裁定：自定义平台身份 = `custom` + 稳定 ID）。界面枚举才用内置列表。
+    for (final platform in MusicPlatform.values) {
+      if (platform.name == name) return platform;
+    }
+    return null;
+  }
+
+  static OnlineMusicCapability? _matchCapability(Object? value) {
+    final name = _nonEmptyString(value);
+    if (name == null) return null;
+    for (final capability in OnlineMusicCapability.values) {
+      if (capability.name == name) return capability;
+    }
+    return null;
   }
 
   static List<OnlineMusicProviderDefinition> _parseProviders(Object? value) {
@@ -614,7 +1346,6 @@ final class OnlineMusicSettings {
     final parsedCapabilities = hasCapabilities
         ? _parseCapabilities(value['capabilities'])
         : null;
-
     final auth = value['auth'];
     final authMap = auth is Map ? auth : const <Object?, Object?>{};
     // 只识别 `none` 与 `apiKey`；缺失或无法识别的 kind 一律按默认的 `apiKey`
@@ -634,13 +1365,31 @@ final class OnlineMusicSettings {
         _nonEmptyString(authMap['parameter']) ??
         defaultOnlineMusicCredentialParameter;
 
+    // F4-S5（P-39）：平台相关字段一起解析 —— "不是内置平台"时**绝不静默回落 netease**，
+    // 而是保留原始标识 + 给出解析期问题（合成层据此 fail-closed）。
+    final platformFields = _parsePlatformFields(
+      value['contentPlatform'],
+      value['platformId'],
+    );
+
     return OnlineMusicProviderDefinition(
       id: id,
       protocol: protocol,
-      contentPlatform: _parseContentPlatform(value['contentPlatform']),
+      contentPlatform: platformFields.contentPlatform,
+      platformId: platformFields.platformId,
+      platformName: _nonEmptyString(value['platformName']),
+      platformConfigIssue: platformFields.issue,
       displayName: _nonEmptyString(value['displayName']) ?? '',
-      capabilities: parsedCapabilities,
-      baseUrl: normalizeOnlineMusicBaseUrl(value['baseUrl']),
+      // F4-S4：档位声明（可缺省）——缺省即空表 ⇒ 与修复前完全一致。
+      qualityTiers: _parseQualityTiers(value['qualityTiers']),
+      // P-32：绑定与"解析期损坏项"分开带上（后者不落盘、不参与相等性）。
+      capabilityConfigIssues:
+          parsedCapabilities?.issues ??
+          const <OnlineMusicCapabilityConfigIssue>[],
+      capabilities: parsedCapabilities?.bindings,
+      // 只保存"显式提供"的原值：缺失（含非字符串 / 空串）一律留空 ⇒ 走默认地址。
+      // **绝不替换非法值**（P-18），是否可用交给 baseUrlIssue 判定。
+      baseUrl: explicitOnlineMusicBaseUrl(value['baseUrl']) ?? '',
       connectTimeout: normalizeOnlineMusicTimeout(
         value['connectTimeoutMs'],
         defaultValue: defaultOnlineMusicConnectTimeout,
@@ -712,10 +1461,29 @@ final class OnlineMusicSettings {
   ///
   /// 单个能力解析失败只影响该能力（标记为不支持），不影响同一条目的其它能力；
   /// 未写出的能力同样视为「不支持」，不回落 `protocol`。
-  static Map<OnlineMusicCapability, OnlineMusicCapabilityBinding>
+  ///
+  /// P-32：返回值里多带一份 **issues** —— "坏了"必须能被报出来，
+  /// 否则它和"从未配置"在界面上完全同形。
+  static ({
+    Map<OnlineMusicCapability, OnlineMusicCapabilityBinding> bindings,
+    List<OnlineMusicCapabilityConfigIssue> issues,
+  })
   _parseCapabilities(Object? value) {
-    if (value is! Map) return const {};
+    if (value is! Map) {
+      // 第二处静默降级（P-32）：整块 `capabilities` 不是对象时，旧实现直接返回空表
+      // ⇒ 该条目变成"全部能力都不支持"，同样不报错。
+      return (
+        bindings:
+            const <OnlineMusicCapability, OnlineMusicCapabilityBinding>{},
+        issues: const [
+          OnlineMusicCapabilityConfigIssue(
+            reason: '能力配置不是一个对象 ⇒ 该条目的全部能力都按「不支持」处理，请重新配置',
+          ),
+        ],
+      );
+    }
     final result = <OnlineMusicCapability, OnlineMusicCapabilityBinding>{};
+    final issues = <OnlineMusicCapabilityConfigIssue>[];
     for (final capability in OnlineMusicCapability.values) {
       final raw = value[capability.name];
       if (raw == null) continue;
@@ -723,20 +1491,23 @@ final class OnlineMusicSettings {
         result[capability] = OnlineMusicCapabilityBinding.fromJson(raw);
       } on FormatException {
         result[capability] = const OnlineMusicUnsupportedCapabilityBinding();
+        // **不回显异常文案**：`FormatException` 里可能带着配置里的原始值
+        // （例如「能力绑定类型无效：<原值>」），而这些文案会进界面 / 日志。
+        // 只说清"哪一项坏了 + 怎么修"，需要看原值时去 JSON 视图。
+        issues.add(
+          OnlineMusicCapabilityConfigIssue(
+            capability: capability,
+            reason: '能力配置已损坏（无法解析）⇒ 该能力按「不支持」处理，请重新配置',
+          ),
+        );
       }
     }
-    return Map.unmodifiable(result);
+    return (
+      bindings: Map.unmodifiable(result),
+      issues: List.unmodifiable(issues),
+    );
   }
 
-  /// D1：内容来源只支持既有闭集；无法识别的值回落 netease（默认内容来源）。
-  static MusicPlatform _parseContentPlatform(Object? value) {
-    final name = _nonEmptyString(value);
-    if (name == null) return MusicPlatform.netease;
-    for (final platform in MusicPlatform.values) {
-      if (platform.name == name) return platform;
-    }
-    return MusicPlatform.netease;
-  }
 }
 
 bool _sameProviders(
@@ -760,3 +1531,144 @@ bool _sameCapabilityProviders(
   }
   return true;
 }
+
+bool _samePlatformSet(Set<MusicPlatform> a, Set<MusicPlatform> b) =>
+    a.length == b.length && a.containsAll(b);
+
+bool _sameRouting(
+  Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> a,
+  Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> b,
+) {
+  if (a.length != b.length) return false;
+  for (final platform in a.entries) {
+    final other = b[platform.key];
+    if (other == null || other.length != platform.value.length) return false;
+    for (final entry in platform.value.entries) {
+      final otherIds = other[entry.key];
+      if (otherIds == null || otherIds.length != entry.value.length) {
+        return false;
+      }
+      for (var index = 0; index < entry.value.length; index++) {
+        if (otherIds[index] != entry.value[index]) return false;
+      }
+    }
+  }
+  return true;
+}
+
+/// F4-S4（P-13）：解析 `qualityTiers`。
+///
+/// - **缺省**（键不存在）⇒ 空表 ⇒ 与修复前完全一致（内部偏好原样透传）；
+/// - 单条不合法（不是对象 / 缺键 / 空串）⇒ 抛 [FormatException]：
+///   与其它字段同一口径 —— 坏配置**明确报错**，绝不静默丢一半档位表。
+List<PlatformQualityTier> _parseQualityTiers(Object? value) {
+  if (value == null) return const [];
+  if (value is! List) {
+    throw const FormatException('qualityTiers 必须是数组');
+  }
+  return List.unmodifiable([
+    for (final entry in value)
+      PlatformQualityTier(
+        internalLevel: _requireQualityTierText(entry, 'internal'),
+        displayLabel: _requireQualityTierText(entry, 'label'),
+        requestValue: _requireQualityTierText(entry, 'value'),
+      ),
+  ]);
+}
+
+String _requireQualityTierText(Object? entry, String key) {
+  if (entry is! Map) {
+    throw const FormatException('qualityTiers 的每一项都必须是对象');
+  }
+  final text = entry[key];
+  if (text is! String || text.trim().isEmpty) {
+    throw FormatException('qualityTiers 的 $key 必须是非空字符串');
+  }
+  return text.trim();
+}
+
+/// F4-S5（P-39 / D5:A）：解析平台相关字段 —— **未知平台绝不静默回落 netease**。
+///
+/// 三种情形：
+/// 1. `contentPlatform` **缺失**（旧配置）⇒ 与修复前完全一致：`netease` + 无问题；
+/// 2. `contentPlatform` 是**内置平台名** ⇒ 原样解析，并带上显式声明的 `platformId`；
+/// 3. 其它（未知名字）⇒ **保留原始串**（作为 `platformId`，除非用户显式给了 `platformId`）
+///    并给出 [platformConfigIssue] —— 由合成层建成"不可用但可见"的条目
+///    （与 `baseUrlIssue` 同一套 fail-closed 口径：不发请求、不参与路由，但**不隐藏**）。
+({MusicPlatform contentPlatform, String? platformId, String? issue})
+_parsePlatformFields(Object? rawContentPlatform, Object? rawPlatformId) {
+  final declaredId = _nonEmptyString(rawPlatformId);
+  final name = _nonEmptyString(rawContentPlatform);
+  if (name == null) {
+    return (
+      contentPlatform: MusicPlatform.netease,
+      platformId: declaredId,
+      issue: null,
+    );
+  }
+  for (final platform in builtinMusicPlatforms) {
+    if (platform.name == name) {
+      return (
+        contentPlatform: platform,
+        platformId: declaredId,
+        issue: null,
+      );
+    }
+  }
+  // P-39 / P0 规则⑩：写成 `custom` 却没有稳定 ID ⇒ **明确报错**（身份无效，不得路由）。
+  if (name == MusicPlatform.custom.name) {
+    return (
+      contentPlatform: MusicPlatform.custom,
+      platformId: declaredId,
+      issue: declaredId == null
+          ? '内容来源是自定义平台，但没有提供稳定的 platformId：'
+                '该条目不会被路由，也不会发出任何请求。'
+          : null,
+    );
+  }
+  // P-39 / P0 规则④：认不出的内容来源**绝不回落网易云**。
+  // 它必须被**原样保留**成自定义平台身份（`custom` + 原始值）；条目若显式声明了
+  // `platformId`，以显式声明为准。同时**明确报出问题**（不隐藏、不静默改写）。
+  return (
+    contentPlatform: MusicPlatform.custom,
+    platformId: declaredId ?? name,
+    issue:
+        '内容来源「$name」不是内置平台'
+        '（${builtinMusicPlatforms.map((platform) => platform.name).join(' / ')}）：'
+        '已按**自定义平台**原样保留其标识（身份 = custom + ${declaredId ?? name}），'
+        '不会回落网易云。若这不是你想要的平台，请改正 contentPlatform 或 platformId'
+        '（在成功配置前，该条目不参与路由，也不会发出任何请求）',
+  );
+}
+
+/// F5-P-39（P3）：按**平台身份**解析展示名 —— 界面收口的单一事实源。
+///
+/// 与 [platformDisplayLabel] 的分工：后者只看身份（无法知道条目声明的名字），
+/// 本函数会先在**已保存配置**里找同身份的条目，用它的 `platformName`（F4-S5 语义：声明名优先）。
+///
+/// 规则（P0）：找不到同名条目、或身份无效 ⇒ 交回 [platformDisplayLabel] 的兜底
+/// （「自定义平台」/「未知平台」），**绝不回落网易云**、也不用名称/URL 反推身份。
+String platformLabelForIdentity(
+  OnlineMusicSettings settings,
+  PlatformIdentity identity,
+) {
+  if (identity.isCustom) {
+    for (final definition in settings.providers) {
+      if (definition.identity == identity) return definition.displayPlatformName;
+    }
+  }
+  return platformDisplayLabel(identity);
+}
+
+/// F5-P-39（P3）：**应用层可直接调用**的来源标签（签名里只有 `PlatformTrackRef`，
+/// 不暴露 provider 层类型 ⇒ 满足 `lib/page`/`lib/component` 的依赖边界守卫）。
+///
+/// 名字来源 = 当前已保存配置里同身份条目的 `platformName`；找不到/身份无效 ⇒ 兜底文案，
+/// **绝不回落网易云**。
+String platformLabelForRef(PlatformTrackRef ref) =>
+    platformLabelForIdentity(AppPreference.instance.onlineMusicSettings, ref.identity);
+
+/// F5-P-39（P3）：**应用层可直接调用**的身份版展示名（签名只有 `PlatformIdentity`，
+/// 不含 provider 类型 ⇒ 满足依赖边界守卫）。
+String platformLabelForIdentityOnly(PlatformIdentity identity) =>
+    platformLabelForIdentity(AppPreference.instance.onlineMusicSettings, identity);

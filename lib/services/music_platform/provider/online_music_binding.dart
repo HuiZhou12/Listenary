@@ -16,6 +16,26 @@ const builtinOnlineMusicChkszId = 'chksz';
 /// 已知的内置实现标识；其它值一律视为无效配置（显式拒绝，不静默降级）。
 const supportedBuiltinOnlineMusicIds = {builtinOnlineMusicChkszId};
 
+/// 内置实现（ChkSz）**真正实现**的能力集合。
+///
+/// 这是"旧版条目（没有 `capabilities` 键）应当声明什么能力"的**唯一事实源**。
+///
+/// **为什么需要它（P-19）**：旧实现让旧条目对**任意**能力都返回内置实现，
+/// 于是设置页的平台卡声称该条目支持 8 个能力，而运行时只服务这 4 个
+/// （`chksz_online_music_provider.dart` 的 `_defaultPlatforms`）——
+/// 用户在平台卡里选到那 4 项之外时，拿到的是一条**静默的 `unavailable`**：
+/// 界面说"能"，运行时说"不能"，而没有任何地方解释这个矛盾。
+///
+/// 它必须与运行时一致：`test/services/music_platform/online_music_default_compat_test.dart`
+/// 里有一条**跨层一致性断言**盯着这件事（声明侧 == 运行时侧），
+/// 这里少写一项、或运行时多写一项，都会让该测试变红。
+const builtinOnlineMusicCapabilities = {
+  OnlineMusicCapability.search,
+  OnlineMusicCapability.playlist,
+  OnlineMusicCapability.lyric,
+  OnlineMusicCapability.stream,
+};
+
 sealed class OnlineMusicCapabilityBinding {
   const OnlineMusicCapabilityBinding();
 

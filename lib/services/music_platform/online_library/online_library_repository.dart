@@ -109,7 +109,7 @@ final class OnlineLibraryRepository {
     final rows = _db.select(
       'SELECT platform, track_id, title, album, cover_uri, duration_ms, '
       'availability FROM online_tracks WHERE platform = ? AND track_id = ?',
-      [_platformValue(ref.platform), _requiredTrackId(ref.trackId)],
+      [_platformIdentityValue(ref.identity), _requiredTrackId(ref.trackId)],
     );
     if (rows.isEmpty) return null;
     return _readTrack(rows.single);
@@ -127,7 +127,7 @@ final class OnlineLibraryRepository {
     final timestamp = (playedAt ?? DateTime.now()).toUtc();
     _transaction(() {
       _upsertTrack(track, lastQuality: lastQuality, updatedAt: timestamp);
-      final platform = _platformValue(track.ref.platform);
+      final platform = _platformIdentityValue(track.ref.identity);
       final trackId = _requiredTrackId(track.ref.trackId);
       _db.execute(
         'INSERT INTO online_play_history('
@@ -145,7 +145,7 @@ final class OnlineLibraryRepository {
     final changed = _db.select(
       'UPDATE online_play_history SET play_count = play_count + 1 '
       'WHERE platform = ? AND track_id = ? RETURNING play_count',
-      [_platformValue(ref.platform), _requiredTrackId(ref.trackId)],
+      [_platformIdentityValue(ref.identity), _requiredTrackId(ref.trackId)],
     );
     return changed.isNotEmpty;
   }
@@ -306,6 +306,21 @@ final class OnlineLibraryRepository {
         );
       }
 
+      // F5-S3（P-62）：先记下**既有条目**的加入时间。
+      //
+      // 刷新只应"更新清单"，不应把老歌的「加入时间」重置成刷新时刻 ——
+      // 那既破坏"最近加入"语义，也会打乱用户可见顺序
+      //（`OnlinePlaylistSnapshot` 的加入时间还参与排序比较）。
+      // 键 = "平台\u0000曲目 id"：与数据库主键 `(playlist_id, platform, track_id)` 的后两段一致，
+      // 且**不经过** `_parsePlatform`（避免引入平台解析的额外前提）。
+      final previousAddedAt = <String, String>{
+        for (final row in _db.select(
+          'SELECT platform, track_id, added_at FROM online_playlist_items '
+          'WHERE playlist_id = ?',
+          [localId],
+        ))
+          '${row['platform']}\u0000${row['track_id']}': row['added_at'] as String,
+      };
       _db.execute('DELETE FROM online_playlist_items WHERE playlist_id = ?', [
         localId,
       ]);
@@ -319,12 +334,15 @@ final class OnlineLibraryRepository {
         for (var index = 0; index < playlist.tracks.length; index++) {
           final track = playlist.tracks[index];
           _upsertTrack(track, lastQuality: null, updatedAt: timestamp);
+          final trackId = _requiredTrackId(track.ref.trackId);
           statement.execute([
             localId,
             platform,
-            _requiredTrackId(track.ref.trackId),
+            trackId,
             index,
-            addedAt,
+            // 同一歌单 + 同一平台 + 同一曲目 id ⇒ 仍是那首歌 ⇒ **保留原加入时间**；
+            // 只有本次刷新新出现的条目才写刷新时刻。
+            previousAddedAt['$platform\u0000$trackId'] ?? addedAt,
           ]);
         }
       } finally {
@@ -512,7 +530,7 @@ final class OnlineLibraryRepository {
       'AND i.platform = ? AND i.track_id = ?',
       [
         personalFavoritesPlaylistName,
-        _platformValue(ref.platform),
+        _platformIdentityValue(ref.identity),
         _requiredTrackId(ref.trackId),
       ],
     );
@@ -543,7 +561,7 @@ final class OnlineLibraryRepository {
         [localId],
       );
       if (playlist.isEmpty) return;
-      final platform = _platformValue(track.ref.platform);
+      final platform = _platformIdentityValue(track.ref.identity);
       final trackId = _requiredTrackId(track.ref.trackId);
       final already = _db.select(
         'SELECT 1 FROM online_playlist_items '
@@ -589,13 +607,13 @@ final class OnlineLibraryRepository {
       final item = _db.select(
         'SELECT 1 FROM online_playlist_items '
         'WHERE playlist_id = ? AND platform = ? AND track_id = ?',
-        [localId, _platformValue(ref.platform), _requiredTrackId(ref.trackId)],
+        [localId, _platformIdentityValue(ref.identity), _requiredTrackId(ref.trackId)],
       );
       if (item.isEmpty) return;
       _db.execute(
         'DELETE FROM online_playlist_items '
         'WHERE playlist_id = ? AND platform = ? AND track_id = ?',
-        [localId, _platformValue(ref.platform), _requiredTrackId(ref.trackId)],
+        [localId, _platformIdentityValue(ref.identity), _requiredTrackId(ref.trackId)],
       );
       _db.execute('UPDATE online_playlists SET updated_at = ? WHERE id = ?', [
         DateTime.now().toUtc().toIso8601String(),
@@ -622,7 +640,7 @@ final class OnlineLibraryRepository {
       final target = ordered
           .map(
             (ref) =>
-                '${_platformValue(ref.platform)}:${_requiredTrackId(ref.trackId)}',
+                '${_platformIdentityValue(ref.identity)}:${_requiredTrackId(ref.trackId)}',
           )
           .toSet();
       if (current.length != ordered.length || !current.containsAll(target)) {
@@ -643,7 +661,7 @@ final class OnlineLibraryRepository {
           statement.execute([
             index,
             localId,
-            _platformValue(ordered[index].platform),
+            _platformIdentityValue(ordered[index].identity),
             _requiredTrackId(ordered[index].trackId),
           ]);
         }
@@ -694,7 +712,7 @@ final class OnlineLibraryRepository {
     required String? lastQuality,
     required DateTime updatedAt,
   }) {
-    final platform = _platformValue(track.ref.platform);
+    final platform = _platformIdentityValue(track.ref.identity);
     final trackId = _requiredTrackId(track.ref.trackId);
     final title = track.title.trim();
     if (title.isEmpty) throw ArgumentError.value(track.title, 'track.title');
@@ -759,7 +777,11 @@ final class OnlineLibraryRepository {
   }
 
   OnlinePlaylistSnapshot _readPlaylistSnapshot(Row row) {
-    final platform = _parsePlatform(row['platform'] as String);
+    // F5-P-39（P4）：读回平台时**必须**用身份解析（`_parsePlatform` 只认内置名，
+// 遇到自定义平台的稳定 ID 会抛 FormatException ⇒ 数据可读不回来）。
+    final platform =
+        _parsePlatformIdentity(row['platform'] as String)?.platform ??
+        MusicPlatform.custom;
     final remoteId = row['remote_playlist_id'] as String;
     final cover = row['cover_uri'] as String?;
     final refreshed = row['last_refreshed_at'] as String?;
@@ -780,7 +802,11 @@ final class OnlineLibraryRepository {
   }
 
   MusicTrack _readTrack(Row row, {List<String>? artists}) {
-    final platform = _parsePlatform(row['platform'] as String);
+    // F5-P-39（P4）：读回平台时**必须**用身份解析（`_parsePlatform` 只认内置名，
+// 遇到自定义平台的稳定 ID 会抛 FormatException ⇒ 数据可读不回来）。
+    final platform =
+        _parsePlatformIdentity(row['platform'] as String)?.platform ??
+        MusicPlatform.custom;
     final trackId = row['track_id'] as String;
     final resolvedArtists =
         artists ??
@@ -794,7 +820,11 @@ final class OnlineLibraryRepository {
             .toList(growable: false);
     final rawCoverUri = row['cover_uri'] as String?;
     return MusicTrack(
-      ref: PlatformTrackRef(platform: platform, trackId: trackId),
+      ref: PlatformTrackRef(
+        platform: platform,
+        platformId: _parsePlatformIdentity(row['platform'] as String)?.platformId,
+        trackId: trackId,
+      ),
       title: row['title'] as String,
       artists: resolvedArtists,
       album: row['album'] as String,
@@ -919,12 +949,48 @@ final class OnlineLibraryRepository {
   }
 }
 
-String _platformValue(MusicPlatform platform) => platform.name;
+/// F5-P-39（P4 数据层接缝）：**平台身份 → 落库值**。
+///
+/// - 内置平台 ⇒ 枚举名（与旧数据完全一致 ⇒ **零迁移**）；
+/// - 自定义平台 ⇒ **稳定 ID**（复用既有 `platform TEXT` 列 ⇒ 无需迁移）。
+String _platformIdentityValue(PlatformIdentity identity) {
+  // P0 规则⑩：身份缺失（自定义平台没有稳定 ID）⇒ **明确报错**，绝不写一个空/伪造的平台值
+  // （否则会写出"读不回"的行，等于把损坏写进库）。
+  if (!identity.isValid) {
+    throw ArgumentError.value(
+      identity,
+      'identity',
+      '平台身份无效：自定义平台必须有稳定的 platformId（否则不应落库）',
+    );
+  }
+  return identity.storageValue;
+}
 
-MusicPlatform _parsePlatform(String value) => MusicPlatform.values.firstWhere(
-  (platform) => platform.name == value,
-  orElse: () => throw FormatException('Unknown music platform: $value'),
-);
+/// F5-P-39（P0 规则④）：**落库值 → 平台身份**。
+///
+/// - 已知内置平台名 ⇒ 该平台；
+/// - 其他非空值 ⇒ `custom` + **原样保留**的标识（不归一、不推断、**绝不回落网易云**）；
+/// - `custom` 一词本身 / 空值 ⇒ `null`（没有稳定 ID ⇒ 调用方 fail-closed：
+///   数据可保留与展示，但**不得执行不确定的播放路由**）。
+PlatformIdentity? _parsePlatformIdentity(String value) =>
+    PlatformIdentity.tryParse(value);
+
+String _platformValue(MusicPlatform platform) =>
+    _platformIdentityValue(PlatformIdentity.builtin(platform));
+
+/// ⚠️ 这是**兼容层**：只接受内置平台（认不出仍旧抛 `FormatException`，行为与改动前一致）。
+///
+/// 它刻意**不**把自定义平台值解析出来 —— 因为本类目前仍以 `MusicPlatform` 收发，
+/// 拿不出稳定 ID 就无法构造有效身份。P4 正式改造时，凡是要用身份做**路由/落库判断**的地方
+/// 都应改用 [_parsePlatformIdentity]（否则字面量 `"custom"` 会被误当成 `MusicPlatform.custom`，
+/// 那是**没有稳定 ID 的无效身份**）。
+MusicPlatform _parsePlatform(String value) {
+  final identity = _parsePlatformIdentity(value);
+  if (identity == null || identity.isCustom) {
+    throw FormatException('Unknown music platform: $value');
+  }
+  return identity.platform;
+}
 
 TrackAvailability _parseAvailability(String value) =>
     TrackAvailability.values.firstWhere(
@@ -940,7 +1006,12 @@ String _requiredTrackId(String value) {
 
 String _requiredRemotePlaylistId(String value) {
   final normalized = value.trim();
-  if (!RegExp(r'^[1-9][0-9]*$').hasMatch(normalized)) {
+  // **只要求非空**：远端 id 的形状由 Provider 决定（网易云是纯数字，
+  // 别的服务可以是字母数字混排）。这里原先只接受 `^[1-9][0-9]*$`，
+  // 于是"用字母数字 id 的 Provider"**能取回歌单却存不进去** ——
+  // 而且它和上面那层（`OnlinePlaylistController`）的校验是**两处独立的假设**，
+  // 只改一处会漏（本项目的这条缺陷就是这么漏过去的）。
+  if (normalized.isEmpty) {
     throw ArgumentError.value(value, 'remotePlaylistId');
   }
   return normalized;

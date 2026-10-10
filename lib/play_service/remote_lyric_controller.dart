@@ -10,7 +10,23 @@ import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_request.dart';
 import 'package:pure_music/services/music_platform/online_music_service.dart';
 
-enum RemoteLyricStatus { inactive, loading, ready, empty, failed }
+enum RemoteLyricStatus {
+  inactive,
+  loading,
+  ready,
+
+  /// 这首歌**没有**歌词（平台支持歌词，但这份曲目没有）。
+  empty,
+
+  /// 该平台**不支持**歌词（P-63：与 [empty] 是**两种不同的事实**）。
+  ///
+  /// 以前这里复用了 [empty]，于是"平台没有歌词能力"与"这首歌没歌词"在界面上
+  /// **长得一模一样**（都渲染成「暂无歌词」），而播放侧对同一情形给的是明确的
+  /// `unavailable` —— 同一失败两种结论（RC-C）。
+  platformUnsupported,
+
+  failed,
+}
 
 @immutable
 final class RemoteLyricSnapshot {
@@ -30,6 +46,10 @@ final class RemoteLyricSnapshot {
 
   const RemoteLyricSnapshot.empty(PlatformTrackRef ref)
     : this._(status: RemoteLyricStatus.empty, ref: ref);
+
+  /// 该平台不支持歌词（P-63）。
+  const RemoteLyricSnapshot.platformUnsupported(PlatformTrackRef ref)
+    : this._(status: RemoteLyricStatus.platformUnsupported, ref: ref);
 
   const RemoteLyricSnapshot.failed(PlatformTrackRef ref)
     : this._(status: RemoteLyricStatus.failed, ref: ref);
@@ -120,7 +140,10 @@ final class RemoteLyricController extends ValueNotifier<RemoteLyricSnapshot> {
     final revision = ++_requestRevision;
     value = RemoteLyricSnapshot.loading(ref);
     if (!_service.capabilities.lyricPlatforms.contains(ref.platform)) {
-      value = RemoteLyricSnapshot.empty(ref);
+      // P-63：「**这个平台**没有歌词能力」不是「**这首歌**没有歌词」。
+      // 前者用户换不了歌也没用（要换平台/加一个能出歌词的 Provider），
+      // 后者换一首就好 —— 两者必须给出不同状态与文案。
+      value = RemoteLyricSnapshot.platformUnsupported(ref);
       return;
     }
 
@@ -227,4 +250,23 @@ String remoteLyricLineContent(LyricLine line) => switch (line) {
   SyncLyricLine value => value.content,
   UnsyncLyricLine value => value.content,
   _ => '',
+};
+
+/// 无行可显示时的占位文案（**唯一**来源，视图只做委托）。
+///
+/// 三问必须分开答（P-63 把最后一问补上）：
+/// - 「正在加载」不是「没有歌词」；
+/// - 「加载失败」也不是「没有歌词」；
+/// - 「**这首歌**没有歌词」与「**这个平台**不支持歌词」是两件不同的事 ——
+///   前者换一首歌就好，后者换歌没用（得换平台，或加一个能出歌词的 Provider）。
+///
+/// 放在这里而不是视图里：这样它是**可直接单测**的纯函数，而视图只剩委托；
+/// 枚举的 `switch` 又是穷尽的 ⇒ 新增状态一定会被编译期拦下。
+String remoteLyricPlaceholderFor(RemoteLyricStatus status) => switch (status) {
+  RemoteLyricStatus.loading => '歌词加载中…',
+  RemoteLyricStatus.failed => '歌词加载失败',
+  RemoteLyricStatus.platformUnsupported => '该平台不支持歌词（当前 Provider 没有歌词能力）',
+  RemoteLyricStatus.ready ||
+  RemoteLyricStatus.empty ||
+  RemoteLyricStatus.inactive => '暂无歌词',
 };

@@ -16,6 +16,9 @@ import 'package:pure_music/page/folder_detail_page.dart';
 import 'package:pure_music/page/folders_page.dart';
 import 'package:pure_music/page/now_playing_page/page.dart';
 import 'package:pure_music/page/online_music_page.dart';
+import 'package:pure_music/page/home_page.dart';
+import 'package:pure_music/page/explore_page.dart';
+import 'package:pure_music/page/chart_list_page.dart';
 import 'package:pure_music/page/playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
 import 'package:pure_music/page/online_playlists_page.dart';
@@ -182,15 +185,26 @@ class _EntryState extends State<Entry>
         };
         showTextOnSnackBar(message, variant: ToastVariant.error);
       },
-      onQualityDowngraded: (quality) {
-        final label = MusicQuality.values
-            .firstWhere(
-              (entry) => entry.level == quality,
-              orElse: () => MusicQuality.standard,
-            )
-            .label;
+      // **方案 B**：会话层已经在**平台档位序**上判定过降权，这里拿到的就是**要展示的档位名**
+      // （平台自己的文案；平台没声明档位时是内部档位的中文文案）。
+      // 不要再拿内部枚举去反查 —— 否则 QQ 的 `flac` 会落回"标准"文案（Spec §19.7）。
+      onQualityDowngraded: (label) {
         showTextOnSnackBar('当前音源不支持所选音质，已降至$label');
       },
+      // 方案 B 的判定放在档位模块的纯函数里；play_service 不依赖 provider 层类型，
+      // 所以这里用"核心类型签名"的回调把两者接起来（entry 是组合根，允许引用契约）。
+      qualityDowngradeLabelFor:
+          ({
+            required MusicPlatform platform,
+            required String requested,
+            required String actual,
+            String? previousActual,
+          }) => resolveQualityDowngrade(
+            tiers: widget.onlineMusicService.qualityTiersFor(platform),
+            requested: requested,
+            actual: actual,
+            previousActual: previousActual,
+          )?.displayLabel,
     );
     _remotePlaybackTimeline = RemotePlaybackTimelineController(
       readPosition: _remotePlaybackBackend.readPosition,
@@ -669,9 +683,9 @@ class _EntryState extends State<Entry>
                 Provider<OnlineMusicService>.value(
                   value: widget.onlineMusicService,
                 ),
-                ChangeNotifierProvider<OnlineMusicProviderSettingsController>.value(
-                  value: widget.onlineMusicSettings,
-                ),
+                ChangeNotifierProvider<
+                  OnlineMusicProviderSettingsController
+                >.value(value: widget.onlineMusicSettings),
                 ChangeNotifierProvider<ActivePlaybackSession>.value(
                   value: _activePlaybackSessionComposition.activeSession,
                 ),
@@ -749,6 +763,33 @@ class _EntryState extends State<Entry>
               children: children,
             ),
         branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: app_paths.HOME_PAGE,
+                builder: (context, state) => const HomePage(),
+              ),
+            ],
+          ),
+          // branch 顺序**必须与侧边栏 `destinations` 一致**（导航壳按下标切分支）。
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: app_paths.EXPLORE_PAGE,
+                builder: (context, state) => const ExplorePage(),
+                routes: [
+                  // 探索页货架上的「查看全部」落地：榜单全量网格。
+                  GoRoute(
+                    path: 'charts',
+                    pageBuilder: (context, state) => SlideTransitionPage(
+                      key: state.pageKey,
+                      child: const ChartListPage(),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
           StatefulShellBranch(
             routes: [
               GoRoute(

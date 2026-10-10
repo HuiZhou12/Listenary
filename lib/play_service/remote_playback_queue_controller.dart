@@ -22,6 +22,7 @@ final class RemoteQueuePlaybackResult {
 
   final Uri? coverUri;
   final Duration? duration;
+
   /// The platform-reported level, never inferred from the request.
   final String? actualQuality;
 }
@@ -35,8 +36,20 @@ abstract interface class RemoteQueuePlaybackMetadataGateway
   });
 }
 
+/// 能查到**平台档位声明**的播放网关（D2:A / D10:A）。
+///
+/// 降级链必须按平台自己声明的档位走，而不是按内部枚举下标 —— 后者等于把网易云的
+/// 档位语义强加到别的平台（Spec §19.7 缺陷 B）。网关不实现这个接口时
+/// （既有测试替身、没有档位声明的平台），控制器保持引入档位模型之前的行为。
+abstract interface class RemoteQueuePlaybackQualityGateway
+    implements RemoteQueuePlaybackGateway {
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform);
+}
+
 final class OnlineServiceRemoteQueuePlaybackGateway
-    implements RemoteQueuePlaybackMetadataGateway {
+    implements
+        RemoteQueuePlaybackMetadataGateway,
+        RemoteQueuePlaybackQualityGateway {
   const OnlineServiceRemoteQueuePlaybackGateway({
     required OnlineMusicService service,
     required PlaybackBackend backend,
@@ -45,6 +58,10 @@ final class OnlineServiceRemoteQueuePlaybackGateway
 
   final OnlineMusicService _service;
   final PlaybackBackend _backend;
+
+  @override
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) =>
+      _service.qualityTiersFor(platform);
 
   @override
   Future<void> open(
@@ -125,6 +142,7 @@ final class RemotePlaybackQueueController {
 
     final qualities = _qualityFallbackChain(
       requestedQuality,
+      platform: item.ref.platform,
       fallbackQuality: fallbackQuality,
     );
     Object? lastError;
@@ -181,10 +199,27 @@ final class RemotePlaybackQueueController {
     }
   }
 
+  /// 降级链：从期望档一路降到下限（下限可能是上一首平台实际返回的档位）。
+  ///
+  /// 有平台档位声明时**按该平台的档位**生成（内部枚举只是我们的抽象，平台真实档位
+  /// 可能少一档、顺序不同）；没有声明时保持引入档位模型之前的行为。
   List<String> _qualityFallbackChain(
     String requestedQuality, {
+    required MusicPlatform platform,
     String? fallbackQuality,
   }) {
+    final gateway = _gateway;
+    List<PlatformQualityTier> tiers = const [];
+    if (gateway is RemoteQueuePlaybackQualityGateway) {
+      tiers = gateway.qualityTiersFor(platform);
+    }
+    final platformChain = platformQualityFallbackChain(
+      tiers: tiers,
+      requestedQuality: requestedQuality,
+      fallbackQuality: fallbackQuality,
+    );
+    if (platformChain != null) return platformChain;
+
     final requestedIndex = MusicQuality.values.indexWhere(
       (quality) => quality.level == requestedQuality,
     );

@@ -167,6 +167,64 @@ void main() {
     await _flushAsync();
     expect(controller.value.status, RemoteLyricStatus.empty);
   });
+
+  // ★ P-63：「这首歌没歌词」与「这个平台不支持歌词」必须是**两种**状态与文案。
+  // 以前后者被写成 `empty`，界面上两者都是「暂无歌词」⇒ 用户只会反复换歌，
+  // 而播放侧对同一情形给的是明确的 `unavailable`（同一失败两种结论，RC-C）。
+  test('★ P-63 平台没有歌词能力 ⇒ platformUnsupported（不是 empty），且不发请求', () async {
+    // 开场时控制器已经为队列里的第一项（netease）发过一次请求，因此这里比较**新增**请求数。
+    final before = service.requestedRefs.length;
+    const qqRef = PlatformTrackRef(platform: MusicPlatform.qq, trackId: '9');
+    queue
+      ..replace([
+        RemotePlaybackQueueItem(
+          ref: qqRef,
+          title: 'QQ track',
+          artists: const ['Artist'],
+        ),
+      ], currentIndex: 0)
+      ..select(0);
+    await _flushAsync();
+
+    expect(controller.value.status, RemoteLyricStatus.platformUnsupported);
+    expect(controller.value.ref, qqRef);
+    expect(
+      service.requestedRefs.length,
+      before,
+      reason: '平台没有歌词能力 ⇒ 闸门直接给出结论，不再发新请求',
+    );
+  });
+
+  test('★ P-63 对照：平台支持但这首歌没歌词 ⇒ 仍然是 empty', () async {
+    service.complete(firstRef, const MusicLyrics());
+    await _flushAsync();
+
+    expect(
+      controller.value.status,
+      RemoteLyricStatus.empty,
+      reason: 'P-63：两种情形不得再塌成同一个状态',
+    );
+    expect(service.requestedRefs, [firstRef]);
+  });
+
+  test('★ P-63 占位文案：四种状态四种说法，"没歌词"与"平台不支持"必须不同', () {
+    expect(remoteLyricPlaceholderFor(RemoteLyricStatus.loading), contains('加载'));
+    expect(remoteLyricPlaceholderFor(RemoteLyricStatus.failed), contains('失败'));
+
+    final empty = remoteLyricPlaceholderFor(RemoteLyricStatus.empty);
+    final unsupported = remoteLyricPlaceholderFor(
+      RemoteLyricStatus.platformUnsupported,
+    );
+    expect(empty, '暂无歌词');
+    expect(
+      unsupported,
+      isNot(empty),
+      reason: 'P-63：同一失败两种结论是这次要修的缺陷形态',
+    );
+    expect(unsupported, contains('平台不支持'));
+    // 必须给出"为什么换歌没用"的线索，而不是只说"没有歌词"。
+    expect(unsupported, contains('Provider'));
+  });
 }
 
 MusicLyrics _lyrics({String first = 'First line'}) => MusicLyrics(
@@ -184,6 +242,9 @@ Future<void> _flushAsync() async {
 final class _FakeOnlineMusicService implements OnlineMusicService {
   final Map<PlatformTrackRef, Completer<MusicLyrics>> _responses = {};
   final List<OnlineMusicCancelToken> tokens = [];
+
+  /// 实际发出过取词请求的曲目（P-63：用来证明"平台不支持"时**不去请求**）。
+  final List<PlatformTrackRef> requestedRefs = [];
 
   @override
   final capabilities = OnlineMusicCapabilities(
@@ -203,10 +264,44 @@ final class _FakeOnlineMusicService implements OnlineMusicService {
   }
 
   @override
+  Future<List<RemotePlaylistSummary>> fetchPlaylistCollection({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    String? categoryId,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => const [];
+
+  @override
+  Future<List<RemotePlaylistCategory>> fetchPlaylistCategories({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('categories');
+
+  @override
+  Future<List<RemotePlaylistSummary>> fetchChartList({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('charts');
+
+  @override
+  Future<List<MusicTrack>> fetchNewSongs({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('new songs');
+
+  @override
   Future<MusicLyrics> fetchLyrics(
     PlatformTrackRef ref, {
     required OnlineMusicCancelToken cancelToken,
   }) {
+    requestedRefs.add(ref);
     tokens.add(cancelToken);
     return _responses.putIfAbsent(ref, Completer.new).future;
   }
@@ -236,6 +331,28 @@ final class _FakeOnlineMusicService implements OnlineMusicService {
 
   @override
   String defaultQualityFor(MusicPlatform platform) => 'standard';
+
+  @override
+  Future<AggregatedSearchResult> searchAggregated({
+    required Iterable<MusicPlatform> platforms,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => AggregatedSearchResult(perPlatform: const {}, failures: const {});
+
+  @override
+  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) => const [];
+
+  @override
+  PlatformQualitySelection selectQualityFor(
+    MusicPlatform platform, {
+    required String preference,
+  }) => PlatformQualitySelection(
+    requestValue: preference,
+    displayLabel: preference,
+    internalLevel: preference,
+  );
 
   @override
   void dispose() {}
