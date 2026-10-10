@@ -1,3 +1,4 @@
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
@@ -1658,3 +1659,11 @@ String platformLabelForIdentity(
   }
   return platformDisplayLabel(identity);
 }
+
+/// F5-P-39（P3）：**应用层可直接调用**的来源标签（签名里只有 `PlatformTrackRef`，
+/// 不暴露 provider 层类型 ⇒ 满足 `lib/page`/`lib/component` 的依赖边界守卫）。
+///
+/// 名字来源 = 当前已保存配置里同身份条目的 `platformName`；找不到/身份无效 ⇒ 兜底文案，
+/// **绝不回落网易云**。
+String platformLabelForRef(PlatformTrackRef ref) =>
+    platformLabelForIdentity(AppPreference.instance.onlineMusicSettings, ref.identity);

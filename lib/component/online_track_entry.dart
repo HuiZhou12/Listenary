@@ -3,11 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/online_track_row.dart';
 import 'package:pure_music/component/personal_playlist_picker.dart';
-import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/services/music_platform/index.dart';
-import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
-
 /// 一条**在线曲目行**：副标题组装 + 来源标记 + 收藏 + 加入歌单 + 播放中高亮 + 进场动画。
 ///
 /// 为什么要有它：主页、探索页、搜索页、收藏页、自建歌单详情、订阅歌单详情都要同一件事，
@@ -25,20 +22,15 @@ class OnlineTrackEntry extends StatelessWidget {
     this.onRemove,
     this.animateEntrance = true,
   });
-
   final MusicTrack track;
-
   /// 点这一行做什么（通常是"用当前列表起播"）。为 null 时行不可点。
   final VoidCallback? onTap;
-
   /// 歌单详情页用来提供"从歌单移除"；其它场景不传。
   final VoidCallback? onRemove;
-
   /// 是否播放列表进场动画。
   ///
   /// 可重排列表里要关掉：进场动画会和拖拽/重排动画打架。
   final bool animateEntrance;
-
   @override
   Widget build(BuildContext context) {
     // 与既有各页一致的判定：明确标为"不可用/付费"的曲目不给点。
@@ -61,7 +53,7 @@ class OnlineTrackEntry extends StatelessWidget {
       // 来源标签（I1）：任何在线曲目列表里都必须能看出这一行属于哪个平台。
       // **统一取曲目自己的 ref**（而不是外层分组/歌单的字段）—— 两者理论上一致，
       // 但以 ref 为准才不会出现"同一首歌在两页显示不同来源"。
-      sourceLabel: platformLabelForIdentity(AppPreference.instance.onlineMusicSettings, track.ref.identity),
+      sourceLabel: platformLabelForRef(track.ref),
       onTap: playable ? onTap : null,
       onAddToPlaylist: () => showPersonalPlaylistPicker(context, track: track),
       showFavorite: true,

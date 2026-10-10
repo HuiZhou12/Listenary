@@ -1,3 +1,4 @@
+export 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart' show platformLabelForRef;
 export 'models/music_models.dart';
 export 'online_music_credentials.dart';
 // P-29：诊断出口（窄接口 + 已本地化/已脱敏的 DTO）。应用层只读这些字符串，
