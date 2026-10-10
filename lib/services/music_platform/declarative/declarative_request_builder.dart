@@ -257,13 +257,33 @@ BuiltDeclarativeRequest buildDeclarativeRequest({
 }
 
 Object? _resolve(OnlineMusicParamBinding binding, DeclarativeInputs inputs) {
-  final value = inputs.valueOf(binding.source);
+  final source = binding.source;
+  final constant = binding.value;
+  // F4-S1（P-08 / D1:A）：**静态常量优先**；两者同给或都不给都是配置错误 ——
+  // 正常路径在保存/试跑校验就被拦下（`validationIssues`），这里是运行期兜底，
+  // 绝不"静默取其一"、也绝不悄悄少发一个参数。
+  if (constant != null) {
+    if (source != null) {
+      throw DeclarativeRequestException(
+        DeclarativeRequestErrorKind.invalidParameterBinding,
+        '参数 ${binding.name} 同时声明了取值来源与固定值，只能留一个',
+      );
+    }
+    return constant;
+  }
+  if (source == null) {
+    throw DeclarativeRequestException(
+      DeclarativeRequestErrorKind.invalidParameterBinding,
+      '参数 ${binding.name} 既没有取值来源也没有固定值',
+    );
+  }
+  final value = inputs.valueOf(source);
   if (value != null) return value;
   if (binding.defaultValue != null) return binding.defaultValue;
   if (binding.required) {
     throw DeclarativeRequestException(
       DeclarativeRequestErrorKind.missingRequiredInput,
-      '缺少必填输入 ${binding.source.name}',
+      '缺少必填输入 ${source.name}',
     );
   }
   return null;

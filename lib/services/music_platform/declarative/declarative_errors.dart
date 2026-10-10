@@ -21,6 +21,12 @@ enum DeclarativeRequestErrorKind {
   ///
   /// 同上：绝不静默降级为空值或明文发送。
   sensitiveHeaderCredentialMissing,
+
+  /// 参数绑定自身不成立：**既没有取值来源也没有固定值**，或者**两者同时给了**。
+  ///
+  /// F4-S1（P-08 / D1:A）：正常路径在保存与试跑校验（`validationIssues`）就被拦下，
+  /// 这里是运行期兜底 —— 绝不"静默取其一"，也绝不悄悄少发一个参数。
+  invalidParameterBinding,
 }
 
 final class DeclarativeRequestException implements Exception {

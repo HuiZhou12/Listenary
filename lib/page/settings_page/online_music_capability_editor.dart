@@ -510,13 +510,18 @@ class _OnlineMusicCapabilityEditorDialogState
   /// 于是 `default: 30` 保存一次就变成 `"30"`。线上取值不受影响
   /// （`_stringify` 把两者都渲染成 `30`），但配置该保持它原来的样子。
   /// 还原顺序：整数 → 小数 → 布尔 → 字符串（与成功判定里 `_coerce` 的口径一致）。
-  OnlineMusicParamBinding _paramBindingOf(_ParamRow row) =>
-      OnlineMusicParamBinding(
-        name: row.name.text.trim(),
-        source: row.source,
-        required: row.required,
-        defaultValue: _coerceDefaultValue(row.defaultValue.text),
-      );
+  OnlineMusicParamBinding _paramBindingOf(_ParamRow row) {
+    final constant = row.value.text.trim();
+    return OnlineMusicParamBinding(
+      name: row.name.text.trim(),
+      // F4-S1（P-08 / D1:A）：来源与固定值**互斥** ——
+      // 固定值模式下**只**写 value，绝不两个都写（否则保存会被校验拦下）。
+      source: row.source,
+      value: row.usesConstant && constant.isNotEmpty ? constant : null,
+      required: row.required,
+      defaultValue: _coerceDefaultValue(row.defaultValue.text),
+    );
+  }
 
   Object? _coerceDefaultValue(String raw) {
     final text = raw.trim();
@@ -1185,15 +1190,35 @@ class _OnlineMusicCapabilityEditorDialogState
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 560.0;
           final nameField = _field(row.name, '参数名');
-          final sourceField = _EnumMenuField<OnlineMusicInputSource>(
-            label: '取值来源',
-            value: row.source,
-            options: OnlineMusicInputSource.values,
-            labelOf: inputSourceLabel,
-            // P-64：不再把英文枚举名当副标题露出来（它是**内部细节**）。
-            // 要和 JSON 视图对照时，JSON 视图里本来就是原始枚举名。
-            onChanged: (value) => setState(() => row.source = value),
+          // F4-S1（P-08 / D1:A）：取值要么来自闭集来源，要么是**写死的固定值**，两者互斥。
+          final usesConstant = row.usesConstant;
+          final constantToggle = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Checkbox(
+                value: usesConstant,
+                visualDensity: VisualDensity.compact,
+                onChanged: (value) => setState(() {
+                  // 切到固定值 ⇒ 清空来源；切回来源 ⇒ 给一个与当前能力相关的默认来源（P-23）。
+                  row.source = (value ?? false)
+                      ? null
+                      : defaultInputSourceFor(widget.capability);
+                }),
+              ),
+              const Text('固定值'),
+            ],
           );
+          final sourceField = usesConstant
+              ? _field(row.value, '固定值（写死，例如 30）')
+              : _EnumMenuField<OnlineMusicInputSource>(
+                  label: '取值来源',
+                  value: row.source ?? defaultInputSourceFor(widget.capability),
+                  options: OnlineMusicInputSource.values,
+                  labelOf: inputSourceLabel,
+                  // P-64：不再把英文枚举名当副标题露出来（它是**内部细节**）。
+                  // 要和 JSON 视图对照时，JSON 视图里本来就是原始枚举名。
+                  onChanged: (value) => setState(() => row.source = value),
+                );
           final removeButton = IconButton(
             tooltip: '删除这一行',
             onPressed: () => setState(() => rows.removeAt(index).dispose()),
@@ -1212,7 +1237,12 @@ class _OnlineMusicCapabilityEditorDialogState
             ],
           );
           final defaultField = _field(row.defaultValue, '默认值（可留空）');
-          final extras = compact
+          final extrasBody = usesConstant
+              ? const Padding(
+                  padding: EdgeInsets.only(top: 8.0),
+                  child: _Hint('固定值由你自己写死、一定会有值，因此「必填 / 默认值」在这里不起作用。'),
+                )
+              : compact
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -1232,6 +1262,19 @@ class _OnlineMusicCapabilityEditorDialogState
                     Expanded(child: defaultField),
                   ],
                 );
+          final extras = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0, left: 8.0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: constantToggle,
+                ),
+              ),
+              extrasBody,
+            ],
+          );
           final head = compact
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2189,11 +2232,12 @@ class _Hint extends StatelessWidget {
 }
 
 class _ParamRow {
-  _ParamRow(this.name, this.source, this.required, this.defaultValue);
+  _ParamRow(this.name, this.source, this.value, this.required, this.defaultValue);
 
   factory _ParamRow.from(OnlineMusicParamBinding binding) => _ParamRow(
     TextEditingController(text: binding.name),
     binding.source,
+    TextEditingController(text: binding.value ?? ''),
     binding.required,
     TextEditingController(text: binding.defaultValue?.toString() ?? ''),
   );
@@ -2203,19 +2247,29 @@ class _ParamRow {
   factory _ParamRow.empty(OnlineMusicInputSource source) => _ParamRow(
     TextEditingController(),
     source,
+    TextEditingController(),
     false,
     TextEditingController(),
   );
 
   final TextEditingController name;
-  OnlineMusicInputSource source;
+
+  /// 取值来源（闭集）；**null 表示"固定值"模式**（F4-S1 / P-08 / D1:A）。
+  OnlineMusicInputSource? source;
+
+  /// 固定值输入框（**只在固定值模式下有意义**）。
+  final TextEditingController value;
 
   /// 必填（P-21 起有控件，因此可变）。
   bool required;
   final TextEditingController defaultValue;
 
+  /// 是否处于"固定值"模式（与 [source] 互斥）。
+  bool get usesConstant => source == null;
+
   void dispose() {
     name.dispose();
+    value.dispose();
     defaultValue.dispose();
   }
 }

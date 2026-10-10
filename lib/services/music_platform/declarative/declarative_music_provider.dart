@@ -361,6 +361,11 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
           // 声明了引用但没有可用凭据 ⇒ 与"没配凭据"同类（换 Provider 是合理出路）。
           DeclarativeRequestErrorKind.sensitiveHeaderCredentialMissing =>
             OnlineMusicErrorKind.notConfigured,
+          // F4-S1：参数绑定自身不成立（来源与固定值同给 / 都没有）⇒ **配置错误**，
+          // 与敏感头明文同理：**不能**归成 notConfigured，否则路由会把它当成
+          // "换个 Provider 试试"，把真正该修的配置问题盖掉。
+          DeclarativeRequestErrorKind.invalidParameterBinding =>
+            OnlineMusicErrorKind.badRequest,
         },
         safeMessage: error.safeMessage,
       );

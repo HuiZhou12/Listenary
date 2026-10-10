@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -1740,6 +1742,72 @@ void main() {
               as OnlineMusicDeclarativeCapabilityBinding;
       expect(saved.request.query.single.required, isTrue, reason: '勾了要写进去');
       expect(saved.request.query.single.defaultValue, 30, reason: '顺带不丢类型');
+    });
+  });
+
+  group('★ F4-S1 参数行支持「固定值」（P-08 / D1:A）', () {
+    testWidgets('★ 勾「固定值」填值并保存 ⇒ 配置里只有 value、没有 source', (tester) async {
+      final fixture = bindingWithParamExtras(required: true, defaultValue: 30);
+      final settings = settingsWithBinding(
+        OnlineMusicCapability.search,
+        fixture,
+      );
+      final controller = _controller(configured: settings, active: settings);
+      addTearDown(controller.dispose);
+      await pumpPanel(tester, controller);
+      await openCapabilityEditorFor(tester, OnlineMusicCapability.search);
+
+      expect(
+        fixture.request.query.single.source,
+        isNotNull,
+        reason: '夹具起点是"来源"模式',
+      );
+      await scrollCapabilityFormTo(tester, '固定值');
+      final constantRow = find
+          .ancestor(of: find.text('固定值'), matching: find.byType(Row))
+          .first;
+      await tester.tap(
+        find.descendant(of: constantRow, matching: find.byType(Checkbox)),
+      );
+      await tester.pumpAndSettle();
+
+      final valueField = find.ancestor(
+        of: find.text('固定值（写死，例如 30）'),
+        matching: find.byType(TextField),
+      );
+      expect(valueField, findsOneWidget, reason: '切到固定值后必须出现固定值输入框');
+      await tester.enterText(valueField, '30');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      final saved =
+          controller.settings.providers.single.bindingFor(
+                OnlineMusicCapability.search,
+              )
+              as OnlineMusicDeclarativeCapabilityBinding;
+      final param = saved.request.query.single;
+      expect(param.value, '30', reason: '固定值要写进配置');
+      expect(
+        param.source,
+        isNull,
+        reason: '两者互斥：固定值模式下不得再写来源（不静默取其一）',
+      );
+      expect(
+        param.toJson().containsKey('source'),
+        isFalse,
+        reason: '写盘形状里也不该再出现 source',
+      );
+    });
+
+    test('源码守卫：固定值模式必须说明「必填 / 默认值」不适用', () {
+      // 这条说明是"避免设了没生效"的关键文案，但它在表单最下方、惰性列表里
+      // 滚动锚点容易滚过头（S1 实测）⇒ 用源码守卫钉住，不做易碎的滚动断言。
+      final source = File(
+        'lib/page/settings_page/online_music_capability_editor.dart',
+      ).readAsStringSync();
+      expect(source, contains('固定值由你自己写死'));
+      expect(source, contains('「必填 / 默认值」在这里不起作用'));
     });
   });
 

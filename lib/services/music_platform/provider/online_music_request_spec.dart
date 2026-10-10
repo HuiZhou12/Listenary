@@ -28,17 +28,31 @@ enum OnlineMusicInputSource {
 }
 
 /// 一个可映射参数的来源说明。
+///
+/// 取值有**两种互斥**的来法（D1:A：「来源封闭 **+** 允许静态常量」）：
+/// - [source]：来自闭集输入来源（只有用户操作时才可能有值）；
+/// - [value]：写死的**静态常量**（例如平台要求的固定 `device` / `format` / `limit`）。
+///
+/// 两者**恰好给一个**：都给或都不给都会被 [OnlineMusicRequestSpec.validationIssues]
+/// 在保存与试跑阶段拦下（与请求头"引用 vs 明文"同一套风格），构造请求时也会兜底报错。
 final class OnlineMusicParamBinding {
   const OnlineMusicParamBinding({
     required this.name,
-    required this.source,
+    this.source,
+    this.value,
     this.required = false,
     this.defaultValue,
   });
 
   final String name;
-  final OnlineMusicInputSource source;
 
+  /// 取值来源（闭集）；与 [value] **互斥**。
+  final OnlineMusicInputSource? source;
+
+  /// **静态常量值**；与 [source] **互斥**。
+  ///
+  /// 有常量时 [required] / [defaultValue] 都不再参与判定（常量必然有值）。
+  final String? value;
   /// 输入缺失时是否算配置错误（否则用 [defaultValue] / 直接省略）。
   final bool required;
 
@@ -47,20 +61,25 @@ final class OnlineMusicParamBinding {
 
   Map<String, dynamic> toJson() => {
     'name': name,
-    'source': source.name,
+    if (source != null) 'source': source!.name,
+    if (value != null) 'value': value,
     'required': required,
     if (defaultValue != null) 'default': defaultValue,
   };
 
   static OnlineMusicParamBinding fromJson(Object? value) {
     final map = _requireMap(value, 'query/body 参数');
+    final rawSource = map['source'];
     return OnlineMusicParamBinding(
       name: _requireText(map['name'], 'query/body 参数名'),
-      source: _requireEnum(
-        map['source'],
-        OnlineMusicInputSource.values,
-        'query/body 参数来源',
-      ),
+      source: rawSource == null
+          ? null
+          : _requireEnum(
+              rawSource,
+              OnlineMusicInputSource.values,
+              'query/body 参数来源',
+            ),
+      value: _optionalText(map['value']),
       required: map['required'] == true,
       defaultValue: _optionalScalar(map['default'], 'query/body 参数默认值'),
     );
@@ -71,14 +90,16 @@ final class OnlineMusicParamBinding {
       other is OnlineMusicParamBinding &&
       other.name == name &&
       other.source == source &&
+      other.value == value &&
       other.required == required &&
       other.defaultValue == defaultValue;
 
   @override
-  int get hashCode => Object.hash(name, source, required, defaultValue);
+  int get hashCode => Object.hash(name, source, value, required, defaultValue);
 
   @override
-  String toString() => '$name<-${source.name}';
+  String toString() =>
+      '$name<-${source?.name ?? (value == null ? '未设置' : '固定值')}';
 }
 
 /// 常量请求头（不支持动态值：时间戳/签名属于"需要代码实现"的边界）。
@@ -355,6 +376,7 @@ final class OnlineMusicRequestSpec {
       } else if (!names.add(entry.name)) {
         issues.add('查询参数 ${entry.name} 重复');
       }
+      issues.addAll(_paramValueIssues(entry, '查询参数'));
     }
     for (final header in headers) {
       if (header.name.trim().isEmpty) {
@@ -398,6 +420,7 @@ final class OnlineMusicRequestSpec {
         } else if (!bodyNames.add(field.name)) {
           issues.add('请求体字段 ${field.name} 重复');
         }
+        issues.addAll(_paramValueIssues(field, '请求体字段'));
       }
     }
     switch (auth) {
@@ -478,6 +501,22 @@ String? _optionalText(Object? value) {
   if (value == null) return null;
   final text = '$value'.trim();
   return text.isEmpty ? null : text;
+}
+
+/// F4-S1（P-08 / D1:A）：一个参数必须**恰好**有一种取值来法 ——
+/// 要么来自闭集输入来源，要么是写死的静态常量。
+///
+/// 与请求头"凭据引用 vs 明文值"同一套风格：**不静默取其一**，在保存/试跑阶段拦下。
+List<String> _paramValueIssues(OnlineMusicParamBinding binding, String what) {
+  final hasSource = binding.source != null;
+  final hasValue = binding.value != null;
+  if (hasSource && hasValue) {
+    return ['$what ${binding.name} 同时声明了取值来源与固定值，只能留一个'];
+  }
+  if (!hasSource && !hasValue) {
+    return ['$what ${binding.name} 既没有取值来源也没有固定值'];
+  }
+  return const [];
 }
 
 T _requireEnum<T extends Enum>(Object? value, List<T> values, String label) {
