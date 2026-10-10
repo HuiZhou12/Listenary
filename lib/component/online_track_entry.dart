@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/online_track_row.dart';
 import 'package:pure_music/component/personal_playlist_picker.dart';
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/services/music_platform/index.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
 
 /// 一条**在线曲目行**：副标题组装 + 来源标记 + 收藏 + 加入歌单 + 播放中高亮 + 进场动画。
@@ -40,7 +42,10 @@ class OnlineTrackEntry extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 与既有各页一致的判定：明确标为"不可用/付费"的曲目不给点。
+    // P-63：可用性判据加**平台身份**维度 —— 身份无效（自定义平台缺稳定 ID）不可播；
+    // 既有 unavailable/paid 语义保留，只呈现状态、不改数据。
     final playable =
+        track.ref.hasValidIdentity &&
         track.availability != TrackAvailability.unavailable &&
         track.availability != TrackAvailability.paid;
     final details = [
@@ -56,7 +61,7 @@ class OnlineTrackEntry extends StatelessWidget {
       // 来源标签（I1）：任何在线曲目列表里都必须能看出这一行属于哪个平台。
       // **统一取曲目自己的 ref**（而不是外层分组/歌单的字段）—— 两者理论上一致，
       // 但以 ref 为准才不会出现"同一首歌在两页显示不同来源"。
-      sourceLabel: musicPlatformLabel(track.ref.platform),
+      sourceLabel: platformLabelForIdentity(AppPreference.instance.onlineMusicSettings, track.ref.identity),
       onTap: playable ? onTap : null,
       onAddToPlaylist: () => showPersonalPlaylistPicker(context, track: track),
       showFavorite: true,
