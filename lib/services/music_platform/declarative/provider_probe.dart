@@ -5,8 +5,8 @@
 ///
 /// 硬约束（逐条对应 Spec）：
 /// - P1 以**条目**为单位（服务级探测：baseUrl 可达性 + 协议基本形态，Spec §19.5）；
-/// - P2/P7 候选只来自 [onlineMusicProviderTemplates]（闭集、不接受用户自定义）——
-///   F3-S3 会在此基础上**优先**使用条目自身的绑定（D-F3-1）；
+/// - P2/P7 候选由调用方按 D-F3-1 决定：**优先条目自身的声明式绑定**，
+///   只有该条目尚无任何绑定时才用兼容模板（闭集，不做开放式扫描，也不新增插件机制）；
 /// - P3 串行、不重试、不跟随跨主机重定向（传输层由调用方以 followRedirects:false 构造）；
 /// - P4 每个请求用条目自身的超时；总预算到期立即停止并聚合；
 /// - P5 不携带**必须**的凭据：已配置的凭据会被使用，但没有凭据也照样探测，
@@ -31,6 +31,7 @@ import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_error.dart';
 import 'package:pure_music/services/music_platform/online_music_request.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_json_path.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_credentials.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_request_spec.dart';
@@ -42,6 +43,65 @@ const providerProbeTotalBudget = Duration(seconds: 30);
 /// 探测用的固定输入：只取一条，足以判断"能不能解析出曲目"。
 const providerProbeKeyword = 'listenary';
 const providerProbeLimit = 1;
+
+/// 候选**来源**（D-F3-1 第 3 条：每个候选必须标明来源，不得混淆）。
+enum ProviderProbeCandidateSource {
+  /// 用户为该条目**自己配置**的声明式绑定。
+  userConfig,
+
+  /// 编译期**兼容模板**（只在该条目尚无任何声明式绑定时作为兜底）。
+  compatibilityTemplate,
+}
+
+String providerProbeCandidateSourceLabel(ProviderProbeCandidateSource source) =>
+    switch (source) {
+      ProviderProbeCandidateSource.userConfig => '条目自身配置',
+      ProviderProbeCandidateSource.compatibilityTemplate => '兼容模板',
+    };
+
+/// 一个**探测候选**：一条声明式绑定 + 它来自哪里 + 它验的是哪个能力。
+///
+/// D-F3-5 第 6 条：一次探测只能证明"**这个候选**的**这个能力**"发得出去、回得来、解析得出，
+/// 因此来源与能力都必须跟着结论一起走（不能只报"探测成功"）。
+final class ProviderProbeCandidate {
+  const ProviderProbeCandidate({
+    required this.id,
+    required this.label,
+    required this.binding,
+    required this.capability,
+    required this.source,
+  });
+
+  /// 从兼容模板构造候选（旧路径的等价形态；来源如实标为模板）。
+  factory ProviderProbeCandidate.fromTemplate(
+    OnlineMusicProviderTemplate template,
+  ) => ProviderProbeCandidate(
+    id: template.id,
+    label: template.label,
+    binding: template.search,
+    capability: OnlineMusicCapability.search,
+    source: ProviderProbeCandidateSource.compatibilityTemplate,
+  );
+
+  final String id;
+  final String label;
+  final OnlineMusicDeclarativeCapabilityBinding binding;
+
+  /// 这个候选**实际验证**的能力。
+  final OnlineMusicCapability capability;
+
+  final ProviderProbeCandidateSource source;
+
+  /// 界面上「来源（能力）」这一段，例如 `条目自身配置（搜索）`。
+  String get sourceLabel =>
+      '${providerProbeCandidateSourceLabel(source)}'
+      '（${onlineMusicCapabilityLabel(capability)}）';
+
+  @override
+  String toString() =>
+      'ProviderProbeCandidate($id, capability=${capability.name}, '
+      'source=${source.name})';
+}
 
 /// 该候选**走到了哪一步**（D-F3-4 / D-F3-5：三种情形必须能分开）。
 ///
@@ -63,6 +123,8 @@ final class ProviderProbeOutcome {
     required this.candidateId,
     required this.label,
     required this.score,
+    required this.source,
+    required this.capability,
     this.status = ProviderProbeStatus.attempted,
     this.statusCode,
     this.mappedTrackCount = 0,
@@ -77,6 +139,10 @@ final class ProviderProbeOutcome {
 
   final String candidateId;
   final String label;
+
+  /// 该候选的**来源**与它实际验证的**能力**（D-F3-1 第 3 条 / D-F3-5 第 6 条）。
+  final ProviderProbeCandidateSource source;
+  final OnlineMusicCapability capability;
 
   /// 2 = 可用；1 = 部分可用（能取到列表但字段映射不全）；0 = 不可用。
   ///
@@ -113,6 +179,11 @@ final class ProviderProbeOutcome {
   /// 是否真的发出过请求。
   bool get wasAttempted => status != ProviderProbeStatus.notAttempted;
 
+  /// 界面上「来源（能力）」这一段，例如 `条目自身配置（搜索）`。
+  String get sourceLabel =>
+      '${providerProbeCandidateSourceLabel(source)}'
+      '（${onlineMusicCapabilityLabel(capability)}）';
+
   @override
   String toString() =>
       'ProviderProbeOutcome($candidateId, status=${status.name}, score=$score, '
@@ -124,6 +195,8 @@ final class ProviderProbeReport {
     required this.outcomes,
     this.draft,
     this.draftTemplateId,
+    this.draftSource,
+    this.draftCapability,
     this.blockedReason,
   });
 
@@ -132,6 +205,10 @@ final class ProviderProbeReport {
   /// 最高分候选生成的初稿；全部分数为 0 时为 null（进入手工配置）。
   final OnlineMusicDeclarativeCapabilityBinding? draft;
   final String? draftTemplateId;
+
+  /// 初稿来自哪里、验的是哪个能力（D-F3-5 第 6 条：结论必须带上来源与能力）。
+  final ProviderProbeCandidateSource? draftSource;
+  final OnlineMusicCapability? draftCapability;
 
   /// **整个探测被拦下**的原因（非 null 时 [outcomes] 必为空）。
   ///
@@ -153,14 +230,17 @@ final class ProviderProbeReport {
       outcomes.every((outcome) => outcome.status != ProviderProbeStatus.attempted);
 }
 
-/// 探测 search 能力。
+/// 按**给定的候选顺序**做一次服务级探测（D-F3-5：每个候选最多一个请求）。
+///
+/// 候选的**来源与顺序**由调用方决定（条目自身配置优先，模板仅作兼容兜底，见
+/// `online_music_probe_candidates.dart`）—— 探测本身不查配置，只负责"按顺序试一遍并说清结论"。
 ///
 /// [credential] 是**已经配置好**的凭据值（可以为 null）。探测不会因为缺它而拒绝执行。
 Future<ProviderProbeReport> probeDeclarativeSearch({
   required DeclarativeHttpTransport transport,
   required OnlineMusicCredentialReader headerCredentialReader,
   required MusicPlatform platform,
-  List<OnlineMusicProviderTemplate>? templates,
+  required List<ProviderProbeCandidate> candidates,
   String? credential,
   OnlineMusicCancelToken? cancelToken,
   DateTime Function()? clock,
@@ -172,9 +252,10 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
   final now = clock ?? DateTime.now;
   final startedAt = now();
   final token = cancelToken ?? OnlineMusicCancelToken();
-  final candidates = (templates ?? onlineMusicProviderTemplates())
-      .take(maxRequests.clamp(1, providerProbeMaxRequests))
-      .toList(growable: false);
+  // D-F3-5 第 5 条：保留请求预算上限。**不截断候选列表** —— 超预算的候选必须以
+  // "未尝试：请求预算耗尽"出现在报告里（截掉它们等于悄悄少报了几个候选）。
+  final requestBudget = maxRequests.clamp(1, providerProbeMaxRequests);
+  var requestsIssued = 0;
 
   // D-F3-5：没有可执行候选 ⇒ 明确报告"未尝试"，**不构造**虚假的成功结果，
   // 也不谎称"候选都没通过"（那意味着我们试过了）。
@@ -186,42 +267,29 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
   }
 
   final outcomes = <ProviderProbeOutcome>[];
-  OnlineMusicProviderTemplate? best;
+  ProviderProbeCandidate? best;
   var bestScore = 0;
 
   for (var index = 0; index < candidates.length; index++) {
     final candidate = candidates[index];
+    if (requestsIssued >= requestBudget) {
+      outcomes.add(_notAttempted(candidate, '未尝试：请求预算耗尽'));
+      continue;
+    }
     if (now().difference(startedAt) >= totalBudget) {
-      for (final skipped in candidates.skip(index)) {
-        outcomes.add(
-          ProviderProbeOutcome(
-            candidateId: skipped.id,
-            label: skipped.label,
-            score: 0,
-            status: ProviderProbeStatus.notAttempted,
-            notAttemptedReason: '未尝试：探测预算已用完',
-          ),
-        );
-      }
-      break;
+      outcomes.add(_notAttempted(candidate, '未尝试：探测总时限已用完'));
+      continue;
     }
     if (token.isCancelled) {
-      outcomes.add(
-        ProviderProbeOutcome(
-          candidateId: candidate.id,
-          label: candidate.label,
-          score: 0,
-          status: ProviderProbeStatus.notAttempted,
-          notAttemptedReason: '未尝试：探测已被取消',
-        ),
-      );
-      break;
+      outcomes.add(_notAttempted(candidate, '未尝试：探测已被取消'));
+      continue;
     }
+    requestsIssued++;
 
     final outcome = await _probeCandidate(
       transport: transport,
       headerCredentialReader: headerCredentialReader,
-      template: candidate,
+      candidate: candidate,
       platform: platform,
       credential: credential,
       cancelToken: token,
@@ -237,22 +305,38 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
 
   return ProviderProbeReport(
     outcomes: List.unmodifiable(outcomes),
-    draft: best?.search,
+    draft: best?.binding,
     draftTemplateId: best?.id,
+    draftSource: best?.source,
+    draftCapability: best?.capability,
   );
 }
+
+/// "未尝试"的统一构造（D-F3-5：它**不是**失败，因此不给分类、不给分数）。
+ProviderProbeOutcome _notAttempted(
+  ProviderProbeCandidate candidate,
+  String reason,
+) => ProviderProbeOutcome(
+  candidateId: candidate.id,
+  label: candidate.label,
+  score: 0,
+  source: candidate.source,
+  capability: candidate.capability,
+  status: ProviderProbeStatus.notAttempted,
+  notAttemptedReason: reason,
+);
 
 Future<ProviderProbeOutcome> _probeCandidate({
   required DeclarativeHttpTransport transport,
   required OnlineMusicCredentialReader headerCredentialReader,
-  required OnlineMusicProviderTemplate template,
+  required ProviderProbeCandidate candidate,
   required MusicPlatform platform,
   required String? credential,
   required OnlineMusicCancelToken cancelToken,
   required String keyword,
   required int limit,
 }) {
-  final binding = template.search;
+  final binding = candidate.binding;
   final spec = binding.request;
 
   // P5：**不因为缺凭据而拒绝探测**。没有凭据时用「无认证」的副本发一次，
@@ -282,7 +366,7 @@ Future<ProviderProbeOutcome> _probeCandidate({
   return _send(
     transport: transport,
     headerCredentialReader: headerCredentialReader,
-    template: template,
+    candidate: candidate,
     binding: binding,
     spec: probeSpec,
     inputs: inputs,
@@ -296,7 +380,7 @@ Future<ProviderProbeOutcome> _probeCandidate({
 Future<ProviderProbeOutcome> _send({
   required DeclarativeHttpTransport transport,
   required OnlineMusicCredentialReader headerCredentialReader,
-  required OnlineMusicProviderTemplate template,
+  required ProviderProbeCandidate candidate,
   required OnlineMusicDeclarativeCapabilityBinding binding,
   required OnlineMusicRequestSpec spec,
   required DeclarativeInputs inputs,
@@ -319,9 +403,11 @@ Future<ProviderProbeOutcome> _send({
   if (execution.stage == DeclarativeExecutionStage.notSent) {
     // 请求**根本没发出去**（配置/凭据问题）⇒ 不能报成"网络或服务不可达"。
     return ProviderProbeOutcome(
-      candidateId: template.id,
-      label: template.label,
+      candidateId: candidate.id,
+      label: candidate.label,
       score: 0,
+      source: candidate.source,
+      capability: candidate.capability,
       status: ProviderProbeStatus.notSent,
       failureReason: execution.failureReason,
       requestSummary: execution.requestSummary,
@@ -332,9 +418,11 @@ Future<ProviderProbeOutcome> _send({
     final kind = execution.failureKind;
     final statusCode = execution.statusCode;
     return ProviderProbeOutcome(
-      candidateId: template.id,
-      label: template.label,
+      candidateId: candidate.id,
+      label: candidate.label,
       score: 0,
+      source: candidate.source,
+      capability: candidate.capability,
       statusCode: statusCode,
       // 401/403（或缺凭据）⇒ 如实报"需要认证"，绝不归成网络故障（D-F3-2）。
       needsAuthentication:
@@ -367,9 +455,11 @@ Future<ProviderProbeOutcome> _send({
     );
     if (page.items.isEmpty) {
       return ProviderProbeOutcome(
-        candidateId: template.id,
-        label: template.label,
+        candidateId: candidate.id,
+        label: candidate.label,
         score: 0,
+        source: candidate.source,
+        capability: candidate.capability,
         statusCode: execution.statusCode,
         failureReason: '响应成功但没有解析出任何曲目',
         requestSummary: execution.requestSummary,
@@ -377,9 +467,11 @@ Future<ProviderProbeOutcome> _send({
       );
     }
     return ProviderProbeOutcome(
-      candidateId: template.id,
-      label: template.label,
+      candidateId: candidate.id,
+      label: candidate.label,
       score: 2,
+      source: candidate.source,
+      capability: candidate.capability,
       statusCode: execution.statusCode,
       mappedTrackCount: page.items.length,
       requestSummary: execution.requestSummary,
@@ -389,9 +481,11 @@ Future<ProviderProbeOutcome> _send({
     // 列表存在但字段映射不全：给 1 分，让用户拿到一个可继续编辑的初稿。
     final partial = _countListEntries(binding.response.listPath, execution.body);
     return ProviderProbeOutcome(
-      candidateId: template.id,
-      label: template.label,
+      candidateId: candidate.id,
+      label: candidate.label,
       score: partial > 0 ? 1 : 0,
+      source: candidate.source,
+      capability: candidate.capability,
       statusCode: execution.statusCode,
       mappedTrackCount: partial,
       failureReason: '字段映射不完整：${error.reason}',

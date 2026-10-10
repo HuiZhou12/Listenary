@@ -5,6 +5,7 @@ import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_diagnostics.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
+import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_templates.dart';
 
@@ -29,7 +30,7 @@ void main() {
       );
 
   test(
-    'probeSearch uses the entry baseUrl transport and yields a draft',
+    '★ F3-S3 探测打的是**条目自己**的绑定（P-05）并标注来源与能力',
     () async {
       transport.responder = (request) async => _msapiBody;
 
@@ -37,11 +38,24 @@ void main() {
         store.value.providers.single,
       );
 
-      expect(report.draftTemplateId, 'netease-proxy');
+      // 以前这里探测的是**编译期模板**（`draftTemplateId == 'netease-proxy'`），
+      // 而那正是 P-05「探测与用户配置完全脱钩」：探测"成功"的是模板指纹。
+      // 现在候选来自条目自身配置，来源与能力都跟着结论走（D-F3-1 第 3 条 / D-F3-5 第 6 条）。
+      expect(report.draftTemplateId, 'user:search');
+      expect(report.draftSource, ProviderProbeCandidateSource.userConfig);
+      expect(report.draftCapability, OnlineMusicCapability.search);
+      expect(
+        report.outcomes.single.source,
+        ProviderProbeCandidateSource.userConfig,
+      );
+      expect(report.outcomes.single.sourceLabel, contains('条目自身配置'));
+      expect(report.outcomes.single.sourceLabel, contains('搜索'));
       expect(
         transport.requests.map((request) => request.path),
         contains('/search'),
       );
+      // D-F3-5 第 4 条：每个候选**最多一个**探针请求（服务级探测不逐能力重复打）。
+      expect(transport.requests, hasLength(1));
     },
   );
 
@@ -77,15 +91,17 @@ void main() {
         store.value.providers.single,
       );
 
-      // 两个候选都会真的被探测一次，且都不带凭据。
+      // ⚠️ 断言随 F3-S3（D-F3-1）更新，**不是放宽**：该条目**自己**配了声明式搜索绑定 ⇒
+      // 候选只有"条目自身配置"这一条，**不再**顺带探测两个兼容模板
+      //（以前那样会把模板的成功混进结论里，正是 P-05 的形态）。
       expect(transport.requests.map((request) => request.path).toSet(), {
-        '/api/163_search',
         '/search',
       });
       for (final request in transport.requests) {
         expect(request.query.containsKey('apikey'), isFalse);
       }
-      expect(report.draftTemplateId, 'netease-proxy');
+      expect(report.draftTemplateId, 'user:search');
+      expect(report.draftSource, ProviderProbeCandidateSource.userConfig);
     },
   );
 

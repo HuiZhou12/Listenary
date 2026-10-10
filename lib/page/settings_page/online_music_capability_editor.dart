@@ -602,7 +602,9 @@ class _OnlineMusicCapabilityEditorDialogState
         }
         final kind = outcome.failureKind;
         detail.writeln(
-          '· ${outcome.label}（${outcome.candidateId}）：'
+          // F3-S3（D-F3-1 第 3 条）：**来源与能力必须写在结论旁边** ——
+          // "探测成功"本身不说明什么，得说清验的是"谁的哪个能力"。
+          '· ${outcome.sourceLabel}（${outcome.candidateId}）：'
           '${outcome.status == ProviderProbeStatus.notSent ? '请求未发出（配置问题）' : '得分 ${outcome.score}'}'
           '${outcome.statusCode == null ? '' : ' · HTTP ${outcome.statusCode}'}'
           '${outcome.mappedTrackCount > 0 ? ' · 解析出 ${outcome.mappedTrackCount} 首' : ''}'
@@ -627,7 +629,9 @@ class _OnlineMusicCapabilityEditorDialogState
         _busy = false;
         _resultOk = report.hasDraft;
         _resultHeadline = report.hasDraft
-            ? '探测命中「${report.draftTemplateId}」，已生成可编辑初稿'
+            // D-F3-5 第 6 条：一次探测只证明**这个候选的这个能力**，所以标题也要说清
+            // 验的是谁、哪个能力（"探测成功"本身不成立）。D-F3-1 第 3 条：来源不得混淆。
+            ? '已由「${_probeSourceLabelOf(report)}」生成可编辑初稿'
             : '没有候选可用（${report.outcomes.length} 个候选均未通过）';
         _resultController.text = detail.toString().trimRight();
         if (report.hasDraft) {
@@ -641,8 +645,18 @@ class _OnlineMusicCapabilityEditorDialogState
     }
   }
 
-  Future<void> _runTest() async {
-    final binding = _collect();
+  /// 探测初稿的**来源与能力**（D-F3-1 第 3 条「不得混淆来源」/ D-F3-5 第 6 条
+  /// 「结论必须注明实际验证的候选来源和能力」）。
+  String _probeSourceLabelOf(ProviderProbeReport report) {
+    final source = report.draftSource;
+    final capability = report.draftCapability;
+    final id = report.draftTemplateId ?? '未知候选';
+    if (source == null || capability == null) return id;
+    return '${providerProbeCandidateSourceLabel(source)}'
+        '（${onlineMusicCapabilityLabel(capability)}）· $id';
+  }
+
+  Future<void> _runTest() async {    final binding = _collect();
     final issues = [
       ..._collectErrors,
       ...binding.validationIssues(widget.capability),

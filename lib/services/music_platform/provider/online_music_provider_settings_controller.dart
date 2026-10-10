@@ -15,6 +15,7 @@ import 'package:pure_music/services/music_platform/online_music_request.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_header_migration.dart';
+import 'package:pure_music/services/music_platform/provider/online_music_probe_candidates.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_credentials.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 
@@ -460,11 +461,24 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
         blockedReason: '服务地址无效：$baseUrlIssue（不会回落到默认地址，也不会发出请求）',
       );
     }
+    // F3-S3（P-05 / P-27 / D-F3-1 / D-F3-5）：候选**优先取条目自身的声明式绑定**
+    // （服务级：先 search，再其它可探测能力）；只有条目完全没有绑定时才用兼容模板，
+    // 并在结果里标注来源。条目有绑定却配坏了时**绝不**退回模板（那会掩盖配置问题）。
+    final candidates = probeCandidatesFor(definition);
+    if (candidates.isEmpty) {
+      // D-F3-5 第 6 条：没有候选就**如实报告"未尝试"**，不构造虚假的成功结果，
+      // 也不谎称"候选都没通过"（那意味着我们试过了）。
+      return ProviderProbeReport(
+        outcomes: const [],
+        blockedReason: noProbeCandidateReason(definition),
+      );
+    }
     return probeDeclarativeSearch(
       transport: _transportFor(definition),
       // F3-S1：探测与试跑**共用**同一条执行路径（含敏感请求头凭据读取）。
       headerCredentialReader: _headerCredentialReader,
       platform: definition.contentPlatform,
+      candidates: candidates,
       credential: await _readCredential(definition),
       cancelToken: cancelToken,
     );

@@ -54,6 +54,7 @@ void main() {
     final report = await probeDeclarativeSearch(
       transport: transport,
       headerCredentialReader: noHeaderCredentials,
+      candidates: templateCandidates(),
       platform: MusicPlatform.netease,
       credential: 'chksz_KEY_TEST_ONLY',
     );
@@ -77,6 +78,7 @@ void main() {
     final report = await probeDeclarativeSearch(
       transport: transport,
       headerCredentialReader: noHeaderCredentials,
+      candidates: templateCandidates(),
       platform: MusicPlatform.netease,
     );
 
@@ -99,6 +101,7 @@ void main() {
     await probeDeclarativeSearch(
       transport: transport,
       headerCredentialReader: noHeaderCredentials,
+      candidates: templateCandidates(),
       platform: MusicPlatform.netease,
     );
 
@@ -114,6 +117,7 @@ void main() {
     await probeDeclarativeSearch(
       transport: transport,
       headerCredentialReader: noHeaderCredentials,
+      candidates: templateCandidates(),
       platform: MusicPlatform.netease,
       maxRequests: 99,
     );
@@ -127,6 +131,7 @@ void main() {
     final report = await probeDeclarativeSearch(
       transport: transport,
       headerCredentialReader: noHeaderCredentials,
+      candidates: templateCandidates(),
       platform: MusicPlatform.netease,
     );
 
@@ -150,6 +155,7 @@ void main() {
     final report = await probeDeclarativeSearch(
       transport: transport,
       headerCredentialReader: noHeaderCredentials,
+      candidates: templateCandidates(),
       platform: MusicPlatform.netease,
     );
 
@@ -176,6 +182,7 @@ void main() {
     final report = await probeDeclarativeSearch(
       transport: transport,
       headerCredentialReader: noHeaderCredentials,
+      candidates: templateCandidates(),
       platform: MusicPlatform.netease,
     );
 
@@ -193,13 +200,29 @@ void main() {
     final report = await probeDeclarativeSearch(
       transport: transport,
       headerCredentialReader: noHeaderCredentials,
+      candidates: templateCandidates(),
       platform: MusicPlatform.netease,
       credential: 'chksz_KEY_TEST_ONLY',
       maxRequests: 1,
     );
 
     expect(transport.requests, hasLength(1));
-    expect(report.outcomes, hasLength(1));
+    // ⚠️ 断言随 F3-S3（D-F3-5 第 5 条）更新，**不是放宽**：以前超出预算的候选被
+    // `.take(maxRequests)` **直接截掉**（报告里根本看不到它），现在它以
+    // 「未尝试：请求预算耗尽」出现在报告里 —— 用户必须能看到"有几个候选没试"。
+    expect(report.outcomes, hasLength(onlineMusicProviderTemplates().length));
+    expect(
+      report.outcomes.where(
+        (outcome) => outcome.status == ProviderProbeStatus.notAttempted,
+      ),
+      hasLength(onlineMusicProviderTemplates().length - 1),
+    );
+    expect(
+      report.outcomes.last.notAttemptedReason,
+      contains('预算'),
+      reason: '超预算的候选必须显示"未尝试：请求预算耗尽"，不得误报为验证失败',
+    );
+    expect(report.outcomes.last.failureKind, isNull);
   });
 
   test('the total budget stops further probing and aggregates the rest', () async {
@@ -212,6 +235,7 @@ void main() {
     final report = await probeDeclarativeSearch(
       transport: transport,
       headerCredentialReader: noHeaderCredentials,
+      candidates: templateCandidates(),
       platform: MusicPlatform.netease,
       clock: clock,
     );
@@ -226,7 +250,13 @@ void main() {
     );
     expect(
       report.outcomes.map((outcome) => outcome.notAttemptedReason),
-      everyElement(allOf(contains('未尝试'), contains('预算'))),
+      everyElement(
+        allOf(
+          contains('未尝试'),
+          // 两种"没试"的原因都要说清楚：请求数预算耗尽 / 探测总时限已到。
+          anyOf(contains('预算'), contains('时限')),
+        ),
+      ),
     );
     expect(
       report.outcomes.map((outcome) => outcome.failureKind),
@@ -243,6 +273,7 @@ void main() {
     final report = await probeDeclarativeSearch(
       transport: transport,
       headerCredentialReader: noHeaderCredentials,
+      candidates: templateCandidates(),
       platform: MusicPlatform.netease,
       credential: 'chksz_KEY_TEST_ONLY',
     );
@@ -261,6 +292,7 @@ void main() {
     await probeDeclarativeSearch(
       transport: transport,
       headerCredentialReader: noHeaderCredentials,
+      candidates: templateCandidates(),
       platform: MusicPlatform.netease,
       credential: 'chksz_KEY_TEST_ONLY',
     );
@@ -293,7 +325,7 @@ void main() {
         transport: transport,
         headerCredentialReader: noHeaderCredentials,
         platform: MusicPlatform.netease,
-        templates: [onlineMusicProviderTemplates().first],
+        candidates: templateCandidates([onlineMusicProviderTemplates().first]),
       );
 
       final outcome = report.outcomes.single;
@@ -315,7 +347,7 @@ void main() {
         transport: transport,
         headerCredentialReader: noHeaderCredentials,
         platform: MusicPlatform.netease,
-        templates: [onlineMusicProviderTemplates().first],
+        candidates: templateCandidates([onlineMusicProviderTemplates().first]),
       );
       expect(
         unreadable.outcomes.single.failureKind,
@@ -336,7 +368,7 @@ void main() {
         transport: transport,
         headerCredentialReader: noHeaderCredentials,
         platform: MusicPlatform.netease,
-        templates: [onlineMusicProviderTemplates().first],
+        candidates: templateCandidates([onlineMusicProviderTemplates().first]),
       );
       expect(
         readable.outcomes.single.failureKind,
@@ -352,7 +384,7 @@ void main() {
         transport: transport,
         headerCredentialReader: noHeaderCredentials,
         platform: MusicPlatform.netease,
-        templates: [onlineMusicProviderTemplates().first],
+        candidates: templateCandidates([onlineMusicProviderTemplates().first]),
       );
       expect(
         unreadable.outcomes.single.failureKind,
@@ -385,7 +417,7 @@ void main() {
         headerCredentialReader: noHeaderCredentials,
         platform: MusicPlatform.netease,
         credential: 'chksz_KEY_TEST_ONLY',
-        templates: [onlineMusicProviderTemplates().first],
+        candidates: templateCandidates([onlineMusicProviderTemplates().first]),
       );
 
       final outcome = report.outcomes.single;
@@ -407,7 +439,7 @@ void main() {
         transport: transport,
         headerCredentialReader: noHeaderCredentials,
         platform: MusicPlatform.netease,
-        templates: const [],
+        candidates: const [],
       );
 
       expect(report.outcomes, isEmpty);
@@ -449,7 +481,7 @@ void main() {
         transport: transport,
         headerCredentialReader: noHeaderCredentials,
         platform: MusicPlatform.netease,
-        templates: [template],
+        candidates: templateCandidates([template]),
       );
 
       final outcome = report.outcomes.single;
@@ -458,6 +490,96 @@ void main() {
       expect(outcome.failureReason, isNotNull);
       expect(transport.requests, isEmpty);
       expect(report.didNotSendAnyRequest, isTrue);
+    });
+
+    test('多候选：按顺序各打一次，每个候选**最多一个**请求', () async {
+      // 一份响应同时满足两个候选的判定与映射（chksz 用 code/data.songs，msapi 用 result.songs）。
+      transport.responder = (options) async => {
+        'code': 200,
+        'data': {
+          'songs': [
+            {'id': 1, 'name': 'x', 'artists': 'a', 'duration': 1},
+          ],
+        },
+        'result': {
+          'songs': [
+            {
+              'id': 2,
+              'name': 'y',
+              'artists': [
+                {'id': 1, 'name': 'b'},
+              ],
+            },
+          ],
+        },
+      };
+      final templates = onlineMusicProviderTemplates();
+      final candidates = [
+        ProviderProbeCandidate(
+          id: 'user:search',
+          label: '条目自身配置',
+          binding: templates.first.search,
+          capability: OnlineMusicCapability.search,
+          source: ProviderProbeCandidateSource.userConfig,
+        ),
+        ProviderProbeCandidate(
+          id: 'user:newSongs',
+          label: '条目自身配置',
+          binding: templates.last.search,
+          capability: OnlineMusicCapability.newSongs,
+          source: ProviderProbeCandidateSource.userConfig,
+        ),
+      ];
+
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        platform: MusicPlatform.netease,
+        candidates: candidates,
+      );
+
+      // D-F3-5 第 4 条：**服务级**探测不因"支持多个能力"而重复打。
+      expect(transport.requests, hasLength(2));
+      expect(
+        report.outcomes.map((outcome) => outcome.capability),
+        [OnlineMusicCapability.search, OnlineMusicCapability.newSongs],
+      );
+      expect(
+        report.outcomes.map((outcome) => outcome.source),
+        everyElement(ProviderProbeCandidateSource.userConfig),
+      );
+      expect(
+        report.outcomes.map((outcome) => outcome.sourceLabel),
+        everyElement(contains('条目自身配置')),
+      );
+    });
+
+    test('超出请求预算的候选记为"未尝试"，不误报为验证失败（D-F3-5 第 5 条）', () async {
+      transport.responder = (options) async => const {'nope': true};
+      final candidates = [
+        for (var index = 0; index < providerProbeMaxRequests + 1; index++)
+          ProviderProbeCandidate(
+            id: 'user:$index',
+            label: '条目自身配置',
+            binding: onlineMusicProviderTemplates().first.search,
+            capability: OnlineMusicCapability.search,
+            source: ProviderProbeCandidateSource.userConfig,
+          ),
+      ];
+
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        platform: MusicPlatform.netease,
+        candidates: candidates,
+      );
+
+      // 预算上限仍然是 4（P4），第 5 个候选不得被尝试、也不得给出失败分类。
+      expect(transport.requests, hasLength(providerProbeMaxRequests));
+      final last = report.outcomes.last;
+      expect(last.status, ProviderProbeStatus.notAttempted);
+      expect(last.notAttemptedReason, contains('预算'));
+      expect(last.failureKind, isNull);
     });
 
     test('传输失败带上**结构化详情**：超时 ≠ 连不上 ≠ 域名打错（D-F3-4）', () async {
@@ -470,7 +592,7 @@ void main() {
         transport: transport,
         headerCredentialReader: noHeaderCredentials,
         platform: MusicPlatform.netease,
-        templates: [onlineMusicProviderTemplates().first],
+        candidates: templateCandidates([onlineMusicProviderTemplates().first]),
       );
 
       final outcome = report.outcomes.single;
@@ -578,3 +700,11 @@ final class _NoHeaderCredentials implements OnlineMusicCredentialReader {
   @override
   Future<String?> readCredential(String reference) async => null;
 }
+/// 旧的 `templates:` 参数在 F3-S3 换成了**候选列表**（每个候选带来源与能力）。
+/// 这些用例本来就是"拿模板当候选"，因此这里等价转换（来源如实标为兼容模板）。
+List<ProviderProbeCandidate> templateCandidates([
+  List<OnlineMusicProviderTemplate>? templates,
+]) => [
+  for (final template in templates ?? onlineMusicProviderTemplates())
+    ProviderProbeCandidate.fromTemplate(template),
+];
