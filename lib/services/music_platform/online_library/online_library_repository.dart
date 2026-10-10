@@ -939,26 +939,6 @@ final class OnlineLibraryRepository {
 
 String _platformValue(MusicPlatform platform) => platform.name;
 
-/// F5-P-39（P4 数据层接缝）：把**平台身份**写成可落库的值。
-///
-/// - 内置平台 ⇒ 枚举名（与旧数据完全一致 ⇒ **零迁移**）；
-/// - 自定义平台 ⇒ **稳定 ID**（复用既有 `platform TEXT` 列 ⇒ 无需迁移）。
-String _platformIdentityValue(PlatformIdentity identity) =>
-    identity.storageValue;
-
-/// F5-P-39（P0 规则④）：从库里的平台值读回**身份**。
-///
-/// - 已知内置平台名 ⇒ 该平台；
-/// - 其他非空值 ⇒ `custom` + **原样保留**的标识（不归一、不推断、**绝不回落网易云**）；
-/// - `custom` 一词本身 / 空值 ⇒ `null`（没有稳定 ID ⇒ 调用方必须 fail-closed：
-///   数据可保留与展示，但**不得执行不确定的播放路由**）。
-///
-/// ⚠️ 注意与 [_parsePlatform] 的区别：后者拿 `MusicPlatform.values` 匹配，
-/// 在 `custom` 进入枚举后会把字面量 `"custom"` 匹配成 `MusicPlatform.custom`
-///（**没有稳定 ID ⇒ 身份无效**）。凡是"要拿身份去做路由/落库判断"的地方都应用本函数。
-PlatformIdentity? _parsePlatformIdentity(String value) =>
-    PlatformIdentity.tryParse(value);
-
 MusicPlatform _parsePlatform(String value) => MusicPlatform.values.firstWhere(
   (platform) => platform.name == value,
   orElse: () => throw FormatException('Unknown music platform: $value'),
