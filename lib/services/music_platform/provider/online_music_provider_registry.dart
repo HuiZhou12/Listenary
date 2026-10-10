@@ -177,7 +177,10 @@ final class OnlineMusicProviderRegistry {
   /// 与旧的「看被选中的那一个 Provider 声明了什么」不同：这里回答的是
   /// "这个平台到底有没有能用的 Provider"，这正是平台门槛（D3）需要的依据。
   Set<MusicPlatform> platformsFor(OnlineMusicCapability capability) => {
-    for (final platform in builtinMusicPlatforms)
+    // ⚠️ 这里**必须**用 `MusicPlatform.values`（含 `custom`）：能力集合是**路由/门槛**依据，
+    // 不是界面枚举。若排除 `custom`，自定义平台会在聚合门槛处被丢掉（provider 一个请求都收不到）。
+    // 自定义平台之间的区分由 `providersForIdentity`（稳定 ID）负责，不靠这里。
+    for (final platform in MusicPlatform.values)
       if (providersFor(platform, capability).isNotEmpty) platform,
   };
 

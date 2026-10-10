@@ -408,7 +408,13 @@ final class CompositeOnlineMusicService
         safeMessage: '搜索已取消',
       );
     }
-    return AggregatedSearchResult(perPlatform: perPlatform, failures: failures);
+    return AggregatedSearchResult(
+      perPlatform: perPlatform,
+      failures: failures,
+      // F5-P-39（P2）：身份键结果才是自定义平台的权威来源（旧枚举键可能因守卫被移除）。
+      perPlatformIdentity: perPlatformIdentity,
+      failuresByIdentity: failuresByIdentity,
+    );
   }
 
   /// 单平台搜索；永不抛出 `OnlineMusicException`（改写进 failures），
