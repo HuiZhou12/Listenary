@@ -116,3 +116,6 @@ skills-lock.json
 
 # Reasonix task traces
 .reasonix/
+
+# Archive docs must not live in the public repo (user decision 2026-10-11).
+docs/archive/
