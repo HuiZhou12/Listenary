@@ -5,6 +5,8 @@
 /// 未在本 Provider 上配置的能力一律报 `unavailable`，绝不伪装成支持。
 library;
 
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_errors.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
@@ -33,8 +35,10 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
     required OnlineMusicCredentialReader credentials,
     this.credentialReference,
     this.contentPlatform = MusicPlatform.netease,
+
     /// F5-P-39（P3）：稳定平台 ID，透传给摘要/搜索页（界面按身份显示名字）。
     this.platformId,
+
     /// F4-S4（P-13 / D10b:a）：Provider **静态声明**的档位表（内部级别 → 平台取值 + 展示名）。
     /// 缺省空 = 不声明档位 ⇒ 与修复前完全一致。
     this.qualityTiers = const [],
@@ -231,10 +235,7 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
   }) async {
-    final binding = _requireBinding(
-      OnlineMusicCapability.chartList,
-      platform,
-    );
+    final binding = _requireBinding(OnlineMusicCapability.chartList, platform);
     return _run(
       binding: binding,
       cancelToken: cancelToken,
@@ -321,7 +322,8 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
     required OnlineMusicDeclarativeCapabilityBinding binding,
     required OnlineMusicCancelToken cancelToken,
     required DeclarativeInputs inputs,
-    required T Function(Object? body) map,
+    // 允许**异步**映射：歌词需要把 LRC 解析成 `parsed`（与内置路径同一个解析器）。
+    required FutureOr<T> Function(Object? body) map,
   }) async {
     if (cancelToken.isCancelled) {
       throw const OnlineMusicException(
@@ -384,7 +386,7 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
           safeMessage: _safeMessageForKind(kind, response.statusCode),
         );
       }
-      return map(response.data);
+      return await map(response.data);
     } on OnlineMusicException {
       rethrow;
     } on DeclarativeRequestException catch (error) {

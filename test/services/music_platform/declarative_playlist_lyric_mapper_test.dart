@@ -188,8 +188,8 @@ void main() {
     );
     const ref = PlatformTrackRef(platform: netease, trackId: '347230');
 
-    test('读出原文与翻译，并带上来源', () {
-      final lyrics = mapDeclarativeLyricsResponse(
+    test('★ 读出原文与翻译、带上来源，并且**必须填 parsed**', () async {
+      final lyrics = await mapDeclarativeLyricsResponse(
         spec: spec,
         body: const {
           'lrc': {
@@ -203,10 +203,29 @@ void main() {
       expect(lyrics.original, '[00:00.00]海阔天空');
       expect(lyrics.translation, 'translated');
       expect(lyrics.ref, ref);
+      // ⚠️ 这条断言是**缺陷的护栏**：播放侧只认 `parsed`
+      //（`remote_lyric_controller`：`result.parsed == null ⇒ 暂无歌词`）。
+      // 旧实现只填 original ⇒ 任何声明式 Provider 的歌词都显示"暂无歌词"，
+      // 而试跑看 original（"原文有"）⇒ 假阳性。这里钉死"必须解析出来"。
+      expect(lyrics.parsed, isNotNull);
+      expect(lyrics.parsed!.lines, isNotEmpty);
     });
 
-    test('纯音乐：字段读到空是正常空结果，不是映射失败', () {
-      final lyrics = mapDeclarativeLyricsResponse(
+    test('原文非空但没有时间戳 ⇒ parsed 为空，但不崩、也不算映射失败', () async {
+      final lyrics = await mapDeclarativeLyricsResponse(
+        spec: spec,
+        body: const {
+          'lrc': {'lyric': '这是一段没有时间戳的文本'},
+        },
+        ref: ref,
+      );
+
+      expect(lyrics.original, '这是一段没有时间戳的文本');
+      expect(lyrics.parsed?.lines ?? const [], isEmpty);
+    });
+
+    test('纯音乐：字段读到空是正常空结果，不是映射失败', () async {
+      final lyrics = await mapDeclarativeLyricsResponse(
         spec: spec,
         body: const {
           'lrc': {'lyric': ''},
@@ -218,9 +237,9 @@ void main() {
       expect(lyrics.ref, ref);
     });
 
-    test('一个歌词字段都没配置 → 明确报配置错误（不能让用户以为"这首没歌词"）', () {
-      expect(
-        () => mapDeclarativeLyricsResponse(
+    test('一个歌词字段都没配置 → 明确报配置错误（不能让用户以为"这首没歌词"）', () async {
+      await expectLater(
+        mapDeclarativeLyricsResponse(
           spec: OnlineMusicResponseSpec(fieldsRootPath: p('lrc')),
           body: const {
             'lrc': {'lyric': 'whatever'},

@@ -706,7 +706,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     }
     final preview = execution.responsePreview;
     try {
-      return _evaluateCapabilityResponse(
+      final evaluated = await _evaluateCapabilityResponse(
         definition: definition,
         capability: capability,
         limit: effectiveLimit,
@@ -719,7 +719,8 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
         trackId: trackId,
         requestedPlaylistId: effectivePlaylistId,
         quality: quality,
-      ).withRequestSummary(requestSummary);
+      );
+      return evaluated.withRequestSummary(requestSummary);
     } on DeclarativeMappingException catch (error) {
       return DeclarativeCapabilityTestResult(
         ok: false,
@@ -743,7 +744,10 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   }
 
   /// 对一次成功的 HTTP 往返做"成功判定 + 字段映射"，并在失败时给出大类。
-  DeclarativeCapabilityTestResult _evaluateCapabilityResponse({
+  ///
+  /// 现在是**异步**的：歌词映射需要把 LRC 解析成 `parsed`（与内置路径同一个解析器），
+  /// 而该解析走 isolate。其它能力仍是同步映射，由调用方统一 `await`。
+  Future<DeclarativeCapabilityTestResult> _evaluateCapabilityResponse({
     required OnlineMusicProviderDefinition definition,
     required OnlineMusicCapability capability,
 
@@ -755,7 +759,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     required String? trackId,
     required String? requestedPlaylistId,
     required String quality,
-  }) {
+  }) async {
     if (!declarativeResponseIsSuccess(
       spec: binding.response.success,
       statusCode: response.statusCode,
@@ -957,7 +961,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
 
       case OnlineMusicCapability.lyric:
         {
-          final lyrics = mapDeclarativeLyricsResponse(
+          final lyrics = await mapDeclarativeLyricsResponse(
             spec: binding.response,
             body: response.data,
             ref: PlatformTrackRef(
@@ -980,7 +984,11 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
             mappedSummary: isEmpty
                 ? '没有可验证的数据（空结果）'
                 : '歌词：原文${lyrics.original != null ? '有' : '无'}'
-                      '${lyrics.translation != null ? ' · 翻译有' : ''}',
+                      '${lyrics.translation != null ? ' · 翻译有' : ''}'
+                      // ⚠️ **必须报解析行数**：播放侧只认 `parsed`（解析后的行），
+                      // 而"原文有"只证明字段取到了。不报行数时，"绿"不等于"能显示歌词"
+                      // —— 这正是"声明式歌词全显示暂无歌词"那个缺陷的假阳性来源。
+                      ' · 解析 ${lyrics.parsed?.lines.length ?? 0} 行',
             failureReason: isEmpty
                 ? declarativeEmptyResultNote('没有解析出歌词（纯音乐 / 间奏本来就没有歌词）')
                 : null,

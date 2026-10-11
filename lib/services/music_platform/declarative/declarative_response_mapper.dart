@@ -8,6 +8,8 @@ import 'package:pure_music/services/music_platform/declarative/declarative_error
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_json_path.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_response_spec.dart';
+import 'package:pure_music/services/online_lyric/parsed_lyric_converter.dart';
+import 'package:pure_music/services/online_lyric/parsers/lrc_tool.dart';
 
 /// 成功判定：状态码 + 一组 AND 谓词。
 bool declarativeResponseIsSuccess({
@@ -127,11 +129,7 @@ ResolvedStream mapDeclarativeResolveResponse({
   //   1. 根本没配 trackId 映射（保存/试跑另有校验提前报，这里是运行期兜底）；
   //   2. 配了但按当前路径/转换读不出来；
   //   3. 读出来了但与请求的不是同一首。
-  final read = _readWithDiagnosis(
-    spec,
-    OnlineMusicDomainField.trackId,
-    root,
-  );
+  final read = _readWithDiagnosis(spec, OnlineMusicDomainField.trackId, root);
   final returnedId = read.value;
   if (returnedId == null) {
     final mismatch = read.mismatch;
@@ -330,11 +328,11 @@ List<RemotePlaylistCategory> mapDeclarativePlaylistCategoriesResponse({
 /// 就可能没有歌词，那是正常的空结果（上层会显示"暂无歌词"）。
 /// 只有当用户**一个歌词字段都没配置**时才判定为配置错误 —— 那种情况下永远取不到
 /// 歌词，属于"接口定义无法匹配响应"，必须让用户知道。
-MusicLyrics mapDeclarativeLyricsResponse({
+Future<MusicLyrics> mapDeclarativeLyricsResponse({
   required OnlineMusicResponseSpec spec,
   required Object? body,
   required PlatformTrackRef ref,
-}) {
+}) async {
   const lyricFields = [
     OnlineMusicDomainField.lyricOriginal,
     OnlineMusicDomainField.lyricTranslation,
@@ -345,18 +343,44 @@ MusicLyrics mapDeclarativeLyricsResponse({
   }
 
   final root = spec.fieldsRootPath?.read(body) ?? body;
+  final original = _readString(
+    spec,
+    OnlineMusicDomainField.lyricOriginal,
+    root,
+  );
+  final translation = _readString(
+    spec,
+    OnlineMusicDomainField.lyricTranslation,
+    root,
+  );
+  final romanization = _readString(
+    spec,
+    OnlineMusicDomainField.lyricRomanization,
+    root,
+  );
+
+  // ⚠️ **必须把 LRC 解析成 `parsed`**：播放侧只认 `MusicLyrics.parsed`
+  //（`remote_lyric_controller`：`result.parsed == null ⇒ 显示"暂无歌词"`）。
+  // 旧实现只填 original/translation/romanization ⇒ **任何声明式 Provider 的歌词都会显示
+  // "暂无歌词"**，而试跑只看 original（显示"原文有"）⇒ 典型假阳性。
+  // 这里与**内置路径**（`chksz_netease_codec.parseLyricsResponse`）用同一个解析器与转换，
+  // 保证两条路径产出的 `MusicLyrics` 一致。
+  final hasOriginal = original != null && original.trim().isNotEmpty;
+  final parsedResult = hasOriginal
+      ? await parseLyricInIsolate(
+          text: original,
+          transText: translation,
+          romanizationText: romanization,
+        )
+      : null;
+
   return MusicLyrics(
-    original: _readString(spec, OnlineMusicDomainField.lyricOriginal, root),
-    translation: _readString(
-      spec,
-      OnlineMusicDomainField.lyricTranslation,
-      root,
-    ),
-    romanization: _readString(
-      spec,
-      OnlineMusicDomainField.lyricRomanization,
-      root,
-    ),
+    original: original,
+    translation: translation,
+    romanization: romanization,
+    parsed: parsedResult == null
+        ? null
+        : parsedLyricToLyric(parsedResult, rawText: original),
     ref: ref,
   );
 }
