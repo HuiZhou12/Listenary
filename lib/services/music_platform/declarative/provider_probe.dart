@@ -392,6 +392,139 @@ final class ProviderProbeReport {
   bool get didNotSendAnyRequest => outcomes.every(
     (outcome) => outcome.status != ProviderProbeStatus.attempted,
   );
+
+  /// **阶段汇总**（F3-3c / Spec §13.3 "阶段汇总"）：把逐候选结论收成一句可解释的话。
+  ProviderProbeSummary get summary => providerProbeSummaryOf(outcomes);
+}
+
+/// 一次探测的**汇总结论**（F3-3c）。
+///
+/// 为什么需要它：逐候选明细回答了"每个候选怎么了"，但用户真正要的是
+/// "**这次探测到底证明了什么、卡在哪一步、为什么推荐它**"。
+/// 汇总只做**计数与归因**，不重新判定任何东西（判定仍在共享执行引擎里）。
+final class ProviderProbeSummary {
+  const ProviderProbeSummary({
+    required this.verifiedCount,
+    required this.unconfirmedCount,
+    required this.failedCount,
+    required this.notAttemptedCount,
+    required this.failedStageCounts,
+    this.recommendedProvenance,
+    this.recommendationReason,
+  });
+
+  final int verifiedCount;
+  final int unconfirmedCount;
+  final int failedCount;
+  final int notAttemptedCount;
+
+  /// 各**失败阶段**的候选数（"卡在哪一步"的分布）。
+  final Map<DeclarativeVerificationStage, int> failedStageCounts;
+
+  /// 被推荐为初稿的候选（可追溯标识），没有则为 null。
+  final String? recommendedProvenance;
+
+  /// 推荐它的**理由**（可解释，绝不写"分数最高"）。
+  final String? recommendationReason;
+
+  bool get hasRecommendation => recommendedProvenance != null;
+
+  /// 一句话结论（界面直接显示；**不含任何凭据值**）。
+  String describe() {
+    if (verifiedCount == 0 &&
+        unconfirmedCount == 0 &&
+        failedCount == 0 &&
+        notAttemptedCount == 0) {
+      return '本次没有候选（未发出任何请求）';
+    }
+    final parts = <String>[
+      if (verifiedCount > 0) '$verifiedCount 个已验证可用',
+      if (unconfirmedCount > 0) '$unconfirmedCount 个未能确认',
+      if (failedCount > 0) '$failedCount 个验证失败',
+      if (notAttemptedCount > 0) '$notAttemptedCount 个未尝试',
+    ];
+    final buffer = StringBuffer('结论：${parts.join(' / ')}');
+    if (failedStageCounts.isNotEmpty) {
+      final stages = [
+        for (final entry in failedStageCounts.entries)
+          '${declarativeVerificationStageLabel(entry.key)}×${entry.value}',
+      ];
+      buffer.write('；卡点：${stages.join('、')}');
+    }
+    if (recommendedProvenance != null) {
+      buffer.write('；推荐「$recommendedProvenance」');
+      if (recommendationReason != null) {
+        buffer.write('（$recommendationReason）');
+      }
+    }
+    return buffer.toString();
+  }
+
+  @override
+  String toString() =>
+      'ProviderProbeSummary(verified=$verifiedCount, '
+      'unconfirmed=$unconfirmedCount, failed=$failedCount, '
+      'notAttempted=$notAttemptedCount, recommended=$recommendedProvenance)';
+}
+
+/// 由逐候选结论生成汇总（纯函数，便于单独断言）。
+ProviderProbeSummary providerProbeSummaryOf(
+  List<ProviderProbeOutcome> outcomes,
+) {
+  var verified = 0;
+  var unconfirmed = 0;
+  var failed = 0;
+  var notAttempted = 0;
+  final failedStages = <DeclarativeVerificationStage, int>{};
+
+  ProviderProbeOutcome? recommended;
+  var recommendedRank = 0;
+
+  for (final outcome in outcomes) {
+    switch (outcome.status) {
+      case ProviderProbeStatus.notAttempted:
+        // "未尝试"**不是失败**，单独计数（D-F3-5）。
+        notAttempted++;
+      case ProviderProbeStatus.notSent:
+        failed++;
+      case ProviderProbeStatus.attempted:
+        switch (outcome.confidence) {
+          case DeclarativeVerificationConfidence.verified:
+            verified++;
+          case DeclarativeVerificationConfidence.unconfirmed:
+            unconfirmed++;
+          case DeclarativeVerificationConfidence.failed:
+            failed++;
+        }
+    }
+    final failedStage = outcome.firstFailedStage;
+    if (failedStage != null) {
+      failedStages[failedStage] = (failedStages[failedStage] ?? 0) + 1;
+    }
+    // 推荐依据 = 可解释的排序（F3-1/R4）；同一级取**先出现**的候选（顺序即优先级）。
+    final rank = probeDraftRank(outcome);
+    if (rank > recommendedRank) {
+      recommendedRank = rank;
+      recommended = outcome;
+    }
+  }
+
+  return ProviderProbeSummary(
+    verifiedCount: verified,
+    unconfirmedCount: unconfirmed,
+    failedCount: failed,
+    notAttemptedCount: notAttempted,
+    failedStageCounts: Map.unmodifiable(failedStages),
+    // 与 `ProviderProbeCandidate.provenanceLabel` 同一形态（来源（能力）· 候选 id）。
+    recommendedProvenance: recommended == null
+        ? null
+        : '${recommended.sourceLabel} · ${recommended.candidateId}',
+    recommendationReason: switch (recommendedRank) {
+      2 => '四阶段全通，必需输出齐',
+      1 => '四阶段走通但映射不全，仍可作可编辑初稿',
+      _ => null,
+    },
+  );
 }
 
 /// 按**给定的候选顺序**做一次服务级探测（D-F3-5：每个候选最多一个请求）。

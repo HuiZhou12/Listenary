@@ -271,6 +271,81 @@ void main() {
     });
   });
 
+  group('F3-3c 阶段汇总（证明了什么 / 卡在哪一步 / 为什么推荐它）', () {
+    test('四种结论分别计数，且**未尝试不计入失败**', () {
+      final summary = providerProbeSummaryOf([
+        outcomeOf(mappedItemCount: 3), // verified
+        outcomeOf(
+          mappedItemCount: 2,
+          mappingIncompleteReason: '缺字段',
+        ), // unconfirmed
+        outcomeOf(
+          statusCode: 500,
+          failureKind: OnlineMusicErrorKind.unavailable,
+        ),
+        outcomeOf(
+          status: ProviderProbeStatus.notAttempted,
+          statusCode: null,
+          notAttemptedReason: '未尝试：请求预算耗尽',
+        ),
+      ]);
+
+      expect(summary.verifiedCount, 1);
+      expect(summary.unconfirmedCount, 1);
+      expect(summary.failedCount, 1);
+      expect(summary.notAttemptedCount, 1);
+      expect(
+        summary.failedStageCounts[DeclarativeVerificationStage.judgement],
+        1,
+        reason: 'HTTP 500 ⇒ 卡在判定',
+      );
+    });
+
+    test('汇总文案含计数、卡点与推荐理由（且不写"分数最高"）', () {
+      final summary = providerProbeSummaryOf([
+        outcomeOf(mappedItemCount: 3),
+        outcomeOf(statusCode: null, failureKind: OnlineMusicErrorKind.network),
+      ]);
+
+      final text = summary.describe();
+      expect(text, startsWith('结论：'));
+      expect(text, contains('1 个已验证可用'));
+      expect(text, contains('1 个验证失败'));
+      expect(text, contains('卡点：传输×1'));
+      expect(text, contains('推荐「'));
+      expect(text, contains('四阶段全通'));
+      expect(text, isNot(contains('分数')));
+    });
+
+    test('推荐依据是可解释排序：已验证 > 映射不全（不按出现顺序）', () {
+      final summary = providerProbeSummaryOf([
+        outcomeOf(mappedItemCount: 2, mappingIncompleteReason: '缺字段'),
+        outcomeOf(mappedItemCount: 5),
+      ]);
+
+      expect(summary.recommendationReason, contains('四阶段全通'));
+      expect(summary.recommendedProvenance, contains('搜索'));
+    });
+
+    test('全部未尝试 ⇒ 没有任何"失败"计数', () {
+      final summary = providerProbeSummaryOf([
+        outcomeOf(
+          status: ProviderProbeStatus.notAttempted,
+          statusCode: null,
+          notAttemptedReason: '未尝试：请求预算耗尽',
+        ),
+      ]);
+
+      expect(summary.failedCount, 0);
+      expect(summary.hasRecommendation, isFalse);
+      expect(summary.describe(), contains('1 个未尝试'));
+    });
+
+    test('空候选 ⇒ 明说"未发出任何请求"', () {
+      expect(providerProbeSummaryOf(const []).describe(), contains('未发出任何请求'));
+    });
+  });
+
   group('阶段词表（界面文案的地基）', () {
     test('四个阶段与四种状态都有中文标签', () {
       expect(

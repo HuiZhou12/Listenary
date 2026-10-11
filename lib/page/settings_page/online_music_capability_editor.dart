@@ -663,6 +663,9 @@ class _OnlineMusicCapabilityEditorDialogState
         return;
       }
       final detail = StringBuffer();
+      // F3-3c：先给**汇总结论**（证明了什么 / 卡在哪一步 / 为什么推荐它），再看逐候选明细。
+      detail.writeln(report.summary.describe());
+      detail.writeln();
       // F3-2 / 决策 5：**用了默认输入必须如实披露** —— 结论是"在这个输入下"得到的。
       for (final note in report.inputNotes) {
         detail.writeln('· 输入说明：$note');
