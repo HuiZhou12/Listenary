@@ -236,7 +236,9 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
         definition: provider,
         capability: capability,
         initialBinding: provider.bindingFor(capability),
-        onProbe: () => _controller.probeSearch(provider),
+        // F3-2b：探测**先出计划**（候选 / 输入 / 凭据需求），用户确认并改完输入后才真正发请求。
+        onProbePlan: () => _controller.probePlanFor(provider),
+        onProbe: (inputs) => _controller.probeSearch(provider, inputs: inputs),
         onTest: (binding, inputs) => _controller.testCapability(
           provider.withCapabilityBinding(capability, binding),
           capability,
@@ -488,9 +490,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
           // 用户完全看不出是自己的配置坏了 —— 与"从未配置"长得一模一样。
           if (provider.validationIssues().isNotEmpty) ...[
             const SizedBox(height: 4),
-            _SettingsHint(
-              '配置问题：${provider.validationIssues().join('；')}',
-            ),
+            _SettingsHint('配置问题：${provider.validationIssues().join('；')}'),
           ],
           // P-04：**逐条目**的"未生效"标记（以前只有页面顶部一句全局提示，
           // 用户看不出到底是哪一项改了还没生效）。
@@ -768,8 +768,7 @@ class _PlatformCard extends StatelessWidget {
             subtitle: '未配置：该平台下没有支持此能力的条目',
             action: const Text('未配置'),
           ),
-          if (pending)
-            const _SettingsHint('这里的改动尚未生效（下次启动）'),
+          if (pending) const _SettingsHint('这里的改动尚未生效（下次启动）'),
         ],
       );
     }
@@ -805,8 +804,7 @@ class _PlatformCard extends StatelessWidget {
             ),
           ),
         ),
-        if (pending)
-          const _SettingsHint('这里的改动尚未生效（下次启动）'),
+        if (pending) const _SettingsHint('这里的改动尚未生效（下次启动）'),
       ],
     );
   }
@@ -1058,9 +1056,7 @@ class _ProviderDialogState extends State<_ProviderDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       // P-64：用户可见文案统一用**展示名**（label 优先 displayName），与列表里的称呼一致。
-      title: Text(
-        _isEditing ? '编辑提供商 ${widget.editing!.label}' : '添加提供商',
-      ),
+      title: Text(_isEditing ? '编辑提供商 ${widget.editing!.label}' : '添加提供商'),
       content: SizedBox(
         width: 420,
         child: Column(
@@ -1119,11 +1115,11 @@ class _ProviderDialogState extends State<_ProviderDialog> {
                 segments: [
                   for (final platform in builtinMusicPlatforms)
                     ButtonSegment(
-                value: platform,
-                // P-64：这里以前直接显示英文枚举名（netease/qq/kugou），
-                // 而平台卡用的是 `musicPlatformLabel`。同一个平台两种称呼 ⇒ 统一成中文。
-                label: Text(musicPlatformLabel(platform)),
-              ),
+                      value: platform,
+                      // P-64：这里以前直接显示英文枚举名（netease/qq/kugou），
+                      // 而平台卡用的是 `musicPlatformLabel`。同一个平台两种称呼 ⇒ 统一成中文。
+                      label: Text(musicPlatformLabel(platform)),
+                    ),
                 ],
                 selected: {_contentPlatform},
                 onSelectionChanged: _isEditing
@@ -1288,8 +1284,7 @@ class _MigrationOutcomeDialog extends StatelessWidget {
                 Text('停止原因：${report.stopReason}'),
                 const SizedBox(height: 8),
               ],
-              if (report.portable)
-                const Text('便携版：本次未做任何迁移，明文仍在配置里。'),
+              if (report.portable) const Text('便携版：本次未做任何迁移，明文仍在配置里。'),
               for (final line in lines) Text(line),
               const SizedBox(height: 8),
               const Text('改动会在下次启动时生效。'),

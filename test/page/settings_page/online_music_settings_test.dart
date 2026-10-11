@@ -74,11 +74,7 @@ void main() {
       await tester.drag(find.byKey(capabilityFormKey), const Offset(0, -320));
       await tester.pumpAndSettle();
     }
-    expect(
-      find.text(label),
-      findsOneWidget,
-      reason: '把「$label」滚进视口后应当能找到它',
-    );
+    expect(find.text(label), findsOneWidget, reason: '把「$label」滚进视口后应当能找到它');
   }
 
   /// 滚到某个控件再点它（避免"视口外 = 找不到"的假失败）。
@@ -454,6 +450,10 @@ void main() {
 
     await tester.tap(find.text('探测该服务'));
     await tester.pumpAndSettle();
+    // F3-2b 的刻意语义变更：探测**先出计划**（候选 / 输入 / 凭据需求）并由用户确认，
+    // 点下按钮即发请求的旧行为已取消 —— 因此这里多一步"开始探测"。
+    await tester.tap(find.text('开始探测'));
+    await tester.pumpAndSettle();
     expect(transport.probeCalls, greaterThan(0));
     controller.dispose();
   });
@@ -545,6 +545,9 @@ void main() {
 
     // 探测会写入逐候选的多行明细：内容更长时结论不变。
     await tester.tap(find.text('探测该服务'));
+    await tester.pumpAndSettle();
+    // F3-2b：先确认计划，再真正发请求。
+    await tester.tap(find.text('开始探测'));
     await tester.pumpAndSettle();
     final longDetail = tester
         .widget<TextField>(readOnlyResultField())
@@ -808,7 +811,9 @@ void main() {
     // 于是界面上选得到、调用时静默 `unavailable`。
     // 现在只有**内置实现真正有的能力**才有候选，其余如实显示"未配置"。
     final missingOnNetease = OnlineMusicCapability.values
-        .where((capability) => !builtinOnlineMusicCapabilities.contains(capability))
+        .where(
+          (capability) => !builtinOnlineMusicCapabilities.contains(capability),
+        )
         .length;
     expect(missingOnNetease, 4, reason: '内置实现有 4 项 ⇒ 网易云卡应缺 4 项');
     expect(
@@ -821,9 +826,7 @@ void main() {
     );
     expect(
       find.text(unconfigured),
-      findsNWidgets(
-        2 * OnlineMusicCapability.values.length + missingOnNetease,
-      ),
+      findsNWidgets(2 * OnlineMusicCapability.values.length + missingOnNetease),
     );
   });
 
@@ -906,10 +909,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(
       find
-          .ancestor(
-            of: find.text('请求头名'),
-            matching: find.byType(TextField),
-          )
+          .ancestor(of: find.text('请求头名'), matching: find.byType(TextField))
           .first,
       name,
     );
@@ -1011,10 +1011,7 @@ void main() {
     await tester.pumpAndSettle();
     // 只点凭据对话框里的「保存」（编辑器自己也有一个同名按钮）。
     await tester.tap(
-      find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.text('保存'),
-      ),
+      find.descendant(of: find.byType(AlertDialog), matching: find.text('保存')),
     );
     await tester.pumpAndSettle();
 
@@ -1382,7 +1379,9 @@ void main() {
     // 用 `validationIssues` 反推"模型要什么"，因此**新增能力也不会漏**。
     for (final capability in OnlineMusicCapability.values) {
       final fields = responsePathFieldsFor(capability);
-      final issues = const OnlineMusicResponseSpec().validationIssues(capability);
+      final issues = const OnlineMusicResponseSpec().validationIssues(
+        capability,
+      );
       final requiresListPath = issues.any(
         (issue) => issue.contains('必须配置列表路径'),
       );
@@ -1406,10 +1405,7 @@ void main() {
       const listPathOnly = (listPath: true, fieldsRootPath: false);
       const fieldsRootOnly = (listPath: false, fieldsRootPath: true);
       const both = (listPath: true, fieldsRootPath: true);
-      expect(
-        responsePathFieldsFor(OnlineMusicCapability.search),
-        listPathOnly,
-      );
+      expect(responsePathFieldsFor(OnlineMusicCapability.search), listPathOnly);
       // 歌单详情两个都要：元数据在字段根路径、曲目数组在列表路径（真实配方形状）。
       expect(responsePathFieldsFor(OnlineMusicCapability.playlist), both);
       for (final capability in const [
@@ -1510,14 +1506,16 @@ void main() {
   testWidgets('F1 P-01 歌单详情：曲目数组路径写得住、试跑真的取到曲目', (tester) async {
     const trackCount = 3;
     final binding = validBindingFor(OnlineMusicCapability.playlist);
-    final settings = settingsWithBinding(OnlineMusicCapability.playlist, binding);
+    final settings = settingsWithBinding(
+      OnlineMusicCapability.playlist,
+      binding,
+    );
     final transport = _StubTransport({
       'playlist': {
         'id': 42,
         'name': '测试歌单',
         'tracks': [
-          for (var i = 0; i < trackCount; i++)
-            {'id': 100 + i, 'name': '曲目 $i'},
+          for (var i = 0; i < trackCount; i++) {'id': 100 + i, 'name': '曲目 $i'},
         ],
       },
     });
@@ -1564,7 +1562,10 @@ void main() {
       ),
     );
     expect(binding.validationIssues(OnlineMusicCapability.playlist), isEmpty);
-    final settings = settingsWithBinding(OnlineMusicCapability.playlist, binding);
+    final settings = settingsWithBinding(
+      OnlineMusicCapability.playlist,
+      binding,
+    );
     final transport = _StubTransport({
       'playlist': {'id': 42, 'name': '测试歌单'},
     });
@@ -1640,10 +1641,7 @@ void main() {
 
     // 确认文案必须逐项说清：哪几项会被覆盖 / 哪几项保持不变。
     expect(find.textContaining('当前的配置会被覆盖'), findsOneWidget);
-    expect(
-      find.textContaining('其它已配置的能力（歌单列表）保持不变'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('其它已配置的能力（歌单列表）保持不变'), findsOneWidget);
 
     await tester.tap(find.text('填充'));
     await tester.pumpAndSettle();
@@ -1714,10 +1712,7 @@ void main() {
     });
 
     testWidgets('★ 「必填」勾选框真的写进配置', (tester) async {
-      final fixture = bindingWithParamExtras(
-        required: false,
-        defaultValue: 30,
-      );
+      final fixture = bindingWithParamExtras(required: false, defaultValue: 30);
       final settings = settingsWithBinding(
         OnlineMusicCapability.search,
         fixture,
@@ -1792,11 +1787,7 @@ void main() {
               as OnlineMusicDeclarativeCapabilityBinding;
       final param = saved.request.query.single;
       expect(param.value, '30', reason: '固定值要写进配置');
-      expect(
-        param.source,
-        isNull,
-        reason: '两者互斥：固定值模式下不得再写来源（不静默取其一）',
-      );
+      expect(param.source, isNull, reason: '两者互斥：固定值模式下不得再写来源（不静默取其一）');
       expect(
         param.toJson().containsKey('source'),
         isFalse,
@@ -1919,11 +1910,7 @@ void main() {
               as OnlineMusicDeclarativeCapabilityBinding;
       final header = saved.request.headers.single;
       expect(header.sensitive, isTrue);
-      expect(
-        header.source,
-        isNull,
-        reason: '敏感头绝不能来自输入（F0 边界只加强不削弱）',
-      );
+      expect(header.source, isNull, reason: '敏感头绝不能来自输入（F0 边界只加强不削弱）');
       expect(header.credentialReference, isNotNull, reason: '敏感头必须带凭据引用');
     });
   });
@@ -2230,7 +2217,9 @@ void main() {
 
   // ------------------------------------------------------------------ F2（P-31）
 
-  testWidgets('★ F2 P-31 保存时把字段级 required 派生自能力级 requiredFieldsFor', (tester) async {
+  testWidgets('★ F2 P-31 保存时把字段级 required 派生自能力级 requiredFieldsFor', (
+    tester,
+  ) async {
     // 夹具起点故意制造**矛盾**：search 的能力级要求是 {trackId, title}，
     // 但文件里 trackId 的字段级标记是 false（手工编辑或旧版本可能留下这种状态）。
     final base = validBindingFor(OnlineMusicCapability.search);
@@ -2488,9 +2477,7 @@ void main() {
   testWidgets('★ F2 P-37 配置停用、运行中仍可用 ⇒ **两个事实都显示**且各自标注来源', (tester) async {
     // 让运行中的 service **确实**服务 qq：声明式条目 + search/stream 两条绑定
     //（D3 硬门槛要求可搜索 = 有 search 且有 stream）。
-    final searchJson = validBindingFor(
-      OnlineMusicCapability.search,
-    ).toJson();
+    final searchJson = validBindingFor(OnlineMusicCapability.search).toJson();
     final qqSettings = OnlineMusicSettings.fromJson({
       'providers': [
         {
@@ -2520,10 +2507,7 @@ void main() {
       reason: '配置态的事实',
     );
     expect(
-      find.descendant(
-        of: qqCard,
-        matching: find.text('运行中：仍可用（停用要下次启动才生效）'),
-      ),
+      find.descendant(of: qqCard, matching: find.text('运行中：仍可用（停用要下次启动才生效）')),
       findsOneWidget,
       reason: 'P-37：运行中的事实必须**同时**说清，不能被展示优先级吃掉',
     );
@@ -2587,6 +2571,9 @@ void main() {
     final probeButton = find.widgetWithText(TextButton, '探测该服务');
     expect(probeButton, findsOneWidget, reason: '搜索能力应提供「探测该服务」');
     await tester.tap(probeButton);
+    await tester.pumpAndSettle();
+    // F3-2b：探测前先确认计划（候选 / 输入 / 凭据），确认后才发请求。
+    await tester.tap(find.text('开始探测'));
     await tester.pumpAndSettle();
 
     // 应用初稿会把视图切回表单（`_loadFromBinding` 里 `_showJson = false`），因此再切到 JSON。
@@ -2669,11 +2656,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final sent = transport.requests.last.query;
-    expect(
-      sent['keywords'],
-      '自定义词',
-      reason: 'P-49：界面上填的关键词必须真的进请求（以前恒为探测常量）',
-    );
+    expect(sent['keywords'], '自定义词', reason: 'P-49：界面上填的关键词必须真的进请求（以前恒为探测常量）');
     expect(sent['limit'], '7', reason: 'P-49：以前恒为 1');
   });
 }
@@ -2712,8 +2695,7 @@ final class _DiagnosticsOnlyService
   List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) => const [];
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// 各能力的**校验通过**夹具：路径与字段名都取自真实配方（`docs/dev/netease-bindings/`）。
@@ -2922,37 +2904,38 @@ OnlineMusicSettings settingsWithBinding(
 });
 
 /// F0-4 用的**校验通过**的声明式 search 绑定（字段映射齐全）。
-Map<String, Object?> f04SearchBindingJson() => OnlineMusicDeclarativeCapabilityBinding(
-  request: const OnlineMusicRequestSpec(
-    path: '/search',
-    query: [
-      OnlineMusicParamBinding(
-        name: 'keywords',
-        source: OnlineMusicInputSource.keyword,
-        required: true,
+Map<String, Object?> f04SearchBindingJson() =>
+    OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(
+        path: '/search',
+        query: [
+          OnlineMusicParamBinding(
+            name: 'keywords',
+            source: OnlineMusicInputSource.keyword,
+            required: true,
+          ),
+        ],
       ),
-    ],
-  ),
-  response: OnlineMusicResponseSpec(
-    listPath: JsonPath.tryParse('result.songs'),
-    fields: {
-      OnlineMusicDomainField.trackId: OnlineMusicFieldSpec(
-        candidates: [JsonPath.tryParse('id')!],
-        transform: OnlineMusicFieldTransform.asInt,
-        required: true,
+      response: OnlineMusicResponseSpec(
+        listPath: JsonPath.tryParse('result.songs'),
+        fields: {
+          OnlineMusicDomainField.trackId: OnlineMusicFieldSpec(
+            candidates: [JsonPath.tryParse('id')!],
+            transform: OnlineMusicFieldTransform.asInt,
+            required: true,
+          ),
+          OnlineMusicDomainField.title: OnlineMusicFieldSpec(
+            candidates: [JsonPath.tryParse('name')!],
+            transform: OnlineMusicFieldTransform.asString,
+            required: true,
+          ),
+          OnlineMusicDomainField.artists: OnlineMusicFieldSpec(
+            candidates: [JsonPath.tryParse('artists[*].name')!],
+            transform: OnlineMusicFieldTransform.asStringList,
+          ),
+        },
       ),
-      OnlineMusicDomainField.title: OnlineMusicFieldSpec(
-        candidates: [JsonPath.tryParse('name')!],
-        transform: OnlineMusicFieldTransform.asString,
-        required: true,
-      ),
-      OnlineMusicDomainField.artists: OnlineMusicFieldSpec(
-        candidates: [JsonPath.tryParse('artists[*].name')!],
-        transform: OnlineMusicFieldTransform.asStringList,
-      ),
-    },
-  ),
-).toJson();
+    ).toJson();
 
 final class _StubTransport implements DeclarativeHttpTransport {
   /// 可选自定义响应体；缺省是"搜索形状"的假响应（既有用例依赖它）。

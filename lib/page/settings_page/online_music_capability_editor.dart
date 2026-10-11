@@ -7,6 +7,9 @@ import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_verification.dart';
+import 'package:pure_music/page/settings_page/online_music_probe_plan_dialog.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_probe_inputs.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_probe_plan.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
 import 'package:pure_music/services/music_platform/online_music_credentials.dart';
 import 'package:pure_music/services/music_platform/online_music_diagnostics.dart';
@@ -105,6 +108,7 @@ class OnlineMusicCapabilityEditorDialog extends StatefulWidget {
     required this.definition,
     required this.capability,
     required this.initialBinding,
+    required this.onProbePlan,
     required this.onProbe,
     required this.onTest,
     required this.onIsCredentialConfigured,
@@ -115,8 +119,12 @@ class OnlineMusicCapabilityEditorDialog extends StatefulWidget {
   final OnlineMusicCapability capability;
   final OnlineMusicCapabilityBinding initialBinding;
 
-  /// 探测整个服务（仅 search 提供）。
-  final Future<ProviderProbeReport> Function() onProbe;
+  /// 探测**发请求之前**的计划（仅 search 提供）：候选 / 输入 / 凭据需求（F3-2b）。
+  final Future<ProviderProbePlan> Function() onProbePlan;
+
+  /// 探测整个服务；[inputs] 是用户在计划确认框里确认过的输入（F3-2b）。
+  final Future<ProviderProbeReport> Function(DeclarativeProbeInputs inputs)
+  onProbe;
 
   /// 用**当前编辑中的**绑定试跑一次；[inputs] 是**用户给的**真实输入（P-49）。
   final Future<DeclarativeCapabilityTestResult> Function(
@@ -611,18 +619,39 @@ class _OnlineMusicCapabilityEditorDialogState
   }
 
   Future<void> _runProbe() async {
+    // F3-2b：**先出计划、再发请求** —— 事前说清"测哪些候选 / 用什么输入 / 是否需要凭据"，
+    // 并允许就地改输入。取消 ⇒ 一个请求都不发（旧实现点下即发，用户事前一无所知）。
+    //
+    // ⚠️ 计划与确认阶段**不进忙碌态**：对话框开着时界面还在转圈，既是"正在进行"的假象，
+    // 也会让 widget 测试永远等不到静止（无限动画）。
+    final plan = await widget.onProbePlan();
+    if (!mounted) return;
+    // F0-3：整个探测被拦下（服务地址非法）时**不能**说"候选都没通过"——
+    // 那意味着"我们试过了"，而事实是一个请求都没发。
+    if (plan.isBlocked) {
+      setState(() {
+        _resultOk = false;
+        _resultHeadline = '无法探测';
+        _resultController.text = plan.blockedReason ?? '无法探测';
+      });
+      return;
+    }
+    final inputs = await showDialog<DeclarativeProbeInputs>(
+      context: context,
+      builder: (_) => OnlineMusicProbePlanDialog(plan: plan),
+    );
+    // 取消 ⇒ **不发请求**（也不留忙碌态）。
+    if (inputs == null || !mounted) return;
     setState(() {
       _busy = true;
-      // 进行中先清空上一次结果，避免旧标题/旧详情被误读成本次结果。
+      // 真正开始探测前清空上一次结果，避免旧标题/旧详情被误读成本次结果。
       _resultHeadline = null;
       _resultOk = null;
       _resultController.clear();
     });
     try {
-      final report = await widget.onProbe();
+      final report = await widget.onProbe(inputs);
       if (!mounted) return;
-      // F0-3：整个探测被拦下（服务地址非法）时**不能**说"候选都没通过"——
-      // 那意味着"我们试过了"，而事实是一个请求都没发。
       final blocked = report.blockedReason;
       if (blocked != null) {
         setState(() {
@@ -634,6 +663,11 @@ class _OnlineMusicCapabilityEditorDialogState
         return;
       }
       final detail = StringBuffer();
+      // F3-2 / 决策 5：**用了默认输入必须如实披露** —— 结论是"在这个输入下"得到的。
+      for (final note in report.inputNotes) {
+        detail.writeln('· 输入说明：$note');
+      }
+      if (report.inputNotes.isNotEmpty) detail.writeln();
       for (final outcome in report.outcomes) {
         // F3-S1：三种情形必须**分开说** ——「未尝试」「没发出去（配置问题）」与
         // 「试过但失败」。把它们渲染成同一句"候选未通过"，就是在谎称"我们试过了"。

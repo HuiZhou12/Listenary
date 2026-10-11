@@ -9,6 +9,7 @@ import 'package:pure_music/services/music_platform/declarative/declarative_reque
 import 'package:pure_music/services/music_platform/declarative/declarative_response_mapper.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_verification.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_probe_inputs.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_probe_plan.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_credentials.dart';
@@ -528,6 +529,42 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
         cancelToken: cancelToken,
         inputs: inputs,
       ),
+    );
+  }
+
+  /// 探测的**事前计划**（F3-2b / Spec §13.2 R7）：候选、输入、凭据需求。
+  ///
+  /// **一个请求都不发**（只读配置与凭据可用性）—— 界面据此先向用户说清
+  /// "会测哪些候选、用什么输入、是否需要真实凭据"，再决定要不要真的探测。
+  Future<ProviderProbePlan> probePlanFor(
+    OnlineMusicProviderDefinition definition, {
+    DeclarativeProbeInputs inputs = const DeclarativeProbeInputs(),
+  }) async {
+    final baseUrlIssue = definition.baseUrlIssue;
+    if (baseUrlIssue != null) {
+      return ProviderProbePlan(
+        candidates: const [],
+        inputs: inputs,
+        requiresCredential: definition.requiresCredential,
+        hasCredential: false,
+        blockedReason: '服务地址无效：$baseUrlIssue（不会回落到默认地址，也不会发出请求）',
+      );
+    }
+    final candidates = probeCandidatesFor(definition);
+    if (candidates.isEmpty) {
+      return ProviderProbePlan(
+        candidates: const [],
+        inputs: inputs,
+        requiresCredential: definition.requiresCredential,
+        hasCredential: false,
+        blockedReason: noProbeCandidateReason(definition),
+      );
+    }
+    return ProviderProbePlan(
+      candidates: candidates,
+      inputs: inputs,
+      requiresCredential: definition.requiresCredential,
+      hasCredential: await _readCredential(definition) != null,
     );
   }
 
