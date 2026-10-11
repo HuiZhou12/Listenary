@@ -116,6 +116,12 @@ final class ProviderProbeCandidate {
       '${providerProbeCandidateSourceLabel(source)}'
       '（${onlineMusicCapabilityLabel(capability)}）';
 
+  /// **可追溯**的候选标识（F3-2c / Spec §9.2）：来源 + 能力 + 候选 id。
+  ///
+  /// 报告与计划都用它 —— 用户要能回答"这条结论是**哪个候选**给的"，
+  /// 而不是只看到一句"探测成功"。
+  String get provenanceLabel => '$sourceLabel · $id';
+
   @override
   String toString() =>
       'ProviderProbeCandidate($id, capability=${capability.name}, '
@@ -450,6 +456,13 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
       outcomes.add(_notAttempted(candidate, '未尝试：探测已被取消'));
       continue;
     }
+    // F3-2c：**兼容性过滤**（来源优先级不等于可信）—— 不兼容的候选以"未尝试 + 原因"
+    // 出现，绝不静默丢弃，也绝不消耗请求预算。
+    final incompatible = probeCandidateIncompatibility(candidate);
+    if (incompatible != null) {
+      outcomes.add(_notAttempted(candidate, '未尝试：$incompatible'));
+      continue;
+    }
     // F3-2 / 决策 5：**缺少必需输入 ⇒ 不发请求**，并如实记"未尝试"。
     // 宁可说"没试"，也不拿默认值替用户决定（旧实现把关键词写死且不声明）。
     final resolvedInputs = resolveProbeInputs(candidate.capability, inputs);
@@ -495,6 +508,32 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
     draftSource: best?.source,
     draftCapability: best?.capability,
   );
+}
+
+/// 该候选**能否用于服务级探测**；不能则给出**可读原因**（F3-2c / Spec §9.2 的兼容性过滤）。
+///
+/// 为什么要"过滤而不是悄悄丢掉"：候选池里可能出现两种根本发不出去的候选 ——
+/// ① 该能力需要实体 ID（服务级探测**绝不伪造 ID**）；② 请求路径带 `{占位符}`
+/// 而探测没有任何 ID 输入可填。这两种都必须以**"未尝试 + 原因"**出现，
+/// 而不是被静默剔除（用户会以为"它被测过并且失败了"）。
+///
+/// 优先级只决定顺序、**不代表可信**：来源再高也要过这一关。
+String? probeCandidateIncompatibility(ProviderProbeCandidate candidate) {
+  if (!probeCapableCapabilities.contains(candidate.capability)) {
+    // ⚠️ 文案与既有实现**逐字一致**（`_probeCandidate` 内的纵深防线也用这句）：
+    // 用户可见的措辞不做无谓漂移，也让既有断言继续有效。
+    return '该能力需要具体的曲目 / 歌单 ID，不适合服务级探测'
+        '（请用「试跑」并自己填 ID；探测不会伪造 ID）';
+  }
+  final placeholders = RegExp(
+    r'\{([^}]+)\}',
+  ).allMatches(candidate.binding.request.path).map((m) => m.group(1)!).toList();
+  if (placeholders.isNotEmpty) {
+    return '该候选的请求路径需要占位符 '
+        '${placeholders.map((name) => '{$name}').join('、')}，'
+        '而服务级探测没有可提供的实体 ID';
+  }
+  return null;
 }
 
 /// 该候选**能否作为初稿**、以及它的可解释排序值（F3-1 / Spec §9.4 的 R4）。

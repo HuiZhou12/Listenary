@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_http_transport.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_probe_inputs.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_probe_plan.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_verification.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
@@ -170,7 +171,90 @@ void main() {
       expect(report.inputNotes, isEmpty);
     });
   });
+  group('F3-2c 兼容性过滤与可追溯', () {
+    test('普通搜索候选：兼容（返回 null），且 provenance 可追溯', () {
+      final candidate = _searchCandidate();
+
+      expect(probeCandidateIncompatibility(candidate), isNull);
+      expect(candidate.provenanceLabel, contains('搜索'));
+      expect(candidate.provenanceLabel, contains(candidate.id));
+    });
+
+    test('路径带占位符 ⇒ 明确判定不兼容（原因可读）', () {
+      final candidate = _candidateWithPath('/song/{trackId}');
+
+      final reason = probeCandidateIncompatibility(candidate);
+      expect(reason, isNotNull);
+      expect(reason, contains('占位符'));
+      expect(reason, contains('trackId'));
+    });
+
+    test('需要实体 ID 的能力（歌词）⇒ 明确判定不兼容', () {
+      final candidate = ProviderProbeCandidate(
+        id: 'user:lyric',
+        label: '条目自身配置',
+        source: ProviderProbeCandidateSource.userConfig,
+        capability: OnlineMusicCapability.lyric,
+        binding: OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(path: '/lyric'),
+          response: OnlineMusicResponseSpec(
+            listPath: JsonPath.tryParse('data'),
+          ),
+        ),
+      );
+
+      final reason = probeCandidateIncompatibility(candidate);
+      expect(reason, isNotNull);
+      expect(reason, contains('曲目 / 歌单 ID'));
+    });
+
+    test('★ 不兼容候选 ⇒ 未尝试、**不发请求**、原因写清楚', () async {
+      final transport = _FakeTransport(explode: true);
+
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: _NoCredentialReader(),
+        platform: MusicPlatform.netease,
+        candidates: [_candidateWithPath('/song/{trackId}')],
+      );
+
+      expect(transport.calls, 0, reason: '不兼容的候选绝不消耗请求预算');
+      final outcome = report.outcomes.single;
+      expect(outcome.status, ProviderProbeStatus.notAttempted);
+      expect(outcome.notAttemptedReason, contains('占位符'));
+      expect(outcome.countsAsFailure, isFalse);
+    });
+
+    test('计划里如实列出"不会请求"的候选（不许看起来像测过但失败）', () {
+      final plan = ProviderProbePlan(
+        candidates: [_searchCandidate(), _candidateWithPath('/song/{trackId}')],
+        inputs: const DeclarativeProbeInputs(),
+        requiresCredential: false,
+        hasCredential: false,
+      );
+
+      expect(plan.incompatibleCandidateLines, hasLength(1));
+      expect(plan.incompatibleCandidateLines.single, contains('→'));
+      final text = plan.describe();
+      expect(text, contains('不会请求：'));
+      expect(text, contains('占位符'));
+    });
+  });
 }
+
+ProviderProbeCandidate _candidateWithPath(String path) =>
+    ProviderProbeCandidate(
+      id: 'user:search',
+      label: '条目自身配置',
+      source: ProviderProbeCandidateSource.userConfig,
+      capability: OnlineMusicCapability.search,
+      binding: OnlineMusicDeclarativeCapabilityBinding(
+        request: OnlineMusicRequestSpec(path: path),
+        response: OnlineMusicResponseSpec(
+          listPath: JsonPath.tryParse('data.songs'),
+        ),
+      ),
+    );
 
 ProviderProbeCandidate _searchCandidate() => ProviderProbeCandidate(
   id: 'user:search',

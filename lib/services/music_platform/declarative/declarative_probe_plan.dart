@@ -47,9 +47,19 @@ final class ProviderProbePlan {
   /// 结论最多是"未能确认"（D-F3-2）。
   bool get probesWithoutCredential => requiresCredential && !hasCredential;
 
-  /// 每个候选的"来源（能力）"，顺序即执行顺序。
+  /// 每个候选的"来源（能力）+ 候选 id"，顺序即执行顺序。
   List<String> get candidateLines => [
-    for (final candidate in candidates) candidate.sourceLabel,
+    for (final candidate in candidates) candidate.provenanceLabel,
+  ];
+
+  /// **不会发请求**的候选（兼容性过滤，F3-2c）：`候选 → 原因`。
+  ///
+  /// 单独列出来是有意的：用户必须能看到"哪个候选被跳过了、为什么"，
+  /// 否则会把它误读成"测过但失败了"。
+  List<String> get incompatibleCandidateLines => [
+    for (final candidate in candidates)
+      if (probeCandidateIncompatibility(candidate) case final reason?)
+        '${candidate.provenanceLabel} → $reason',
   ];
 
   /// 前 [limit] 个候选（用于界面上"将测试：…"的简短列出）。
@@ -69,7 +79,7 @@ final class ProviderProbePlan {
       if (resolved == null) {
         final missing =
             missingRequiredProbeInputName(candidate.capability, inputs) ?? '输入';
-        lines.add('${candidate.sourceLabel}：**缺少必需的$missing**（本次不会发送请求）');
+        lines.add('${candidate.provenanceLabel}：**缺少必需的$missing**（本次不会发送请求）');
         continue;
       }
       final used = <String>['关键词「${resolved.keyword}」'];
@@ -81,7 +91,7 @@ final class ProviderProbePlan {
       final defaults = resolved.defaultedNotes.isEmpty
           ? ''
           : '（含默认值：${resolved.defaultedNotes.join('、')}）';
-      lines.add('${candidate.sourceLabel}：${used.join('、')}$defaults');
+      lines.add('${candidate.provenanceLabel}：${used.join('、')}$defaults');
     }
     return List.unmodifiable(lines);
   }
@@ -100,6 +110,11 @@ final class ProviderProbePlan {
     );
     for (final line in candidateLinesPreview()) {
       buffer.writeln('· $line');
+    }
+    for (final line in incompatibleCandidateLines) {
+      // F3-2c：被兼容性过滤掉的候选**不会**发请求 —— 原因必须写出来，
+      // 否则用户会把它读成"测过但失败了"。
+      buffer.writeln('不会请求：$line');
     }
     for (final line in inputLines) {
       buffer.writeln('输入：$line');
