@@ -7,6 +7,7 @@ library;
 
 // `probeCapableCapabilities`（哪些能力可作服务级探针）定义在**声明式层**：
 // 它是探测自身的契约，放在这里会形成 provider→declarative→provider 的循环依赖。
+import 'package:pure_music/services/music_platform/declarative/declarative_probe_contract.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_templates.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';

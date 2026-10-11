@@ -204,8 +204,6 @@ class _OnlineMusicCapabilityEditorDialogState
     });
   }
 
-  bool get _isSearch => widget.capability == OnlineMusicCapability.search;
-
   @override
   void initState() {
     super.initState();
@@ -951,12 +949,15 @@ class _OnlineMusicCapabilityEditorDialogState
                       onPressed: _applyJson,
                       child: const Text('应用 JSON'),
                     ),
-                  if (_isSearch)
-                    TextButton.icon(
-                      onPressed: _busy ? null : _runProbe,
-                      icon: const Icon(Symbols.radar),
-                      label: const Text('探测该服务'),
-                    ),
+                  // F3-4：**不再按能力隐藏探测入口**（旧实现按 `_isSearch` 判断后隐藏）。
+                  // 需要实体 ID 的能力不再"入口凭空消失"，而是由能力契约在点下后
+                  // 明确说明原因（"该能力需要具体的曲目 / 歌单 ID…请用试跑"）——
+                  // 隐藏入口会让人以为"这个功能不存在"。
+                  TextButton.icon(
+                    onPressed: _busy ? null : _runProbe,
+                    icon: const Icon(Symbols.radar),
+                    label: const Text('探测该服务'),
+                  ),
                   TextButton.icon(
                     onPressed: _busy ? null : _runTest,
                     icon: const Icon(Symbols.play_arrow),

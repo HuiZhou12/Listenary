@@ -49,6 +49,7 @@ import 'package:pure_music/services/music_platform/online_music_error.dart';
 import 'package:pure_music/services/music_platform/online_music_request.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_probe_contract.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_probe_inputs.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_json_path.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_credentials.dart';
@@ -130,23 +131,11 @@ final class ProviderProbeCandidate {
 
 /// **服务级探测**能验的能力（D-F3-5，按用户裁定修正）。
 ///
-/// Spec §19.5：探测 = 服务级（baseUrl 可达性 + 协议基本形态），**不是**逐个能力验一遍。
-/// 收进来的判据是两条（**不再要求"必须返回曲目列表"**）：
-/// 1. **不需要用户提供具体实体 ID**（不需要 trackId / playlistId）；
-/// 2. 能**独立执行**并给出有效的服务级证据（发一次真实请求 + 用**它自己的**响应结构
-///    与映射结果判定 —— 曲目列表、歌单列表、歌单分类、榜单各自算数）。
+/// **服务级探测**能验哪些能力、结果怎么计数 —— 见 `declarative_probe_contract.dart`。
 ///
-/// 排除在默认探针之外的（按用户裁定第 3 条）：
-/// - `playlist`（歌单详情）/ `lyric` / `stream` 都需要**具体实体 ID**
-///   ⇒ 交给**试跑**（用户自己填 ID），**绝不伪造一个 ID 去探测**。
-const probeCapableCapabilities = <OnlineMusicCapability>[
-  // 优先 Search；其余按"无需 ID 即可独立执行"的集合给出（顺序即执行顺序）。
-  OnlineMusicCapability.search,
-  OnlineMusicCapability.newSongs,
-  OnlineMusicCapability.playlistCollection,
-  OnlineMusicCapability.playlistCategories,
-  OnlineMusicCapability.chartList,
-];
+/// F3-4：这张表**只有一份**（契约），`probeCapableCapabilities` 与映射单位都从它派生；
+/// 以前这里另存一份能力列表、`_judgeProbeResponse` 里再写一份单位字面量，
+/// 新增能力时漏改一处就会出现"能探但不会计数"。
 
 /// 该候选**走到了哪一步**（D-F3-4 / D-F3-5：三种情形必须能分开）。
 ///
@@ -648,12 +637,9 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
 ///
 /// 优先级只决定顺序、**不代表可信**：来源再高也要过这一关。
 String? probeCandidateIncompatibility(ProviderProbeCandidate candidate) {
-  if (!probeCapableCapabilities.contains(candidate.capability)) {
-    // ⚠️ 文案与既有实现**逐字一致**（`_probeCandidate` 内的纵深防线也用这句）：
-    // 用户可见的措辞不做无谓漂移，也让既有断言继续有效。
-    return '该能力需要具体的曲目 / 歌单 ID，不适合服务级探测'
-        '（请用「试跑」并自己填 ID；探测不会伪造 ID）';
-  }
+  // F3-4：可探测性与原因都取自**能力契约**（文案只有那一份）。
+  final notProbeable = probeNotProbeableReasonFor(candidate.capability);
+  if (notProbeable != null) return notProbeable;
   final placeholders = RegExp(
     r'\{([^}]+)\}',
   ).allMatches(candidate.binding.request.path).map((m) => m.group(1)!).toList();
@@ -765,16 +751,16 @@ Future<ProviderProbeOutcome> _send({
   // 用户裁定第 3 条：需要**具体曲目 / 歌单 ID** 的能力不作默认探针，
   // 且**绝不伪造 ID** —— 因此这里连请求都不发（候选策略本不该把它们放进来，
   // 这是纵深防线：万一日后有人改坏了候选策略，也不会"编一个 ID 去试探"）。
-  if (!probeCapableCapabilities.contains(candidate.capability)) {
+  // F3-4：可探测性与原因都取自**能力契约**（文案只有那一份，见 `declarative_probe_contract.dart`）。
+  final notProbeable = probeNotProbeableReasonFor(candidate.capability);
+  if (notProbeable != null) {
     return ProviderProbeOutcome(
       candidateId: candidate.id,
       label: candidate.label,
       source: candidate.source,
       capability: candidate.capability,
       status: ProviderProbeStatus.notAttempted,
-      notAttemptedReason:
-          '未尝试：该能力需要具体的曲目 / 歌单 ID，不适合服务级探测'
-          '（请用「试跑」并自己填 ID；探测不会伪造 ID）',
+      notAttemptedReason: '未尝试：$notProbeable',
     );
   }
 
@@ -949,7 +935,7 @@ int _countListEntries(JsonPath? listPath, Object? body) {
       limit: limit,
       offset: 0,
     ).items.length,
-    unit: '首曲目',
+    unit: probeResultUnitFor(candidate.capability),
   ),
   OnlineMusicCapability.playlistCollection => (
     count: mapDeclarativePlaylistCollectionResponse(
@@ -957,7 +943,7 @@ int _countListEntries(JsonPath? listPath, Object? body) {
       body: body,
       platform: platform,
     ).length,
-    unit: '个歌单',
+    unit: probeResultUnitFor(candidate.capability),
   ),
   OnlineMusicCapability.chartList => (
     count: mapDeclarativePlaylistCollectionResponse(
@@ -965,7 +951,7 @@ int _countListEntries(JsonPath? listPath, Object? body) {
       body: body,
       platform: platform,
     ).length,
-    unit: '个榜单',
+    unit: probeResultUnitFor(candidate.capability),
   ),
   OnlineMusicCapability.playlistCategories => (
     count: mapDeclarativePlaylistCategoriesResponse(
@@ -973,13 +959,13 @@ int _countListEntries(JsonPath? listPath, Object? body) {
       body: body,
       platform: platform,
     ).length,
-    unit: '个分类',
+    unit: probeResultUnitFor(candidate.capability),
   ),
-  // 需要具体实体 ID 的能力**不作为默认探针**（见 `probeCapableCapabilities`）。
+  // 需要具体实体 ID 的能力**不作为默认探针**（见能力契约）。
   // 真走到这里说明候选策略被改坏了 ⇒ 明确失败，而不是硬套某个映射或伪造 ID。
   OnlineMusicCapability.playlist ||
   OnlineMusicCapability.lyric ||
-  OnlineMusicCapability.stream => throw const DeclarativeMappingException(
-    '该能力需要具体的曲目 / 歌单 ID，不适合服务级探测（请用「试跑」并自己填 ID）',
+  OnlineMusicCapability.stream => throw DeclarativeMappingException(
+    probeNotProbeableReasonFor(candidate.capability) ?? '该能力不适合服务级探测',
   ),
 };

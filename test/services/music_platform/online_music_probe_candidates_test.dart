@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/services/music_platform/chksz/index.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_probe_contract.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_templates.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_probe_candidates.dart';
@@ -124,10 +125,7 @@ void main() {
       contains(builtinOnlineMusicChkszId),
     );
     // 一个都没配、又没有可用模板时，理由必须说"没有绑定"（与上面那条形成对照）。
-    expect(
-      noProbeCandidateReason(definition),
-      contains('没有声明式绑定'),
-    );
+    expect(noProbeCandidateReason(definition), contains('没有声明式绑定'));
     expect(probeCandidatesFor(definition, templates: const []), isEmpty);
   });
 
@@ -195,10 +193,7 @@ void main() {
 
       expect(candidates, hasLength(1), reason: '${capability.name} 应当能作探针');
       expect(candidates.single.capability, capability);
-      expect(
-        candidates.single.source,
-        ProviderProbeCandidateSource.userConfig,
-      );
+      expect(candidates.single.source, ProviderProbeCandidateSource.userConfig);
     }
   });
 
@@ -222,10 +217,7 @@ void main() {
       'search': binding('/search').toJson(),
     }).providers.single;
 
-    expect(
-      probeCandidatesFor(definition).single.sourceLabel,
-      '条目自身配置（搜索）',
-    );
+    expect(probeCandidatesFor(definition).single.sourceLabel, '条目自身配置（搜索）');
     expect(
       ProviderProbeCandidate.fromTemplate(
         onlineMusicProviderTemplates().first,
