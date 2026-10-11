@@ -659,6 +659,16 @@ class _OnlineMusicCapabilityEditorDialogState
           '${outcome.needsAuthentication ? ' · 需要认证' : ''}'
           '${kind == null ? '' : ' · ${onlineMusicErrorKindLabel(kind)}'}',
         );
+        // F3-1：**卡在哪一阶段**（配置 / 传输 / 判定 / 映射）。
+        // 以前四种完全不同的原因会塌缩成同一句"候选未通过"，用户不知道该改哪里。
+        final failedStage = outcome.firstFailedStage;
+        if (failedStage != null) {
+          detail.writeln(
+            '    卡在：${declarativeVerificationStageLabel(failedStage)}'
+            '（${declarativeVerificationStageStatusLabel(outcome.stageStatus(failedStage))}）'
+            '${failedStage == DeclarativeVerificationStage.config ? ' · 未发出任何请求' : ''}',
+          );
+        }
         if (outcome.failureReason != null) {
           detail.writeln('    ${outcome.failureReason}');
         }
