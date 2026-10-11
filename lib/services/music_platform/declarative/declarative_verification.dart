@@ -34,3 +34,55 @@ String declarativeVerificationConfidenceLabel(
   DeclarativeVerificationConfidence.unconfirmed => '未能确认',
   DeclarativeVerificationConfidence.failed => '验证失败',
 };
+
+/// 一次"配置验证"的**四个阶段**（F3-1 / Spec §9.3、§13.4.2）。
+///
+/// 为什么要把阶段与置信度**分开**：三态只回答"这份配置被证明可用了吗"，
+/// 不回答"**走到哪一步失败的**"。以前只有单个数（`score`），于是
+/// "配置写错没发出去"、"连不上"、"服务端判失败"、"映射不全"会塌缩成同一句话，
+/// 用户不知道该改哪里（P-07 / P-16 / P-45 的共同形态）。
+enum DeclarativeVerificationStage {
+  /// ① 配置自洽：校验是否为空（含敏感头、认证矛盾、参数绑定）。
+  config,
+
+  /// ② 传输：是否真的发出、HTTP 状态、超时 / DNS / 连接 / TLS / 取消。
+  transport,
+
+  /// ③ 判定：`success` 谓词（状态码 + `allOf`）是否成立（含"响应不可读"）。
+  judgement,
+
+  /// ④ 映射：`listPath` / 字段根路径 / 必需字段 / 分页是否读得出。
+  mapping,
+}
+
+/// 单个阶段的状态（F3-1）。
+///
+/// [notRun] 是本片新增的关键区分：**前序阶段已经失败 ⇒ 它根本没轮到**。
+/// 把它报成"失败"等于谎称我们试过（与 `ProviderProbeStatus.notAttempted` 同一教训）。
+enum DeclarativeVerificationStageStatus {
+  passed,
+  failed,
+
+  /// 没轮到（前序已失败 / 整个探测未被尝试）。
+  notRun,
+
+  /// 该阶段不适用（例如没有可判定的谓词）。
+  notEvaluable,
+}
+
+String declarativeVerificationStageLabel(DeclarativeVerificationStage stage) =>
+    switch (stage) {
+      DeclarativeVerificationStage.config => '配置',
+      DeclarativeVerificationStage.transport => '传输',
+      DeclarativeVerificationStage.judgement => '判定',
+      DeclarativeVerificationStage.mapping => '映射',
+    };
+
+String declarativeVerificationStageStatusLabel(
+  DeclarativeVerificationStageStatus status,
+) => switch (status) {
+  DeclarativeVerificationStageStatus.passed => '通过',
+  DeclarativeVerificationStageStatus.failed => '失败',
+  DeclarativeVerificationStageStatus.notRun => '未运行',
+  DeclarativeVerificationStageStatus.notEvaluable => '不适用',
+};

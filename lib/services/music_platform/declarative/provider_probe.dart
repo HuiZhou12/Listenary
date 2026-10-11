@@ -172,6 +172,7 @@ final class ProviderProbeOutcome {
     this.notAttemptedReason,
     this.failureKind,
     this.transportFailure,
+    this.mappingIncompleteReason,
     this.requestSummary,
     this.responsePreview,
   });
@@ -191,6 +192,7 @@ final class ProviderProbeOutcome {
   final ProviderProbeStatus status;
 
   final int? statusCode;
+
   /// 解析出的**条目数**（按该能力自己的单位：曲目 / 歌单 / 分类 / 榜单…）。
   final int mappedItemCount;
 
@@ -217,6 +219,11 @@ final class ProviderProbeOutcome {
   /// **统一判定表**给出的失败分类（F3-S1：与试跑同一套，不再自带第二套分类）。
   final OnlineMusicErrorKind? failureKind;
 
+  /// 阶段④（映射）**不完整**的原因：缺哪些字段 / 哪条路径读不出（F3-1 / R3）。
+  ///
+  /// 这是 `unconfirmed` 的**证据**：只有"未能确认"是没用的，用户要知道差哪一项。
+  final String? mappingIncompleteReason;
+
   /// 传输失败的**结构化详情**（F3-S2 / D-F3-4）：超时 / 无法连接 / DNS / TLS / 取消 /
   /// 非传输异常。顶层类别仍是 [failureKind]，这里只把底层真相说清楚。
   final DeclarativeTransportFailure? transportFailure;
@@ -230,15 +237,84 @@ final class ProviderProbeOutcome {
   /// 是否真的发出过请求。
   bool get wasAttempted => status != ProviderProbeStatus.notAttempted;
 
+  /// 这个候选是否**算作失败**（F3-1 / Spec §13.4.2）。
+  ///
+  /// `notAttempted`（预算耗尽 / 无候选 / 已取消）**不算失败** —— 本片修掉的一处真实缺陷：
+  /// 此前 [confidence] 把"一个请求都没发"直接归成 `failed`，等于把"没试"说成"试过且失败"。
+  bool get countsAsFailure =>
+      status == ProviderProbeStatus.notSent || failureKind != null;
+
+  /// 单个阶段的结论（F3-1 的**四阶段状态机**）。
+  DeclarativeVerificationStageStatus stageStatus(
+    DeclarativeVerificationStage stage,
+  ) {
+    // 一个请求都没发 ⇒ **四个阶段都没轮到**（不是失败）。
+    if (status == ProviderProbeStatus.notAttempted) {
+      return DeclarativeVerificationStageStatus.notRun;
+    }
+    switch (stage) {
+      case DeclarativeVerificationStage.config:
+        // 请求都没构造出来 ⇒ 问题在配置（凭据 / 敏感头 / 参数绑定）。
+        return status == ProviderProbeStatus.notSent
+            ? DeclarativeVerificationStageStatus.failed
+            : DeclarativeVerificationStageStatus.passed;
+      case DeclarativeVerificationStage.transport:
+        if (status == ProviderProbeStatus.notSent) {
+          return DeclarativeVerificationStageStatus.notRun;
+        }
+        // 没有状态码 ⇒ 压根没拿到响应（超时 / DNS / 连接 / TLS / 取消）。
+        return statusCode == null
+            ? DeclarativeVerificationStageStatus.failed
+            : DeclarativeVerificationStageStatus.passed;
+      case DeclarativeVerificationStage.judgement:
+        if (status == ProviderProbeStatus.notSent || statusCode == null) {
+          return DeclarativeVerificationStageStatus.notRun;
+        }
+        // 有状态码却有失败分类 ⇒ 成功判定没过（含"2xx 但响应不可读"）。
+        return failureKind != null
+            ? DeclarativeVerificationStageStatus.failed
+            : DeclarativeVerificationStageStatus.passed;
+      case DeclarativeVerificationStage.mapping:
+        if (status == ProviderProbeStatus.notSent ||
+            statusCode == null ||
+            failureKind != null) {
+          return DeclarativeVerificationStageStatus.notRun;
+        }
+        return mappingIncompleteReason != null
+            ? DeclarativeVerificationStageStatus.failed
+            : DeclarativeVerificationStageStatus.passed;
+    }
+  }
+
+  /// **第一个失败的阶段**（都通过或未尝试 ⇒ null）。
+  ///
+  /// 界面据此说"卡在哪一步"，而不是把四种完全不同的原因混成一句"候选未通过"。
+  DeclarativeVerificationStage? get firstFailedStage {
+    for (final stage in DeclarativeVerificationStage.values) {
+      if (stageStatus(stage) == DeclarativeVerificationStageStatus.failed) {
+        return stage;
+      }
+    }
+    return null;
+  }
+
   /// 这次探测的**结论可信度**（F3-S6 / D-F3-3，与试跑**同一套词表**）。
   ///
-  /// - [DeclarativeVerificationConfidence.failed]：未尝试 / 请求没发出去 / 明确的失败；
-  /// - [DeclarativeVerificationConfidence.unconfirmed]：认证条件未满足（服务可能可达，
-  ///   但没证明能力可用）、响应有效但没解析出任何曲目（空结果）、或字段映射不全
-  ///   （能取到列表，但不足以证明这份配置可用）；
-  /// - [DeclarativeVerificationConfidence.verified]：解析出了曲目且字段/身份都通过。
+  /// - [DeclarativeVerificationConfidence.failed]：请求没发出去（配置问题）或明确的失败；
+  /// - [DeclarativeVerificationConfidence.unconfirmed]：**未尝试**（预算耗尽 / 取消 / 无候选）、
+  ///   认证条件未满足（服务可能可达，但没证明能力可用）、响应有效但没解析出任何条目
+  ///   （空结果）、或字段映射不全（能取到列表，但不足以证明这份配置可用）；
+  /// - [DeclarativeVerificationConfidence.verified]：解析出了条目且字段/身份都通过。
+  ///
+  /// ⚠️ "未尝试"必须靠 [status] / [notAttemptedReason] / [stageStatus] 读，**不能**靠
+  /// `confidence == failed` 判定；需要"是否算失败"时一律用 [countsAsFailure]。
   DeclarativeVerificationConfidence get confidence {
-    if (status != ProviderProbeStatus.attempted) {
+    // F3-1：`notAttempted` **不是失败**（D-F3-5）—— 三态里没有"没试过"这一档，
+    // 因此归到"未能确认"，并由 `notAttemptedReason` 与阶段状态说明真相。
+    if (status == ProviderProbeStatus.notAttempted) {
+      return DeclarativeVerificationConfidence.unconfirmed;
+    }
+    if (status == ProviderProbeStatus.notSent) {
       return DeclarativeVerificationConfidence.failed;
     }
     if (credentialMissingForAuth) {
@@ -249,7 +325,8 @@ final class ProviderProbeOutcome {
       // 响应有效但没有可验证的数据（空结果）⇒ 不能算"可用"。
       return DeclarativeVerificationConfidence.unconfirmed;
     }
-    if (score < 2) {
+    // F3-1 / R4：判据从"分数 < 2"改为**映射是否真的不完整** —— 不再让数分决定结论。
+    if (mappingIncompleteReason != null) {
       // 能取到列表但字段映射不全 ⇒ 同样不足以证明可用。
       return DeclarativeVerificationConfidence.unconfirmed;
     }
@@ -303,8 +380,9 @@ final class ProviderProbeReport {
       outcomes.any((outcome) => outcome.needsAuthentication);
 
   /// 是否**一个请求都没发出去**（全部候选都是未尝试/未发出）。
-  bool get didNotSendAnyRequest =>
-      outcomes.every((outcome) => outcome.status != ProviderProbeStatus.attempted);
+  bool get didNotSendAnyRequest => outcomes.every(
+    (outcome) => outcome.status != ProviderProbeStatus.attempted,
+  );
 }
 
 /// 按**给定的候选顺序**做一次服务级探测（D-F3-5：每个候选最多一个请求）。
@@ -345,7 +423,8 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
 
   final outcomes = <ProviderProbeOutcome>[];
   ProviderProbeCandidate? best;
-  var bestScore = 0;
+  var bestRank = 0;
+  var bestSourceRank = 0;
 
   for (var index = 0; index < candidates.length; index++) {
     final candidate = candidates[index];
@@ -374,8 +453,16 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
       limit: limit,
     );
     outcomes.add(outcome);
-    if (outcome.score > bestScore) {
-      bestScore = outcome.score;
+    // F3-1 / R4：初稿候选按**可解释的排序**选，不再比 `score` 大小
+    //（"分高者胜"既说不清为什么，也会让"字段多填了一点"压过"真的可用"）。
+    final rank = probeDraftRank(outcome);
+    if (rank == 0) continue;
+    final sourceRank = outcome.source == ProviderProbeCandidateSource.userConfig
+        ? 2
+        : 1;
+    if (rank > bestRank || (rank == bestRank && sourceRank > bestSourceRank)) {
+      bestRank = rank;
+      bestSourceRank = sourceRank;
       best = candidate;
     }
   }
@@ -387,6 +474,22 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
     draftSource: best?.source,
     draftCapability: best?.capability,
   );
+}
+
+/// 该候选**能否作为初稿**、以及它的可解释排序值（F3-1 / Spec §9.4 的 R4）。
+///
+/// - `0`：**不可作初稿** —— 未尝试 / 请求没发出去 / 明确失败 / 认证条件未满足 / 空结果；
+/// - `1`：**部分可用** —— 能取到列表但字段映射不全（仍给用户一个可继续编辑的初稿）；
+/// - `2`：**已验证可用** —— 四阶段全通且必需输出齐。
+///
+/// 调用方在**同级**时用"来源优先级（条目自身配置 > 兼容模板）→ 候选顺序"打破平手，
+/// 因此推荐依据始终可以讲清楚，而不是"分数谁大"。
+int probeDraftRank(ProviderProbeOutcome outcome) {
+  if (outcome.status != ProviderProbeStatus.attempted) return 0;
+  if (outcome.failureKind != null) return 0;
+  if (outcome.credentialMissingForAuth) return 0;
+  if (outcome.mappedItemCount == 0) return 0;
+  return outcome.mappingIncompleteReason == null ? 2 : 1;
 }
 
 /// "未尝试"的统一构造（D-F3-5：它**不是**失败，因此不给分类、不给分数）。
@@ -614,7 +717,10 @@ Future<ProviderProbeOutcome> _send({
     );
   } on DeclarativeMappingException catch (error) {
     // 列表存在但字段映射不全：给 1 分，让用户拿到一个可继续编辑的初稿。
-    final partial = _countListEntries(binding.response.listPath, execution.body);
+    final partial = _countListEntries(
+      binding.response.listPath,
+      execution.body,
+    );
     // ⚠️ 认证未满足时连"部分可用"也不能说（那不是映射问题，而是根本没带凭据）⇒ 不计可用。
     return ProviderProbeOutcome(
       candidateId: candidate.id,
@@ -627,6 +733,9 @@ Future<ProviderProbeOutcome> _send({
       needsAuthentication: authWithoutCredential,
       credentialMissingForAuth: authWithoutCredential,
       failureReason: '字段映射不完整：${error.reason}',
+      // F3-1 / R3：`unconfirmed` 必须带**证据**（缺哪条路径 / 哪个字段），
+      // 否则用户只看到"未能确认"，不知道下一步改什么。
+      mappingIncompleteReason: error.reason,
       requestSummary: execution.requestSummary,
       responsePreview: execution.responsePreview,
     );
