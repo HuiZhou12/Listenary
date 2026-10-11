@@ -167,7 +167,6 @@ final class ProviderProbeOutcome {
   const ProviderProbeOutcome({
     required this.candidateId,
     required this.label,
-    required this.score,
     required this.source,
     required this.capability,
     this.status = ProviderProbeStatus.attempted,
@@ -191,11 +190,6 @@ final class ProviderProbeOutcome {
   /// 该候选的**来源**与它实际验证的**能力**（D-F3-1 第 3 条 / D-F3-5 第 6 条）。
   final ProviderProbeCandidateSource source;
   final OnlineMusicCapability capability;
-
-  /// 2 = 可用；1 = 部分可用（能取到列表但字段映射不全）；0 = 不可用。
-  ///
-  /// ⚠️ 它**只**描述探测所发的那一个请求的证据（D-F3-5）：不能证明该条目的全部能力。
-  final int score;
 
   final ProviderProbeStatus status;
 
@@ -348,7 +342,7 @@ final class ProviderProbeOutcome {
 
   @override
   String toString() =>
-      'ProviderProbeOutcome($candidateId, status=${status.name}, score=$score, '
+      'ProviderProbeOutcome($candidateId, status=${status.name}, '
       'statusCode=$statusCode, kind=${failureKind?.name})';
 }
 
@@ -486,7 +480,9 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
       limit: resolvedInputs.limit,
     );
     outcomes.add(outcome);
-    // F3-1 / R4：初稿候选按**可解释的排序**选，不再比 `score` 大小
+    // F3-1 / R4：初稿候选按**可解释的排序**选（`probeDraftRank`）。
+    // F3-3a：旧的 `score` 字段已**彻底移除** —— 它既不参与判定与推荐，
+    // 也不再被任何界面显示，留着只会诱使后来者重新按"分高者胜"写逻辑。
     //（"分高者胜"既说不清为什么，也会让"字段多填了一点"压过"真的可用"）。
     final rank = probeDraftRank(outcome);
     if (rank == 0) continue;
@@ -559,7 +555,6 @@ ProviderProbeOutcome _notAttempted(
 ) => ProviderProbeOutcome(
   candidateId: candidate.id,
   label: candidate.label,
-  score: 0,
   source: candidate.source,
   capability: candidate.capability,
   status: ProviderProbeStatus.notAttempted,
@@ -641,7 +636,6 @@ Future<ProviderProbeOutcome> _send({
     return ProviderProbeOutcome(
       candidateId: candidate.id,
       label: candidate.label,
-      score: 0,
       source: candidate.source,
       capability: candidate.capability,
       status: ProviderProbeStatus.notAttempted,
@@ -667,7 +661,6 @@ Future<ProviderProbeOutcome> _send({
     return ProviderProbeOutcome(
       candidateId: candidate.id,
       label: candidate.label,
-      score: 0,
       source: candidate.source,
       capability: candidate.capability,
       status: ProviderProbeStatus.notSent,
@@ -682,7 +675,6 @@ Future<ProviderProbeOutcome> _send({
     return ProviderProbeOutcome(
       candidateId: candidate.id,
       label: candidate.label,
-      score: 0,
       source: candidate.source,
       capability: candidate.capability,
       statusCode: statusCode,
@@ -728,7 +720,6 @@ Future<ProviderProbeOutcome> _send({
       return ProviderProbeOutcome(
         candidateId: candidate.id,
         label: candidate.label,
-        score: 0,
         source: candidate.source,
         capability: candidate.capability,
         statusCode: execution.statusCode,
@@ -748,7 +739,6 @@ Future<ProviderProbeOutcome> _send({
       return ProviderProbeOutcome(
         candidateId: candidate.id,
         label: candidate.label,
-        score: 0,
         source: candidate.source,
         capability: candidate.capability,
         statusCode: execution.statusCode,
@@ -766,7 +756,6 @@ Future<ProviderProbeOutcome> _send({
     return ProviderProbeOutcome(
       candidateId: candidate.id,
       label: candidate.label,
-      score: 2,
       source: candidate.source,
       capability: candidate.capability,
       statusCode: execution.statusCode,
@@ -785,7 +774,6 @@ Future<ProviderProbeOutcome> _send({
     return ProviderProbeOutcome(
       candidateId: candidate.id,
       label: candidate.label,
-      score: authWithoutCredential ? 0 : (partial > 0 ? 1 : 0),
       source: candidate.source,
       capability: candidate.capability,
       statusCode: execution.statusCode,

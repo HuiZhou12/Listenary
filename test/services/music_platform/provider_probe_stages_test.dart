@@ -9,8 +9,10 @@ import 'package:pure_music/services/music_platform/online_music_error.dart';
 /// 这一片要钉死两件事，它们都是**真实缺陷**而不是文档洁癖：
 /// 1. **"未尝试"不得报成失败** —— 此前 `confidence` 把"一个请求都没发"直接归成 `failed`，
 ///    等于把"没试过"说成"试过且失败"（与 D-F3-5 的意图自相矛盾）；
-/// 2. **`score` 不得决定结论** —— 此前 `confidence` 用 `score < 2` 判"未能确认"、
-///    用 `score > bestScore` 挑推荐候选（"分高者胜"）。
+/// 2. **结论不得依赖"分数"** —— 此前 `confidence` 用 `score < 2` 判"未能确认"、
+///    用 `score > bestScore` 挑推荐候选（"分高者胜"）。F3-3a 起 `score` 字段**已移除**，
+///    这里改为断言**契约字段**（阶段 / 置信度 / 排序），并在 `provider_probe_test.dart`
+///    的源码守卫里禁止任何"比分"写法回流。
 void main() {
   ProviderProbeOutcome outcomeOf({
     ProviderProbeStatus status = ProviderProbeStatus.attempted,
@@ -20,13 +22,11 @@ void main() {
     String? mappingIncompleteReason,
     bool credentialMissingForAuth = false,
     String? notAttemptedReason,
-    int score = 0,
     ProviderProbeCandidateSource source =
         ProviderProbeCandidateSource.userConfig,
   }) => ProviderProbeOutcome(
     candidateId: 'cand',
     label: '候选',
-    score: score,
     source: source,
     capability: OnlineMusicCapability.search,
     status: status,
@@ -214,21 +214,19 @@ void main() {
     });
   });
 
-  group('R4：score 不得决定结论', () {
-    test('score=2 但映射不全 ⇒ 仍为"未能确认"（旧实现会判成已验证）', () {
-      final outcome = outcomeOf(
-        score: 2,
-        mappedItemCount: 3,
-        mappingIncompleteReason: '缺少字段 name',
+  group('R4：结论只由契约字段决定（`score` 已在 F3-3a 移除）', () {
+    test('映射不全 ⇒ 未能确认；四阶段全通 ⇒ 已验证（与任何"分数"无关）', () {
+      expect(
+        outcomeOf(
+          mappedItemCount: 3,
+          mappingIncompleteReason: '缺少字段 name',
+        ).confidence,
+        DeclarativeVerificationConfidence.unconfirmed,
       );
-
-      expect(outcome.confidence, DeclarativeVerificationConfidence.unconfirmed);
-    });
-
-    test('score=0 但四阶段全通 ⇒ 仍为"已验证可用"（旧实现会判成未能确认）', () {
-      final outcome = outcomeOf(score: 0, mappedItemCount: 3);
-
-      expect(outcome.confidence, DeclarativeVerificationConfidence.verified);
+      expect(
+        outcomeOf(mappedItemCount: 3).confidence,
+        DeclarativeVerificationConfidence.verified,
+      );
     });
   });
 
@@ -263,16 +261,12 @@ void main() {
       expect(probeDraftRank(outcomeOf(mappedItemCount: 0)), 0);
     });
 
-    test('★ 排序与 score 无关（score 高但映射不全 ⇒ 仍低于已验证）', () {
-      final highScoreButIncomplete = outcomeOf(
-        score: 2,
-        mappedItemCount: 3,
-        mappingIncompleteReason: '缺字段',
-      );
-
+    test('★ 排序只看契约字段（映射不全降级为 1，与任何"分数"无关）', () {
       expect(
-        probeDraftRank(highScoreButIncomplete),
-        lessThan(probeDraftRank(outcomeOf(score: 0, mappedItemCount: 3))),
+        probeDraftRank(
+          outcomeOf(mappedItemCount: 3, mappingIncompleteReason: '缺字段'),
+        ),
+        lessThan(probeDraftRank(outcomeOf(mappedItemCount: 3))),
       );
     });
   });

@@ -44,53 +44,63 @@ void main() {
 
   setUp(() => transport = _FakeProbeTransport());
 
-  test('a ChkSz-compatible service yields a draft from the builtin template', () async {
-    transport.responder = (options) async {
-      expect(options.path, '/api/163_search');
-      expect(options.queryParameters['apikey'], 'chksz_KEY_TEST_ONLY');
-      expect(options.queryParameters['keyword'], providerProbeKeyword);
-      return _chkszBody;
-    };
+  test(
+    'a ChkSz-compatible service yields a draft from the builtin template',
+    () async {
+      transport.responder = (options) async {
+        expect(options.path, '/api/163_search');
+        expect(options.queryParameters['apikey'], 'chksz_KEY_TEST_ONLY');
+        expect(options.queryParameters['keyword'], providerProbeKeyword);
+        return _chkszBody;
+      };
 
-    final report = await probeDeclarativeSearch(
-      transport: transport,
-      headerCredentialReader: noHeaderCredentials,
-      candidates: templateCandidates(),
-      platform: MusicPlatform.netease,
-      credential: 'chksz_KEY_TEST_ONLY',
-    );
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        candidates: templateCandidates(),
+        platform: MusicPlatform.netease,
+        credential: 'chksz_KEY_TEST_ONLY',
+      );
 
-    expect(report.hasDraft, isTrue);
-    expect(report.draftTemplateId, builtinOnlineMusicChkszId);
-    expect(report.draft, chkszSearchTemplate);
-    final best = report.outcomes.firstWhere(
-      (outcome) => outcome.candidateId == builtinOnlineMusicChkszId,
-    );
-    expect(best.score, 2);
-    expect(best.mappedItemCount, 1);
-    expect(best.statusCode, 200);
-  });
+      expect(report.hasDraft, isTrue);
+      expect(report.draftTemplateId, builtinOnlineMusicChkszId);
+      expect(report.draft, chkszSearchTemplate);
+      final best = report.outcomes.firstWhere(
+        (outcome) => outcome.candidateId == builtinOnlineMusicChkszId,
+      );
+      // F3-3a：`score` 字段已移除 ⇒ 这里断言**契约**（置信度 + 阶段），而不是一个数。
+      expect(best.confidence, DeclarativeVerificationConfidence.verified);
+      expect(best.firstFailedStage, isNull);
+      expect(best.mappedItemCount, 1);
+      expect(best.statusCode, 200);
+    },
+  );
 
-  test('probeSearch reports "needs authentication" from the real response', () async {
-    // P5：缺凭据也要真的发一次请求，让服务端回答。
-    transport.statusCode = 401;
-    transport.responder = (options) async => const {'message': 'unauthorized'};
+  test(
+    'probeSearch reports "needs authentication" from the real response',
+    () async {
+      // P5：缺凭据也要真的发一次请求，让服务端回答。
+      transport.statusCode = 401;
+      transport.responder = (options) async => const {
+        'message': 'unauthorized',
+      };
 
-    final report = await probeDeclarativeSearch(
-      transport: transport,
-      headerCredentialReader: noHeaderCredentials,
-      candidates: templateCandidates(),
-      platform: MusicPlatform.netease,
-    );
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        candidates: templateCandidates(),
+        platform: MusicPlatform.netease,
+      );
 
-    expect(
-      transport.requests.any((request) => request.path == '/api/163_search'),
-      isTrue,
-      reason: '没有凭据也要发出探测请求',
-    );
-    expect(report.anyNeedsAuthentication, isTrue);
-    expect(report.hasDraft, isFalse);
-  });
+      expect(
+        transport.requests.any((request) => request.path == '/api/163_search'),
+        isTrue,
+        reason: '没有凭据也要发出探测请求',
+      );
+      expect(report.anyNeedsAuthentication, isTrue);
+      expect(report.hasDraft, isFalse);
+    },
+  );
 
   test('a keyed template without a credential still probes', () async {
     transport.responder = (options) async {
@@ -106,10 +116,10 @@ void main() {
       platform: MusicPlatform.netease,
     );
 
-    expect(
-      transport.requests.map((request) => request.path).toSet(),
-      {'/api/163_search', '/search'},
-    );
+    expect(transport.requests.map((request) => request.path).toSet(), {
+      '/api/163_search',
+      '/search',
+    });
   });
 
   test('the candidate list is clamped to the hard limit', () async {
@@ -123,31 +133,37 @@ void main() {
       maxRequests: 99,
     );
 
-    expect(transport.requests.length, lessThanOrEqualTo(providerProbeMaxRequests));
-  });
-
-  test('a netease-proxy service is recognised without any credential', () async {
-    transport.responder = (options) async => _msapiBody;
-
-    final report = await probeDeclarativeSearch(
-      transport: transport,
-      headerCredentialReader: noHeaderCredentials,
-      candidates: templateCandidates(),
-      platform: MusicPlatform.netease,
-    );
-
-    expect(report.draftTemplateId, 'netease-proxy');
-    // 两个模板都会被真的探测一次；ChkSz 模板的成功判定不匹配这份响应，因此得分 0。
     expect(
-      transport.requests.map((request) => request.path).toSet(),
-      {'/api/163_search', '/search'},
+      transport.requests.length,
+      lessThanOrEqualTo(providerProbeMaxRequests),
     );
-    final chkszOutcome = report.outcomes.firstWhere(
-      (outcome) => outcome.candidateId == builtinOnlineMusicChkszId,
-    );
-    expect(chkszOutcome.score, 0);
-    expect(chkszOutcome.failureReason, contains('成功判定未通过'));
   });
+
+  test(
+    'a netease-proxy service is recognised without any credential',
+    () async {
+      transport.responder = (options) async => _msapiBody;
+
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        candidates: templateCandidates(),
+        platform: MusicPlatform.netease,
+      );
+
+      expect(report.draftTemplateId, 'netease-proxy');
+      // 两个模板都会被真的探测一次；ChkSz 模板的成功判定不匹配这份响应，因此**判定失败**。
+      expect(transport.requests.map((request) => request.path).toSet(), {
+        '/api/163_search',
+        '/search',
+      });
+      final chkszOutcome = report.outcomes.firstWhere(
+        (outcome) => outcome.candidateId == builtinOnlineMusicChkszId,
+      );
+      expect(chkszOutcome.confidence, DeclarativeVerificationConfidence.failed);
+      expect(chkszOutcome.failureReason, contains('成功判定未通过'));
+    },
+  );
 
   test('401 and 403 are reported as "needs authentication"', () async {
     transport.statusCode = 401;
@@ -164,14 +180,16 @@ void main() {
     expect(report.anyNeedsAuthentication, isTrue);
     expect(
       report.outcomes.every(
-        (outcome) => outcome.failureReason != null || outcome.score == 0,
+        (outcome) =>
+            outcome.failureReason != null ||
+            outcome.confidence == DeclarativeVerificationConfidence.failed,
       ),
       isTrue,
     );
   });
 
   test('a partial mapping still produces an editable draft', () async {
-    // 列表存在（score 1），但缺少必填的 title。
+    // 列表存在（映射不全），但缺少必填的 title。
     transport.responder = (options) async => const {
       'result': {
         'songs': [
@@ -191,7 +209,8 @@ void main() {
     final outcome = report.outcomes.firstWhere(
       (candidate) => candidate.candidateId == 'netease-proxy',
     );
-    expect(outcome.score, 1);
+    expect(outcome.confidence, DeclarativeVerificationConfidence.unconfirmed);
+    expect(outcome.mappingIncompleteReason, isNotNull);
     expect(outcome.failureReason, contains('字段映射不完整'));
   });
 
@@ -226,46 +245,49 @@ void main() {
     expect(report.outcomes.last.failureKind, isNull);
   });
 
-  test('the total budget stops further probing and aggregates the rest', () async {
-    transport.responder = (options) async => const {'nope': true};
-    // 第一次检查就认为预算已用完。
-    var calls = 0;
-    final start = DateTime.utc(2026, 10, 5);
-    DateTime clock() => start.add(Duration(seconds: calls++ * 60));
+  test(
+    'the total budget stops further probing and aggregates the rest',
+    () async {
+      transport.responder = (options) async => const {'nope': true};
+      // 第一次检查就认为预算已用完。
+      var calls = 0;
+      final start = DateTime.utc(2026, 10, 5);
+      DateTime clock() => start.add(Duration(seconds: calls++ * 60));
 
-    final report = await probeDeclarativeSearch(
-      transport: transport,
-      headerCredentialReader: noHeaderCredentials,
-      candidates: templateCandidates(),
-      platform: MusicPlatform.netease,
-      clock: clock,
-    );
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: noHeaderCredentials,
+        candidates: templateCandidates(),
+        platform: MusicPlatform.netease,
+        clock: clock,
+      );
 
-    expect(transport.requests, isEmpty);
-    // ⚠️ 断言随 F3-S1 收紧（不是放宽）：预算耗尽的候选以前只是"一条失败理由"，
-    // 与"试过但失败"在结构上无法区分。D-F3-5 要求这种候选显示
-    // 「未尝试：请求预算耗尽」并且**不得误报为验证失败** ⇒ 现在它有独立状态。
-    expect(
-      report.outcomes.map((outcome) => outcome.status),
-      everyElement(ProviderProbeStatus.notAttempted),
-    );
-    expect(
-      report.outcomes.map((outcome) => outcome.notAttemptedReason),
-      everyElement(
-        allOf(
-          contains('未尝试'),
-          // 两种"没试"的原因都要说清楚：请求数预算耗尽 / 探测总时限已到。
-          anyOf(contains('预算'), contains('时限')),
+      expect(transport.requests, isEmpty);
+      // ⚠️ 断言随 F3-S1 收紧（不是放宽）：预算耗尽的候选以前只是"一条失败理由"，
+      // 与"试过但失败"在结构上无法区分。D-F3-5 要求这种候选显示
+      // 「未尝试：请求预算耗尽」并且**不得误报为验证失败** ⇒ 现在它有独立状态。
+      expect(
+        report.outcomes.map((outcome) => outcome.status),
+        everyElement(ProviderProbeStatus.notAttempted),
+      );
+      expect(
+        report.outcomes.map((outcome) => outcome.notAttemptedReason),
+        everyElement(
+          allOf(
+            contains('未尝试'),
+            // 两种"没试"的原因都要说清楚：请求数预算耗尽 / 探测总时限已到。
+            anyOf(contains('预算'), contains('时限')),
+          ),
         ),
-      ),
-    );
-    expect(
-      report.outcomes.map((outcome) => outcome.failureKind),
-      everyElement(isNull),
-      reason: '未尝试 ≠ 验证失败：不得给出失败分类',
-    );
-    expect(report.didNotSendAnyRequest, isTrue);
-  });
+      );
+      expect(
+        report.outcomes.map((outcome) => outcome.failureKind),
+        everyElement(isNull),
+        reason: '未尝试 ≠ 验证失败：不得给出失败分类',
+      );
+      expect(report.didNotSendAnyRequest, isTrue);
+    },
+  );
 
   test('every candidate failing yields no draft but a full report', () async {
     transport.statusCode = 500;
@@ -299,10 +321,10 @@ void main() {
     );
 
     // 只会打到模板里写明的相对路径，不存在字典式扫描。
-    expect(
-      transport.requests.map((request) => request.path).toSet(),
-      {'/api/163_search', '/search'},
-    );
+    expect(transport.requests.map((request) => request.path).toSet(), {
+      '/api/163_search',
+      '/search',
+    });
   });
 
   test('the probe transport can be built without following redirects', () {
@@ -355,9 +377,7 @@ void main() {
         OnlineMusicErrorKind.endpointMismatch,
       );
       expect(
-        declarativeTestFailureKindFor(
-          unreadable.outcomes.single.failureKind!,
-        ),
+        declarativeTestFailureKindFor(unreadable.outcomes.single.failureKind!),
         classifyUnsuccessfulTestResponse(500, '<html>500</html>'),
       );
     });
@@ -422,7 +442,11 @@ void main() {
       );
 
       final outcome = report.outcomes.single;
-      expect(outcome.score, 2, reason: '夹具必须走**成功**分支');
+      expect(
+        outcome.confidence,
+        DeclarativeVerificationConfidence.verified,
+        reason: '夹具必须走**成功**分支',
+      );
       expect(outcome.requestSummary, isNotNull);
       expect(outcome.requestSummary, contains('apikey=[redacted]'));
       expect(outcome.requestSummary, isNot(contains('chksz_KEY_TEST_ONLY')));
@@ -541,10 +565,10 @@ void main() {
 
       // D-F3-5 第 4 条：**服务级**探测不因"支持多个能力"而重复打。
       expect(transport.requests, hasLength(2));
-      expect(
-        report.outcomes.map((outcome) => outcome.capability),
-        [OnlineMusicCapability.search, OnlineMusicCapability.newSongs],
-      );
+      expect(report.outcomes.map((outcome) => outcome.capability), [
+        OnlineMusicCapability.search,
+        OnlineMusicCapability.newSongs,
+      ]);
       expect(
         report.outcomes.map((outcome) => outcome.source),
         everyElement(ProviderProbeCandidateSource.userConfig),
@@ -616,7 +640,8 @@ void main() {
       );
     });
 
-    test('源码守卫：探测不得再长出"第二套分类"', () {      // 审计点名的"第四处分类逻辑"就是这样长出来的：探测自带 401/403 判断、
+    test('源码守卫：探测不得再长出"第二套分类"', () {
+      // 审计点名的"第四处分类逻辑"就是这样长出来的：探测自带 401/403 判断、
       // 自带成功判定、自带兜底 `catch (_)`。这里用源码扫描把它钉死 ——
       // 一旦有人再写一遍，这个测试就会红。
       final source = File(
@@ -634,6 +659,12 @@ void main() {
         'statusCode == 401', // 认证判断只允许由统一表得出
         'statusCode == 403',
         'catch (_) {', // 兜底吞异常会再次把配置错误误诊成网络故障
+        // F3-3a：**不得再长出"分数"** —— 旧的 `score` 字段既不参与判定也不参与推荐，
+        // 已被彻底移除；留下任何"比分"写法都会让结论重新变得不可解释。
+        'bestScore',
+        'score >',
+        'score <',
+        'score:',
       ]) {
         expect(
           source,
@@ -668,7 +699,11 @@ void main() {
       //（否则保存后运行期恒 notConfigured）。
       expect(outcome.statusCode, 200);
       expect(outcome.mappedItemCount, greaterThan(0));
-      expect(outcome.score, 0, reason: 'D-F3-2：不得标记为已验证可用');
+      expect(
+        outcome.confidence,
+        isNot(DeclarativeVerificationConfidence.verified),
+        reason: 'D-F3-2：不得标记为已验证可用',
+      );
       expect(outcome.needsAuthentication, isTrue);
       expect(outcome.credentialMissingForAuth, isTrue);
       expect(outcome.failureReason, contains('认证'));
@@ -699,7 +734,11 @@ void main() {
       );
 
       final outcome = report.outcomes.single;
-      expect(outcome.score, 2, reason: '有凭据 ⇒ 真的走通了认证，才算可用');
+      expect(
+        outcome.confidence,
+        DeclarativeVerificationConfidence.verified,
+        reason: '有凭据 ⇒ 真的走通了认证，才算可用',
+      );
       expect(outcome.credentialMissingForAuth, isFalse);
       expect(transport.requests.single.query['apikey'], 'chksz_KEY_TEST_ONLY');
       expect(report.hasDraft, isTrue);
@@ -749,7 +788,8 @@ void main() {
             'D-F3-3：空结果不能算可用 '
             '(status=${empty.status} kind=${empty.failureKind} code=${empty.statusCode} '
             'mapped=${empty.mappedItemCount} needsAuth=${empty.needsAuthentication} '
-            'credMissing=${empty.credentialMissingForAuth} score=${empty.score} '
+            'credMissing=${empty.credentialMissingForAuth} '
+            'confidence=${empty.confidence.name} '
             'why=${empty.failureReason})',
       );
       expect(empty.failureKind, isNull, reason: '也不该捏造失败大类');
@@ -859,18 +899,17 @@ void main() {
           path: '/toplist',
           listPath: 'data.list',
           fields: {
-            OnlineMusicDomainField.playlistId: stringField('id', required: true),
+            OnlineMusicDomainField.playlistId: stringField(
+              'id',
+              required: true,
+            ),
             OnlineMusicDomainField.playlistName: stringField('name'),
           },
         ),
       );
       expect(chart.confidence, DeclarativeVerificationConfidence.verified);
       expect(chart.mappedItemCount, 1);
-      expect(
-        chart.mappedUnit,
-        '个榜单',
-        reason: '不得再把榜单说成"首曲目"（用户裁定第 2 条）',
-      );
+      expect(chart.mappedUnit, '个榜单', reason: '不得再把榜单说成"首曲目"（用户裁定第 2 条）');
 
       // ② 分类（categoryId/categoryName）。
       transport.responder = (options) async => const {
@@ -895,10 +934,7 @@ void main() {
           },
         ),
       );
-      expect(
-        categories.confidence,
-        DeclarativeVerificationConfidence.verified,
-      );
+      expect(categories.confidence, DeclarativeVerificationConfidence.verified);
       expect(categories.mappedUnit, '个分类');
 
       // ③ 结构合法但没有数据 ⇒ 未能确认（它自己的结构，不是曲目列表）。
@@ -912,7 +948,10 @@ void main() {
           path: '/top/playlist',
           listPath: 'data.list',
           fields: {
-            OnlineMusicDomainField.playlistId: stringField('id', required: true),
+            OnlineMusicDomainField.playlistId: stringField(
+              'id',
+              required: true,
+            ),
             OnlineMusicDomainField.playlistName: stringField('name'),
           },
         ),
@@ -939,7 +978,10 @@ void main() {
           path: '/top/playlist',
           listPath: 'data.list',
           fields: {
-            OnlineMusicDomainField.playlistId: stringField('id', required: true),
+            OnlineMusicDomainField.playlistId: stringField(
+              'id',
+              required: true,
+            ),
             OnlineMusicDomainField.playlistName: stringField('name'),
           },
         ),
@@ -974,11 +1016,7 @@ void main() {
       final outcome = report.outcomes.single;
       expect(outcome.status, ProviderProbeStatus.notAttempted);
       expect(outcome.notAttemptedReason, contains('不会伪造 ID'));
-      expect(
-        transport.requests,
-        isEmpty,
-        reason: '不能编一个 ID 去试探（用户裁定第 3 条）',
-      );
+      expect(transport.requests, isEmpty, reason: '不能编一个 ID 去试探（用户裁定第 3 条）');
     });
   });
 }
@@ -1038,6 +1076,7 @@ final class _NoHeaderCredentials implements OnlineMusicCredentialReader {
   @override
   Future<String?> readCredential(String reference) async => null;
 }
+
 /// 旧的 `templates:` 参数在 F3-S3 换成了**候选列表**（每个候选带来源与能力）。
 /// 这些用例本来就是"拿模板当候选"，因此这里等价转换（来源如实标为兼容模板）。
 List<ProviderProbeCandidate> templateCandidates([
