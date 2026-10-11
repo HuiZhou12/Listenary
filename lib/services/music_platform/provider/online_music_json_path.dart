@@ -145,7 +145,14 @@ final class JsonPath {
               next.add(node[index]);
             }
           case JsonPathProject():
-            if (node is List) next.addAll(node);
+            if (node is List) {
+              next.addAll(node);
+            } else if (node is Map) {
+              // **Map 值投影**（F3 后续）：有些接口把结果放进"键是动态 id"的对象里，
+              // 例如 QQ 播放解析 `data.playUrl.<songmid>.{url,error}` —— 键名事先无法写进路径，
+              // 只能投影取值。顺序 = Map 的插入顺序（JSON 解码后即响应里的书写顺序）⇒ 确定性。
+              next.addAll(node.values);
+            }
         }
       }
       if (next.isEmpty) return projects ? const <Object?>[] : null;
@@ -159,8 +166,7 @@ final class JsonPath {
   bool get projects => segments.any((segment) => segment is JsonPathProject);
 
   @override
-  bool operator ==(Object other) =>
-      other is JsonPath && other.source == source;
+  bool operator ==(Object other) => other is JsonPath && other.source == source;
 
   @override
   int get hashCode => source.hashCode;

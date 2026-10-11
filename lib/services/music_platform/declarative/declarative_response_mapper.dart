@@ -429,8 +429,22 @@ _FieldRead _readWithDiagnosis(
   if (fieldSpec == null) return const _FieldRead(null);
   _TransformMismatch? mismatch;
   for (final candidate in fieldSpec.candidates) {
-    final raw = candidate.read(node);
+    var raw = candidate.read(node);
     if (raw == null) continue;
+    // **投影恰好命中一个值 ⇒ 对标量字段视作该值**（F3 后续）。
+    // 场景：QQ 播放解析 `data.playUrl[*].url` —— 键是动态 songmid，只能投影；
+    // 结果理论上逐键取值（List），但实际只会有请求的那一个键 ⇒ 标量字段应当能用。
+    // ⚠️ 三条边界：① 只对**投影路径**生效（`[0]` / 裸路径语义不变）；
+    // ② 只对**标量转换**生效（列表字段要的就是 List，绝不解包）；
+    // ③ 多于一个值时**不解包** —— 宁可报"缺少必填字段"（fail-closed），也不静默取第一个。
+    if (raw is List &&
+        raw.length == 1 &&
+        candidate.projects &&
+        !_isListTransform(fieldSpec.transform)) {
+      raw = raw.first;
+      // 解包后可能正好是 null（数组里那一项是 null）⇒ 与"路径落空"同样处理。
+      if (raw == null) continue;
+    }
     final transformed = _applyTransform(fieldSpec, raw);
     if (transformed != null) return _FieldRead(transformed);
     mismatch ??= _TransformMismatch(
@@ -542,6 +556,11 @@ int? _readIntAtPath(JsonPath? path, Object? body) {
 // ---------------------------------------------------------------------------
 // 类型转换（闭集）
 // ---------------------------------------------------------------------------
+
+/// 列表类转换：它们**要的就是 List**，因此投影结果绝不能被"单元素解包"。
+bool _isListTransform(OnlineMusicFieldTransform transform) =>
+    transform == OnlineMusicFieldTransform.asStringList ||
+    transform == OnlineMusicFieldTransform.asSingleStringList;
 
 /// 转换失败或值不可用时返回 null（是否算错误由字段的 `required` 决定）。
 Object? _applyTransform(OnlineMusicFieldSpec spec, Object? raw) {
