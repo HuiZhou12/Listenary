@@ -8,6 +8,7 @@ import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_verification.dart';
 import 'package:pure_music/page/settings_page/online_music_probe_plan_dialog.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_binding_diff.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_probe_inputs.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_probe_plan.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
@@ -119,7 +120,10 @@ class OnlineMusicCapabilityEditorDialog extends StatefulWidget {
   final OnlineMusicCapability capability;
   final OnlineMusicCapabilityBinding initialBinding;
 
-  /// 探测**发请求之前**的计划（仅 search 提供）：候选 / 输入 / 凭据需求（F3-2b）。
+  /// 探测**发请求之前**的计划：候选 / 输入 / 凭据需求（F3-2b）。
+  ///
+  /// F3-4 起**每个能力都提供**它 —— 需要实体 ID 的能力会由能力契约在计划里
+  /// 明确说明"请用试跑"，而不是把入口藏起来。
   final Future<ProviderProbePlan> Function() onProbePlan;
 
   /// 探测整个服务；[inputs] 是用户在计划确认框里确认过的输入（F3-2b）。
@@ -738,15 +742,68 @@ class _OnlineMusicCapabilityEditorDialogState
             ? '未确认：需要该条目的 Key（配置后重新探测）'
             : '没有候选可用（${report.outcomes.length} 个候选均未通过）';
         _resultController.text = detail.toString().trimRight();
-        if (report.hasDraft) {
-          _loadFromBinding(report.draft!);
-          _json.text = _jsonPreview();
-        }
       });
-      if (report.hasDraft) unawaited(_refreshHeaderCredentialStates());
+      // F3-5a：初稿只是**建议** —— 先展示与"当前编辑内容"的差异，由用户决定是否应用。
+      // 旧行为是探测成功后**静默覆盖**用户正在编辑的内容（P-20 的教训）。
+      if (report.hasDraft) {
+        await _offerDraft(report);
+      }
+      if (report.hasDraft && mounted) {
+        unawaited(_refreshHeaderCredentialStates());
+      }
     } catch (_) {
       _setResult(headline: '探测失败（网络或服务不可达）', ok: false);
     }
+  }
+
+  /// F3-5a：把探测初稿当作**建议**处理 —— 先 diff、再让用户决定。
+  ///
+  /// - 「保留我的编辑」（默认安全侧）⇒ **什么都不改**；
+  /// - 「应用建议」⇒ 才写进编辑器（仍需用户点保存才会落盘）。
+  Future<void> _offerDraft(ProviderProbeReport report) async {
+    final draft = report.draft;
+    if (draft == null) return;
+    final diff = describeDeclarativeBindingDiff(current: _binding, next: draft);
+    final apply = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('探测生成了建议配置'),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('来源：${_probeSourceLabelOf(report)}'),
+                const SizedBox(height: 12),
+                Text(
+                  diff.isEmpty
+                      ? '与当前编辑内容**没有差异**（应用与否都一样）。'
+                      : '与当前编辑内容有 ${diff.length} 处差异：\n'
+                            '${diff.map((line) => '· $line').join('\n')}',
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('保留我的编辑'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('应用建议'),
+          ),
+        ],
+      ),
+    );
+    if (apply != true || !mounted) return;
+    setState(() {
+      _loadFromBinding(draft);
+      _json.text = _jsonPreview();
+    });
   }
 
   /// 探测初稿的**来源与能力**（D-F3-1 第 3 条「不得混淆来源」/ D-F3-5 第 6 条

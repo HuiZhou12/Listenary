@@ -240,7 +240,105 @@ void main() {
       expect(text, contains('占位符'));
     });
   });
+  group('R6：凭据不出现在任何对外文本里', () {
+    const secret = 'SECRET_MUST_NOT_LEAK_ANYWHERE';
+
+    test('★ 传输抛错时，错误文本/摘要/片段/toString 都不含凭据', () async {
+      final transport = _FakeTransport(explode: true);
+      ProviderProbeOutcome? outcome;
+      Object? thrown;
+
+      try {
+        final report = await probeDeclarativeSearch(
+          transport: transport,
+          headerCredentialReader: _NoCredentialReader(),
+          platform: MusicPlatform.netease,
+          candidates: [_queryAuthCandidate()],
+          credential: secret,
+        );
+        outcome = report.outcomes.single;
+      } catch (error) {
+        // 引擎若选择直接抛出，也算"对外文本"的一种 —— 一并检查。
+        thrown = error;
+      }
+
+      final text = [
+        outcome?.failureReason,
+        outcome?.requestSummary,
+        outcome?.responsePreview,
+        outcome?.mappingIncompleteReason,
+        outcome?.toString(),
+        '$thrown',
+      ].join(' ');
+      expect(text.contains(secret), isFalse, reason: 'R6：任何对外文本都不得含凭据');
+    });
+
+    test('★ 凭据**确实**发给了服务端，但请求摘要里是 [redacted]（不是没发）', () async {
+      final transport = _FakeTransport(statusCode: 500);
+
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: _NoCredentialReader(),
+        platform: MusicPlatform.netease,
+        candidates: [_queryAuthCandidate()],
+        credential: secret,
+      );
+
+      // 1) 真的发出去了（否则这条测试就没证明力）。
+      expect(transport.requests.single.query['apikey'], secret);
+      // 2) 界面上看到的是遮蔽后的形态。
+      final summary = report.outcomes.single.requestSummary ?? '';
+      expect(summary, contains('apikey=[redacted]'));
+      expect(summary.contains(secret), isFalse);
+      // 3) 整个 outcome 的任何字段都不含它。
+      expect(report.outcomes.single.toString().contains(secret), isFalse);
+    });
+
+    test('★ 响应体不整块保留：只留脱敏且截断的片段', () async {
+      final transport = _FakeTransport(statusCode: 500);
+      transport.responderBody = const {
+        'code': 500,
+        'msg': 'RAW_BODY_MARKER 不该出现在诊断字段里',
+      };
+
+      final report = await probeDeclarativeSearch(
+        transport: transport,
+        headerCredentialReader: _NoCredentialReader(),
+        platform: MusicPlatform.netease,
+        candidates: [_searchCandidate()],
+      );
+
+      final outcome = report.outcomes.single;
+      for (final field in [
+        outcome.failureReason,
+        outcome.requestSummary,
+        outcome.mappingIncompleteReason,
+      ]) {
+        expect(
+          field ?? '',
+          isNot(contains('RAW_BODY_MARKER')),
+          reason: 'R6：原始响应体不得进入诊断文本字段',
+        );
+      }
+    });
+  });
 }
+
+ProviderProbeCandidate _queryAuthCandidate() => ProviderProbeCandidate(
+  id: 'user:search',
+  label: '条目自身配置',
+  source: ProviderProbeCandidateSource.userConfig,
+  capability: OnlineMusicCapability.search,
+  binding: OnlineMusicDeclarativeCapabilityBinding(
+    request: const OnlineMusicRequestSpec(
+      path: '/search',
+      auth: OnlineMusicQueryAuthPlacement(parameterName: 'apikey'),
+    ),
+    response: OnlineMusicResponseSpec(
+      listPath: JsonPath.tryParse('data.songs'),
+    ),
+  ),
+);
 
 ProviderProbeCandidate _candidateWithPath(String path) =>
     ProviderProbeCandidate(
@@ -276,18 +374,25 @@ final class _FakeTransport implements DeclarativeHttpTransport {
   final bool explode;
   int calls = 0;
 
+  /// 记录**实际发出去**的请求（R6 要证明"发给服务端了、但报告里没有"）。
+  final List<BuiltDeclarativeRequest> requests = [];
+
+  /// 响应体（R6 的"不整块保留"用得上）。
+  Object? responderBody;
+
   @override
   Future<DeclarativeHttpResponse> send(
     BuiltDeclarativeRequest request, {
     required OnlineMusicCancelToken cancelToken,
   }) async {
     calls++;
+    requests.add(request);
     if (explode) {
       throw StateError('这条路径不应该发出任何请求');
     }
     return DeclarativeHttpResponse(
       statusCode: statusCode,
-      data: const {'code': 500, 'msg': 'boom'},
+      data: responderBody ?? const {'code': 500, 'msg': 'boom'},
     );
   }
 }

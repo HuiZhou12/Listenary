@@ -2576,6 +2576,30 @@ void main() {
     await tester.tap(find.text('开始探测'));
     await tester.pumpAndSettle();
 
+    // F3-5a：初稿只是**建议** —— 先弹差异确认。这里先选「保留我的编辑」，
+    // 断言**什么都没被改**（旧行为是静默覆盖，这一片就是来钉死它的）。
+    expect(find.text('探测生成了建议配置'), findsOneWidget);
+    expect(find.textContaining('处差异'), findsOneWidget);
+    await tester.tap(find.text('保留我的编辑'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'JSON'));
+    await tester.pumpAndSettle();
+    expect(
+      _jsonViewText(tester),
+      isNot(contains('/api/163_search')),
+      reason: 'F3-5a：拒绝建议后不得改动当前编辑内容',
+    );
+    await tester.tap(find.widgetWithText(TextButton, '表单'));
+    await tester.pumpAndSettle();
+
+    // 再探测一次，这次**应用建议** ⇒ 初稿才进入 `_binding`。
+    await tester.tap(probeButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('开始探测'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('应用建议'));
+    await tester.pumpAndSettle();
+
     // 应用初稿会把视图切回表单（`_loadFromBinding` 里 `_showJson = false`），因此再切到 JSON。
     await tester.tap(find.widgetWithText(TextButton, 'JSON'));
     await tester.pumpAndSettle();
