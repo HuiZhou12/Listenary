@@ -49,6 +49,7 @@ import 'package:pure_music/services/music_platform/online_music_error.dart';
 import 'package:pure_music/services/music_platform/online_music_request.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_probe_inputs.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_json_path.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_credentials.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_request_spec.dart';
@@ -57,9 +58,10 @@ import 'package:pure_music/services/music_platform/provider/online_music_request
 const providerProbeMaxRequests = 4;
 const providerProbeTotalBudget = Duration(seconds: 30);
 
-/// 探测用的固定输入：只取一条，足以判断"能不能解析出曲目"。
-const providerProbeKeyword = 'listenary';
-const providerProbeLimit = 1;
+/// 探测默认输入的**唯一来源**（F3-2 起）：真正定义在
+/// `declarative_probe_inputs.dart`，这里只是既有调用点的别名，避免两处默认值漂移。
+const providerProbeKeyword = probeDefaultKeyword;
+const providerProbeLimit = probeDefaultLimit;
 
 /// 候选**来源**（D-F3-1 第 3 条：每个候选必须标明来源，不得混淆）。
 enum ProviderProbeCandidateSource {
@@ -352,9 +354,16 @@ final class ProviderProbeReport {
     this.draftSource,
     this.draftCapability,
     this.blockedReason,
+    this.inputNotes = const [],
   });
 
   final List<ProviderProbeOutcome> outcomes;
+
+  /// 本次探测**用了哪些默认输入**的如实说明（F3-2 / Spec §10 决策 5）。
+  ///
+  /// 为什么必须有：结论是"在这个输入下"得到的。不说清输入，用户会把它当成
+  /// 对任意输入都成立的结论（旧实现把关键词写死 `listenary` 且不声明）。
+  final List<String> inputNotes;
 
   /// 最高分候选生成的初稿；全部分数为 0 时为 null（进入手工配置）。
   final OnlineMusicDeclarativeCapabilityBinding? draft;
@@ -401,8 +410,7 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
   DateTime Function()? clock,
   Duration totalBudget = providerProbeTotalBudget,
   int maxRequests = providerProbeMaxRequests,
-  String keyword = providerProbeKeyword,
-  int limit = providerProbeLimit,
+  DeclarativeProbeInputs inputs = const DeclarativeProbeInputs(),
 }) async {
   final now = clock ?? DateTime.now;
   final startedAt = now();
@@ -422,6 +430,8 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
   }
 
   final outcomes = <ProviderProbeOutcome>[];
+  // F3-2：默认输入的如实披露（插入顺序 = 候选顺序 ⇒ 确定性）。
+  final inputNotes = <String>{};
   ProviderProbeCandidate? best;
   var bestRank = 0;
   var bestSourceRank = 0;
@@ -440,6 +450,16 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
       outcomes.add(_notAttempted(candidate, '未尝试：探测已被取消'));
       continue;
     }
+    // F3-2 / 决策 5：**缺少必需输入 ⇒ 不发请求**，并如实记"未尝试"。
+    // 宁可说"没试"，也不拿默认值替用户决定（旧实现把关键词写死且不声明）。
+    final resolvedInputs = resolveProbeInputs(candidate.capability, inputs);
+    if (resolvedInputs == null) {
+      final missing =
+          missingRequiredProbeInputName(candidate.capability, inputs) ?? '输入';
+      outcomes.add(_notAttempted(candidate, '未尝试：缺少必需的$missing（请填写后再探测）'));
+      continue;
+    }
+    inputNotes.addAll(resolvedInputs.defaultedNotes);
     requestsIssued++;
 
     final outcome = await _probeCandidate(
@@ -449,8 +469,8 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
       platform: platform,
       credential: credential,
       cancelToken: token,
-      keyword: keyword,
-      limit: limit,
+      keyword: resolvedInputs.keyword,
+      limit: resolvedInputs.limit,
     );
     outcomes.add(outcome);
     // F3-1 / R4：初稿候选按**可解释的排序**选，不再比 `score` 大小
@@ -469,6 +489,7 @@ Future<ProviderProbeReport> probeDeclarativeSearch({
 
   return ProviderProbeReport(
     outcomes: List.unmodifiable(outcomes),
+    inputNotes: List.unmodifiable(inputNotes),
     draft: best?.binding,
     draftTemplateId: best?.id,
     draftSource: best?.source,

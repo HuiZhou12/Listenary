@@ -8,6 +8,7 @@ import 'package:pure_music/services/music_platform/declarative/declarative_http_
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_response_mapper.dart';
 import 'package:pure_music/services/music_platform/declarative/declarative_verification.dart';
+import 'package:pure_music/services/music_platform/declarative/declarative_probe_inputs.dart';
 import 'package:pure_music/services/music_platform/declarative/provider_probe.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_credentials.dart';
@@ -489,6 +490,9 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   Future<ProviderProbeReport> probeSearch(
     OnlineMusicProviderDefinition definition, {
     OnlineMusicCancelToken? cancelToken,
+
+    /// F3-2：**按能力定义的探测输入**（默认值时保持"一键探测"不变）。
+    DeclarativeProbeInputs inputs = const DeclarativeProbeInputs(),
   }) async {
     final baseUrlIssue = definition.baseUrlIssue;
     if (baseUrlIssue != null) {
@@ -512,15 +516,19 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       );
     }
     // F5（P-28）：默认路径创建的 Dio 用完即释放（成功与异常都释放）。
-    return _withTransport(definition, (transport) async => probeDeclarativeSearch(
-      transport: transport,
-      // F3-S1：探测与试跑**共用**同一条执行路径（含敏感请求头凭据读取）。
-      headerCredentialReader: _headerCredentialReader,
-      platform: definition.contentPlatform,
-      candidates: candidates,
-      credential: await _readCredential(definition),
-      cancelToken: cancelToken,
-    ));
+    return _withTransport(
+      definition,
+      (transport) async => probeDeclarativeSearch(
+        transport: transport,
+        // F3-S1：探测与试跑**共用**同一条执行路径（含敏感请求头凭据读取）。
+        headerCredentialReader: _headerCredentialReader,
+        platform: definition.contentPlatform,
+        candidates: candidates,
+        credential: await _readCredential(definition),
+        cancelToken: cancelToken,
+        inputs: inputs,
+      ),
+    );
   }
 
   /// 单项试跑：只跑这一个能力，把 HTTP 结果与映射结果一起回报。
@@ -528,6 +536,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     OnlineMusicProviderDefinition definition,
     OnlineMusicCapability capability, {
     String? keyword,
+
     /// P-49：试跑的"每页数量"由调用方给（默认值与探测一致，默认行为不变）。
     int? limit,
     String? trackId,
@@ -621,22 +630,23 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     final execution = await _withTransport(
       definition,
       (transport) async => executeDeclarativeRequest(
-      spec: binding.request,
-      success: binding.response.success,
-      inputs: DeclarativeInputs(
-        keyword: effectiveKeyword,
-        limit: effectiveLimit,
-        offset: 0,
-        page: 1,
-        trackId: trackId,
-        playlistId: effectivePlaylistId,
-        quality: quality,
+        spec: binding.request,
+        success: binding.response.success,
+        inputs: DeclarativeInputs(
+          keyword: effectiveKeyword,
+          limit: effectiveLimit,
+          offset: 0,
+          page: 1,
+          trackId: trackId,
+          playlistId: effectivePlaylistId,
+          quality: quality,
+        ),
+        transport: transport,
+        headerCredentialReader: _headerCredentialReader,
+        credential: await _readCredential(definition),
+        cancelToken: token,
       ),
-      transport: transport,
-      headerCredentialReader: _headerCredentialReader,
-      credential: await _readCredential(definition),
-      cancelToken: token,
-    ));
+    );
     final requestSummary = execution.requestSummary;
     if (execution.stage == DeclarativeExecutionStage.notSent) {
       // 凭据读取失败 / 请求构造失败：都是**配置**问题，而且**一个请求都没发**。
@@ -699,6 +709,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   DeclarativeCapabilityTestResult _evaluateCapabilityResponse({
     required OnlineMusicProviderDefinition definition,
     required OnlineMusicCapability capability,
+
     /// P-49：映射时用的"每页数量"（与请求里发出去的**同一个**值）。
     required int limit,
     required OnlineMusicDeclarativeCapabilityBinding binding,
