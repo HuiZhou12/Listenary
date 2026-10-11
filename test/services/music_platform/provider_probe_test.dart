@@ -665,11 +665,17 @@ void main() {
         'score >',
         'score <',
         'score:',
+        // F3-3b：**不得另造第二套执行路径** —— 探测只能经 `executeDeclarativeRequest`
+        // 发请求；一旦出现直连传输的写法，就说明它在另起一套。
+        '.send(',
+        'Dio(',
+        'createDio',
+        'httpClientAdapter',
       ]) {
         expect(
           source,
           isNot(contains(forbidden)),
-          reason: '探测不得自带分类：$forbidden',
+          reason: '探测不得自带分类/另造执行路径：$forbidden',
         );
       }
     });
