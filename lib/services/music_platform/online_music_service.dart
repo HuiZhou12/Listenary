@@ -16,6 +16,7 @@ final class OnlineMusicCapabilities {
     Iterable<MusicPlatform> playlistCategoryPlatforms = const [],
     Iterable<MusicPlatform> chartPlatforms = const [],
     Iterable<MusicPlatform> newSongPlatforms = const [],
+    Iterable<MusicPlatform> artistPlatforms = const [],
     Iterable<MusicPlatform> lyricPlatforms = const [],
     Iterable<PlatformIdentity> resolvableIdentities = const [],
     Map<MusicPlatform, String> unavailableSearchReasons = const {},
@@ -31,6 +32,7 @@ final class OnlineMusicCapabilities {
        ),
        chartPlatforms = Set.unmodifiable(chartPlatforms),
        newSongPlatforms = Set.unmodifiable(newSongPlatforms),
+       artistPlatforms = Set.unmodifiable(artistPlatforms),
        lyricPlatforms = Set.unmodifiable(lyricPlatforms),
        unavailableSearchReasons = Map.unmodifiable(unavailableSearchReasons);
 
@@ -102,12 +104,24 @@ final class OnlineMusicCapabilities {
   /// 能列出**新歌**的平台。
   final Set<MusicPlatform> newSongPlatforms;
 
+  /// 能取"艺人 + 热门曲目"的平台（`artist` 能力，2026-10-12 新增）。
+  final Set<MusicPlatform> artistPlatforms;
+
   /// 新歌**真的点得动**的平台：必须同时具备新歌与播放解析能力。
   ///
   /// 理由与搜索的 Stream 硬门槛（D3）一致：列表里放一批点不响的曲目，比不显示更糟。
   /// 曲目的 `availability` 在映射层拿不到可靠取值，所以只能在平台粒度上把这道门关住。
   Set<MusicPlatform> get playableNewSongPlatforms => {
     for (final platform in newSongPlatforms)
+      if (resolvablePlatforms.contains(platform)) platform,
+  };
+
+  /// 能取艺人详情**且热门曲目点得响**的平台。
+  ///
+  /// 与 [playableNewSongPlatforms] 同一条理由：列表里的曲目点不动，比不显示更糟 ⇒
+  /// 艺人页只对"能播"的平台出现。
+  Set<MusicPlatform> get playableArtistPlatforms => {
+    for (final platform in artistPlatforms)
       if (resolvablePlatforms.contains(platform)) platform,
   };
 

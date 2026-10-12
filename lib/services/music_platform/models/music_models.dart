@@ -317,6 +317,37 @@ final class RemotePlaylist {
       PlatformIdentity(platform, platformId: platformId);
 }
 
+/// 一个**在线艺人**（`artist` 能力，2026-10-12 新增）：标量信息 + **热门曲目**。
+///
+/// 形状与 [RemotePlaylist] 同构（"元数据 + 曲目列表"），因为真实服务就是这样：
+/// 网易云实测 `/artists?id=` 一次返回艺人信息与 `hotSongs`。
+final class OnlineArtist {
+  OnlineArtist({
+    required this.platform,
+    required this.id,
+    required this.name,
+    this.avatarUri,
+    this.description,
+    this.platformId,
+    Iterable<MusicTrack> hotSongs = const [],
+  }) : hotSongs = List.unmodifiable(hotSongs);
+
+  final MusicPlatform platform;
+
+  /// 平台自己的艺人标识（**来自请求输入**，不是响应字段 ✓）。
+  final String id;
+  final String name;
+  final Uri? avatarUri;
+  final String? description;
+  final List<MusicTrack> hotSongs;
+
+  /// 自定义平台的稳定 ID（内置平台为 null ⇒ identity = builtin）。
+  final String? platformId;
+
+  PlatformIdentity get identity =>
+      PlatformIdentity(platform, platformId: platformId);
+}
+
 /// 一个**歌单摘要**（歌单集合里的一项）：只有元数据，**没有曲目**。
 ///
 /// 与 [RemotePlaylist]（歌单详情 + `tracks`）是两个业务语义：

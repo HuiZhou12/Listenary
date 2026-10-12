@@ -179,6 +179,51 @@ ResolvedStream mapDeclarativeResolveResponse({
 /// - `fieldsRootPath` 指向**歌单元数据**所在对象（未配置时用整个响应体）；
 /// - `listPath` 指向**歌单内曲目数组**（未配置则不带曲目，保持结构可用）；
 /// - 歌单 id 读不到时**回落到请求里的 id**（调用方本来就知道它，不算映射失败）。
+/// 把声明式响应映射成 [OnlineArtist]（`artist` 能力，2026-10-12 新增）。
+///
+/// 形状与 [mapDeclarativePlaylistResponse] 同构：
+/// - `fieldsRootPath` 指向**艺人标量**所在对象（网易云在 `artist` 下；未配置时用整个响应体）；
+/// - `listPath` 指向**热门曲目数组**（网易云在 `hotSongs`）；
+/// - **艺人 id 不在响应里**（它是请求输入）⇒ 由 [requestedArtistId] 传入 ✓
+///   （与 `playlist` 那边处理 `requestedPlaylistId` 的做法一致）。
+OnlineArtist mapDeclarativeArtistResponse({
+  required OnlineMusicResponseSpec spec,
+  required Object? body,
+  required MusicPlatform platform,
+  String? platformId,
+  required String requestedArtistId,
+}) {
+  final root = spec.fieldsRootPath?.read(body) ?? body;
+
+  final hotSongs = <MusicTrack>[];
+  final listPath = spec.listPath;
+  if (listPath != null) {
+    final rawList = listPath.read(body);
+    if (rawList is! List) {
+      throw const DeclarativeMappingException('列表路径没有取到数组');
+    }
+    for (final element in rawList) {
+      hotSongs.add(_mapTrack(spec, element, platform));
+    }
+  }
+
+  return OnlineArtist(
+    platform: platform,
+    platformId: platformId,
+    id: requestedArtistId,
+    name:
+        _readString(spec, OnlineMusicDomainField.artistName, root) ??
+        requestedArtistId,
+    avatarUri: _readUri(spec, OnlineMusicDomainField.artistAvatarUri, root),
+    description: _readString(
+      spec,
+      OnlineMusicDomainField.artistDescription,
+      root,
+    ),
+    hotSongs: hotSongs,
+  );
+}
+
 RemotePlaylist mapDeclarativePlaylistResponse({
   required OnlineMusicResponseSpec spec,
   required Object? body,

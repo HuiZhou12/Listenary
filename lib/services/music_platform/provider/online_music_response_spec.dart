@@ -27,6 +27,14 @@ enum OnlineMusicDomainField {
   /// 集合的**更新节奏**（平台自己的文案）。榜单这类名次集合靠它说明多久变一次。
   playlistUpdateFrequency,
 
+  // artist（艺人详情，2026-10-12）：标量部分；热门曲目**复用**上面的曲目字段。
+  /// 艺人显示名。
+  artistName,
+  /// 艺人头像（http(s)）。
+  artistAvatarUri,
+  /// 艺人简介（平台自己的文案；可为空）。
+  artistDescription,
+
   // 歌单分类（playlistCategories）
   categoryId,
   categoryName,
@@ -141,9 +149,12 @@ OnlineMusicFieldReader fieldReaderOf(OnlineMusicDomainField field) =>
       OnlineMusicDomainField.streamQuality ||
       OnlineMusicDomainField.lyricOriginal ||
       OnlineMusicDomainField.lyricTranslation ||
+      OnlineMusicDomainField.artistName ||
+      OnlineMusicDomainField.artistDescription ||
       OnlineMusicDomainField.lyricRomanization => OnlineMusicFieldReader.text,
       OnlineMusicDomainField.artists => OnlineMusicFieldReader.textList,
       OnlineMusicDomainField.coverUri ||
+      OnlineMusicDomainField.artistAvatarUri ||
       OnlineMusicDomainField.playlistCoverUri ||
       OnlineMusicDomainField.streamUrl => OnlineMusicFieldReader.uri,
       OnlineMusicDomainField.playlistTrackCount ||
@@ -495,6 +506,11 @@ final class OnlineMusicResponseSpec {
         if (listPath == null) {
           issues.add('歌单分类能力必须配置列表路径');
         }
+      case OnlineMusicCapability.artist:
+        // 艺人详情：标量在 fieldsRootPath、热门曲目在 listPath；两者都没有必然映射不出来。
+        if (listPath == null && fieldsRootPath == null) {
+          issues.add('艺人详情能力必须配置字段根路径或列表路径');
+        }
       case OnlineMusicCapability.newSongs:
         // 新歌就是一个曲目数组，与搜索同构。
         if (listPath == null) {
@@ -622,6 +638,20 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.coverUri,
         OnlineMusicDomainField.duration,
       };
+    case OnlineMusicCapability.artist:
+      // 艺人详情 = 标量（名字/头像/简介）× 热门曲目（曲目字段与搜索相同）。
+      // 曲目是**可选**的：艺人可能没有热门曲目，那不等于配置错 ✓。
+      return const {
+        OnlineMusicDomainField.artistName,
+        OnlineMusicDomainField.artistAvatarUri,
+        OnlineMusicDomainField.artistDescription,
+        OnlineMusicDomainField.trackId,
+        OnlineMusicDomainField.title,
+        OnlineMusicDomainField.artists,
+        OnlineMusicDomainField.album,
+        OnlineMusicDomainField.coverUri,
+        OnlineMusicDomainField.duration,
+      };
     case OnlineMusicCapability.lyric:
       return const {
         OnlineMusicDomainField.lyricOriginal,
@@ -679,6 +709,9 @@ Set<OnlineMusicDomainField> requiredFieldsFor(
         OnlineMusicDomainField.trackId,
         OnlineMusicDomainField.title,
       };
+    case OnlineMusicCapability.artist:
+      // 至少要能确定"这是谁"；**热门曲目可以为空**（艺人可能没有）⇒ 不要求曲目字段 ✓。
+      return const {OnlineMusicDomainField.artistName};
     case OnlineMusicCapability.lyric:
       return const {};
   }

@@ -578,6 +578,9 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     int? limit,
     String? trackId,
     String? playlistId,
+
+    /// 艺人详情（`artist`）试跑要用的**艺人 ID**（2026-10-12 新增）。
+    String? artistId,
     String quality = defaultDeclarativeTestQuality,
     OnlineMusicCancelToken? cancelToken,
   }) async {
@@ -616,13 +619,23 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
       );
     }
     // 试跑面板只有一个 ID 输入框（一次只编辑一个能力）：playlist 用它当歌单 ID，
-    // stream / lyric 用它当曲目 ID；程序化调用仍可显式传 playlistId。
+    // artist 用它当艺人 ID，stream / lyric 用它当曲目 ID；程序化调用仍可显式传这些 id。
     final effectivePlaylistId = playlistId ?? trackId;
     if (capability == OnlineMusicCapability.playlist &&
         (effectivePlaylistId == null || effectivePlaylistId.trim().isEmpty)) {
       return const DeclarativeCapabilityTestResult(
         ok: false,
         failureReason: '试跑歌单详情需要先填一个歌单 ID',
+        failureKind: DeclarativeTestFailureKind.config,
+      );
+    }
+    // 艺人 id 同样可能从那个唯一的 ID 输入框来（编辑器按能力把值放到正确的槽位）。
+    final effectiveArtistId = artistId ?? trackId;
+    if (capability == OnlineMusicCapability.artist &&
+        (effectiveArtistId == null || effectiveArtistId.trim().isEmpty)) {
+      return const DeclarativeCapabilityTestResult(
+        ok: false,
+        failureReason: '试跑艺人详情需要先填一个艺人 ID',
         failureKind: DeclarativeTestFailureKind.config,
       );
     }
@@ -676,6 +689,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
           page: 1,
           trackId: trackId,
           playlistId: effectivePlaylistId,
+          artistId: effectiveArtistId,
           quality: quality,
         ),
         transport: transport,
@@ -718,6 +732,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
         preview: preview,
         trackId: trackId,
         requestedPlaylistId: effectivePlaylistId,
+        requestedArtistId: effectiveArtistId,
         quality: quality,
       );
       return evaluated.withRequestSummary(requestSummary);
@@ -758,6 +773,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     required String? preview,
     required String? trackId,
     required String? requestedPlaylistId,
+    required String? requestedArtistId,
     required String quality,
   }) async {
     if (!declarativeResponseIsSuccess(
@@ -814,6 +830,43 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
                 : null,
             failureReason: page.items.isEmpty
                 ? declarativeEmptyResultNote('没有解析出曲目')
+                : null,
+          );
+        }
+
+      case OnlineMusicCapability.artist:
+        {
+          // 艺人详情：标量（名字/头像/简介）+ 热门曲目。
+          // 与歌单详情同款判据：**配置缺项**（没配列表路径）与**空结果**必须分开说，
+          // 而空的热门曲目是**合法**的（艺人可能确实没有）⇒ 只能算"未能确认"。
+          if (binding.response.listPath == null) {
+            return DeclarativeCapabilityTestResult(
+              ok: false,
+              statusCode: response.statusCode,
+              responsePreview: preview,
+              failureReason: '艺人详情没有配置「列表路径」（热门曲目数组所在位置），因此取不到曲目',
+              failureKind: DeclarativeTestFailureKind.config,
+            );
+          }
+          final artist = mapDeclarativeArtistResponse(
+            spec: binding.response,
+            body: response.data,
+            platform: definition.contentPlatform,
+            requestedArtistId: requestedArtistId!,
+          );
+          final isEmpty = artist.hotSongs.isEmpty;
+          return DeclarativeCapabilityTestResult(
+            ok: !isEmpty,
+            explicitConfidence: isEmpty
+                ? DeclarativeVerificationConfidence.unconfirmed
+                : null,
+            statusCode: response.statusCode,
+            responsePreview: preview,
+            mappedSummary: isEmpty
+                ? '没有可验证的数据（空结果）'
+                : '艺人「${artist.name}」· ${artist.hotSongs.length} 首热门曲目',
+            failureReason: isEmpty
+                ? declarativeEmptyResultNote('没有解析出任何曲目')
                 : null,
           );
         }

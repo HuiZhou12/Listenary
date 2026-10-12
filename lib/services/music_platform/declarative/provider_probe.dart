@@ -927,6 +927,12 @@ int _countListEntries(JsonPath? listPath, Object? body) {
   required MusicPlatform platform,
   required int limit,
 }) => switch (candidate.capability) {
+  // 艺人详情**需要实体 ID**（艺人 id 在请求里、不在响应里）⇒ 按既有设计它本就不参与
+  // "服务级探测"（见 `probeInputRequirementFor` 把它归入"需要实体 ID"那一组）。
+  // 这里**如实报错**，而不是假装能探测 ✓。
+  OnlineMusicCapability.artist => throw UnsupportedError(
+    '艺人详情需要艺人 ID，不参与服务级探测（请用「试跑」验证这份配置）',
+  ),
   OnlineMusicCapability.search || OnlineMusicCapability.newSongs => (
     count: mapDeclarativeSearchResponse(
       spec: binding.response,

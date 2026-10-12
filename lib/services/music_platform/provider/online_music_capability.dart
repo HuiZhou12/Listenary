@@ -37,6 +37,17 @@
 /// 也**不需要新的映射函数**（与搜索同构）。它仍然是一个独立能力，因为它回答的是
 /// "这个平台最近发布了什么"，与关键词搜索是两种语义。
 /// **界面上它还要求该平台具备 [stream]**：列表里的曲目点不动比不显示更糟。
+/// **艺人详情**（`artist`，2026-10-12 新增）：回答"这个艺人是谁 + 他的热门作品"。
+///
+/// 为什么是新能力而不是塞进 search：真实服务里它就是**另一个接口**（网易云实测
+/// `/artists?id=` 返回艺人基本信息 + `hotSongs` 曲目，与关键词搜索是两种语义）；
+/// 而且它**同时**产出标量（名字/头像/简介）与**曲目列表** —— 这正是 [playlist]
+/// （歌单详情的元数据 + 曲目）已经在用的形状 ✓。
+///
+/// 为什么热门曲目不新开能力：一次请求就能拿到（D2 决策：**一个能力不做多请求**），
+/// 拆成两个能力反而要求两倍配置、且两者必须同源才不矛盾。
+///
+/// **它需要实体 ID**（艺人 id 在请求里、不在响应里）⇒ 按既有设计**不参与服务级探测** ✓。
 enum OnlineMusicCapability {
   search,
   playlist,
@@ -44,6 +55,7 @@ enum OnlineMusicCapability {
   playlistCategories,
   chartList,
   newSongs,
+  artist,
   lyric,
   stream,
 }
@@ -58,6 +70,7 @@ String onlineMusicCapabilityLabel(OnlineMusicCapability capability) =>
       OnlineMusicCapability.playlistCategories => '歌单分类',
       OnlineMusicCapability.chartList => '榜单',
       OnlineMusicCapability.newSongs => '新歌',
+      OnlineMusicCapability.artist => '艺人详情',
       OnlineMusicCapability.lyric => '歌词',
       OnlineMusicCapability.stream => '播放解析',
     };

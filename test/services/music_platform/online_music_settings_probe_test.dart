@@ -1106,6 +1106,35 @@ OnlineMusicSettings _allCapabilitiesSettings() => OnlineMusicSettings.fromJson({
             },
           ),
         ).toJson(),
+        'artist': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(
+            path: '/artists',
+            query: [
+              OnlineMusicParamBinding(
+                name: 'id',
+                source: OnlineMusicInputSource.artistId,
+              ),
+            ],
+          ),
+          response: OnlineMusicResponseSpec(
+            success: _codeSuccess,
+            listPath: JsonPathForTest.data,
+            fields: {
+              // 标量（艺人名）+ 曲目字段（热门曲目）—— 与真实配置同形 ✓。
+              OnlineMusicDomainField.artistName: _stringField(
+                JsonPathForTest.name,
+              ),
+              OnlineMusicDomainField.trackId: _stringField(
+                JsonPathForTest.id,
+                required: true,
+              ),
+              OnlineMusicDomainField.title: _stringField(
+                JsonPathForTest.name,
+                required: true,
+              ),
+            },
+          ),
+        ).toJson(),
         'playlistCollection': OnlineMusicDeclarativeCapabilityBinding(
           request: const OnlineMusicRequestSpec(path: '/top/playlist'),
           response: OnlineMusicResponseSpec(

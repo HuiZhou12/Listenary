@@ -815,7 +815,11 @@ void main() {
           (capability) => !builtinOnlineMusicCapabilities.contains(capability),
         )
         .length;
-    expect(missingOnNetease, 4, reason: '内置实现有 4 项 ⇒ 网易云卡应缺 4 项');
+    expect(
+      missingOnNetease,
+      5,
+      reason: '内置实现有 4 项、共 9 个能力 ⇒ 网易云卡应缺 5 项',
+    );
     expect(
       find.descendant(
         of: platformCard(MusicPlatform.netease),
@@ -2096,6 +2100,7 @@ void main() {
     //（旧写法只对 playlistCollection 特判，于是另三个也显示一个用不到的输入框）。
     const needsId = {
       OnlineMusicCapability.playlist,
+      OnlineMusicCapability.artist,
       OnlineMusicCapability.lyric,
       OnlineMusicCapability.stream,
     };
@@ -2756,6 +2761,21 @@ OnlineMusicDeclarativeCapabilityBinding validBindingFor(
         fields: {
           trackId: field(trackId, 'id', asInt),
           title: field(title, 'name', asString),
+        },
+      ),
+    ),
+    // 艺人详情：标量在 `artist`，热门曲目在 `hotSongs`（与网易云实测一致）。
+    OnlineMusicCapability.artist => OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(path: '/artists'),
+      response: OnlineMusicResponseSpec(
+        fieldsRootPath: JsonPath.tryParse('artist'),
+        listPath: JsonPath.tryParse('hotSongs'),
+        fields: {
+          OnlineMusicDomainField.artistName: field(
+            OnlineMusicDomainField.artistName,
+            'name',
+            asString,
+          ),
         },
       ),
     ),

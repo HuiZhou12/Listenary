@@ -53,6 +53,10 @@ void main() {
         OnlineMusicDomainField.categoryId: OnlineMusicFieldReader.scalar,
         OnlineMusicDomainField.categoryName: OnlineMusicFieldReader.scalar,
         OnlineMusicDomainField.categoryCount: OnlineMusicFieldReader.integer,
+        // artist（艺人详情，2026-10-12）：名字/简介是文本，头像是 Uri。
+        OnlineMusicDomainField.artistName: OnlineMusicFieldReader.text,
+        OnlineMusicDomainField.artistAvatarUri: OnlineMusicFieldReader.uri,
+        OnlineMusicDomainField.artistDescription: OnlineMusicFieldReader.text,
         OnlineMusicDomainField.lyricOriginal: OnlineMusicFieldReader.text,
         OnlineMusicDomainField.lyricTranslation: OnlineMusicFieldReader.text,
         OnlineMusicDomainField.lyricRomanization: OnlineMusicFieldReader.text,

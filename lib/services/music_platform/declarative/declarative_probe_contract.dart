@@ -72,6 +72,13 @@ const declarativeProbeCapabilityContracts =
         probeable: false,
         notProbeableReason: probeNeedsEntityIdReason,
       ),
+      // 艺人详情同样需要实体 ID（艺人 id 在请求里、不在响应里）⇒ 交给「试跑」✓。
+      DeclarativeProbeCapabilityContract(
+        capability: OnlineMusicCapability.artist,
+        unit: '',
+        probeable: false,
+        notProbeableReason: probeNeedsEntityIdReason,
+      ),
       DeclarativeProbeCapabilityContract(
         capability: OnlineMusicCapability.lyric,
         unit: '',

@@ -63,6 +63,7 @@ DeclarativeProbeInputRequirement probeInputRequirementFor(
   ),
   // 需要实体 ID 的能力不属于服务级探测（由候选策略排除；这里也如实声明"无要求"）。
   OnlineMusicCapability.playlist ||
+  OnlineMusicCapability.artist ||
   OnlineMusicCapability.lyric ||
   OnlineMusicCapability.stream => const DeclarativeProbeInputRequirement(),
 };

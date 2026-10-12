@@ -247,6 +247,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
           limit: inputs.limit,
           trackId: inputs.trackId,
           playlistId: inputs.playlistId,
+          artistId: inputs.artistId,
         ),
         // F0-4：敏感请求头的凭据按**槽位名**读写，与条目级 API Key 同一个出口。
         onIsCredentialConfigured: _controller.isReferencedCredentialConfigured,
