@@ -16,6 +16,7 @@ final class OnlineMusicCapabilities {
     Iterable<MusicPlatform> playlistCategoryPlatforms = const [],
     Iterable<MusicPlatform> chartPlatforms = const [],
     Iterable<MusicPlatform> newSongPlatforms = const [],
+    Iterable<MusicPlatform> newAlbumPlatforms = const [],
     Iterable<MusicPlatform> artistPlatforms = const [],
     Iterable<MusicPlatform> albumPlatforms = const [],
     Iterable<MusicPlatform> artistAlbumPlatforms = const [],
@@ -35,6 +36,7 @@ final class OnlineMusicCapabilities {
        ),
        chartPlatforms = Set.unmodifiable(chartPlatforms),
        newSongPlatforms = Set.unmodifiable(newSongPlatforms),
+       newAlbumPlatforms = Set.unmodifiable(newAlbumPlatforms),
        artistPlatforms = Set.unmodifiable(artistPlatforms),
        albumPlatforms = Set.unmodifiable(albumPlatforms),
        artistAlbumPlatforms = Set.unmodifiable(artistAlbumPlatforms),
@@ -110,6 +112,9 @@ final class OnlineMusicCapabilities {
   /// 能列出**新歌**的平台。
   final Set<MusicPlatform> newSongPlatforms;
 
+  /// 能列**新专辑**的平台（`newAlbums` 能力，2026-10-12 新增）。
+  final Set<MusicPlatform> newAlbumPlatforms;
+
   /// 能取"艺人 + 热门曲目"的平台（`artist` 能力，2026-10-12 新增）。
   final Set<MusicPlatform> artistPlatforms;
 
@@ -129,6 +134,12 @@ final class OnlineMusicCapabilities {
   Set<MusicPlatform> get playableNewSongPlatforms => {
     for (final platform in newSongPlatforms)
       if (resolvablePlatforms.contains(platform)) platform,
+  };
+
+  /// 能列新专辑**且专辑打得开**的平台（与 [openableArtistAlbumPlatforms] 同一条判据 ✓）。
+  Set<MusicPlatform> get openableNewAlbumPlatforms => {
+    for (final platform in newAlbumPlatforms)
+      if (albumPlatforms.contains(platform)) platform,
   };
 
   /// 能取艺人详情**且热门曲目点得响**的平台。
@@ -338,6 +349,16 @@ abstract interface class OnlineMusicService {
     required String albumId,
     required OnlineMusicCancelToken cancelToken,
   }) => throw UnsupportedError('Album detail is not supported');
+
+  /// **新专辑**（`newAlbums`，2026-10-12 新增）：平台最近发布的专辑（**输出是专辑摘要** ✓）。
+  ///
+  /// 与 [fetchNewSongs] 分开：真实服务是另一个接口，输出形状也不同（专辑 vs 曲目 ✓）。
+  Future<List<OnlineAlbumSummary>> fetchNewAlbums({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('New albums are not supported');
 
   /// **艺人的专辑列表**（`artistAlbums`，2026-10-12 新增）：参考艺人页的「专辑」区块 ✓。
   ///

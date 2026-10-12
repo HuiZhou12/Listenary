@@ -67,6 +67,8 @@ $album    = Get-Json "$BaseUrl/album?id=$albumId"
 $artistAlbums = Get-Json "$BaseUrl/artist/album?id=$artistId&limit=$Trim"
 # artistSongs（2026-10-12 新增）：同一个艺人的单曲列表（形状 = songs 数组）。
 $artistSongs = Get-Json "$BaseUrl/artist/songs?id=$artistId&limit=$Trim"
+# newAlbums（2026-10-12 新增）：平台最近发布的专辑（形状 = albums 数组；实测认 limit ✓）。
+$newAlbums = Get-Json "$BaseUrl/album/new?limit=$Trim"
 
 $blocks = [ordered]@{
   rawSearch = ([ordered]@{
@@ -139,6 +141,13 @@ $blocks = [ordered]@{
       songs = Take $artistSongs.songs $Trim
       total = $artistSongs.total
       more  = $artistSongs.more
+    } | ConvertTo-Json -Depth 30 -Compress)
+
+  # newAlbums（2026-10-12）：专辑就在 albums 数组里（裁到 $Trim 条）。
+  rawNewAlbums = ([ordered]@{
+      code   = $newAlbums.code
+      albums = Take $newAlbums.albums $Trim
+      total  = $newAlbums.total
     } | ConvertTo-Json -Depth 30 -Compress)
 }
 

@@ -78,6 +78,12 @@ enum OnlineMusicCapability {
   /// 实测 `/artist/songs?id=` → `{code, songs, more, total}`，曲目就是**标准曲目形状** ✓
   /// ⇒ **不放新领域字段**（身份/标题/艺人/专辑/时长全部复用 ✓），模型也直接复用 `MusicTrack` ✓。
   artistSongs,
+  /// **新专辑**（`newAlbums`，2026-10-12 新增）：参考 Explore 第一个区块「**新专辑与单曲**」里的"新专辑"那一半 ✓。
+  ///
+  /// 为什么与 [newSongs] 分开：真实服务是另一个接口，且**输出形状不同**（专辑元数据 vs 曲目 ✓）
+  /// —— 网易云实测 `/album/new?limit=N` **认 `limit`** ✓（而 `/album/newest` **不认** ✗，所以用前者 ✓），
+  /// 并且它**不需要 `area`** 也能用 ✓（`area` 属"要不要暴露给用户"的决策，这一版先不碰 ✓）。
+  newAlbums,
   lyric,
   stream,
 }
@@ -96,6 +102,7 @@ String onlineMusicCapabilityLabel(OnlineMusicCapability capability) =>
       OnlineMusicCapability.album => '专辑详情',
       OnlineMusicCapability.artistAlbums => '艺人专辑列表',
       OnlineMusicCapability.artistSongs => '艺人单曲列表',
+      OnlineMusicCapability.newAlbums => '新专辑',
       OnlineMusicCapability.lyric => '歌词',
       OnlineMusicCapability.stream => '播放解析',
     };

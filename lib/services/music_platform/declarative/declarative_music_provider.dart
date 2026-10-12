@@ -251,6 +251,27 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
   }
 
   @override
+  Future<List<OnlineAlbumSummary>> fetchNewAlbums({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    final binding = _requireBinding(OnlineMusicCapability.newAlbums, platform);
+    return _run(
+      binding: binding,
+      cancelToken: cancelToken,
+      inputs: DeclarativeInputs(limit: limit, offset: offset, page: 1),
+      map: (body) => mapDeclarativeAlbumListResponse(
+        spec: binding.response,
+        body: body,
+        platform: platform,
+        platformId: platformId,
+      ),
+    );
+  }
+
+  @override
   Future<List<MusicTrack>> fetchArtistSongs({
     required MusicPlatform platform,
     required String artistId,
@@ -301,7 +322,7 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
         offset: offset,
         page: 1,
       ),
-      map: (body) => mapDeclarativeArtistAlbumsResponse(
+      map: (body) => mapDeclarativeAlbumListResponse(
         spec: binding.response,
         body: body,
         platform: platform,

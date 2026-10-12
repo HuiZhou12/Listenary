@@ -573,6 +573,11 @@ final class OnlineMusicResponseSpec {
         if (listPath == null) {
           issues.add('艺人单曲列表能力必须配置列表路径');
         }
+      case OnlineMusicCapability.newAlbums:
+        // 新专辑：数组类能力 ⇒ **必须**有列表路径 ✓。
+        if (listPath == null) {
+          issues.add('新专辑能力必须配置列表路径');
+        }
       case OnlineMusicCapability.newSongs:
         // 新歌就是一个曲目数组，与搜索同构。
         if (listPath == null) {
@@ -706,6 +711,15 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.coverUri,
         OnlineMusicDomainField.duration,
       };
+    case OnlineMusicCapability.newAlbums:
+      // 新专辑 = 专辑元数据（与 `artistAlbums` **同一组字段** ✓）—— 没有曲目 ✓。
+      return const {
+        OnlineMusicDomainField.albumId,
+        OnlineMusicDomainField.albumName,
+        OnlineMusicDomainField.albumCoverUri,
+        OnlineMusicDomainField.albumTrackCount,
+        OnlineMusicDomainField.albumReleaseTime,
+      };
     case OnlineMusicCapability.artistSongs:
       // 艺人单曲列表 = **曲目数组**（与搜索/新歌同构 ✓）⇒ 复用同一组曲目字段 ✓。
       return const {
@@ -826,6 +840,12 @@ Set<OnlineMusicDomainField> requiredFieldsFor(
     case OnlineMusicCapability.album:
       // 至少要能确定"这是哪张专辑"；曲目可以为空 ✓。
       return const {OnlineMusicDomainField.albumName};
+    case OnlineMusicCapability.newAlbums:
+      // 列表项至少要能确定"这是哪张专辑"：**id + 名字** ✓。
+      return const {
+        OnlineMusicDomainField.albumId,
+        OnlineMusicDomainField.albumName,
+      };
     case OnlineMusicCapability.artistSongs:
       // 曲目列表至少要能确定"这是哪首歌"：**id + 标题** ✓。
       return const {

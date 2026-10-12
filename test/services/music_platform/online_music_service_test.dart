@@ -52,6 +52,13 @@ void main() {
 
 final class _FakeOnlineMusicService implements OnlineMusicService {
   @override
+  Future<List<OnlineAlbumSummary>> fetchNewAlbums({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('New albums are not implemented here');
+  @override
   Future<List<MusicTrack>> fetchArtistSongs({
     required MusicPlatform platform,
     required String artistId,

@@ -353,6 +353,12 @@ void main() {
       expect(find.text('第二阶段'), findsNothing);
       expect(find.text('配置'), findsWidgets);
 
+      // 能力清单变长 ⇒ 按钮可能在惰性列表里还没被构建 ✗ ⇒ 先滚动查找 ✓。
+      await tester.scrollUntilVisible(
+        find.text('一键按 ChkSz 兼容方式填充'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       await tester.tap(find.text('一键按 ChkSz 兼容方式填充'));
       await tester.pumpAndSettle();
 
@@ -817,8 +823,8 @@ void main() {
         .length;
     expect(
       missingOnNetease,
-      8,
-      reason: '内置实现有 4 项、共 12 个能力 ⇒ 网易云卡应缺 8 项',
+      9,
+      reason: '内置实现有 4 项、共 13 个能力 ⇒ 网易云卡应缺 9 项',
     );
     expect(
       find.descendant(
@@ -1596,6 +1602,14 @@ void main() {
   Future<void> openFillConfirm(WidgetTester tester) async {
     await tester.tap(find.byTooltip('能力配置'));
     await tester.pumpAndSettle();
+    // 能力清单会随能力数量增长（2026-10-12 起 13 项）⇒ 按钮在**惰性列表**里可能还没被构建 ✗
+    // ⇒ 必须**普通滚动查找**（`ensureVisible` 对"没构建"的控件无效 ✓；
+    //    `scrollCapabilityFormTo` 是"能力编辑器表单"专用 ✓，这里没有那个 key ✗）。
+    await tester.scrollUntilVisible(
+      find.text('一键按 ChkSz 兼容方式填充'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.text('一键按 ChkSz 兼容方式填充'));
     await tester.pumpAndSettle();
     expect(find.text('按 ChkSz 兼容方式填充？'), findsOneWidget);
@@ -2313,6 +2327,14 @@ void main() {
     addTearDown(controller.dispose);
     await pumpPanel(tester, controller, service: _DiagnosticsOnlyService());
 
+    // 能力清单变长（2026-10-12 起 13 项）⇒ 诊断区块可能落在惰性列表下方 ✗
+    // ⇒ 用**普通滚动查找**（不能用 `scrollCapabilityFormTo`：那是"能力编辑器表单"专用 ✓）。
+    await tester.scrollUntilVisible(
+      find.text('路由诊断'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+
     expect(find.text('路由诊断'), findsOneWidget);
     expect(find.textContaining('网易云/搜索'), findsOneWidget);
     expect(find.textContaining('neteaseA'), findsOneWidget);
@@ -2771,6 +2793,26 @@ OnlineMusicDeclarativeCapabilityBinding validBindingFor(
         },
       ),
     ),
+    // 新专辑：专辑就在数组元素上（网易云 `/album/new` 的 `albums` ✓）。
+    OnlineMusicCapability.newAlbums =>
+      OnlineMusicDeclarativeCapabilityBinding(
+        request: const OnlineMusicRequestSpec(path: '/album/new'),
+        response: OnlineMusicResponseSpec(
+          listPath: JsonPath.tryParse('albums'),
+          fields: {
+            OnlineMusicDomainField.albumId: field(
+              OnlineMusicDomainField.albumId,
+              'id',
+              asInt,
+            ),
+            OnlineMusicDomainField.albumName: field(
+              OnlineMusicDomainField.albumName,
+              'name',
+              asString,
+            ),
+          },
+        ),
+      ),
     // 艺人单曲列表：曲目就在数组元素上（网易云 `/artist/songs` 的 `songs` ✓）。
     OnlineMusicCapability.artistSongs =>
       OnlineMusicDeclarativeCapabilityBinding(

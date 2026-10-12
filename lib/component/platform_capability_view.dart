@@ -30,6 +30,7 @@ const platformCapabilityRows =
       (label: '专辑详情', available: _album),
       (label: '艺人专辑列表', available: _artistAlbums),
       (label: '艺人单曲列表', available: _artistSongs),
+      (label: '新专辑', available: _newAlbums),
       (label: '歌词', available: _lyrics),
       (label: '播放解析', available: _resolvable),
     ];
@@ -63,6 +64,10 @@ bool _artistAlbums(OnlineMusicCapabilities c, MusicPlatform p) =>
 ///（列出一堆点不动的歌，比不显示更糟 ✗）。
 bool _artistSongs(OnlineMusicCapabilities c, MusicPlatform p) =>
     c.playableArtistSongPlatforms.contains(p);
+
+/// 新专辑：**既列得出、又打得开专辑详情**的平台 ✓（列出来打不开更糟 ✗）。
+bool _newAlbums(OnlineMusicCapabilities c, MusicPlatform p) =>
+    c.openableNewAlbumPlatforms.contains(p);
 
 bool _chartList(OnlineMusicCapabilities c, MusicPlatform p) =>
     c.chartPlatforms.contains(p);

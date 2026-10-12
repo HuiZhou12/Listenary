@@ -936,7 +936,41 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
               failureKind: DeclarativeTestFailureKind.config,
             );
           }
-          final albums = mapDeclarativeArtistAlbumsResponse(
+          final albums = mapDeclarativeAlbumListResponse(
+            spec: binding.response,
+            body: response.data,
+            platform: definition.contentPlatform,
+          );
+          final isEmpty = albums.isEmpty;
+          return DeclarativeCapabilityTestResult(
+            ok: !isEmpty,
+            explicitConfidence: isEmpty
+                ? DeclarativeVerificationConfidence.unconfirmed
+                : null,
+            statusCode: response.statusCode,
+            responsePreview: preview,
+            mappedSummary: isEmpty
+                ? '没有可验证的数据（空结果）'
+                : '${albums.length} 张专辑（首张：${albums.first.name}）',
+            failureReason: isEmpty
+                ? declarativeEmptyResultNote('没有解析出任何专辑')
+                : null,
+          );
+        }
+
+      case OnlineMusicCapability.newAlbums:
+        {
+          // 新专辑：**数组类**能力（空结果算"未能确认" ✓，与其它列表能力同判据 ✓）。
+          if (binding.response.listPath == null) {
+            return DeclarativeCapabilityTestResult(
+              ok: false,
+              statusCode: response.statusCode,
+              responsePreview: preview,
+              failureReason: '新专辑没有配置「列表路径」（专辑数组所在位置），因此取不到专辑',
+              failureKind: DeclarativeTestFailureKind.config,
+            );
+          }
+          final albums = mapDeclarativeAlbumListResponse(
             spec: binding.response,
             body: response.data,
             platform: definition.contentPlatform,

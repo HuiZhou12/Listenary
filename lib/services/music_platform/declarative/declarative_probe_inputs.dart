@@ -54,8 +54,9 @@ DeclarativeProbeInputRequirement probeInputRequirementFor(
       DeclarativeProbeInput.limit,
     },
   ),
-  // 新歌 / 歌单列表 / 歌单分类 / 榜单：由服务端决定"给什么"，无需关键词。
+  // 新歌 / 新专辑 / 歌单列表 / 歌单分类 / 榜单：由服务端决定"给什么"，无需关键词。
   OnlineMusicCapability.newSongs ||
+  OnlineMusicCapability.newAlbums ||
   OnlineMusicCapability.playlistCollection ||
   OnlineMusicCapability.playlistCategories ||
   OnlineMusicCapability.chartList => const DeclarativeProbeInputRequirement(

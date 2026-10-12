@@ -164,6 +164,8 @@ void main() {
       OnlineMusicCapability.playlistCollection,
       OnlineMusicCapability.playlistCategories,
       OnlineMusicCapability.chartList,
+      // 2026-10-12 新增：新专辑同样"不需要实体 ID" ⇒ 也可作候选 ✓。
+      OnlineMusicCapability.newAlbums,
     ]);
     // 裁定第 3 条：需要具体曲目 / 歌单 ID 的能力**不作默认探针**（也绝不伪造 ID）。
     for (final capability in const [

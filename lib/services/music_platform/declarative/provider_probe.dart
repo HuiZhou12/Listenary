@@ -945,6 +945,15 @@ int _countListEntries(JsonPath? listPath, Object? body) {
   OnlineMusicCapability.artistSongs => throw UnsupportedError(
     '艺人单曲列表需要艺人 ID，不参与服务级探测（请用「试跑」验证这份配置）',
   ),
+  // 新专辑：**数组类**能力（服务端决定给什么 ✓）⇒ 用专辑列表映射数一数 ✓。
+  OnlineMusicCapability.newAlbums => (
+    count: mapDeclarativeAlbumListResponse(
+      spec: binding.response,
+      body: body,
+      platform: platform,
+    ).length,
+    unit: probeResultUnitFor(candidate.capability),
+  ),
   OnlineMusicCapability.search || OnlineMusicCapability.newSongs => (
     count: mapDeclarativeSearchResponse(
       spec: binding.response,

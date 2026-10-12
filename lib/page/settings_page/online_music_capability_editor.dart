@@ -279,6 +279,8 @@ class _OnlineMusicCapabilityEditorDialogState
             OnlineMusicCapability.artistAlbums => JsonPath.tryParse('hotAlbums'),
             // 艺人单曲列表：网易云 `/artist/songs` 把曲目放在 `songs` 下（实测）✓。
             OnlineMusicCapability.artistSongs => JsonPath.tryParse('songs'),
+            // 新专辑：网易云 `/album/new` 把专辑放在 `albums` 下（实测）✓。
+            OnlineMusicCapability.newAlbums => JsonPath.tryParse('albums'),
           },
           fieldsRootPath: switch (widget.capability) {
             OnlineMusicCapability.playlist ||
@@ -292,6 +294,8 @@ class _OnlineMusicCapabilityEditorDialogState
             OnlineMusicCapability.artistAlbums => null,
             // 艺人单曲列表同样没有统一外层对象（每个曲目就是一个数组元素 ✓）。
             OnlineMusicCapability.artistSongs => null,
+            // 新专辑同样没有统一外层对象（每个专辑就是一个数组元素 ✓）。
+            OnlineMusicCapability.newAlbums => null,
             OnlineMusicCapability.search ||
             OnlineMusicCapability.playlistCollection ||
             OnlineMusicCapability.playlistCategories ||
@@ -1934,6 +1938,8 @@ String domainFieldLabel(OnlineMusicDomainField field, {bool required = false}) {
     listPath: true,
     fieldsRootPath: false,
   ),
+  // 新专辑：同上 ✓。
+  OnlineMusicCapability.newAlbums => (listPath: true, fieldsRootPath: false),
   OnlineMusicCapability.playlistCollection ||
   OnlineMusicCapability.playlistCategories ||
   OnlineMusicCapability.chartList ||
@@ -1966,6 +1972,8 @@ OnlineMusicInputSource defaultInputSourceFor(
   OnlineMusicCapability.artistAlbums => OnlineMusicInputSource.artistId,
   // 艺人单曲列表同样复用**艺人 ID** ✓。
   OnlineMusicCapability.artistSongs => OnlineMusicInputSource.artistId,
+  // 新专辑是**数组类**能力（服务端决定给什么 ✓）⇒ 只要 `limit` ✓。
+  OnlineMusicCapability.newAlbums => OnlineMusicInputSource.limit,
   OnlineMusicCapability.lyric ||
   OnlineMusicCapability.stream => OnlineMusicInputSource.trackId,
   OnlineMusicCapability.playlistCollection ||
@@ -2039,6 +2047,13 @@ typedef DeclarativeTestInputs = ({
     limit: true,
     id: true,
     idLabel: '试跑用的艺人 ID',
+  ),
+  // 新专辑：**数组类**能力（不需要 ID ✓），支持 `limit`（实测限流生效 ✓）。
+  OnlineMusicCapability.newAlbums => (
+    keyword: false,
+    limit: true,
+    id: false,
+    idLabel: '',
   ),
   OnlineMusicCapability.playlist => (
     keyword: false,

@@ -259,6 +259,13 @@ void main() {
 /// 榜单页用到的服务替身：能力可配、榜单按平台返回/抛错。
 final class _ChartService implements OnlineMusicService {
   @override
+  Future<List<OnlineAlbumSummary>> fetchNewAlbums({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('New albums are not implemented here');
+  @override
   Future<List<MusicTrack>> fetchArtistSongs({
     required MusicPlatform platform,
     required String artistId,
@@ -407,6 +414,13 @@ final class _ChartService implements OnlineMusicService {
 
 /// 只记录订阅请求的服务替身（证明榜单页把 `(platform, id)` 传对了）。
 final class _RecordingPlaylistService implements OnlineMusicService {
+  @override
+  Future<List<OnlineAlbumSummary>> fetchNewAlbums({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('New albums are not implemented here');
   @override
   Future<List<MusicTrack>> fetchArtistSongs({
     required MusicPlatform platform,

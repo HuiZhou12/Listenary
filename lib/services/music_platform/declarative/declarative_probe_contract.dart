@@ -66,6 +66,11 @@ const declarativeProbeCapabilityContracts =
         capability: OnlineMusicCapability.chartList,
         unit: '个榜单',
       ),
+      // 新专辑：**服务端决定给什么**（不需要实体 ID ✓）⇒ 可探测 ✓（单位是"张专辑" ✓）。
+      DeclarativeProbeCapabilityContract(
+        capability: OnlineMusicCapability.newAlbums,
+        unit: '张专辑',
+      ),
       DeclarativeProbeCapabilityContract(
         capability: OnlineMusicCapability.playlist,
         unit: '',
