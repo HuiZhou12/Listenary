@@ -18,6 +18,7 @@ final class OnlineMusicCapabilities {
     Iterable<MusicPlatform> newSongPlatforms = const [],
     Iterable<MusicPlatform> newAlbumPlatforms = const [],
     Iterable<MusicPlatform> searchableAlbumPlatforms = const [],
+    Iterable<MusicPlatform> searchableArtistPlatforms = const [],
     Iterable<MusicPlatform> artistPlatforms = const [],
     Iterable<MusicPlatform> albumPlatforms = const [],
     Iterable<MusicPlatform> artistAlbumPlatforms = const [],
@@ -39,6 +40,7 @@ final class OnlineMusicCapabilities {
        newSongPlatforms = Set.unmodifiable(newSongPlatforms),
        newAlbumPlatforms = Set.unmodifiable(newAlbumPlatforms),
        searchableAlbumPlatforms = Set.unmodifiable(searchableAlbumPlatforms),
+       searchableArtistPlatforms = Set.unmodifiable(searchableArtistPlatforms),
        artistPlatforms = Set.unmodifiable(artistPlatforms),
        albumPlatforms = Set.unmodifiable(albumPlatforms),
        artistAlbumPlatforms = Set.unmodifiable(artistAlbumPlatforms),
@@ -120,6 +122,9 @@ final class OnlineMusicCapabilities {
   /// 能**按关键词搜专辑**的平台（`searchAlbums` 能力，2026-10-12 新增）。
   final Set<MusicPlatform> searchableAlbumPlatforms;
 
+  /// 能**按关键词搜艺人**的平台（`searchArtists` 能力，2026-10-12 新增）。
+  final Set<MusicPlatform> searchableArtistPlatforms;
+
   /// 能取"艺人 + 热门曲目"的平台（`artist` 能力，2026-10-12 新增）。
   final Set<MusicPlatform> artistPlatforms;
 
@@ -152,6 +157,13 @@ final class OnlineMusicCapabilities {
   Set<MusicPlatform> get openableSearchAlbumPlatforms => {
     for (final platform in searchableAlbumPlatforms)
       if (albumPlatforms.contains(platform)) platform,
+  };
+
+  /// 搜索结果里「艺人」行**打得开**的平台：既要能搜艺人，又要能打开艺人页 ✓
+  ///（搜出来点不开，比不显示更糟 ✗）。
+  Set<MusicPlatform> get openableSearchArtistPlatforms => {
+    for (final platform in searchableArtistPlatforms)
+      if (artistPlatforms.contains(platform)) platform,
   };
 
   /// 能取艺人详情**且热门曲目点得响**的平台。
@@ -361,6 +373,15 @@ abstract interface class OnlineMusicService {
     required String albumId,
     required OnlineMusicCancelToken cancelToken,
   }) => throw UnsupportedError('Album detail is not supported');
+
+  /// **按关键词搜索艺人**（`searchArtists`，2026-10-12 新增）：搜索结果里的「艺人」那一段 ✓。
+  Future<List<OnlineArtistSummary>> searchArtists({
+    required MusicPlatform platform,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Artist search is not supported');
 
   /// **按关键词搜索专辑**（`searchAlbums`，2026-10-12 新增）：搜索页结果分区里的「专辑」✓。
   Future<List<OnlineAlbumSummary>> searchAlbums({

@@ -120,6 +120,21 @@ final class _AlbumEntry extends _SearchEntry {
   final OnlineAlbumSummary album;
 }
 
+/// **艺人结果行**（2026-10-12 ✓）：与曲目/专辑行**混在同一个列表** ✓，
+/// 以「**艺人 · …**」自报家门 ✓（参考的混合结果 + 类型前缀 ✓）。
+final class _ArtistEntry extends _SearchEntry {
+  const _ArtistEntry(this.artist);
+
+  final OnlineArtistSummary artist;
+}
+
+/// **艺人搜索失败的提示行**（只属于该平台 ✓，不静默 ✓）。
+final class _ArtistFailureEntry extends _SearchEntry {
+  const _ArtistFailureEntry(this.platform);
+
+  final MusicPlatform platform;
+}
+
 /// **专辑搜索失败的提示行**（只属于该平台 ✓）：不静默 ✓ ——
 /// 否则"没有专辑"与"专辑搜索失败"看起来一模一样 ✗。
 final class _AlbumFailureEntry extends _SearchEntry {
@@ -162,6 +177,12 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
 
   /// 专辑搜索失败的平台（**只影响该平台的专辑行** ✓，曲目结果照常显示 ✓）。
   final Set<MusicPlatform> _albumsFailed = {};
+
+  /// 搜索结果里的**艺人**（2026-10-12）：与专辑同一套（按平台各存一份 ✓）。
+  final Map<MusicPlatform, List<OnlineArtistSummary>> _artists = {};
+
+  /// 艺人搜索失败的平台（同样只影响该平台的艺人行 ✓）。
+  final Set<MusicPlatform> _artistsFailed = {};
 
   _OnlineSearchStatus _status = _OnlineSearchStatus.idle;
 
@@ -374,6 +395,59 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     });
   }
 
+  /// **搜艺人**（2026-10-12）：只对"搜得出来、且艺人页打得开"的平台 ✓
+  ///（`openableSearchArtistPlatforms` ✓）。失败**只影响该平台的艺人行**且如实标出 ✓。
+  Future<void> _loadArtists({
+    required OnlineMusicService service,
+    required List<MusicPlatform> platforms,
+    required String keyword,
+    required OnlineMusicCancelToken token,
+    required int generation,
+  }) async {
+    final targets = [
+      for (final platform in platforms)
+        if (service.capabilities.openableSearchArtistPlatforms.contains(
+          platform,
+        ))
+          platform,
+    ];
+    if (targets.isEmpty) return;
+    final results = await Future.wait([
+      for (final platform in targets)
+        () async {
+          try {
+            final artists = await service.searchArtists(
+              platform: platform,
+              keyword: keyword,
+              limit: _searchPageSize,
+              offset: 0,
+              cancelToken: token,
+            );
+            return (
+              platform: platform,
+              artists: artists,
+              failed: false,
+            );
+          } on Object {
+            return (
+              platform: platform,
+              artists: const <OnlineArtistSummary>[],
+              failed: true,
+            );
+          }
+        }(),
+    ]);
+    if (!mounted || generation != _generation) return;
+    setState(() {
+      for (final result in results) {
+        if (result.artists.isNotEmpty) {
+          _artists[result.platform] = result.artists;
+        }
+        if (result.failed) _artistsFailed.add(result.platform);
+      }
+    });
+  }
+
   Future<void> _submitSearch() async {
     final query = normalizedSearchQuery(_searchController.text);
     if (query.isEmpty) {
@@ -405,9 +479,11 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
           for (final platform in platforms)
             _PlatformSearchState(platform: platform),
         ]);
-      // 专辑结果与曲目结果**同时开跑** ✓（清掉上一次的 ✓）。
+      // 专辑/艺人结果与曲目结果**同时开跑** ✓（清掉上一次的 ✓）。
       _albums.clear();
       _albumsFailed.clear();
+      _artists.clear();
+      _artistsFailed.clear();
       _error = null;
     });
 
@@ -417,6 +493,15 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     if (albumService != null) {
       unawaited(
         _loadAlbums(
+          service: albumService,
+          platforms: platforms,
+          keyword: query,
+          token: token,
+          generation: generation,
+        ),
+      );
+      unawaited(
+        _loadArtists(
           service: albumService,
           platforms: platforms,
           keyword: query,
@@ -813,6 +898,16 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
       if (_albumsFailed.contains(group.platform)) {
         entries.add(_AlbumFailureEntry(group.platform));
       }
+      // **艺人结果同样混排** ✓（曲目 → 专辑 → 艺人 ✓；每行自报类型 ✓）。
+      final artists = _artists[group.platform];
+      if (artists != null) {
+        for (final artist in artists) {
+          entries.add(_ArtistEntry(artist));
+        }
+      }
+      if (_artistsFailed.contains(group.platform)) {
+        entries.add(_ArtistFailureEntry(group.platform));
+      }
       entries.add(_FooterEntry(group));
     }
     return entries;
@@ -829,6 +924,10 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
         _TrackEntry(:final group, :final track) => _buildTrackRow(group, track),
         _AlbumEntry(:final album) => _buildAlbumRow(album),
         _AlbumFailureEntry(:final platform) => _buildAlbumFailureRow(platform),
+        _ArtistEntry(:final artist) => _buildArtistRow(artist),
+        _ArtistFailureEntry(:final platform) => _buildArtistFailureRow(
+          platform,
+        ),
         _FailureEntry(:final group) => _buildFailureRow(group),
         _EmptyGroupEntry(:final platform) => _buildEmptyGroupRow(platform),
         _FooterEntry(:final group) => _buildLoadMoreFooter(group),
@@ -941,6 +1040,106 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 一行**艺人结果**：与专辑行同一套做法 ✓（混排 + 类型前缀 ✓；自带透明 Material ✓）。
+  Widget _buildArtistRow(OnlineArtistSummary artist) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: 2),
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: AppRadius.smCircular,
+        child: InkWell(
+          borderRadius: AppRadius.smCircular,
+          onTap: () => context.push(
+            app_paths.ONLINE_ARTIST_PAGE,
+            extra: (
+              platform: artist.platform,
+              artistId: artist.id,
+              name: artist.name,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: Spacing.sm,
+              vertical: 8.0,
+            ),
+            child: Row(
+              children: [
+                ClipOval(
+                  child: SizedBox.square(
+                    dimension: 48.0,
+                    child: RemoteMediaCover(
+                      coverUri: artist.avatarUri,
+                      placeholder: ColoredBox(
+                        color: scheme.surfaceContainerHighest,
+                        child: Icon(
+                          Symbols.artist,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      cacheWidth: 96,
+                      cacheHeight: 96,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: Spacing.md),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        artist.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: scheme.onSurface,
+                          fontSize: AppType.subtitle,
+                          fontWeight: AppType.weightMedium,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '艺人',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+                OnlineSourceLabel(
+                  label: platformLabelForIdentityOnly(artist.identity),
+                  color: scheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 艺人搜索失败：**如实标出** ✓（不静默 ✓，也不影响该平台的曲目结果 ✓）。
+  Widget _buildArtistFailureRow(MusicPlatform platform) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+      child: Row(
+        children: [
+          Icon(Symbols.artist, size: 16.0, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 8.0),
+          Expanded(
+            child: Text(
+              '${musicPlatformLabel(platform)}的艺人结果没取到（曲目结果不受影响）',
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          ),
+        ],
       ),
     );
   }

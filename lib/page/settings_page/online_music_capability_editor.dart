@@ -285,6 +285,10 @@ class _OnlineMusicCapabilityEditorDialogState
             OnlineMusicCapability.searchAlbums => JsonPath.tryParse(
               'result.albums',
             ),
+            // 搜索艺人：网易云 `/cloudsearch?type=100` 把艺人放在 `result.artists`（实测）✓。
+            OnlineMusicCapability.searchArtists => JsonPath.tryParse(
+              'result.artists',
+            ),
           },
           fieldsRootPath: switch (widget.capability) {
             OnlineMusicCapability.playlist ||
@@ -302,6 +306,8 @@ class _OnlineMusicCapabilityEditorDialogState
             OnlineMusicCapability.newAlbums => null,
             // 搜索专辑同样没有统一外层对象（每个专辑就是一个数组元素 ✓）。
             OnlineMusicCapability.searchAlbums => null,
+            // 搜索艺人同样没有统一外层对象（每个艺人就是一个数组元素 ✓）。
+            OnlineMusicCapability.searchArtists => null,
             OnlineMusicCapability.search ||
             OnlineMusicCapability.playlistCollection ||
             OnlineMusicCapability.playlistCategories ||
@@ -1858,6 +1864,8 @@ const _domainFieldLabels = <OnlineMusicDomainField, String>{
   OnlineMusicDomainField.artists: '艺术家',
   // artist（艺人 id）：与"艺术家"同序，用于点艺人名打开艺人页（2026-10-12）。
   OnlineMusicDomainField.artistIds: '艺术家 ID',
+  // 单个艺人 id（艺人列表项；2026-10-12）✓。
+  OnlineMusicDomainField.artistId: '艺人 ID（列表项）',
   // 专辑 id（用于点专辑名打开专辑页，2026-10-12）✓。
   OnlineMusicDomainField.albumIds: '专辑 ID',
   OnlineMusicDomainField.album: '专辑',
@@ -1948,6 +1956,8 @@ String domainFieldLabel(OnlineMusicDomainField field, {bool required = false}) {
   OnlineMusicCapability.newAlbums => (listPath: true, fieldsRootPath: false),
   // 搜索专辑：同上 ✓。
   OnlineMusicCapability.searchAlbums => (listPath: true, fieldsRootPath: false),
+  // 搜索艺人：同上 ✓。
+  OnlineMusicCapability.searchArtists => (listPath: true, fieldsRootPath: false),
   OnlineMusicCapability.playlistCollection ||
   OnlineMusicCapability.playlistCategories ||
   OnlineMusicCapability.chartList ||
@@ -1984,6 +1994,8 @@ OnlineMusicInputSource defaultInputSourceFor(
   OnlineMusicCapability.newAlbums => OnlineMusicInputSource.limit,
   // 搜索专辑是**关键词**能力（与搜索同判据 ✓）。
   OnlineMusicCapability.searchAlbums => OnlineMusicInputSource.keyword,
+  // 搜索艺人同理 ✓。
+  OnlineMusicCapability.searchArtists => OnlineMusicInputSource.keyword,
   OnlineMusicCapability.lyric ||
   OnlineMusicCapability.stream => OnlineMusicInputSource.trackId,
   OnlineMusicCapability.playlistCollection ||
@@ -2067,6 +2079,13 @@ typedef DeclarativeTestInputs = ({
   ),
   // 搜索专辑：要**关键词**（与搜索同判据 ✓），支持 `limit` ✓。
   OnlineMusicCapability.searchAlbums => (
+    keyword: true,
+    limit: true,
+    id: false,
+    idLabel: '',
+  ),
+  // 搜索艺人：同上 ✓。
+  OnlineMusicCapability.searchArtists => (
     keyword: true,
     limit: true,
     id: false,

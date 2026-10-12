@@ -17,6 +17,9 @@ enum OnlineMusicDomainField {
   /// **艺人 id**（与 [artists] 同序；用于"点艺人名打开艺人页"，2026-10-12 新增）。
   artistIds,
 
+  /// **单个艺人 id**（艺人列表里的一项；与 [artistIds] 不同：后者是"曲目所属艺人"的同序列表 ✓）。
+  artistId,
+
   /// **专辑 id**（用于"点专辑名打开专辑页"，2026-10-12 新增）。
   albumIds,
   album,
@@ -177,7 +180,9 @@ OnlineMusicFieldReader fieldReaderOf(OnlineMusicDomainField field) =>
       // 专辑艺人 id 与其它 id 同类（`scalar`：把 int/字符串插值成身份 ✓）。
       OnlineMusicDomainField.albumArtistId ||
       // 专辑列表里的单个专辑 id 同理 ✓。
-      OnlineMusicDomainField.albumId => OnlineMusicFieldReader.scalar,
+      OnlineMusicDomainField.albumId ||
+      // 艺人列表里的单个艺人 id 同理 ✓。
+      OnlineMusicDomainField.artistId => OnlineMusicFieldReader.scalar,
       OnlineMusicDomainField.album ||
       // 歌单名在"详情"路径由 `_readString` 读、在"集合"路径由 `_readRequired` 插值读
       // ⇒ 取**交集**（只要 `asString`），两条路径都安全。
@@ -583,6 +588,11 @@ final class OnlineMusicResponseSpec {
         if (listPath == null) {
           issues.add('搜索专辑能力必须配置列表路径');
         }
+      case OnlineMusicCapability.searchArtists:
+        // 搜索艺人：同上 ✓。
+        if (listPath == null) {
+          issues.add('搜索艺人能力必须配置列表路径');
+        }
       case OnlineMusicCapability.newSongs:
         // 新歌就是一个曲目数组，与搜索同构。
         if (listPath == null) {
@@ -715,6 +725,13 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.album,
         OnlineMusicDomainField.coverUri,
         OnlineMusicDomainField.duration,
+      };
+    case OnlineMusicCapability.searchArtists:
+      // 搜索艺人 = 艺人元数据（id/名字/头像 ✓）—— 没有热门曲目 ✓。
+      return const {
+        OnlineMusicDomainField.artistId,
+        OnlineMusicDomainField.artistName,
+        OnlineMusicDomainField.artistAvatarUri,
       };
     case OnlineMusicCapability.searchAlbums:
       // 搜索专辑 = 专辑元数据（与 `newAlbums` **同一组字段** ✓）—— 没有曲目 ✓。
@@ -854,6 +871,12 @@ Set<OnlineMusicDomainField> requiredFieldsFor(
     case OnlineMusicCapability.album:
       // 至少要能确定"这是哪张专辑"；曲目可以为空 ✓。
       return const {OnlineMusicDomainField.albumName};
+    case OnlineMusicCapability.searchArtists:
+      // 艺人条目至少要能确定"这是谁"：**id + 名字** ✓。
+      return const {
+        OnlineMusicDomainField.artistId,
+        OnlineMusicDomainField.artistName,
+      };
     case OnlineMusicCapability.searchAlbums:
       // 搜索结果至少要能确定"这是哪张专辑"：**id + 名字** ✓。
       return const {

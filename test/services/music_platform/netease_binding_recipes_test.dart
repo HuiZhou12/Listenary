@@ -12,11 +12,11 @@ import 'package:pure_music/services/music_platform/provider/online_music_respons
 
 import 'live_response_fixtures.g.dart';
 
-/// 网易云十二项发现类能力的**可直接粘贴配置**（人工验收清单 §1.1 的配套件）。
+/// 网易云十三项发现类能力的**可直接粘贴配置**（人工验收清单 §1.1 的配套件）。
 ///
-/// 为什么要有这个文件：人工验收里最费事、最容易配错的一步，是照着文档手动配十二项能力
+/// 为什么要有这个文件：人工验收里最费事、最容易配错的一步，是照着文档手动配十三项能力
 /// （请求路径 + 列表路径 + 每个字段映射）。配错的特征恰恰是"**不报错、但内容少了/错了**"。
-/// 这里把十二项配置**写成代码**，因此：
+/// 这里把十三项配置**写成代码**，因此：
 ///   1. **字段与转换必须通过应用自己的校验**（`domainFieldsFor` + `expectedFieldKinds`）——
 ///      配错会直接编译期/测试期失败，而不是等你到界面上踩；
 ///   2. 它们能**往返 JSON**（`toJson` → `fromJson`），即"粘进设置页的 JSON 一定能被解析"；
@@ -26,7 +26,7 @@ import 'live_response_fixtures.g.dart';
 /// 样本来源均为 2026-10-08 的实测响应（`http://127.0.0.1:3000`）。
 JsonPath _p(String source) => JsonPath.tryParse(source)!;
 
-/// 网易云十二项能力的**统一成功谓词**：业务码必须是 `200`。
+/// 网易云十三项能力的**统一成功谓词**：业务码必须是 `200`。
 ///
 /// 为什么必须写它（能力映射 §6.9 的硬性要求）：真实服务在**上游风控**时会返回
 /// **`code 2001` + 列表全空** —— 若不校验业务码，界面就会把"被挡下"渲染成"**这个平台没有内容**"，
@@ -358,6 +358,47 @@ OnlineMusicDeclarativeCapabilityBinding _newSongs() =>
         pagination: const OnlineMusicPaginationSpec(
           kind: OnlineMusicPaginationKind.none,
         ),
+      ),
+    );
+
+/// **搜索艺人**（`searchArtists`，2026-10-12 实测形状）：
+/// `/cloudsearch?keywords=&type=100` → `{code, result: {artists: [...], artistCount}}` ✓
+///（`type=100` 同样是 DSL 既有的**固定值**参数 ✓）。
+OnlineMusicDeclarativeCapabilityBinding _searchArtists() =>
+    OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(
+        path: '/cloudsearch',
+        query: [
+          OnlineMusicParamBinding(
+            name: 'keywords',
+            source: OnlineMusicInputSource.keyword,
+          ),
+          OnlineMusicParamBinding(name: 'type', value: '100'),
+          OnlineMusicParamBinding(
+            name: 'limit',
+            source: OnlineMusicInputSource.limit,
+          ),
+        ],
+      ),
+      response: OnlineMusicResponseSpec(
+        success: _neteaseSuccess(),
+        listPath: _p('result.artists'),
+        fields: {
+          OnlineMusicDomainField.artistId: OnlineMusicFieldSpec(
+            candidates: [_p('id')],
+            transform: OnlineMusicFieldTransform.asInt,
+            required: true,
+          ),
+          OnlineMusicDomainField.artistName: OnlineMusicFieldSpec(
+            candidates: [_p('name')],
+            transform: OnlineMusicFieldTransform.asString,
+            required: true,
+          ),
+          OnlineMusicDomainField.artistAvatarUri: OnlineMusicFieldSpec(
+            candidates: [_p('picUrl')],
+            transform: OnlineMusicFieldTransform.asHttpsUri,
+          ),
+        },
       ),
     );
 
@@ -736,6 +777,8 @@ _recipe() => {
   OnlineMusicCapability.newAlbums: _newAlbums(),
   // 搜索专辑（2026-10-12）：第十二份 ✓。
   OnlineMusicCapability.searchAlbums: _searchAlbums(),
+  // 搜索艺人（2026-10-12）：第十三份 ✓。
+  OnlineMusicCapability.searchArtists: _searchArtists(),
 };
 
 void main() {
@@ -803,7 +846,7 @@ void main() {
     ],
   };
 
-  group('网易云十二项能力的可直接粘贴配置', () {
+  group('网易云十三项能力的可直接粘贴配置', () {
     test('★ 每项只使用该能力允许的领域字段，且转换合法（配错会直接失败）', () {
       _recipe().forEach((capability, binding) {
         final allowed = domainFieldsFor(capability);
@@ -1065,7 +1108,7 @@ void main() {
     // 上面几条用的是**手写样本**；手写样本可能"恰好成立"，而真实数据不成立。
     // 这里改用脚本抓下来的真实响应（`live_response_fixtures.g.dart`，只把列表裁到前 2 条），
     // 断言**映射结果与原始 JSON 里的值一致** —— 也就是"这份配置在真实数据上取对了"。
-    test('★ 真实响应：十二项配置的成功谓词都接受（业务码 200）', () {
+    test('★ 真实响应：十三项配置的成功谓词都接受（业务码 200）', () {
       final fixtures = <String, Map<String, Object?>>{
         'search': rawSearch,
         'playlist': rawPlaylist,
@@ -1085,6 +1128,8 @@ void main() {
         'newAlbums': rawNewAlbums,
         // 搜索专辑（2026-10-12）：真实 `/cloudsearch?type=10` 的响应 ✓。
         'searchAlbums': rawSearchAlbums,
+        // 搜索艺人（2026-10-12）：真实 `/cloudsearch?type=100` 的响应 ✓。
+        'searchArtists': rawSearchArtists,
       };
       _recipe().forEach((capability, binding) {
         // 每份配置都必须有**真实固件**（`album` 已于 2026-10-12 补抓 ✓）；
@@ -1261,6 +1306,23 @@ void main() {
       expect(mapped.hotSongs.first.artists.first, firstAr['name']);
       expect(mapped.hotSongs.first.artistIds.first, '${firstAr['id']}');
       expect(mapped.hotSongs.first.album, firstAl['name']);
+    });
+
+    test('★ 真实响应：搜索艺人取到的 id/名字与原始 JSON 一致', () {
+      final raw = rawSearchArtists;
+      final result = raw['result']! as Map<String, Object?>;
+      final rawArtists = result['artists']! as List<Object?>;
+
+      final mapped = mapDeclarativeArtistListResponse(
+        spec: _searchArtists().response,
+        body: raw,
+        platform: MusicPlatform.netease,
+      );
+
+      expect(mapped, hasLength(rawArtists.length), reason: '艺人取自 result.artists ✓');
+      final first = rawArtists.first! as Map<String, Object?>;
+      expect(mapped.first.id, '${first['id']}');
+      expect(mapped.first.name, first['name']);
     });
 
     test('★ 真实响应：搜索专辑取到的 id/名字/曲目数/发行时间与原始 JSON 一致', () {
@@ -1467,7 +1529,7 @@ void main() {
       expect(mapped.tracks.first.albumIds, ['93113910']);
     });
 
-    test('把十二项配置写成可直接复制的 JSON 文件（人工验收清单配套，并当场校验可解析）', () {
+    test('把十三项配置写成可直接复制的 JSON 文件（人工验收清单配套，并当场校验可解析）', () {
       const encoder = JsonEncoder.withIndent('  ');
       final directory = Directory('docs/dev/netease-bindings');
       directory.createSync(recursive: true);
@@ -1486,7 +1548,7 @@ void main() {
         expect(parsed, isA<OnlineMusicDeclarativeCapabilityBinding>());
       });
 
-      expect(written, hasLength(12));
+      expect(written, hasLength(13));
       // ignore: avoid_print
       print('已写出 ${written.length} 个配置：${written.join(', ')}');
     });

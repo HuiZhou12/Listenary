@@ -361,6 +361,33 @@ final class OnlineArtist {
       PlatformIdentity(platform, platformId: platformId);
 }
 
+/// **艺人列表里的一项**（`searchArtists` 能力，2026-10-12 新增）：只有元数据 ✓。
+///
+/// 与 [OnlineArtist]（艺人详情，**带热门曲目**）刻意分开：搜索结果里本来就没有热门曲目 ✓
+/// ⇒ 不为"统一"塞空列表 ✓（同 [OnlineAlbumSummary] 与 [OnlineAlbum] 的关系 ✓）。
+final class OnlineArtistSummary {
+  OnlineArtistSummary({
+    required this.platform,
+    required this.id,
+    required this.name,
+    this.avatarUri,
+    this.platformId,
+  });
+
+  final MusicPlatform platform;
+
+  /// 平台自己的艺人标识。
+  final String id;
+  final String name;
+  final Uri? avatarUri;
+
+  /// 自定义平台的稳定 ID（内置平台为 null ⇒ identity = builtin）。
+  final String? platformId;
+
+  PlatformIdentity get identity =>
+      PlatformIdentity(platform, platformId: platformId);
+}
+
 /// **专辑列表里的一项**（`artistAlbums` 能力，2026-10-12 新增）：只有元数据，**没有曲目** ✓。
 ///
 /// 与 [OnlineAlbum]（专辑详情，**带曲目**）刻意分开：列表项本来就没有曲目，

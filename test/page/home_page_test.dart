@@ -466,6 +466,14 @@ MusicTrack _track(String id, MusicPlatform platform) => MusicTrack(
 /// 主页用到的在线音乐服务替身：能力可配、歌单列表按平台返回/抛错。
 final class _HomeService implements OnlineMusicService {
   @override
+  Future<List<OnlineArtistSummary>> searchArtists({
+    required MusicPlatform platform,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Artist search is not implemented here');
+  @override
   Future<List<OnlineAlbumSummary>> searchAlbums({
     required MusicPlatform platform,
     required String keyword,
@@ -632,6 +640,14 @@ final class _HomeService implements OnlineMusicService {
 
 /// 只记录订阅请求的服务替身（证明主页把 `(platform, id)` 传对了）。
 final class _PlaylistRecordingService implements OnlineMusicService {
+  @override
+  Future<List<OnlineArtistSummary>> searchArtists({
+    required MusicPlatform platform,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Artist search is not implemented here');
   @override
   Future<List<OnlineAlbumSummary>> searchAlbums({
     required MusicPlatform platform,

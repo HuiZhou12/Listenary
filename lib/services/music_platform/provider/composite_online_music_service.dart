@@ -67,6 +67,10 @@ final class CompositeOnlineMusicService
       searchableAlbumPlatforms: registry.platformsFor(
         OnlineMusicCapability.searchAlbums,
       ),
+      // 搜索艺人（2026-10-12）✓。
+      searchableArtistPlatforms: registry.platformsFor(
+        OnlineMusicCapability.searchArtists,
+      ),
       // 艺人详情（2026-10-12）：注册表按"该平台是否配了 artist 能力"决定 ✓。
       artistPlatforms: registry.platformsFor(OnlineMusicCapability.artist),
       // 专辑详情（2026-10-12）✓。
@@ -219,6 +223,26 @@ final class CompositeOnlineMusicService
     OnlineMusicCapability.newSongs,
     (provider) => provider.fetchNewSongs(
       platform: platform,
+      limit: limit,
+      offset: offset,
+      cancelToken: cancelToken,
+    ),
+  );
+
+  /// 搜索艺人（`searchArtists`）：按关键词搜艺人（**输出是艺人摘要** ✓）。
+  @override
+  Future<List<OnlineArtistSummary>> searchArtists({
+    required MusicPlatform platform,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => _dispatch(
+    platform,
+    OnlineMusicCapability.searchArtists,
+    (provider) => provider.searchArtists(
+      platform: platform,
+      keyword: keyword,
       limit: limit,
       offset: offset,
       cancelToken: cancelToken,

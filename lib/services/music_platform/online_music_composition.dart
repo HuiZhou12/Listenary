@@ -323,6 +323,25 @@ final class _ConfiguredMusicProvider implements OnlineMusicProvider {
   }
 
   @override
+  Future<List<OnlineArtistSummary>> searchArtists({
+    required MusicPlatform platform,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) {
+    final delegate = _delegate(OnlineMusicCapability.searchArtists);
+    if (delegate == null) return Future.error(unsupportedCapability());
+    return delegate.searchArtists(
+      platform: platform,
+      keyword: keyword,
+      limit: limit,
+      offset: offset,
+      cancelToken: cancelToken,
+    );
+  }
+
+  @override
   Future<List<OnlineAlbumSummary>> searchAlbums({
     required MusicPlatform platform,
     required String keyword,
@@ -518,6 +537,15 @@ final class _UnusableBaseUrlProvider implements OnlineMusicProvider {
   @override
   Set<MusicPlatform> platformsFor(OnlineMusicCapability capability) =>
       _platforms[capability] ?? const {};
+
+  @override
+  Future<List<OnlineArtistSummary>> searchArtists({
+    required MusicPlatform platform,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => throw _error();
 
   @override
   Future<List<OnlineAlbumSummary>> searchAlbums({

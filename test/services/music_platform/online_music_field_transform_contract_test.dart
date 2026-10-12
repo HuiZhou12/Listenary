@@ -42,6 +42,8 @@ void main() {
         OnlineMusicDomainField.artists: OnlineMusicFieldReader.textList,
         // 艺人 id 与"艺术家"同序（用于打开艺人页，2026-10-12）。
         OnlineMusicDomainField.artistIds: OnlineMusicFieldReader.textList,
+        // 艺人列表里的**单个**艺人 id（与 artistIds 不同：后者是"曲目所属艺人"的同序列表 ✓）。
+        OnlineMusicDomainField.artistId: OnlineMusicFieldReader.scalar,
         // 专辑 id（用于打开专辑页，2026-10-12）✓。
         OnlineMusicDomainField.albumIds: OnlineMusicFieldReader.textList,
         // album（专辑详情，2026-10-12）：名字/专辑艺人是文本、封面是 Uri、曲目数是整数。

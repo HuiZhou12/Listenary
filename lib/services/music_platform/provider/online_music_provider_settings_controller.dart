@@ -958,6 +958,40 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
           );
         }
 
+      case OnlineMusicCapability.searchArtists:
+        {
+          // 搜索艺人：**关键词 + 艺人数组**（与"搜索专辑"同形 ✓）。
+          if (binding.response.listPath == null) {
+            return DeclarativeCapabilityTestResult(
+              ok: false,
+              statusCode: response.statusCode,
+              responsePreview: preview,
+              failureReason: '搜索艺人没有配置「列表路径」（艺人数组所在位置），因此取不到艺人',
+              failureKind: DeclarativeTestFailureKind.config,
+            );
+          }
+          final artists = mapDeclarativeArtistListResponse(
+            spec: binding.response,
+            body: response.data,
+            platform: definition.contentPlatform,
+          );
+          final isEmpty = artists.isEmpty;
+          return DeclarativeCapabilityTestResult(
+            ok: !isEmpty,
+            explicitConfidence: isEmpty
+                ? DeclarativeVerificationConfidence.unconfirmed
+                : null,
+            statusCode: response.statusCode,
+            responsePreview: preview,
+            mappedSummary: isEmpty
+                ? '没有可验证的数据（空结果）'
+                : '${artists.length} 位艺人（首位：${artists.first.name}）',
+            failureReason: isEmpty
+                ? declarativeEmptyResultNote('没有解析出任何艺人')
+                : null,
+          );
+        }
+
       case OnlineMusicCapability.searchAlbums:
         {
           // 搜索专辑：**关键词 + 专辑数组**（与"新专辑"同形，多一个关键词 ✓）。

@@ -192,6 +192,41 @@ ResolvedStream mapDeclarativeResolveResponse({
 /// - `listPath` 指向**热门曲目数组**（网易云在 `hotSongs`）；
 /// - **艺人 id 不在响应里**（它是请求输入）⇒ 由 [requestedArtistId] 传入 ✓
 ///   （与 `playlist` 那边处理 `requestedPlaylistId` 的做法一致）。
+/// 把声明式响应映射成**艺人列表**（`searchArtists`，2026-10-12 新增）。
+///
+/// 与 [mapDeclarativeAlbumListResponse] 同形：`listPath` 指向艺人数组
+///（网易云 `/cloudsearch?type=100` 在 `result.artists` ✓），字段从**元素**上读 ✓。
+List<OnlineArtistSummary> mapDeclarativeArtistListResponse({
+  required OnlineMusicResponseSpec spec,
+  required Object? body,
+  required MusicPlatform platform,
+  String? platformId,
+}) {
+  final listPath = spec.listPath;
+  if (listPath == null) {
+    throw const DeclarativeMappingException('列表路径没有取到数组');
+  }
+  final rawList = listPath.read(body);
+  if (rawList is! List) {
+    throw const DeclarativeMappingException('列表路径没有取到数组');
+  }
+  return [
+    for (final element in rawList)
+      OnlineArtistSummary(
+        platform: platform,
+        platformId: platformId,
+        id: '${_readRequired(spec, OnlineMusicDomainField.artistId, element)}',
+        name:
+            _readString(spec, OnlineMusicDomainField.artistName, element) ?? '',
+        avatarUri: _readUri(
+          spec,
+          OnlineMusicDomainField.artistAvatarUri,
+          element,
+        ),
+      ),
+  ];
+}
+
 /// 把声明式响应映射成**专辑列表**（`artistAlbums` / `newAlbums`，2026-10-12 新增）。
 ///
 /// 与其它列表类能力同形：`listPath` 指向专辑数组（网易云 `/artist/album` 在 `hotAlbums`、

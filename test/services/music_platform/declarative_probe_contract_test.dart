@@ -45,6 +45,8 @@ void main() {
         OnlineMusicCapability.newAlbums,
         // 搜索专辑：与搜索同判据（给默认关键词即可 ✓）。
         OnlineMusicCapability.searchAlbums,
+        // 搜索艺人：同上 ✓。
+        OnlineMusicCapability.searchArtists,
       ]);
     });
 

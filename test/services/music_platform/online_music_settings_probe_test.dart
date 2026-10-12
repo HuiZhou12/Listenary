@@ -1106,6 +1106,24 @@ OnlineMusicSettings _allCapabilitiesSettings() => OnlineMusicSettings.fromJson({
             },
           ),
         ).toJson(),
+        // 搜索艺人（2026-10-12）：艺人在 `result.artists` 下（复用既有 `data` 形状 ✓）。
+        'searchArtists': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(path: '/cloudsearch'),
+          response: OnlineMusicResponseSpec(
+            success: _codeSuccess,
+            listPath: JsonPathForTest.data,
+            fields: {
+              OnlineMusicDomainField.artistId: _intField(
+                JsonPathForTest.id,
+                required: true,
+              ),
+              OnlineMusicDomainField.artistName: _stringField(
+                JsonPathForTest.name,
+                required: true,
+              ),
+            },
+          ),
+        ).toJson(),
         // 搜索专辑（2026-10-12）：专辑在 `result.albums` 下（复用既有 `data` 形状 ✓）。
         'searchAlbums': OnlineMusicDeclarativeCapabilityBinding(
           request: const OnlineMusicRequestSpec(path: '/cloudsearch'),

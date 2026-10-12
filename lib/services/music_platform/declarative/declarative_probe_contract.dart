@@ -76,6 +76,11 @@ const declarativeProbeCapabilityContracts =
         capability: OnlineMusicCapability.searchAlbums,
         unit: '张专辑',
       ),
+      // 搜索艺人：同上 ✓（单位是"位艺人" ✓）。
+      DeclarativeProbeCapabilityContract(
+        capability: OnlineMusicCapability.searchArtists,
+        unit: '位艺人',
+      ),
       DeclarativeProbeCapabilityContract(
         capability: OnlineMusicCapability.playlist,
         unit: '',

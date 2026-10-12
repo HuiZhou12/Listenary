@@ -827,8 +827,8 @@ void main() {
         .length;
     expect(
       missingOnNetease,
-      10,
-      reason: '内置实现有 4 项、共 14 个能力 ⇒ 网易云卡应缺 10 项',
+      11,
+      reason: '内置实现有 4 项、共 15 个能力 ⇒ 网易云卡应缺 11 项',
     );
     expect(
       find.descendant(
@@ -1329,7 +1329,7 @@ void main() {
             .where((entry) => entry.value == OnlineMusicInputSource.keyword)
             .map((entry) => entry.key)
             .toList(),
-        [OnlineMusicCapability.search, OnlineMusicCapability.searchAlbums],
+        [OnlineMusicCapability.search, OnlineMusicCapability.searchAlbums, OnlineMusicCapability.searchArtists],
       );
     });
   });
@@ -2800,6 +2800,26 @@ OnlineMusicDeclarativeCapabilityBinding validBindingFor(
         },
       ),
     ),
+    // 搜索艺人：艺人在 `result.artists` 下（网易云 `/cloudsearch?type=100` ✓）。
+    OnlineMusicCapability.searchArtists =>
+      OnlineMusicDeclarativeCapabilityBinding(
+        request: const OnlineMusicRequestSpec(path: '/cloudsearch'),
+        response: OnlineMusicResponseSpec(
+          listPath: JsonPath.tryParse('result.artists'),
+          fields: {
+            OnlineMusicDomainField.artistId: field(
+              OnlineMusicDomainField.artistId,
+              'id',
+              asInt,
+            ),
+            OnlineMusicDomainField.artistName: field(
+              OnlineMusicDomainField.artistName,
+              'name',
+              asString,
+            ),
+          },
+        ),
+      ),
     // 搜索专辑：专辑在 `result.albums` 下（网易云 `/cloudsearch?type=10` ✓）。
     OnlineMusicCapability.searchAlbums =>
       OnlineMusicDeclarativeCapabilityBinding(

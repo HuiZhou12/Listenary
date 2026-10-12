@@ -41,6 +41,15 @@ final class ChkszOnlineMusicProvider
   final String providerId;
 
   @override
+  Future<List<OnlineArtistSummary>> searchArtists({
+    required MusicPlatform platform,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => throw unsupportedCapability();
+
+  @override
   Future<List<OnlineAlbumSummary>> searchAlbums({
     required MusicPlatform platform,
     required String keyword,

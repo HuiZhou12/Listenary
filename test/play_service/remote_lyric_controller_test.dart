@@ -241,6 +241,14 @@ Future<void> _flushAsync() async {
 
 final class _FakeOnlineMusicService implements OnlineMusicService {
   @override
+  Future<List<OnlineArtistSummary>> searchArtists({
+    required MusicPlatform platform,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Artist search is not implemented here');
+  @override
   Future<List<OnlineAlbumSummary>> searchAlbums({
     required MusicPlatform platform,
     required String keyword,

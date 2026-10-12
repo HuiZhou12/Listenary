@@ -93,6 +93,9 @@ void main() {
     );
     expect(find.text('故里逢春'), findsWidgets);
     expect(find.textContaining('专辑 · 2020 年 · 2 首'), findsOneWidget);
+    // **艺人行**同样混排 ✓，以「艺人」自报家门 ✓（参考的第三种类型 ✓）。
+    expect(find.text('阿YueYue'), findsOneWidget);
+    expect(find.text('艺人'), findsOneWidget);
     // 来源徽章照旧 ✓（这一行属于哪个平台 ✓）。
     expect(find.text('网易云'), findsWidgets);
   });
@@ -101,12 +104,29 @@ void main() {
 /// 极简假件：只实现"搜专辑"需要的成员，其余交给 `noSuchMethod`（Dart 允许 ✓）。
 final class _AlbumSearchService implements OnlineMusicService {
   @override
+  Future<List<OnlineArtistSummary>> searchArtists({
+    required MusicPlatform platform,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => [
+    OnlineArtistSummary(
+      platform: MusicPlatform.netease,
+      id: 'ar1',
+      name: '阿YueYue',
+    ),
+  ];
+  @override
   OnlineMusicCapabilities get capabilities => OnlineMusicCapabilities(
     searchablePlatforms: const [MusicPlatform.netease],
     resolvablePlatforms: const [],
     // 专辑要**打得开**才会显示专辑行 ✓（搜得出来点不开比不显示更糟 ✗）。
     albumPlatforms: const [MusicPlatform.netease],
     searchableAlbumPlatforms: const [MusicPlatform.netease],
+    // 艺人同理：**打得开艺人页**才显示艺人行 ✓。
+    artistPlatforms: const [MusicPlatform.netease],
+    searchableArtistPlatforms: const [MusicPlatform.netease],
   );
 
   @override

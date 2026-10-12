@@ -87,6 +87,7 @@ void main() {
       OnlineMusicCapability.artistSongs: runtime.artistSongPlatforms,
       OnlineMusicCapability.newAlbums: runtime.newAlbumPlatforms,
       OnlineMusicCapability.searchAlbums: runtime.searchableAlbumPlatforms,
+      OnlineMusicCapability.searchArtists: runtime.searchableArtistPlatforms,
       OnlineMusicCapability.lyric: runtime.lyricPlatforms,
       OnlineMusicCapability.stream: runtime.resolvablePlatforms,
     };
