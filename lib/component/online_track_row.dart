@@ -55,6 +55,7 @@ class OnlineTrackRow extends StatefulWidget {
     this.onToggleFavorite,
     this.isNowPlaying = false,
     this.sourceLabel,
+    this.leadingIndex,
   });
 
   final MusicTrack track;
@@ -74,6 +75,10 @@ class OnlineTrackRow extends StatefulWidget {
   ///
   /// 为 null 时不渲染任何标签（单平台列表沿用既有观感）。
   final String? sourceLabel;
+
+  /// **行首序号**（可选）：只有"有排序语义"的列表（榜单/专辑）才给；
+  /// 普通歌单传 null ⇒ 不渲染序号（与参考产品的规则一致）。
+  final int? leadingIndex;
 
   @override
   State<OnlineTrackRow> createState() => _OnlineTrackRowState();
@@ -129,6 +134,22 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                 padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
                 child: Row(
                   children: [
+                    // 行首序号（可选）：**名次集合**（榜单）与专辑这类"有排序语义"的列表才给，
+                    // 普通歌单不给 —— 与参考产品的规则一致（榜单/专辑有序号，普通歌单没有）。
+                    if (widget.leadingIndex case final index?) ...[
+                      SizedBox(
+                        width: 28,
+                        child: Text(
+                          '$index',
+                          textAlign: TextAlign.end,
+                          style: TextStyle(
+                            color: metadataColor,
+                            fontSize: AppType.caption,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: Spacing.sm),
+                    ],
                     _OnlineTrackCover(
                       key: ValueKey('online-track-cover-${track.ref.trackId}'),
                       coverUri: track.coverUri,

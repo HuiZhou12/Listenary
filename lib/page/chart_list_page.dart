@@ -11,6 +11,7 @@ import 'package:pure_music/component/remote_media_card.dart';
 import 'package:pure_music/component/remote_media_grid.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/services/music_platform/index.dart';
@@ -113,6 +114,13 @@ class _ChartListPageState extends State<ChartListPage>
       );
       return;
     }
+    // 本页每一项都是**名次集合**（榜单）⇒ 记下"这是榜单订阅"，详情页据此显示行首序号。
+    // 记在偏好里（新增键值，**不动 DB schema** ✓）。
+    // 落盘用 `.ignore()` **火焰式**：内存里已经标记；落盘失败只影响"重启后是否还显示序号"，
+    // **不能**因为落盘失败就打断"订阅成功后进详情页"的主流程（曾因此让一条测试变红）。
+    AppPreference.instance.markRankedSubscription(saved.localId);
+    AppPreference.instance.save().ignore();
+    if (!mounted) return;
     await context.push(
       app_paths.ONLINE_PLAYLIST_DETAIL_PAGE,
       extra: saved.localId,

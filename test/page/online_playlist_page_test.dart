@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/core/database.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/page/online_playlist_detail_page.dart';
 import 'package:pure_music/page/online_playlists_page.dart';
 import 'package:pure_music/page/personal_playlist_detail_page.dart';
@@ -169,6 +170,44 @@ void main() {
       expect(find.byTooltip('编辑'), findsNothing);
     },
   );
+
+  testWidgets('★ 名次集合（榜单订阅）显示行首序号；普通歌单不显示', (tester) async {
+    final saved = repository.replaceSubscriptionSnapshot(_playlist());
+    await controller.loadSubscriptions();
+
+    // 单例偏好会被这一条改动 ⇒ 用后还原（避免污染其它测试）。
+    addTearDown(() => AppPreference.instance.rankedSubscriptions = []);
+
+    // ① 普通歌单：**不该**出现行首序号（参考产品的规则：普通歌单不编号）。
+    AppPreference.instance.rankedSubscriptions = [];
+    await _pump(
+      tester,
+      controller,
+      personalController,
+      OnlinePlaylistDetailPage(localId: saved.localId),
+    );
+    await _pumpUntilFound(tester, find.text('Remote Track'));
+    expect(
+      find.text('1'),
+      findsNothing,
+      reason: '普通歌单不该有行首序号（规则照参考产品：榜单/专辑才有）',
+    );
+
+    // ② 标成名次集合：**应**出现序号 1（对照才算真断言）。
+    AppPreference.instance.markRankedSubscription(saved.localId);
+    await _pump(
+      tester,
+      controller,
+      personalController,
+      OnlinePlaylistDetailPage(localId: saved.localId),
+    );
+    await _pumpUntilFound(tester, find.text('Remote Track'));
+    expect(
+      find.text('1'),
+      findsOneWidget,
+      reason: '名次集合（从榜单订阅）必须显示行首序号',
+    );
+  });
 
   testWidgets('★ 订阅歌单详情里点「添加到歌单」→ 曲目真的进自建歌单', (tester) async {
     final saved = repository.replaceSubscriptionSnapshot(_playlist());

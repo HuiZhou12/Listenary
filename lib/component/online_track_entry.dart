@@ -21,6 +21,7 @@ class OnlineTrackEntry extends StatelessWidget {
     required this.onTap,
     this.onRemove,
     this.animateEntrance = true,
+    this.leadingIndex,
   });
   final MusicTrack track;
   /// 点这一行做什么（通常是"用当前列表起播"）。为 null 时行不可点。
@@ -31,6 +32,9 @@ class OnlineTrackEntry extends StatelessWidget {
   ///
   /// 可重排列表里要关掉：进场动画会和拖拽/重排动画打架。
   final bool animateEntrance;
+  /// **行首序号**（可选）：只有"有排序语义"的列表（榜单/专辑）才传，
+  /// 普通歌单传 null ⇒ 不显示序号（与参考产品的规则一致）。
+  final int? leadingIndex;
   @override
   Widget build(BuildContext context) {
     // 与既有各页一致的判定：明确标为"不可用/付费"的曲目不给点。
@@ -61,6 +65,7 @@ class OnlineTrackEntry extends StatelessWidget {
       onToggleFavorite: () => favorites.toggleFavorite(track),
       onRemove: onRemove,
       isNowPlaying: isOnlineTrackNowPlaying(context, track.ref),
+      leadingIndex: leadingIndex,
     );
     if (!animateEntrance) return row;
     return DirectionalListItemEntrance(identity: track.ref, child: row);

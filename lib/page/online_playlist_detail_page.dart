@@ -124,11 +124,18 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
   ///
   /// 组装、来源标记（取**曲目自己的 ref**，而不是歌单的字段）、收藏与操作
   /// 都收敛在 [OnlineTrackEntry] 里。
-  Widget _buildTrackRow(MusicTrack track, Iterable<MusicTrack> playbackTracks) =>
-      OnlineTrackEntry(
-        track: track,
-        onTap: () => _play(playbackTracks, track),
-      );
+  ///
+  /// [leadingIndex] 只在**名次集合**（从榜单订阅进来的）时给：参考产品的规则是
+  /// "榜单/专辑有序号、普通歌单没有"，我们照此办理 ✓。
+  Widget _buildTrackRow(
+    MusicTrack track,
+    Iterable<MusicTrack> playbackTracks, {
+    int? leadingIndex,
+  }) => OnlineTrackEntry(
+    track: track,
+    onTap: () => _play(playbackTracks, track),
+    leadingIndex: leadingIndex,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -231,8 +238,17 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
         '${snapshot.playlist.trackCount ?? allTracks.length} 首歌曲 · 只读订阅',
       ].join(' · '),
       secondaryContent: tracks,
-      secondaryContentBuilder: (context, track, index, msc, view) =>
-          _buildTrackRow(track, tracks),
+      secondaryContentBuilder:
+          (context, track, index, msc, view) => _buildTrackRow(
+            track,
+            tracks,
+            // 名次集合（榜单订阅）才显示行首序号；判据记在偏好里（不动 DB schema ✓）。
+            leadingIndex: AppPreference.instance.isRankedSubscription(
+              widget.localId,
+            )
+                ? index + 1
+                : null,
+          ),
       enableShufflePlay: false,
       enableSortMethod: hasEnoughItemsToSort(allTracks.length),
       enableSortOrder: hasEnoughItemsToSort(allTracks.length),

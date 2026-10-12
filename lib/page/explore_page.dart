@@ -13,6 +13,7 @@ import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/services/music_platform/index.dart';
@@ -262,6 +263,7 @@ class _ExplorePageState extends State<ExplorePage>
   Future<void> _subscribe(
     RemotePlaylistSummary summary, {
     String failureLabel = '订阅该歌单失败',
+    bool isRanked = false,
   }) async {
     if (_subscribing.contains(summary.platform)) return;
     setState(() => _subscribing.add(summary.platform));
@@ -278,6 +280,14 @@ class _ExplorePageState extends State<ExplorePage>
         variant: ToastVariant.error,
       );
       return;
+    }
+    if (isRanked) {
+      // 从榜单订阅进来的 ⇒ 记下"这是名次集合"，详情页据此显示行首序号 ✓。
+      // 记在偏好里（新增键值，**不动 DB schema** ✓）。
+      // 落盘火焰式（`.ignore()`）：内存已标记；落盘失败只影响"重启后是否还显示序号"，
+      // **不能**打断"订阅成功 → 进详情页"的主流程。
+      AppPreference.instance.markRankedSubscription(saved.localId);
+      AppPreference.instance.save().ignore();
     }
     showTextOnSnackBar(
       '已订阅「${saved.playlist.name}」',
@@ -395,13 +405,13 @@ class _ExplorePageState extends State<ExplorePage>
                 placeholderIcon: Symbols.leaderboard,
                 onTap: _subscribing.contains(platform)
                     ? null
-                    : () => _subscribe(summary, failureLabel: '打开该榜单失败'),
+                    : () => _subscribe(summary, failureLabel: '打开该榜单失败', isRanked: true),
                 semanticLabel:
                     '${summary.name}，来自${platformLabelForIdentityOnly(summary.identity)}，点击订阅并打开',
                 footer: TextButton(
                   onPressed: _subscribing.contains(platform)
                       ? null
-                      : () => _subscribe(summary, failureLabel: '打开该榜单失败'),
+                      : () => _subscribe(summary, failureLabel: '打开该榜单失败', isRanked: true),
                   child: const Text('订阅'),
                 ),
               );

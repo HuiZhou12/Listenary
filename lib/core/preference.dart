@@ -709,6 +709,28 @@ class AppPreference {
   }
 
   /// 用户手动添加的文件夹路径列表（不包括自动发现的子文件夹）
+  /// **名次集合订阅**：存 `online_playlists.id` 的字符串形式。
+  ///
+  /// 为什么不加数据库列：`online_playlists` 是**按列**存的，而
+  /// `online_library_schema_contract_test.dart` **强制** `user_version = 5`（零迁移契约）⇒
+  /// 加列会让契约测试直接变红。这里新增的是"键的一个值"，**不动 DB schema** ✓。
+  ///
+  /// 语义：从**名次集合（榜单）**订阅进来的歌单 ⇒ 详情页显示**行首序号**
+  /// （参考产品的做法：榜单/专辑有序号，普通歌单没有 ✓）。
+  /// 覆盖面：只包括"从探索页榜单卡 / 榜单网格页订阅的"那些 ✓（如实标注，不假装全量）。
+  List<String> rankedSubscriptions = [];
+
+  /// 该订阅是否来自名次集合（榜单）。
+  bool isRankedSubscription(int localId) =>
+      rankedSubscriptions.contains('$localId');
+
+  /// 记下"这个订阅来自名次集合"。重复调用无副作用（幂等）。
+  void markRankedSubscription(int localId) {
+    final key = '$localId';
+    if (rankedSubscriptions.contains(key)) return;
+    rankedSubscriptions = [...rankedSubscriptions, key];
+  }
+
   List<String> userFolders = [];
 
   List<String> excludedFolderPaths = [];
@@ -816,6 +838,9 @@ class AppPreference {
         ? List.of(defaultUpdateCheckUrls)
         : storedUpdateUrls;
     userFolders = _normalizedFolderPathList(prefMap['userFolders']);
+    rankedSubscriptions = _normalizedStringList(
+      prefMap['rankedSubscriptions'],
+    );
     excludedFolderPaths = _normalizedFolderPathList(
       prefMap['excludedFolderPaths'],
     );
@@ -858,6 +883,7 @@ class AppPreference {
       'lastSeenUpdateTag': lastSeenUpdateTag,
       'updateCheckUrls': updateCheckUrls,
       'userFolders': userFolders,
+      'rankedSubscriptions': rankedSubscriptions,
       'excludedFolderPaths': excludedFolderPaths,
       'folderAliases': folderAliases,
     });
