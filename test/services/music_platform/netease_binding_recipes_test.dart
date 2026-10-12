@@ -396,6 +396,11 @@ OnlineMusicDeclarativeCapabilityBinding _album() =>
             candidates: [_p('size')],
             transform: OnlineMusicFieldTransform.asInt,
           ),
+          // 发行时间是**毫秒**时间戳（实测 `publishTime = 1595952000000` ✓）。
+          OnlineMusicDomainField.albumReleaseTime: OnlineMusicFieldSpec(
+            candidates: [_p('publishTime')],
+            transform: OnlineMusicFieldTransform.asInt,
+          ),
           OnlineMusicDomainField.trackId: OnlineMusicFieldSpec(
             candidates: [_p('id')],
             transform: OnlineMusicFieldTransform.asInt,
@@ -1046,6 +1051,7 @@ void main() {
           'name': '故里逢春',
           'picUrl': 'http://p1.music.126.net/x.jpg',
           'size': 2,
+          'publishTime': 1595952000000,
           'artist': {'name': '阿YueYue'},
         },
         'songs': [
@@ -1076,6 +1082,13 @@ void main() {
       expect(mapped.name, '故里逢春', reason: '标量取自 album.name ✓');
       expect(mapped.artist, '阿YueYue', reason: '专辑艺人取自 album.artist.name ✓');
       expect(mapped.trackCount, 2, reason: '曲目数取自 album.size ✓');
+      // 毫秒时间戳必须按毫秒理解：1595952000000 ms = 2020-07-29 ✓
+      // （若误当秒 ⇒ 年份会是五万多年，这条断言就是防这个 ✗）。
+      expect(
+        mapped.releaseTime?.year,
+        2020,
+        reason: '发行时间是**毫秒**时间戳，不能当秒读',
+      );
       expect(mapped.tracks, hasLength(1), reason: '曲目取自**顶层** songs ✓');
       expect(mapped.tracks.first.title, '故里逢春');
       expect(mapped.tracks.first.artistIds, ['12227865']);

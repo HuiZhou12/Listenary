@@ -373,6 +373,7 @@ final class OnlineAlbum {
     this.coverUri,
     this.artist,
     this.trackCount,
+    this.releaseTime,
     this.platformId,
     Iterable<MusicTrack> tracks = const [],
   }) : tracks = List.unmodifiable(tracks);
@@ -389,6 +390,12 @@ final class OnlineAlbum {
 
   /// 平台声明的曲目数（`size`）；**与 [tracks] 的实际条数不必相等** ✓。
   final int? trackCount;
+
+  /// 发行时间（**UTC**；平台给的是**毫秒**时间戳，由映射层换算 ✓）。
+  ///
+  /// ⚠️ 只有**年份**是可靠展示粒度：跨年边界按 UTC 判定，可能与"当地发行日"差一天 ✓
+  /// ⇒ 界面只显示年份、不显示具体日期 ✓（不把不确定的东西说得很确定 ✓）。
+  final DateTime? releaseTime;
   final List<MusicTrack> tracks;
 
   /// 自定义平台的稳定 ID（内置平台为 null ⇒ identity = builtin）。

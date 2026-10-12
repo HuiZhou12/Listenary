@@ -233,6 +233,16 @@ OnlineAlbum mapDeclarativeAlbumResponse({
       OnlineMusicDomainField.albumTrackCount,
       root,
     ),
+    // 发行时间是**毫秒**时间戳 ⇒ 用 UTC 换算（只展示年份，见模型说明 ✓）。
+    releaseTime: switch (_readIntField(
+      spec,
+      OnlineMusicDomainField.albumReleaseTime,
+      root,
+    )) {
+      final int millis when millis > 0 =>
+        DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true),
+      _ => null,
+    },
     tracks: tracks,
   );
 }

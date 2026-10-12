@@ -49,6 +49,9 @@ void main() {
         OnlineMusicDomainField.albumCoverUri: OnlineMusicFieldReader.uri,
         OnlineMusicDomainField.albumArtist: OnlineMusicFieldReader.text,
         OnlineMusicDomainField.albumTrackCount: OnlineMusicFieldReader.integer,
+        // 发行时间是**毫秒**时间戳 ⇒ 专用语义读取器（2026-10-12）✓。
+        OnlineMusicDomainField.albumReleaseTime:
+            OnlineMusicFieldReader.epochMillis,
         OnlineMusicDomainField.album: OnlineMusicFieldReader.text,
         OnlineMusicDomainField.coverUri: OnlineMusicFieldReader.uri,
         OnlineMusicDomainField.duration: OnlineMusicFieldReader.duration,

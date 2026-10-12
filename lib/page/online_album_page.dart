@@ -271,7 +271,11 @@ class _AlbumHeader extends StatelessWidget {
               ],
               const SizedBox(height: Spacing.xs),
               Text(
-                platformName,
+                // 只显示**年份**：平台给的是毫秒时间戳，跨年边界按 UTC 判定 ✓
+                // ⇒ 具体日期可能差一天，不写具体日期 ✓（模型里也是这么约定的）。
+                album.releaseTime == null
+                    ? platformName
+                    : '$platformName · ${album.releaseTime!.year} 年',
                 style: TextStyle(
                   color: scheme.onSurfaceVariant,
                   fontSize: AppType.caption,

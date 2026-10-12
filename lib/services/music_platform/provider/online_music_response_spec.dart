@@ -50,6 +50,11 @@ enum OnlineMusicDomainField {
   albumArtist,
   /// 专辑曲目数（平台声明的 `size`）。
   albumTrackCount,
+  /// 专辑发行时间（**毫秒**时间戳，2026-10-12 实测：网易云 `album.publishTime = 1595952000000`）。
+  ///
+  /// 为什么是独立字段而不是复用 `streamExpiresAt`：后者的读取器是**秒级**语义，
+  /// 把毫秒塞进去会得到一个"年份五万多年"的假数据 ✗ ⇒ 这里用独立的 [OnlineMusicFieldReader.epochMillis] ✓。
+  albumReleaseTime,
 
   // 歌单分类（playlistCategories）
   categoryId,
@@ -120,6 +125,12 @@ enum OnlineMusicFieldReader {
 
   /// 要求 `int`（秒级时间戳）。
   epochSeconds,
+
+  /// 要求 `int`（**毫秒**时间戳）。
+  ///
+  /// 与 [epochSeconds] 一样**只做语义标注**（不给"自动猜单位"的余地）：
+  /// 平台给的是秒还是毫秒必须先看清楚，否则会得到差 1000 倍的假时间 ✗。
+  epochMillis,
 }
 
 /// 每类读取器**真正能消费**的转换集合（P-30 的契约本体）。
@@ -143,6 +154,8 @@ const _transformsForReader = <OnlineMusicFieldReader, Set<OnlineMusicFieldTransf
     OnlineMusicFieldTransform.asDurationSeconds,
   },
   OnlineMusicFieldReader.epochSeconds: {OnlineMusicFieldTransform.asInt},
+  // 毫秒时间戳同样是 int ⇒ 能消费的转换与秒级一致（**单位靠字段语义区分，不靠类型** ✓）。
+  OnlineMusicFieldReader.epochMillis: {OnlineMusicFieldTransform.asInt},
 };
 
 /// 每个领域字段用哪一类读取器（**穷举 switch**：新增字段漏声明即编译失败）。
@@ -182,6 +195,9 @@ OnlineMusicFieldReader fieldReaderOf(OnlineMusicDomainField field) =>
       OnlineMusicDomainField.categoryCount ||
       OnlineMusicDomainField.albumTrackCount ||
       OnlineMusicDomainField.streamBitrate => OnlineMusicFieldReader.integer,
+      // 发行时间是**毫秒**时间戳 ⇒ 单独的语义读取器（防"秒/毫秒"搞混 ✓）。
+      OnlineMusicDomainField.albumReleaseTime =>
+        OnlineMusicFieldReader.epochMillis,
       OnlineMusicDomainField.duration => OnlineMusicFieldReader.duration,
       OnlineMusicDomainField.streamExpiresAt =>
         OnlineMusicFieldReader.epochSeconds,
@@ -672,13 +688,14 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.duration,
       };
     case OnlineMusicCapability.album:
-      // 专辑详情 = 标量（名字/封面/专辑艺人/曲目数）× 曲目（曲目字段与搜索相同）。
+      // 专辑详情 = 标量（名字/封面/专辑艺人/曲目数/发行时间）× 曲目（曲目字段与搜索相同）。
       // 曲目里也允许 `artistIds` ⇒ 专辑页的每一行同样能**点开艺人页** ✓。
       return const {
         OnlineMusicDomainField.albumName,
         OnlineMusicDomainField.albumCoverUri,
         OnlineMusicDomainField.albumArtist,
         OnlineMusicDomainField.albumTrackCount,
+        OnlineMusicDomainField.albumReleaseTime,
         OnlineMusicDomainField.trackId,
         OnlineMusicDomainField.title,
         OnlineMusicDomainField.artists,

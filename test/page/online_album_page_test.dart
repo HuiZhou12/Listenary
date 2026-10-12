@@ -77,6 +77,7 @@ void main() {
         name: '故里逢春',
         artist: '阿YueYue',
         trackCount: 2,
+        releaseTime: DateTime.utc(2020, 7, 29),
         tracks: [track('1', '故里逢春'), track('2', '第二首')],
       ),
     );
@@ -92,6 +93,9 @@ void main() {
     expect(find.text('2'), findsOneWidget);
     // 平台标注数 == 实际条数 ⇒ **不出现**那句差异提示 ✓。
     expect(find.textContaining('平台标注这张专辑有'), findsNothing);
+    // 发行时间只显示**年份** ✓（不写具体日期：毫秒时间戳按 UTC 判定，日期可能差一天 ✓）。
+    expect(find.textContaining('2020 年'), findsOneWidget);
+    expect(find.textContaining('2020-07-29'), findsNothing);
   });
 
   testWidgets('平台标注曲目数 ≠ 实际条数 ⇒ 如实说出来（以实际为准）', (tester) async {
