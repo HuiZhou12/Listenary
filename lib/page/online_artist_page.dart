@@ -67,6 +67,13 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
   List<OnlineAlbumSummary> _albums = const [];
   OnlineMusicCancelToken? _albumsToken;
 
+  /// **单曲区块**（`artistSongs`，2026-10-12）：参考里的「单曲和迷你专辑」✓。
+  bool _songsSupported = false;
+  bool _songsLoading = false;
+  String? _songsError;
+  List<MusicTrack> _songs = const [];
+  OnlineMusicCancelToken? _songsToken;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -79,7 +86,51 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
   void dispose() {
     _token?.cancel();
     _albumsToken?.cancel();
+    _songsToken?.cancel();
     super.dispose();
+  }
+
+  /// 艺人**单曲列表**（`artistSongs`）：与其它区块**互不影响** ✓。
+  Future<void> _loadSongs(OnlineMusicService service) async {
+    if (!service.capabilities.playableArtistSongPlatforms.contains(
+      widget.platform,
+    )) {
+      if (!mounted) return;
+      setState(() {
+        _songsSupported = false;
+        _songsLoading = false;
+        _songs = const [];
+      });
+      return;
+    }
+    _songsToken?.cancel();
+    final token = OnlineMusicCancelToken();
+    _songsToken = token;
+    setState(() {
+      _songsSupported = true;
+      _songsLoading = true;
+      _songsError = null;
+    });
+    try {
+      final songs = await service.fetchArtistSongs(
+        platform: widget.platform,
+        artistId: widget.artistId,
+        cancelToken: token,
+      );
+      if (!mounted || token.isCancelled) return;
+      setState(() {
+        _songs = songs;
+        _songsLoading = false;
+      });
+    } on Object catch (error) {
+      if (!mounted || token.isCancelled) return;
+      setState(() {
+        _songsLoading = false;
+        _songsError = error is OnlineMusicException
+            ? error.safeMessage
+            : '读取艺人单曲失败';
+      });
+    }
   }
 
   /// 艺人**专辑列表**（`artistAlbums`）：与热门歌曲**互不影响** ✓
@@ -145,6 +196,7 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
     });
     // 专辑区块与热门歌曲**并行**加载 ✓（互不阻塞、互不牵连 ✓）。
     unawaited(_loadAlbums(service));
+    unawaited(_loadSongs(service));
     try {
       final artist = await service.fetchArtist(
         platform: widget.platform,
@@ -265,6 +317,15 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
               ),
             ),
           ],
+          // **单曲和迷你专辑区块**（`artistSongs`）：参考艺人页里「专辑」之后就是它 ✓。
+          if (_songsSupported) ...[
+            const SizedBox(height: Spacing.lg),
+            ContentSection(
+              title: '单曲和迷你专辑',
+              subtitle: '来自${musicPlatformLabel(artist.platform)}；点一行即从这些单曲开始播放',
+              child: _songsBody(),
+            ),
+          ],
         ],
       ),
     );
@@ -284,6 +345,43 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
     if (service == null) return;
     unawaited(_loadAlbums(service));
   }
+
+  void _retrySongs() {
+    final service = context.read<OnlineMusicService?>();
+    if (service == null) return;
+    unawaited(_loadSongs(service));
+  }
+
+  /// 单曲区块的三种状态（**空 ≠ 失败**：空给中性提示、失败才给重试 ✓）。
+  Widget _songsBody() {
+    if (_songsLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: Spacing.lg),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    final error = _songsError;
+    if (error != null) {
+      return InlineFailureHint(message: error, onRetry: _retrySongs);
+    }
+    if (_songs.isEmpty) {
+      return const InlineEmptyHint(
+        icon: Symbols.music_off,
+        message: '这位艺人暂时没有单曲。',
+      );
+    }
+    return Column(
+      children: [
+        for (final song in _songs)
+          OnlineTrackEntry(track: song, onTap: () => _playSongs(song)),
+      ],
+    );
+  }
+
+  Future<void> _playSongs(MusicTrack song) => playOnlineTrackSelection(
+    context,
+    OnlineTrackSelection.fromResultPage(tracks: _songs, selectedRef: song.ref),
+  );
 
   Future<void> _play(OnlineArtist artist, MusicTrack track) =>
       playOnlineTrackSelection(

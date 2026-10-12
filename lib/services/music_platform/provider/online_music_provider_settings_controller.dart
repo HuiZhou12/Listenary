@@ -958,6 +958,42 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
           );
         }
 
+      case OnlineMusicCapability.artistSongs:
+        {
+          // 艺人单曲列表 = **曲目数组**（与搜索/新歌同构 ✓）⇒ 复用同一个映射 ✓。
+          if (binding.response.listPath == null) {
+            return DeclarativeCapabilityTestResult(
+              ok: false,
+              statusCode: response.statusCode,
+              responsePreview: preview,
+              failureReason: '艺人单曲列表没有配置「列表路径」（曲目数组所在位置），因此取不到曲目',
+              failureKind: DeclarativeTestFailureKind.config,
+            );
+          }
+          final page = mapDeclarativeSearchResponse(
+            spec: binding.response,
+            body: response.data,
+            platform: definition.contentPlatform,
+            limit: 30,
+            offset: 0,
+          );
+          final isEmpty = page.items.isEmpty;
+          return DeclarativeCapabilityTestResult(
+            ok: !isEmpty,
+            explicitConfidence: isEmpty
+                ? DeclarativeVerificationConfidence.unconfirmed
+                : null,
+            statusCode: response.statusCode,
+            responsePreview: preview,
+            mappedSummary: isEmpty
+                ? '没有可验证的数据（空结果）'
+                : '${page.items.length} 首曲目（首曲：${page.items.first.title}）',
+            failureReason: isEmpty
+                ? declarativeEmptyResultNote('没有解析出任何曲目')
+                : null,
+          );
+        }
+
       case OnlineMusicCapability.playlist:
         {
           // P-01：曲目数组路径**没配**时曲目必然为空 —— 那是"配置缺项"，不是"这个歌单

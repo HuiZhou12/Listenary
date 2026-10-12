@@ -93,6 +93,13 @@ const declarativeProbeCapabilityContracts =
         probeable: false,
         notProbeableReason: probeNeedsEntityIdReason,
       ),
+      // 艺人单曲列表同理 ✓。
+      DeclarativeProbeCapabilityContract(
+        capability: OnlineMusicCapability.artistSongs,
+        unit: '',
+        probeable: false,
+        notProbeableReason: probeNeedsEntityIdReason,
+      ),
       DeclarativeProbeCapabilityContract(
         capability: OnlineMusicCapability.lyric,
         unit: '',

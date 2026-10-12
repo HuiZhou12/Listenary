@@ -277,6 +277,8 @@ class _OnlineMusicCapabilityEditorDialogState
             OnlineMusicCapability.album => JsonPath.tryParse('songs'),
             // 艺人专辑列表：网易云 `/artist/album` 把专辑放在 `hotAlbums` 下（实测）✓。
             OnlineMusicCapability.artistAlbums => JsonPath.tryParse('hotAlbums'),
+            // 艺人单曲列表：网易云 `/artist/songs` 把曲目放在 `songs` 下（实测）✓。
+            OnlineMusicCapability.artistSongs => JsonPath.tryParse('songs'),
           },
           fieldsRootPath: switch (widget.capability) {
             OnlineMusicCapability.playlist ||
@@ -288,6 +290,8 @@ class _OnlineMusicCapabilityEditorDialogState
             OnlineMusicCapability.album => JsonPath.tryParse('album'),
             // 艺人专辑列表**没有**统一的外层对象（每个专辑就是一个数组元素 ✓）⇒ 不给字段根路径 ✓。
             OnlineMusicCapability.artistAlbums => null,
+            // 艺人单曲列表同样没有统一外层对象（每个曲目就是一个数组元素 ✓）。
+            OnlineMusicCapability.artistSongs => null,
             OnlineMusicCapability.search ||
             OnlineMusicCapability.playlistCollection ||
             OnlineMusicCapability.playlistCategories ||
@@ -1925,6 +1929,11 @@ String domainFieldLabel(OnlineMusicDomainField field, {bool required = false}) {
     listPath: true,
     fieldsRootPath: false,
   ),
+  // 艺人单曲列表：同上（只有列表 ✓）。
+  OnlineMusicCapability.artistSongs => (
+    listPath: true,
+    fieldsRootPath: false,
+  ),
   OnlineMusicCapability.playlistCollection ||
   OnlineMusicCapability.playlistCategories ||
   OnlineMusicCapability.chartList ||
@@ -1955,6 +1964,8 @@ OnlineMusicInputSource defaultInputSourceFor(
   OnlineMusicCapability.album => OnlineMusicInputSource.albumId,
   // 艺人专辑列表复用**艺人 ID**（不新增输入源 ✓）。
   OnlineMusicCapability.artistAlbums => OnlineMusicInputSource.artistId,
+  // 艺人单曲列表同样复用**艺人 ID** ✓。
+  OnlineMusicCapability.artistSongs => OnlineMusicInputSource.artistId,
   OnlineMusicCapability.lyric ||
   OnlineMusicCapability.stream => OnlineMusicInputSource.trackId,
   OnlineMusicCapability.playlistCollection ||
@@ -2017,6 +2028,13 @@ typedef DeclarativeTestInputs = ({
   ),
   // 艺人专辑列表：要**艺人 ID**，并且真的支持 `limit`（网易云实测 ✓）。
   OnlineMusicCapability.artistAlbums => (
+    keyword: false,
+    limit: true,
+    id: true,
+    idLabel: '试跑用的艺人 ID',
+  ),
+  // 艺人单曲列表：要**艺人 ID**，并且真的支持 `limit`（实测 ✓）。
+  OnlineMusicCapability.artistSongs => (
     keyword: false,
     limit: true,
     id: true,

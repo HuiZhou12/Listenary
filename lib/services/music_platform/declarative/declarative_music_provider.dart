@@ -251,6 +251,36 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
   }
 
   @override
+  Future<List<MusicTrack>> fetchArtistSongs({
+    required MusicPlatform platform,
+    required String artistId,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    final binding = _requireBinding(OnlineMusicCapability.artistSongs, platform);
+    return _run(
+      binding: binding,
+      cancelToken: cancelToken,
+      inputs: DeclarativeInputs(
+        artistId: artistId,
+        limit: limit,
+        offset: offset,
+        page: 1,
+      ),
+      // 与搜索/新歌同构（都是曲目数组）⇒ **共用同一个映射** ✓。
+      map: (body) => mapDeclarativeSearchResponse(
+        spec: binding.response,
+        body: body,
+        platform: platform,
+        platformId: platformId,
+        limit: limit,
+        offset: offset,
+      ).items,
+    );
+  }
+
+  @override
   Future<List<OnlineAlbumSummary>> fetchArtistAlbums({
     required MusicPlatform platform,
     required String artistId,

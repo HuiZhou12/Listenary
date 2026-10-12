@@ -69,6 +69,10 @@ final class CompositeOnlineMusicService
       artistAlbumPlatforms: registry.platformsFor(
         OnlineMusicCapability.artistAlbums,
       ),
+      // 艺人单曲列表（2026-10-12）✓。
+      artistSongPlatforms: registry.platformsFor(
+        OnlineMusicCapability.artistSongs,
+      ),
       lyricPlatforms: registry.platformsFor(OnlineMusicCapability.lyric),
       unavailableSearchReasons: reasons,
     );
@@ -209,6 +213,26 @@ final class CompositeOnlineMusicService
     OnlineMusicCapability.newSongs,
     (provider) => provider.fetchNewSongs(
       platform: platform,
+      limit: limit,
+      offset: offset,
+      cancelToken: cancelToken,
+    ),
+  );
+
+  /// 艺人单曲列表（`artistSongs`）：按艺人 ID 列出单曲（**输出就是曲目** ✓）。
+  @override
+  Future<List<MusicTrack>> fetchArtistSongs({
+    required MusicPlatform platform,
+    required String artistId,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => _dispatch(
+    platform,
+    OnlineMusicCapability.artistSongs,
+    (provider) => provider.fetchArtistSongs(
+      platform: platform,
+      artistId: artistId,
       limit: limit,
       offset: offset,
       cancelToken: cancelToken,

@@ -73,6 +73,11 @@ enum OnlineMusicCapability {
   /// 参考艺人页的分区顺序是：**热门歌曲 → 专辑 → 单曲和迷你专辑 → 视频 → 现场表演** ✓
   /// ⇒ 这一版先做「专辑」✓；「单曲」是同形但另一个接口 ✓，留作下一步 ✓（不假装有 ✓）。
   artistAlbums,
+  /// **艺人的单曲列表**（`artistSongs`，2026-10-12 新增）：参考艺人页的「单曲和迷你专辑」区块 ✓。
+  ///
+  /// 实测 `/artist/songs?id=` → `{code, songs, more, total}`，曲目就是**标准曲目形状** ✓
+  /// ⇒ **不放新领域字段**（身份/标题/艺人/专辑/时长全部复用 ✓），模型也直接复用 `MusicTrack` ✓。
+  artistSongs,
   lyric,
   stream,
 }
@@ -90,6 +95,7 @@ String onlineMusicCapabilityLabel(OnlineMusicCapability capability) =>
       OnlineMusicCapability.artist => '艺人详情',
       OnlineMusicCapability.album => '专辑详情',
       OnlineMusicCapability.artistAlbums => '艺人专辑列表',
+      OnlineMusicCapability.artistSongs => '艺人单曲列表',
       OnlineMusicCapability.lyric => '歌词',
       OnlineMusicCapability.stream => '播放解析',
     };

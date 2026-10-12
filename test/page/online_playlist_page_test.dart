@@ -480,6 +480,14 @@ Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
 
 final class _FakeOnlineMusicService implements OnlineMusicService {
   @override
+  Future<List<MusicTrack>> fetchArtistSongs({
+    required MusicPlatform platform,
+    required String artistId,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Artist songs are not implemented here');
+  @override
   Future<List<OnlineAlbumSummary>> fetchArtistAlbums({
     required MusicPlatform platform,
     required String artistId,

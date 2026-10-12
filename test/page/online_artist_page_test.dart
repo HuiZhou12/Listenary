@@ -217,6 +217,47 @@ void main() {
       reason: '不支持却摆一个空区块 ⇒ 会让人以为"这艺人没有专辑"（那是谎 ✗）',
     );
   });
+
+  testWidgets('平台支持时显示「单曲和迷你专辑」区块（参考顺序：… → 专辑 → 单曲）', (tester) async {
+    final service = _FakeArtistService(
+      OnlineArtist(
+        platform: MusicPlatform.netease,
+        id: '7763',
+        name: 'G.E.M.邓紫棋',
+        hotSongs: [track('1', '光年之外')],
+      ),
+      songs: [track('2', '唯一'), track('3', '泡沫')],
+    );
+
+    await pumpArtist(tester, service);
+    await settle(tester, find.text('单曲和迷你专辑'));
+
+    expect(find.text('热门歌曲'), findsOneWidget);
+    expect(find.text('单曲和迷你专辑'), findsOneWidget);
+    expect(find.text('唯一'), findsOneWidget);
+    expect(find.text('泡沫'), findsOneWidget);
+  });
+
+  testWidgets('平台**不支持**艺人单曲列表 ⇒ 整块不显示（不摆空区块骗人）', (tester) async {
+    final service = _FakeArtistService(
+      OnlineArtist(
+        platform: MusicPlatform.netease,
+        id: '7763',
+        name: 'Beyond',
+        hotSongs: [track('9', '灰色轨迹')],
+      ),
+      songsSupported: false,
+    );
+
+    await pumpArtist(tester, service);
+    await settle(tester, find.text('热门歌曲'));
+
+    expect(
+      find.text('单曲和迷你专辑'),
+      findsNothing,
+      reason: '不支持却摆空区块 ⇒ 会让人以为"这艺人没有单曲"（那是谎 ✗）',
+    );
+  });
 }
 
 /// 一行测试曲目（带艺人 id ⇒ 详情行的艺人段可点 ✓）。
@@ -233,30 +274,48 @@ final class _FakeArtistService implements OnlineMusicService {
   _FakeArtistService(
     this.artist, {
     this.albums = const [],
+    this.songs = const [],
     this.albumsSupported = true,
+    this.songsSupported = true,
   }) : failure = null;
 
   _FakeArtistService.failing(this.failure)
     : artist = null,
       albums = const [],
-      albumsSupported = true;
+      songs = const [],
+      albumsSupported = true,
+      songsSupported = true;
 
   final OnlineArtist? artist;
   final List<OnlineAlbumSummary> albums;
+  final List<MusicTrack> songs;
 
-  /// `false` ⇒ 能力集合里**不声明**艺人专辑列表 ⇒ 页面应**整块不显示** ✓。
+  /// `false` ⇒ 能力集合里**不声明**该能力 ⇒ 页面应**整块不显示** ✓。
   final bool albumsSupported;
+  final bool songsSupported;
   final Object? failure;
 
   @override
   OnlineMusicCapabilities get capabilities => OnlineMusicCapabilities(
     searchablePlatforms: const [],
-    resolvablePlatforms: const [],
+    resolvablePlatforms: const [MusicPlatform.netease],
     albumPlatforms: albumsSupported ? const [MusicPlatform.netease] : const [],
     artistAlbumPlatforms: albumsSupported
         ? const [MusicPlatform.netease]
         : const [],
+    artistSongPlatforms: songsSupported
+        ? const [MusicPlatform.netease]
+        : const [],
   );
+
+  @override
+  Future<List<MusicTrack>> fetchArtistSongs({
+    required MusicPlatform platform,
+    required String artistId,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => songs;
 
   @override
   Future<List<OnlineAlbumSummary>> fetchArtistAlbums({
