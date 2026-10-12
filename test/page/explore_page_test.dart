@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/horizontal_shelf.dart';
 import 'package:pure_music/component/remote_media_card.dart';
-import 'package:pure_music/component/online_track_row.dart';
 import 'package:pure_music/core/database.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/utils.dart';
@@ -617,7 +616,7 @@ void main() {
     );
   });
 
-  testWidgets('新歌：只对能播放的平台出现，行上标注来源且可点', (tester) async {
+  testWidgets('新歌：只对能播放的平台出现，**横向货架**上标注来源且可点', (tester) async {
     await pumpExplore(
       tester,
       service: _ExploreService(
@@ -655,16 +654,19 @@ void main() {
     expect(find.text('新歌一'), findsOneWidget);
     expect(find.text('新歌二'), findsOneWidget);
 
-    final rows = tester
-        .widgetList<OnlineTrackRow>(find.byType(OnlineTrackRow))
+    // 2026-10-12 起这一块是**卡片货架**（不再是一长列行 ✓）：找卡片而不是行 ✓。
+    final cards = tester
+        .widgetList<RemoteMediaCard>(find.byType(RemoteMediaCard))
         .toList(growable: false);
-    expect(rows, hasLength(2));
-    // 来源身份：每一行都标出所属平台。
-    expect(rows.map((row) => row.sourceLabel), everyElement('网易云'));
-    // 副标题 = 艺人 · 专辑（沿用既有组装）。
-    expect(rows.first.details, '甲 · 专辑一');
-    // 可播放 ⇒ 挂上了起播回调（起播链路本身由 online_search_launcher 的测试覆盖）。
-    expect(rows.every((row) => row.onTap != null), isTrue);
+    expect(cards, hasLength(2));
+    // 来源身份：每张卡都标出所属平台 ✓。
+    expect(cards.map((card) => card.sourceLabel), everyElement('网易云'));
+    // 副标题 = 艺人 ✓（曲目卡上就是艺人名 ✓）。
+    expect(cards.first.details, '甲');
+    // 可播放 ⇒ 挂上了起播回调 ✓。
+    expect(cards.every((card) => card.onTap != null), isTrue);
+    // 横向浏览由货架承担 ✓（箭头/分页规则由 `horizontal_shelf_test` 覆盖 ✓）。
+    expect(find.byType(HorizontalShelf), findsWidgets);
   });
 
   testWidgets('新歌：只有新歌、没有播放解析的平台整块不出现（点不响比不显示更糟）', (tester) async {

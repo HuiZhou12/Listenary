@@ -113,8 +113,7 @@ final class _EmptyGroupEntry extends _SearchEntry {
 }
 
 /// **专辑结果行**（2026-10-12 ✓）：与曲目行**混在同一个列表**里 ✓，
-/// 靠行首的「**专辑 · …**」类型前缀自报家门 ✓ —— 与参考产品"混合结果 + 类型前缀"的做法一致 ✓
-///（详见 `docs/specs/home-explore-reference-analysis.md` §4.0 的订正 ✓）。
+/// 靠行首的「**专辑 · …**」类型前缀自报家门 ✓ —— 与参考产品"混合结果 + 类型前缀"的做法一致 ✓。
 final class _AlbumEntry extends _SearchEntry {
   const _AlbumEntry(this.album);
 

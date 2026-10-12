@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/horizontal_shelf.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
-import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/platform_capability_view.dart';
 import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
@@ -386,7 +385,9 @@ class _ExplorePageState extends State<ExplorePage>
     // 真实服务可能忽略 limit 并一次返回全部（网易云 `/toplist` 就是）⇒ 货架自己截断，
     // 全量交给「查看全部」的网格页。
     final preview = all.take(widget.chartPreviewLimit).toList(growable: false);
-    final width = _cardWidth;
+    // 榜单封面**放大 15%**（2026-10-12 用户要求 ✓）：一屏里卡片太多会"眼花缭乱"✗，
+    // 放大后一屏看到更少、但每张更清楚 ✓。只动**榜单**这一块，其余货架保持原尺寸 ✓。
+    final width = _cardWidth * 1.15;
     return Padding(
       padding: const EdgeInsets.only(bottom: Spacing.lg),
       child: Column(
@@ -634,16 +635,34 @@ class _ExplorePageState extends State<ExplorePage>
               message: '该平台没有返回新歌。',
             )
           else
-            // 队列 = 该平台的新歌这一批（来源身份天然不混别的平台）。
-            for (final track in tracks)
-              OnlineTrackEntry(
-                track: track,
-                onTap: () => playOnlineSearchResult(
-                  context,
-                  tracks: tracks,
-                  selectedRef: track.ref,
-                ),
+            // **横向货架**（2026-10-12 用户要求 ✓）：此前每个平台一长列曲目 ⇒
+            // 多平台时要往下翻很久才看得到后面的区块 ✗；改成货架后高度固定、
+            // 用左右箭头**横向浏览** ✓（箭头只在能滚的一侧出现 ✓，与其它货架同一条规则 ✓）。
+            HorizontalShelf(
+              itemCount: tracks.length,
+              itemWidth: _cardWidth,
+              itemHeight: RemoteMediaCard.extentFor(
+                width: _cardWidth,
+                hasFooter: false,
               ),
+              itemBuilder: (context, index) {
+                final track = tracks[index];
+                return RemoteMediaCard(
+                  width: _cardWidth,
+                  title: track.title,
+                  coverUri: track.coverUri,
+                  details: track.artistDisplay,
+                  sourceLabel: platformLabelForRef(track.ref),
+                  placeholderIcon: Symbols.music_note,
+                  onTap: () => playOnlineSearchResult(
+                    context,
+                    tracks: tracks,
+                    selectedRef: track.ref,
+                  ),
+                  semanticLabel: '播放"${track.title} - ${track.artistDisplay}"',
+                );
+              },
+            ),
         ],
       ),
     );

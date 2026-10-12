@@ -11,7 +11,7 @@ import 'package:pure_music/services/music_platform/online_library/personal_onlin
 ///
 /// 为什么要有它：主页、探索页、搜索页、收藏页、自建歌单详情、订阅歌单详情都要同一件事，
 /// 而那套组装（读收藏状态、判播放中、拼"艺人 · 专辑"、挂两个操作）此前**每个页面各抄一遍**
-/// （R2 逐处清点后收敛，见 `docs/history/home-explore-r2-report.md`）。
+/// （R2 逐处清点后收敛）。
 /// 抄下一遍之前先把它收敛 —— 否则"来源标记"或"不可播放判定"只要有一处走偏，就会出现
 /// "同一首歌在 A 页能点、B 页点不动"。
 ///

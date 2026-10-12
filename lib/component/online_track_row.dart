@@ -197,6 +197,16 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                           // 而是行尾的小圆点 + 小号低对比文字，详情用 Flexible 先省略。
                           Row(
                             children: [
+                              // **平台标识挪到最左**（2026-10-12 用户要求 ✓）：
+                              // 它此前挂在详情行**末端**、紧挨右侧的时长 ⇒ 两处挤在一起 ✗；
+                              // 现在放行首，离时长最远 ✓（全局生效 ✓）。
+                              if (widget.sourceLabel case final label?) ...[
+                                OnlineSourceLabel(
+                                  label: label,
+                                  color: metadataColor,
+                                ),
+                                const SizedBox(width: Spacing.sm),
+                              ],
                               Flexible(
                                 // 详情行分段：可点段带下划线 + 悬停提示；不可点段是普通文字 ✓。
                                 child: widget.detailParts.isEmpty
@@ -230,13 +240,6 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                                         ],
                                       ),
                               ),
-                              if (widget.sourceLabel case final label?) ...[
-                                const SizedBox(width: Spacing.sm),
-                                OnlineSourceLabel(
-                                  label: label,
-                                  color: metadataColor,
-                                ),
-                              ],
                             ],
                           ),
                         ],
@@ -345,33 +348,47 @@ class _OnlineTrackCover extends StatelessWidget {
   }
 }
 
-/// 详情行的一段：**可点**时带下划线与悬停提示；**不可点**就是普通文字 ✓。
-class _DetailSegment extends StatelessWidget {
+/// 详情行的一段：**悬停时**才有下划线与"可点"提示 ✓（2026-10-12 用户要求：
+/// 初始状态**不要**自带下划线 ✗ —— 那会让整行看起来像链接堆 ✓）；不可点的段始终是普通文字 ✓。
+class _DetailSegment extends StatefulWidget {
   const _DetailSegment({required this.part, required this.color});
 
   final ({String text, VoidCallback? onTap, String? tooltip}) part;
   final Color color;
 
   @override
+  State<_DetailSegment> createState() => _DetailSegmentState();
+}
+
+class _DetailSegmentState extends State<_DetailSegment> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    final onTap = part.onTap;
+    final onTap = widget.part.onTap;
     final text = Text(
-      part.text,
+      widget.part.text,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
-        color: color,
-        decoration: onTap == null ? null : TextDecoration.underline,
-        decorationColor: color,
+        color: widget.color,
+        decoration: onTap == null || !_hovered
+            ? null
+            : TextDecoration.underline,
+        decorationColor: widget.color,
       ),
     );
     if (onTap == null) return text;
-    final link = InkWell(
-      onTap: onTap,
-      borderRadius: AppRadius.xsCircular,
-      child: text,
+    final link = MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppRadius.xsCircular,
+        child: text,
+      ),
     );
-    final tooltip = part.tooltip;
+    final tooltip = widget.part.tooltip;
     return tooltip == null ? link : Tooltip(message: tooltip, child: link);
   }
 }
