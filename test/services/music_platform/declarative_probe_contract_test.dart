@@ -34,7 +34,7 @@ void main() {
   });
 
   group('可探测性（服务级探针）', () {
-    test('可探测的六项与顺序（顺序即执行顺序，搜索优先）', () {
+    test('可探测的七项与顺序（顺序即执行顺序，搜索优先）', () {
       expect(probeCapableCapabilities, const [
         OnlineMusicCapability.search,
         OnlineMusicCapability.newSongs,
@@ -43,6 +43,8 @@ void main() {
         OnlineMusicCapability.chartList,
         // 2026-10-12 新增：新专辑同样"不需要实体 ID" ⇒ 也可探测 ✓。
         OnlineMusicCapability.newAlbums,
+        // 搜索专辑：与搜索同判据（给默认关键词即可 ✓）。
+        OnlineMusicCapability.searchAlbums,
       ]);
     });
 

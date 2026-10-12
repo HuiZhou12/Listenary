@@ -281,6 +281,10 @@ class _OnlineMusicCapabilityEditorDialogState
             OnlineMusicCapability.artistSongs => JsonPath.tryParse('songs'),
             // 新专辑：网易云 `/album/new` 把专辑放在 `albums` 下（实测）✓。
             OnlineMusicCapability.newAlbums => JsonPath.tryParse('albums'),
+            // 搜索专辑：网易云 `/cloudsearch?type=10` 把专辑放在 `result.albums`（实测）✓。
+            OnlineMusicCapability.searchAlbums => JsonPath.tryParse(
+              'result.albums',
+            ),
           },
           fieldsRootPath: switch (widget.capability) {
             OnlineMusicCapability.playlist ||
@@ -296,6 +300,8 @@ class _OnlineMusicCapabilityEditorDialogState
             OnlineMusicCapability.artistSongs => null,
             // 新专辑同样没有统一外层对象（每个专辑就是一个数组元素 ✓）。
             OnlineMusicCapability.newAlbums => null,
+            // 搜索专辑同样没有统一外层对象（每个专辑就是一个数组元素 ✓）。
+            OnlineMusicCapability.searchAlbums => null,
             OnlineMusicCapability.search ||
             OnlineMusicCapability.playlistCollection ||
             OnlineMusicCapability.playlistCategories ||
@@ -1940,6 +1946,8 @@ String domainFieldLabel(OnlineMusicDomainField field, {bool required = false}) {
   ),
   // 新专辑：同上 ✓。
   OnlineMusicCapability.newAlbums => (listPath: true, fieldsRootPath: false),
+  // 搜索专辑：同上 ✓。
+  OnlineMusicCapability.searchAlbums => (listPath: true, fieldsRootPath: false),
   OnlineMusicCapability.playlistCollection ||
   OnlineMusicCapability.playlistCategories ||
   OnlineMusicCapability.chartList ||
@@ -1974,6 +1982,8 @@ OnlineMusicInputSource defaultInputSourceFor(
   OnlineMusicCapability.artistSongs => OnlineMusicInputSource.artistId,
   // 新专辑是**数组类**能力（服务端决定给什么 ✓）⇒ 只要 `limit` ✓。
   OnlineMusicCapability.newAlbums => OnlineMusicInputSource.limit,
+  // 搜索专辑是**关键词**能力（与搜索同判据 ✓）。
+  OnlineMusicCapability.searchAlbums => OnlineMusicInputSource.keyword,
   OnlineMusicCapability.lyric ||
   OnlineMusicCapability.stream => OnlineMusicInputSource.trackId,
   OnlineMusicCapability.playlistCollection ||
@@ -2051,6 +2061,13 @@ typedef DeclarativeTestInputs = ({
   // 新专辑：**数组类**能力（不需要 ID ✓），支持 `limit`（实测限流生效 ✓）。
   OnlineMusicCapability.newAlbums => (
     keyword: false,
+    limit: true,
+    id: false,
+    idLabel: '',
+  ),
+  // 搜索专辑：要**关键词**（与搜索同判据 ✓），支持 `limit` ✓。
+  OnlineMusicCapability.searchAlbums => (
+    keyword: true,
     limit: true,
     id: false,
     idLabel: '',

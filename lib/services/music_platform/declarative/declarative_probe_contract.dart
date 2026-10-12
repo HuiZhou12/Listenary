@@ -71,6 +71,11 @@ const declarativeProbeCapabilityContracts =
         capability: OnlineMusicCapability.newAlbums,
         unit: '张专辑',
       ),
+      // 搜索专辑：与搜索同判据（给默认关键词即可 ✓）⇒ 可探测 ✓。
+      DeclarativeProbeCapabilityContract(
+        capability: OnlineMusicCapability.searchAlbums,
+        unit: '张专辑',
+      ),
       DeclarativeProbeCapabilityContract(
         capability: OnlineMusicCapability.playlist,
         unit: '',

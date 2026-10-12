@@ -84,6 +84,12 @@ enum OnlineMusicCapability {
   /// —— 网易云实测 `/album/new?limit=N` **认 `limit`** ✓（而 `/album/newest` **不认** ✗，所以用前者 ✓），
   /// 并且它**不需要 `area`** 也能用 ✓（`area` 属"要不要暴露给用户"的决策，这一版先不碰 ✓）。
   newAlbums,
+  /// **按关键词搜索专辑**（`searchAlbums`，2026-10-12 新增）：参考搜索页的结果分区里「**专辑**」那一段 ✓。
+  ///
+  /// 与 [search]（曲目）分开：真实服务是同一接口的**不同 `type`**（网易云实测
+  /// `/cloudsearch?type=10` → `result.albums` ✓），且**输出形状不同**（专辑 vs 曲目 ✓）。
+  /// 输入复用 `keyword` ✓（不新增输入源 ✓）；**可探测** ✓（给默认关键词即可，与 [search] 同判据 ✓）。
+  searchAlbums,
   lyric,
   stream,
 }
@@ -103,6 +109,7 @@ String onlineMusicCapabilityLabel(OnlineMusicCapability capability) =>
       OnlineMusicCapability.artistAlbums => '艺人专辑列表',
       OnlineMusicCapability.artistSongs => '艺人单曲列表',
       OnlineMusicCapability.newAlbums => '新专辑',
+      OnlineMusicCapability.searchAlbums => '搜索专辑',
       OnlineMusicCapability.lyric => '歌词',
       OnlineMusicCapability.stream => '播放解析',
     };

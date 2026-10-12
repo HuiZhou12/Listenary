@@ -431,6 +431,14 @@ final class _Gateway implements RemoteQueuePlaybackGateway {
 
 final class _OnlineService implements OnlineMusicService {
   @override
+  Future<List<OnlineAlbumSummary>> searchAlbums({
+    required MusicPlatform platform,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Album search is not implemented here');
+  @override
   Future<List<OnlineAlbumSummary>> fetchNewAlbums({
     required MusicPlatform platform,
     int limit = 30,

@@ -69,6 +69,9 @@ $artistAlbums = Get-Json "$BaseUrl/artist/album?id=$artistId&limit=$Trim"
 $artistSongs = Get-Json "$BaseUrl/artist/songs?id=$artistId&limit=$Trim"
 # newAlbums（2026-10-12 新增）：平台最近发布的专辑（形状 = albums 数组；实测认 limit ✓）。
 $newAlbums = Get-Json "$BaseUrl/album/new?limit=$Trim"
+# searchAlbums（2026-10-12 新增）：按关键词搜专辑（形状 = result.albums；type=10 是固定值 ✓）。
+# 关键词沿用上面那次搜索用的同一个（%E6%B5%B7%E9%98%94%E5%A4%A9%E7%A9%BA = 海阔天空 ✓）。
+$searchAlbums = Get-Json "$BaseUrl/cloudsearch?keywords=%E6%B5%B7%E9%98%94%E5%A4%A9%E7%A9%BA&type=10&limit=$Trim"
 
 $blocks = [ordered]@{
   rawSearch = ([ordered]@{
@@ -148,6 +151,15 @@ $blocks = [ordered]@{
       code   = $newAlbums.code
       albums = Take $newAlbums.albums $Trim
       total  = $newAlbums.total
+    } | ConvertTo-Json -Depth 30 -Compress)
+
+  # searchAlbums（2026-10-12）：专辑就在 result.albums 里（裁到 $Trim 条）。
+  rawSearchAlbums = ([ordered]@{
+      code   = $searchAlbums.code
+      result = [ordered]@{
+        albums     = Take $searchAlbums.result.albums $Trim
+        albumCount = $searchAlbums.result.albumCount
+      }
     } | ConvertTo-Json -Depth 30 -Compress)
 }
 

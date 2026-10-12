@@ -24,7 +24,9 @@ void main() {
     bool active = true,
     OnlineMusicService? service,
   }) async {
-    tester.view.physicalSize = const Size(1200, 2600);
+    // 视口高度跟着**能力数量**走：2026-10-12 能力增至 14 项后，2600 已经装不下整个面板 ✗
+  // ⇒ 断言会因为"惰性列表还没构建到那一段"而找不到控件 ✓。
+  tester.view.physicalSize = const Size(1200, 4200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     final onlineMusic =
@@ -653,7 +655,9 @@ void main() {
   testWidgets('凭据读取在后台静默完成，不插入任何加载行', (tester) async {
     final credentials = _FakeCredentialAccess()..gate = Completer<void>();
     final controller = _controller(credentials: credentials);
-    tester.view.physicalSize = const Size(1200, 2600);
+    // 视口高度跟着**能力数量**走：2026-10-12 能力增至 14 项后，2600 已经装不下整个面板 ✗
+  // ⇒ 断言会因为"惰性列表还没构建到那一段"而找不到控件 ✓。
+  tester.view.physicalSize = const Size(1200, 4200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
@@ -823,8 +827,8 @@ void main() {
         .length;
     expect(
       missingOnNetease,
-      9,
-      reason: '内置实现有 4 项、共 13 个能力 ⇒ 网易云卡应缺 9 项',
+      10,
+      reason: '内置实现有 4 项、共 14 个能力 ⇒ 网易云卡应缺 10 项',
     );
     expect(
       find.descendant(
@@ -1278,7 +1282,7 @@ void main() {
   // ------------------------------------------------------------------ F1-e（P-23）
 
   group('F1 P-23 新增参数行的默认取值来源（按能力，穷举）', () {
-    test('★ 只有 search 的默认是「搜索关键词」', () {
+    test('★ 只有"关键词类"能力的默认是「搜索关键词」（曲目搜索 / 专辑搜索）', () {
       final defaults = {
         for (final capability in OnlineMusicCapability.values)
           capability: defaultInputSourceFor(capability),
@@ -1312,17 +1316,20 @@ void main() {
         OnlineMusicCapability.playlistCategories,
         OnlineMusicCapability.chartList,
         OnlineMusicCapability.newSongs,
+        // 2026-10-12 新增：新专辑同样是"数组类 ⇒ limit" ✓。
+        OnlineMusicCapability.newAlbums,
       ]) {
         expect(defaults[capability], OnlineMusicInputSource.limit);
       }
       // **缺陷本体**：修复前"一律 keyword"，于是歌单详情里新增的参数会把
-      // 搜索关键词当成歌单 ID 发出去。现在 keyword 只属于 search。
+      // 搜索关键词当成歌单 ID 发出去。现在 keyword 只属于**关键词类**能力：
+      // 曲目搜索 ✓ 与专辑搜索 ✓（2026-10-12 新增的后者同样是关键词能力 ✓）。
       expect(
         defaults.entries
             .where((entry) => entry.value == OnlineMusicInputSource.keyword)
             .map((entry) => entry.key)
             .toList(),
-        [OnlineMusicCapability.search],
+        [OnlineMusicCapability.search, OnlineMusicCapability.searchAlbums],
       );
     });
   });
@@ -2793,6 +2800,26 @@ OnlineMusicDeclarativeCapabilityBinding validBindingFor(
         },
       ),
     ),
+    // 搜索专辑：专辑在 `result.albums` 下（网易云 `/cloudsearch?type=10` ✓）。
+    OnlineMusicCapability.searchAlbums =>
+      OnlineMusicDeclarativeCapabilityBinding(
+        request: const OnlineMusicRequestSpec(path: '/cloudsearch'),
+        response: OnlineMusicResponseSpec(
+          listPath: JsonPath.tryParse('result.albums'),
+          fields: {
+            OnlineMusicDomainField.albumId: field(
+              OnlineMusicDomainField.albumId,
+              'id',
+              asInt,
+            ),
+            OnlineMusicDomainField.albumName: field(
+              OnlineMusicDomainField.albumName,
+              'name',
+              asString,
+            ),
+          },
+        ),
+      ),
     // 新专辑：专辑就在数组元素上（网易云 `/album/new` 的 `albums` ✓）。
     OnlineMusicCapability.newAlbums =>
       OnlineMusicDeclarativeCapabilityBinding(
