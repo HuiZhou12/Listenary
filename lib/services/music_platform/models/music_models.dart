@@ -184,6 +184,7 @@ final class MusicTrack {
     required this.ref,
     required this.title,
     required Iterable<String> artists,
+    Iterable<String> artistIds = const [],
     this.album = '',
     this.coverUri,
     this.duration = Duration.zero,
@@ -191,11 +192,18 @@ final class MusicTrack {
     this.searchOrdinal,
     Map<String, String> rawQualityHints = const {},
   }) : artists = List.unmodifiable(artists),
+       artistIds = List.unmodifiable(artistIds),
        rawQualityHints = Map.unmodifiable(rawQualityHints);
 
   final PlatformTrackRef ref;
   final String title;
   final List<String> artists;
+
+  /// **艺人 id**（与 [artists] **同序**，2026-10-12 新增）：曲目行里的艺人名可以据此打开艺人页 ✓。
+  ///
+  /// 真实服务通常把两者放在同一个数组里（网易云 `ar[*].name` 与 `ar[*].id`），
+  /// 所以映射时取两条**同序**路径；某一平台缺 id 时这里为空 ⇒ 界面**不显示可点**（不猜 ✓）。
+  final List<String> artistIds;
   final String album;
   final Uri? coverUri;
   final Duration duration;

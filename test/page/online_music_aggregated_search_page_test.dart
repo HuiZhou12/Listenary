@@ -358,6 +358,12 @@ final class _SearchCall {
 /// 只实现聚合搜索的多平台假服务；其余成员给最小实现（被调用路径不抛
 /// `UnimplementedError`，用例失败时才能看到真实断言）。
 final class _FakeAggregatedService implements OnlineMusicService {
+  @override
+  Future<OnlineArtist> fetchArtist({
+    required MusicPlatform platform,
+    required String artistId,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Artist detail is not implemented here');
   _FakeAggregatedService({
     required Set<MusicPlatform> searchable,
     required this.onSearch,

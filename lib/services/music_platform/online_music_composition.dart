@@ -323,6 +323,21 @@ final class _ConfiguredMusicProvider implements OnlineMusicProvider {
   }
 
   @override
+  Future<OnlineArtist> fetchArtist({
+    required MusicPlatform platform,
+    required String artistId,
+    required OnlineMusicCancelToken cancelToken,
+  }) {
+    final delegate = _delegate(OnlineMusicCapability.artist);
+    if (delegate == null) return Future.error(unsupportedCapability());
+    return delegate.fetchArtist(
+      platform: platform,
+      artistId: artistId,
+      cancelToken: cancelToken,
+    );
+  }
+
+  @override
   Future<List<MusicTrack>> fetchNewSongs({
     required MusicPlatform platform,
     int limit = 30,
@@ -414,6 +429,13 @@ final class _UnusableBaseUrlProvider implements OnlineMusicProvider {
   @override
   Set<MusicPlatform> platformsFor(OnlineMusicCapability capability) =>
       _platforms[capability] ?? const {};
+
+  @override
+  Future<OnlineArtist> fetchArtist({
+    required MusicPlatform platform,
+    required String artistId,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => throw _error();
 
   @override
   OnlineMusicProviderAuth authFor(OnlineMusicCapability capability) =>

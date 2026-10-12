@@ -431,6 +431,12 @@ final class _Gateway implements RemoteQueuePlaybackGateway {
 
 final class _OnlineService implements OnlineMusicService {
   @override
+  Future<OnlineArtist> fetchArtist({
+    required MusicPlatform platform,
+    required String artistId,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Artist detail is not implemented here');
+  @override
   final capabilities = OnlineMusicCapabilities(
     searchablePlatforms: [MusicPlatform.netease],
     resolvablePlatforms: [MusicPlatform.netease],

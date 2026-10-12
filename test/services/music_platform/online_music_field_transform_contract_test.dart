@@ -40,6 +40,8 @@ void main() {
         OnlineMusicDomainField.trackId: OnlineMusicFieldReader.scalar,
         OnlineMusicDomainField.title: OnlineMusicFieldReader.scalar,
         OnlineMusicDomainField.artists: OnlineMusicFieldReader.textList,
+        // 艺人 id 与"艺术家"同序（用于打开艺人页，2026-10-12）。
+        OnlineMusicDomainField.artistIds: OnlineMusicFieldReader.textList,
         OnlineMusicDomainField.album: OnlineMusicFieldReader.text,
         OnlineMusicDomainField.coverUri: OnlineMusicFieldReader.uri,
         OnlineMusicDomainField.duration: OnlineMusicFieldReader.duration,

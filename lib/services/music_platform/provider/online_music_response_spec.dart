@@ -13,6 +13,9 @@ enum OnlineMusicDomainField {
   trackId,
   title,
   artists,
+
+  /// **艺人 id**（与 [artists] 同序；用于"点艺人名打开艺人页"，2026-10-12 新增）。
+  artistIds,
   album,
   coverUri,
   duration,
@@ -152,7 +155,8 @@ OnlineMusicFieldReader fieldReaderOf(OnlineMusicDomainField field) =>
       OnlineMusicDomainField.artistName ||
       OnlineMusicDomainField.artistDescription ||
       OnlineMusicDomainField.lyricRomanization => OnlineMusicFieldReader.text,
-      OnlineMusicDomainField.artists => OnlineMusicFieldReader.textList,
+      OnlineMusicDomainField.artists ||
+      OnlineMusicDomainField.artistIds => OnlineMusicFieldReader.textList,
       OnlineMusicDomainField.coverUri ||
       OnlineMusicDomainField.artistAvatarUri ||
       OnlineMusicDomainField.playlistCoverUri ||
@@ -571,6 +575,7 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.trackId,
         OnlineMusicDomainField.title,
         OnlineMusicDomainField.artists,
+        OnlineMusicDomainField.artistIds,
         OnlineMusicDomainField.album,
         OnlineMusicDomainField.coverUri,
         OnlineMusicDomainField.duration,
@@ -595,6 +600,7 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.trackId,
         OnlineMusicDomainField.title,
         OnlineMusicDomainField.artists,
+        OnlineMusicDomainField.artistIds,
         OnlineMusicDomainField.album,
         OnlineMusicDomainField.coverUri,
         OnlineMusicDomainField.duration,
@@ -634,6 +640,7 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.trackId,
         OnlineMusicDomainField.title,
         OnlineMusicDomainField.artists,
+        OnlineMusicDomainField.artistIds,
         OnlineMusicDomainField.album,
         OnlineMusicDomainField.coverUri,
         OnlineMusicDomainField.duration,
@@ -648,6 +655,7 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.trackId,
         OnlineMusicDomainField.title,
         OnlineMusicDomainField.artists,
+        OnlineMusicDomainField.artistIds,
         OnlineMusicDomainField.album,
         OnlineMusicDomainField.coverUri,
         OnlineMusicDomainField.duration,

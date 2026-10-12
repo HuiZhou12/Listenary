@@ -98,6 +98,9 @@ MusicTrack _mapTrack(
     artists:
         _readStringList(spec, OnlineMusicDomainField.artists, element) ??
         const [],
+    artistIds:
+        _readStringList(spec, OnlineMusicDomainField.artistIds, element) ??
+        const [],
     album: _readString(spec, OnlineMusicDomainField.album, element) ?? '',
     coverUri: _readUri(spec, OnlineMusicDomainField.coverUri, element),
     duration:

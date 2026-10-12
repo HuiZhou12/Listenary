@@ -61,6 +61,8 @@ final class CompositeOnlineMusicService
       ),
       chartPlatforms: registry.platformsFor(OnlineMusicCapability.chartList),
       newSongPlatforms: registry.platformsFor(OnlineMusicCapability.newSongs),
+      // 艺人详情（2026-10-12）：注册表按"该平台是否配了 artist 能力"决定 ✓。
+      artistPlatforms: registry.platformsFor(OnlineMusicCapability.artist),
       lyricPlatforms: registry.platformsFor(OnlineMusicCapability.lyric),
       unavailableSearchReasons: reasons,
     );
@@ -203,6 +205,22 @@ final class CompositeOnlineMusicService
       platform: platform,
       limit: limit,
       offset: offset,
+      cancelToken: cancelToken,
+    ),
+  );
+
+  /// 艺人详情（`artist`）：按实体 ID 取"艺人 + 热门曲目"。
+  @override
+  Future<OnlineArtist> fetchArtist({
+    required MusicPlatform platform,
+    required String artistId,
+    required OnlineMusicCancelToken cancelToken,
+  }) => _dispatch(
+    platform,
+    OnlineMusicCapability.artist,
+    (provider) => provider.fetchArtist(
+      platform: platform,
+      artistId: artistId,
       cancelToken: cancelToken,
     ),
   );

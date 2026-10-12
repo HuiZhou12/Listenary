@@ -1830,6 +1830,8 @@ const _domainFieldLabels = <OnlineMusicDomainField, String>{
   OnlineMusicDomainField.trackId: '曲目 ID',
   OnlineMusicDomainField.title: '标题',
   OnlineMusicDomainField.artists: '艺术家',
+  // artist（艺人 id）：与"艺术家"同序，用于点艺人名打开艺人页（2026-10-12）。
+  OnlineMusicDomainField.artistIds: '艺术家 ID',
   OnlineMusicDomainField.album: '专辑',
   OnlineMusicDomainField.coverUri: '封面地址',
   OnlineMusicDomainField.duration: '时长',

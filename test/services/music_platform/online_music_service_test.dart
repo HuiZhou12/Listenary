@@ -51,6 +51,12 @@ void main() {
 }
 
 final class _FakeOnlineMusicService implements OnlineMusicService {
+  @override
+  Future<OnlineArtist> fetchArtist({
+    required MusicPlatform platform,
+    required String artistId,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Artist detail is not implemented here');
   static const ref = PlatformTrackRef(
     platform: MusicPlatform.netease,
     trackId: 'fake-1',

@@ -479,6 +479,12 @@ Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
 }
 
 final class _FakeOnlineMusicService implements OnlineMusicService {
+  @override
+  Future<OnlineArtist> fetchArtist({
+    required MusicPlatform platform,
+    required String artistId,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Artist detail is not implemented here');
   _FakeOnlineMusicService({
     Set<MusicPlatform> playlistPlatforms = const {MusicPlatform.netease},
   }) : capabilities = OnlineMusicCapabilities(

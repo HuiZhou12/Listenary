@@ -283,6 +283,17 @@ abstract interface class OnlineMusicService {
     required OnlineMusicCancelToken cancelToken,
   }) => throw UnsupportedError('New songs are not supported');
 
+  /// **艺人详情**（`artist`，2026-10-12 新增）：艺人标量信息 + **热门曲目**。
+  ///
+  /// 为什么与"新歌"分开：它是**按实体 ID 取单条**（艺人 id 由调用方给出），
+  /// 而新歌是"服务端决定给什么"✓。热门曲目**不另开能力**：一次请求就能拿到
+  /// （D2：一个能力不做多请求）✓。
+  Future<OnlineArtist> fetchArtist({
+    required MusicPlatform platform,
+    required String artistId,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Artist detail is not supported');
+
   Future<MusicLyrics> fetchLyrics(
     PlatformTrackRef ref, {
     required OnlineMusicCancelToken cancelToken,
