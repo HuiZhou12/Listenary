@@ -428,6 +428,29 @@ void main() {
     expect(find.text('去配置'), findsWidgets);
   });
 
+  testWidgets('★ Home 有「新歌上线」货架（对齐参考 Home 的「新曲上线」，只对能播放的平台出现）', (
+    tester,
+  ) async {
+    await pumpHome(
+      tester,
+      service: _HomeService(
+        capabilities: OnlineMusicCapabilities(
+          searchablePlatforms: const [MusicPlatform.netease],
+          // 新歌 + 播放解析都有 ⇒ 该平台**可播放** ⇒ 新歌货架出现 ✓。
+          resolvablePlatforms: const [MusicPlatform.netease],
+          newSongPlatforms: const [MusicPlatform.netease],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('新歌上线'), findsOneWidget);
+    // 平台没返回曲目 ⇒ **中性空态**（不是失败 ✓）。
+    expect(find.text('该平台没有返回新歌。'), findsOneWidget);
+    // 与参考一致：这一块只在**能播放**的平台出现 ✓（下面那条反向断言覆盖 ✓）。
+    expect(find.text('网易云'), findsWidgets);
+  });
+
   testWidgets('★ 刷新主页：真的重新拉取（不是只重画一遍）', (tester) async {
     final service = _HomeService(
       capabilities: OnlineMusicCapabilities(
@@ -610,7 +633,7 @@ final class _HomeService implements OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('new songs');
+  }) async => const <MusicTrack>[];
 
   @override
   Future<MusicLyrics> fetchLyrics(
@@ -772,7 +795,7 @@ final class _PlaylistRecordingService implements OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('new songs');
+  }) async => const <MusicTrack>[];
 
   @override
   Future<MusicLyrics> fetchLyrics(

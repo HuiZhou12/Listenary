@@ -61,6 +61,15 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   final RemoteLoadState<MusicPlatform, RemotePlaylistSummary> remote =
       RemoteLoadState<MusicPlatform, RemotePlaylistSummary>();
 
+  /// **「新歌上线」货架**（2026-10-12 ✓）：对齐参考 Home 里的 `新曲上线` ✓
+  ///（参考 Home 有 13 个货架，这是**能借**的那一类 ✓；推荐/视频类不借 ✓）。
+  ///
+  /// 只对**能播放**的平台出现 ✓（`playableNewSongPlatforms` ✓）——
+  /// 摆一堆点不响的曲目比不显示更糟 ✗。
+  List<MusicPlatform> _newSongPlatforms = const [];
+  final RemoteLoadState<MusicPlatform, MusicTrack> _newSongState =
+      RemoteLoadState<MusicPlatform, MusicTrack>();
+
   @override
   void initState() {
     super.initState();
@@ -96,6 +105,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     unawaited(personal.load());
     unawaited(_loadFavorites());
     unawaited(_loadCollections());
+    unawaited(_loadNewSongs());
   }
 
   Future<void> _refreshAll() async {
@@ -103,7 +113,11 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     final personal = context.read<PersonalOnlinePlaylistController>();
     unawaited(history.refresh());
     unawaited(personal.load());
-    await Future.wait([_loadFavorites(), _loadCollections()]);
+    await Future.wait([
+      _loadFavorites(),
+      _loadCollections(),
+      _loadNewSongs(),
+    ]);
   }
 
   Future<void> _loadFavorites() async {
@@ -130,6 +144,117 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       _favoritesLoading = false;
     }
   }
+
+  Future<void> _loadNewSongs() async {
+    final service = context.read<OnlineMusicService?>();
+    final platforms = service == null
+        ? const <MusicPlatform>[]
+        : [
+            for (final platform in builtinMusicPlatforms)
+              if (service.capabilities.playableNewSongPlatforms.contains(
+                platform,
+              ))
+                platform,
+          ];
+    if (!mounted) return;
+    setState(() => _newSongPlatforms = platforms);
+    if (service == null) return;
+    await Future.wait([
+      for (final platform in platforms) _loadNewSong(service, platform),
+    ]);
+  }
+
+  Future<void> _loadNewSong(
+    OnlineMusicService service,
+    MusicPlatform platform,
+  ) => loadRemoteList(
+    _newSongState,
+    platform,
+    () => service.fetchNewSongs(
+      platform: platform,
+      limit: widget.collectionLimit,
+      offset: 0,
+      cancelToken: newCancelToken(),
+    ),
+    fallback: '读取该平台新歌失败',
+  );
+
+  Widget _buildNewSongs() {
+    if (_newSongPlatforms.isEmpty) return const SizedBox.shrink();
+    return ContentSection(
+      title: '新歌上线',
+      subtitle: '各平台最近发布的曲目；点一行即从该平台的新歌开始播放',
+      actionLabel: '查看全部',
+      onAction: () => context.go(app_paths.EXPLORE_PAGE),
+      child: Column(
+        children: [
+          for (final platform in _newSongPlatforms) _buildNewSongSection(platform),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNewSongSection(MusicPlatform platform) {
+    final scheme = Theme.of(context).colorScheme;
+    final tracks = _newSongState.items(platform);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Spacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            musicPlatformLabel(platform),
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontSize: AppType.caption,
+              fontWeight: AppType.weightSemibold,
+            ),
+          ),
+          const SizedBox(height: Spacing.sm),
+          if (_newSongState.isLoading(platform))
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: Spacing.lg),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_newSongState.error(platform) case final message?)
+            InlineFailureHint(
+              message: message,
+              onRetry: () => _retryNewSongs(platform),
+            )
+          else if (tracks.isEmpty)
+            const InlineEmptyHint(
+              icon: Symbols.music_off,
+              message: '该平台没有返回新歌。',
+            )
+          else
+            Column(
+              children: [
+                for (final track in tracks)
+                  OnlineTrackEntry(
+                    track: track,
+                    onTap: () => _playNewSong(tracks, track),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _retryNewSongs(MusicPlatform platform) async {
+    final service = context.read<OnlineMusicService?>();
+    if (service == null) return;
+    await _loadNewSong(service, platform);
+  }
+
+  Future<void> _playNewSong(Iterable<MusicTrack> tracks, MusicTrack track) =>
+      playOnlineTrackSelection(
+        context,
+        OnlineTrackSelection.fromResultPage(
+          tracks: tracks,
+          selectedRef: track.ref,
+        ),
+      );
 
   Future<void> _loadCollections() async {
     final service = context.read<OnlineMusicService?>();
@@ -224,6 +349,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
           _buildHistory(history),
           _buildFavorites(),
           _buildPersonalPlaylists(personal),
+          _buildNewSongs(),
           _buildCollections(service),
           PlatformCapabilityView(
             capabilities: service?.capabilities,
