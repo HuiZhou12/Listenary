@@ -568,6 +568,55 @@ void main() {
 
   // ------------------------------------------------------------------ 新歌
 
+  testWidgets('新专辑：只对"打得开专辑详情"的平台出现，并真的去加载了', (tester) async {
+    final service = _ExploreService(
+      capabilities: OnlineMusicCapabilities(
+        searchablePlatforms: const [],
+        resolvablePlatforms: const [],
+        // 专辑详情（打得开）+ 新专辑列表 ⇒ 才出现 ✓。
+        albumPlatforms: const [MusicPlatform.netease],
+        newAlbumPlatforms: const [MusicPlatform.netease],
+      ),
+      newAlbums: {
+        MusicPlatform.netease: [
+          OnlineAlbumSummary(
+            platform: MusicPlatform.netease,
+            id: 'a1',
+            name: '新专辑一',
+            trackCount: 10,
+            releaseTime: DateTime.utc(2025, 3, 1),
+          ),
+        ],
+      },
+    );
+    await pumpExplore(tester, service: service);
+
+    expect(find.text('新专辑'), findsOneWidget);
+    expect(find.text('各平台最近发布的专辑；点一张打开专辑页'), findsOneWidget);
+    // 卡片本身可能因为**横向货架在视口外**而没被构建 ✗ ⇒ 断言"确实去加载了该平台" ✓
+    // （加载链路 + 能力判据都对，控件构建由「新歌」那组测试同一机制覆盖 ✓）。
+    await tester.pumpAndSettle();
+    expect(service.newAlbumCalls, contains(MusicPlatform.netease));
+  });
+
+  testWidgets('新专辑：平台不声明该能力 ⇒ 整块不出现（不摆空区块）', (tester) async {
+    await pumpExplore(
+      tester,
+      service: _ExploreService(
+        capabilities: OnlineMusicCapabilities(
+          searchablePlatforms: const [],
+          resolvablePlatforms: const [],
+        ),
+      ),
+    );
+
+    expect(
+      find.text('新专辑'),
+      findsNothing,
+      reason: '不支持却摆空区块 ⇒ 会让人以为"没有新专辑"（那是谎 ✗）',
+    );
+  });
+
   testWidgets('新歌：只对能播放的平台出现，行上标注来源且可点', (tester) async {
     await pumpExplore(
       tester,
@@ -1249,7 +1298,14 @@ final class _ExploreService implements OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('New albums are not implemented here');
+  }) async {
+    // 记录"确实去加载了哪个平台" ✓（断言不依赖控件是否在视口内 ✓）。
+    newAlbumCalls.add(platform);
+    return newAlbums[platform] ?? const [];
+  }
+
+  /// 新专辑试跑过哪些平台（证明加载链路真的跑了 ✓）。
+  final Set<MusicPlatform> newAlbumCalls = {};
   @override
   Future<List<MusicTrack>> fetchArtistSongs({
     required MusicPlatform platform,
@@ -1286,6 +1342,8 @@ final class _ExploreService implements OnlineMusicService {
     this.failingCharts = const {},
     this.newSongs = const {},
     this.failingNewSongs = const {},
+    // 新专辑（2026-10-12）：与 `newSongs` 同形的注入点 ✓。
+    this.newAlbums = const {},
     this.ignoreOffset = false,
     this.playlistFailure,
     this.categories = const {},
@@ -1308,6 +1366,7 @@ final class _ExploreService implements OnlineMusicService {
   final Map<MusicPlatform, List<RemotePlaylistCategory>> categories;
   final Set<MusicPlatform> failingCategories;
   final Map<MusicPlatform, List<MusicTrack>> newSongs;
+  final Map<MusicPlatform, List<OnlineAlbumSummary>> newAlbums;
   final Set<MusicPlatform> failingNewSongs;
 
   /// 模拟"**用户配了一个忽略 offset 的接口**"（分页路径由用户配置，未必真支持翻页）。

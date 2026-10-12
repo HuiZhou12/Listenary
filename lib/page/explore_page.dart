@@ -97,6 +97,12 @@ class _ExplorePageState extends State<ExplorePage>
   final RemoteLoadState<MusicPlatform, MusicTrack> _newSongState =
       RemoteLoadState<MusicPlatform, MusicTrack>();
 
+  /// 新专辑（2026-10-12）：只取**既列得出、又打得开专辑详情**的平台
+  ///（列出一批打不开的专辑，比不显示更糟 ✗ —— 与榜单「能列 vs 能开」同一条判据 ✓）。
+  List<MusicPlatform> _newAlbumPlatforms = const [];
+  final RemoteLoadState<MusicPlatform, OnlineAlbumSummary> _newAlbumState =
+      RemoteLoadState<MusicPlatform, OnlineAlbumSummary>();
+
   @override
   void initState() {
     super.initState();
@@ -156,18 +162,30 @@ class _ExplorePageState extends State<ExplorePage>
               ))
                 platform,
           ];
+    final newAlbumPlatforms = service == null
+        ? const <MusicPlatform>[]
+        : [
+            for (final platform in builtinMusicPlatforms)
+              if (service.capabilities.openableNewAlbumPlatforms.contains(
+                platform,
+              ))
+                platform,
+          ];
     if (!mounted) return;
     setState(() {
       _platforms = platforms;
       _chartPlatforms = chartPlatforms;
       _categoryPlatforms = categoryPlatforms;
       _newSongPlatforms = newSongPlatforms;
+      _newAlbumPlatforms = newAlbumPlatforms;
     });
     if (service == null) return;
     await Future.wait([
       for (final platform in chartPlatforms) _loadCharts(service, platform),
       for (final platform in newSongPlatforms)
         _loadNewSongs(service, platform),
+      for (final platform in newAlbumPlatforms)
+        _loadNewAlbums(service, platform),
       for (final platform in categoryPlatforms)
         _loadCategories(service, platform),
       for (final platform in platforms)
@@ -328,6 +346,8 @@ class _ExplorePageState extends State<ExplorePage>
         children: [
           _buildCharts(),
           _buildNewSongs(),
+          // 参考 Explore 的第一个区块是「新专辑与单曲」✓ ⇒ 两块**挨着**放 ✓。
+          _buildNewAlbums(),
           _buildCategories(),
           _buildPlatformCollections(),
           PlatformCapabilityView(
@@ -437,6 +457,117 @@ class _ExplorePageState extends State<ExplorePage>
     final service = context.read<OnlineMusicService?>();
     if (service == null) return;
     await _loadCharts(service, platform);
+  }
+
+  Future<void> _loadNewAlbums(
+    OnlineMusicService service,
+    MusicPlatform platform,
+  ) => loadRemoteList(
+    _newAlbumState,
+    platform,
+    () => service.fetchNewAlbums(
+      platform: platform,
+      limit: widget.newSongLimit,
+      offset: 0,
+      cancelToken: newCancelToken(),
+    ),
+    fallback: '读取该平台新专辑失败',
+  );
+
+  Future<void> _retryNewAlbums(MusicPlatform platform) async {
+    final service = context.read<OnlineMusicService?>();
+    if (service == null) return;
+    await _loadNewAlbums(service, platform);
+  }
+
+  // ----------------------------------------------------------------- 新专辑
+
+  /// 新专辑：**卡片货架**（专辑是集合类内容 ⇒ 与榜单/歌单一样用卡片 ✓）。
+  ///
+  /// 只对 [OnlineMusicCapabilities.openableNewAlbumPlatforms] 出现：列出一批**打不开**的专辑
+  /// 比不显示更糟 ✗（与榜单「能列 vs 能开」同一条判据 ✓）。
+  /// 与「新歌」并列 ⇒ 合起来正是参考 Explore 的第一个区块「**新专辑与单曲**」✓。
+  Widget _buildNewAlbums() {
+    if (_newAlbumPlatforms.isEmpty) return const SizedBox.shrink();
+    return ContentSection(
+      title: '新专辑',
+      subtitle: '各平台最近发布的专辑；点一张打开专辑页',
+      child: Column(
+        children: [
+          for (final platform in _newAlbumPlatforms)
+            _buildNewAlbumSection(platform),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNewAlbumSection(MusicPlatform platform) {
+    final scheme = Theme.of(context).colorScheme;
+    final albums = _newAlbumState.items(platform);
+    final width = _cardWidth;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Spacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            musicPlatformLabel(platform),
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontSize: AppType.caption,
+              fontWeight: AppType.weightSemibold,
+            ),
+          ),
+          const SizedBox(height: Spacing.sm),
+          HorizontalShelf(
+            loading: _newAlbumState.isLoading(platform),
+            errorMessage: _newAlbumState.error(platform),
+            onRetry: () => _retryNewAlbums(platform),
+            emptyMessage: '该平台没有返回新专辑。',
+            emptyIcon: Symbols.album,
+            itemCount: albums.length,
+            itemWidth: width,
+            itemHeight: RemoteMediaCard.extentFor(
+              width: width,
+              hasFooter: false,
+            ),
+            itemBuilder: (context, index) {
+              final album = albums[index];
+              return RemoteMediaCard(
+                width: width,
+                title: album.name,
+                coverUri: album.coverUri,
+                details: _newAlbumDetailsOf(album),
+                sourceLabel: platformLabelForIdentityOnly(album.identity),
+                placeholderIcon: Symbols.album,
+                // 点开专辑页：专辑曲目**有序号**、整张可播 ✓（R83 已有页面 ✓）。
+                onTap: () => _openAlbum(album),
+                semanticLabel:
+                    '${album.name}，来自${platformLabelForIdentityOnly(album.identity)}，点击打开专辑',
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 新专辑卡片：元信息沿用既有的「**类型 · …**」两段式 ✓（发行年份 + 曲目数都是平台声明的 ✓）。
+  String _newAlbumDetailsOf(OnlineAlbumSummary album) => [
+    '专辑',
+    if (album.releaseTime case final time?) '${time.year} 年',
+    if (album.trackCount case final count?) '$count 首',
+  ].join(' · ');
+
+  void _openAlbum(OnlineAlbumSummary album) {
+    context.push(
+      app_paths.ONLINE_ALBUM_PAGE,
+      extra: (
+        platform: album.platform,
+        albumId: album.id,
+        name: album.name,
+      ),
+    );
   }
 
   // ----------------------------------------------------------------- 新歌
