@@ -217,7 +217,7 @@ void main() {
     expect(find.text('网易云歌单'), findsOneWidget);
     // 来源与详情都在卡片上（详情行 + 轻量来源标记），且来源取自曲目/歌单自己的 platform。
     final card = tester.widget<RemoteMediaCard>(find.byType(RemoteMediaCard));
-    expect(card.details, '甲');
+    expect(card.details, '歌单 · 甲');
     expect(card.sourceLabel, '网易云');
     // QQ 分组显示自己的错误（失败文案），不影响网易云的结果。
     expect(find.textContaining('平台歌单读取失败'), findsOneWidget);

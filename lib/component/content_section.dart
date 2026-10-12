@@ -41,8 +41,10 @@ class ContentSection extends StatelessWidget {
                   children: [
                     Text(
                       title,
+                      // 层级：页标题(pageTitle 20) > **区块标题(subtitle 16)** > 卡片标题(body 14)。
+                      // 这里原本用 body(14)，与卡片标题**同号** ⇒ 区块之间看不出层次。
                       style: const TextStyle(
-                        fontSize: AppType.body,
+                        fontSize: AppType.subtitle,
                         fontWeight: AppType.weightSemibold,
                       ),
                     ),

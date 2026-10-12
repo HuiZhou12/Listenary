@@ -412,10 +412,12 @@ class _ExplorePageState extends State<ExplorePage>
     );
   }
 
-  /// 榜单卡片优先展示**更新节奏**（这是它区别于普通歌单的信息），再是曲目数。
+  /// 榜单卡片：元信息行统一为「**类型 · …**」两段式（参考产品的做法 —— 先在开头点名
+  /// 内容类型，再跟最能区分它的信息）。榜单用**更新节奏**，最后是曲目数。
   String _chartDetailsOf(RemotePlaylistSummary summary) {
     final frequency = summary.updateFrequency?.trim();
     return [
+      '榜单',
       if (frequency != null && frequency.isNotEmpty) frequency,
       if (summary.trackCount != null) '${summary.trackCount} 首',
     ].join(' · ');
@@ -808,9 +810,11 @@ class _ExplorePageState extends State<ExplorePage>
     );
   }
 
+  /// 平台歌单卡片：元信息行统一为「**类型 · …**」，类型是「歌单」。
   String _detailsOf(RemotePlaylistSummary summary) {
     final creator = summary.creator?.trim();
     return [
+      '歌单',
       if (creator != null && creator.isNotEmpty) creator,
       if (summary.trackCount != null) '${summary.trackCount} 首',
     ].join(' · ');

@@ -201,10 +201,11 @@ class _ChartListPageState extends State<ChartListPage>
     );
   }
 
-  /// 榜单卡片优先展示**更新节奏**（这是它区别于普通歌单的信息），再是曲目数。
+  /// 榜单卡片：元信息行统一为「**类型 · …**」，本页全是榜单 ⇒ 类型固定为「榜单」。
   String _detailsOf(RemotePlaylistSummary summary) {
     final frequency = summary.updateFrequency?.trim();
     return [
+      '榜单',
       if (frequency != null && frequency.isNotEmpty) frequency,
       if (summary.trackCount != null) '${summary.trackCount} 首',
     ].join(' · ');

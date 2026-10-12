@@ -425,9 +425,11 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     );
   }
 
+  /// 平台歌单卡片：元信息行统一为「**类型 · …**」，类型是「歌单」。
   String _detailsOf(RemotePlaylistSummary summary) {
     final creator = summary.creator?.trim();
     return [
+      '歌单',
       if (creator != null && creator.isNotEmpty) creator,
       if (summary.trackCount != null) '${summary.trackCount} 首',
     ].join(' · ');

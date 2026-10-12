@@ -143,4 +143,57 @@ void main() {
       reason: '卡片实际高度必须等于它自己声明的高度',
     );
   });
+
+  // ---- V2-6（2026-10-12）：货架左右箭头 --------------------------------------
+  // 规则：**只在"那一侧确实还能滚"时才渲染该箭头** —— 禁用态若仍渲染，
+  // 就会遮住第一张/最后一张卡片的点击（所以"到边界"必须是"不出现"，而不是"灰掉"）。
+
+  double shelfOffset(WidgetTester tester) =>
+      tester.state<ScrollableState>(find.byType(Scrollable).first).position.pixels;
+
+  testWidgets('V2-6：内容溢出时出现「下一个」，起始位置没有「上一个」', (tester) async {
+    // 12 张 × 140 + 11 × 12 间距 = 1812 > 900 视口 ⇒ 可滚。
+    await pumpShelf(tester, itemCount: 12);
+
+    expect(find.byTooltip('下一个'), findsOneWidget);
+    expect(find.byTooltip('上一个'), findsNothing);
+    expect(shelfOffset(tester), 0);
+  });
+
+  testWidgets('V2-6：点「下一个」往右翻，之后「上一个」出现（可翻回去）', (tester) async {
+    await pumpShelf(tester, itemCount: 12);
+    final before = shelfOffset(tester);
+
+    await tester.tap(find.byTooltip('下一个'));
+    await tester.pumpAndSettle();
+
+    expect(shelfOffset(tester), greaterThan(before));
+    expect(find.byTooltip('上一个'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('上一个'));
+    await tester.pumpAndSettle();
+    expect(shelfOffset(tester), lessThan(before + 1));
+  });
+
+  testWidgets('V2-6：滚到末尾后「下一个」消失（不遮挡最后一张卡）', (tester) async {
+    await pumpShelf(tester, itemCount: 12);
+
+    for (var i = 0; i < 8; i++) {
+      final next = find.byTooltip('下一个');
+      if (next.evaluate().isEmpty) break;
+      await tester.tap(next);
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.byTooltip('下一个'), findsNothing, reason: '到底就不该再有可点的箭头');
+    expect(find.byTooltip('上一个'), findsOneWidget);
+  });
+
+  testWidgets('V2-6：内容放得下时不出现任何箭头', (tester) async {
+    // 2 张 × 140 + 12 = 292 < 900 ⇒ 不可滚。
+    await pumpShelf(tester, itemCount: 2);
+
+    expect(find.byTooltip('下一个'), findsNothing);
+    expect(find.byTooltip('上一个'), findsNothing);
+  });
 }

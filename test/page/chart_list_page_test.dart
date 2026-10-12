@@ -144,7 +144,7 @@ void main() {
 
     expect(find.text('飙升榜'), findsOneWidget);
     expect(find.text('热歌榜'), findsOneWidget);
-    expect(find.text('刚刚更新 · 98 首'), findsOneWidget);
+    expect(find.text('榜单 · 刚刚更新 · 98 首'), findsOneWidget);
     // 只列出"点得开"的平台。
     expect(find.text('QQ音乐'), findsNothing);
   });

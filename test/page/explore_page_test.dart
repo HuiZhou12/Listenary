@@ -137,7 +137,8 @@ void main() {
     expect(find.text('网易云歌单'), findsOneWidget);
     final card = tester.widget<RemoteMediaCard>(find.byType(RemoteMediaCard));
     expect(card.sourceLabel, '网易云');
-    expect(card.details, '甲 · 20 首');
+    // 元信息行统一为「类型 · …」：类型在前（参考产品的做法）。
+    expect(card.details, '歌单 · 甲 · 20 首');
     // QQ 与酷狗没有该能力 ⇒ 既不出现分区，也不出现"空"文案。
     expect(find.text('该平台没有返回歌单。'), findsNothing);
     expect(find.text('QQ音乐'), findsNothing);
@@ -280,8 +281,8 @@ void main() {
 
     expect(find.text('榜单'), findsOneWidget);
     expect(find.text('飙升榜'), findsOneWidget);
-    // 更新节奏是榜单区别于普通歌单的信息，必须在卡片上出现。
-    expect(find.text('刚刚更新 · 98 首'), findsOneWidget);
+    // 更新节奏是榜单区别于普通歌单的信息，必须在卡片上出现；类型「榜单」在前。
+    expect(find.text('榜单 · 刚刚更新 · 98 首'), findsOneWidget);
     expect(find.text('查看全部'), findsOneWidget);
   });
 
