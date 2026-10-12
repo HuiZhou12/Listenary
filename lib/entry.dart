@@ -27,6 +27,7 @@ import 'package:pure_music/page/playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
 import 'package:pure_music/page/online_playlists_page.dart';
 import 'package:pure_music/page/online_playlist_detail_page.dart';
+import 'package:pure_music/page/remote_playlist_page.dart';
 import 'package:pure_music/page/personal_playlist_detail_page.dart';
 import 'package:pure_music/page/favorites_detail_page.dart';
 import 'package:pure_music/page/settings_page/check_update.dart';
@@ -998,6 +999,42 @@ class _EntryState extends State<Entry>
                             localId: state.extra as int,
                           ),
                         ),
+                      ),
+                      // **远程预览**（2026-10-12）：只读、不写库 ✓ ——
+                      // 榜单/歌单封面点进来是这一页；订阅与否由用户在页内自己决定 ✓。
+                      GoRoute(
+                        path: 'preview',
+                        pageBuilder: (context, state) {
+                          final extra =
+                              state.extra
+                                  as ({
+                                    MusicPlatform platform,
+                                    String playlistId,
+                                    String name,
+                                    Uri? coverUri,
+                                    String? creator,
+                                    int? trackCount,
+                                    bool ranked,
+                                  })?;
+                          if (extra == null) {
+                            return SlideTransitionPage(
+                              key: state.pageKey,
+                              child: const OnlinePlaylistsPage(),
+                            );
+                          }
+                          return SlideTransitionPage(
+                            key: state.pageKey,
+                            child: RemotePlaylistPage(
+                              platform: extra.platform,
+                              playlistId: extra.playlistId,
+                              name: extra.name,
+                              coverUri: extra.coverUri,
+                              creator: extra.creator,
+                              trackCount: extra.trackCount,
+                              ranked: extra.ranked,
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),

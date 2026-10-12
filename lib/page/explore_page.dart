@@ -289,14 +289,34 @@ class _ExplorePageState extends State<ExplorePage>
       AppPreference.instance.save().ignore();
     }
     showTextOnSnackBar(
-      '已订阅「${saved.playlist.name}」',
+      '已订阅「${saved.playlist.name}」，可在媒体库查看',
       variant: ToastVariant.success,
     );
-    await context.push(
-      app_paths.ONLINE_PLAYLIST_DETAIL_PAGE,
-      extra: saved.localId,
-    );
+    // **订阅后不再自动跳进详情页**（2026-10-12 用户指出这条反直觉 ✓）：
+    // 想细看就点封面走**预览** ✓；订阅只是一个"放进媒体库"的动作 ✓。
   }
+
+  /// 打开**只读预览**（不订阅 ✓）—— 榜单 / 平台歌单的封面点击都走这里 ✓。
+  Future<void> _openRemotePlaylist({
+    required MusicPlatform platform,
+    required String playlistId,
+    required String name,
+    Uri? coverUri,
+    String? creator,
+    int? trackCount,
+    bool ranked = false,
+  }) => context.push(
+    app_paths.REMOTE_PLAYLIST_PAGE,
+    extra: (
+      platform: platform,
+      playlistId: playlistId,
+      name: name,
+      coverUri: coverUri,
+      creator: creator,
+      trackCount: trackCount,
+      ranked: ranked,
+    ),
+  );
 
   /// 货架里卡片的宽度：**统一取自 `RemoteMediaCard.widthFor`**（与 ResponsiveBuilder 同阈值），
   /// 不在每个页面各写一个断点。
@@ -407,15 +427,27 @@ class _ExplorePageState extends State<ExplorePage>
                 details: _chartDetailsOf(summary),
                 sourceLabel: platformLabelForIdentityOnly(summary.identity),
                 placeholderIcon: Symbols.leaderboard,
-                onTap: _subscribing.contains(platform)
-                    ? null
-                    : () => _subscribe(summary, failureLabel: '打开该榜单失败', isRanked: true),
+                // **点封面 = 打开预览**（2026-10-12 用户指出 ✓）：不再"点一下就订阅" ✗；
+                // 预览是只读的，订阅要用户自己按下面的按钮 ✓。
+                onTap: () => _openRemotePlaylist(
+                  platform: summary.platform,
+                  playlistId: summary.id,
+                  name: summary.name,
+                  coverUri: summary.coverUri,
+                  creator: summary.creator,
+                  trackCount: summary.trackCount,
+                  ranked: true,
+                ),
                 semanticLabel:
-                    '${summary.name}，来自${platformLabelForIdentityOnly(summary.identity)}，点击订阅并打开',
+                    '${summary.name}，来自${platformLabelForIdentityOnly(summary.identity)}，点击预览（不会订阅）',
                 footer: TextButton(
                   onPressed: _subscribing.contains(platform)
                       ? null
-                      : () => _subscribe(summary, failureLabel: '打开该榜单失败', isRanked: true),
+                      : () => _subscribe(
+                          summary,
+                          failureLabel: '订阅该榜单失败',
+                          isRanked: true,
+                        ),
                   child: const Text('订阅'),
                 ),
               );
@@ -878,14 +910,20 @@ class _ExplorePageState extends State<ExplorePage>
                 details: _detailsOf(summary),
                 sourceLabel: platformLabelForIdentityOnly(summary.identity),
                 placeholderIcon: Symbols.queue_music,
-                // **点卡片本体不再自动订阅**（2026-10-12 用户报告 ✓）：
-                // 此前点一下就会把这张歌单**加进媒体库** ✗（用户没点订阅却订阅了 ✓）。
-                // 现在只有下面的「订阅」按钮会订阅 ✓；卡片本体不做事 ✓
-                //（我们还没有"不进库只看"的预览页 ✗ ⇒ 宁可不做，也不替用户做决定 ✓）。
-                onTap: null,
-                semanticLabel: '${summary.name}，来自'
+                // **点封面 = 打开预览**（2026-10-12 用户指出 ✓）：此后"看歌单"不再要求先订阅 ✓，
+                // 也不再点不动 ✗；订阅仍然只由下面的按钮触发 ✓。
+                onTap: () => _openRemotePlaylist(
+                  platform: summary.platform,
+                  playlistId: summary.id,
+                  name: summary.name,
+                  coverUri: summary.coverUri,
+                  creator: summary.creator,
+                  trackCount: summary.trackCount,
+                ),
+                semanticLabel:
+                    '${summary.name}，来自'
                     '${platformLabelForIdentityOnly(summary.identity)}，'
-                    '用下方的「订阅」按钮订阅',
+                    '点击预览（不会订阅）',
                 footer: TextButton(
                   onPressed: _subscribing.contains(platform)
                       ? null

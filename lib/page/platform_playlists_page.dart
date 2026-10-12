@@ -148,13 +148,10 @@ class _PlatformPlaylistsPageState extends State<PlatformPlaylistsPage>
       return;
     }
     showTextOnSnackBar(
-      '已订阅「${saved.playlist.name}」',
+      '已订阅「${saved.playlist.name}」，可在媒体库查看',
       variant: ToastVariant.success,
     );
-    await context.push(
-      app_paths.ONLINE_PLAYLIST_DETAIL_PAGE,
-      extra: saved.localId,
-    );
+    // **订阅后不再自动跳进详情页**（用户指出这条反直觉 ✓）：留在列表/预览页 ✓。
   }
 
   @override
@@ -219,12 +216,24 @@ class _PlatformPlaylistsPageState extends State<PlatformPlaylistsPage>
                           summary.identity,
                         ),
                         placeholderIcon: Symbols.queue_music,
-                        // 与探索页同一条规则 ✓：**点卡片本体不订阅** ✓，只有下面的按钮订阅 ✓。
-                        onTap: null,
+                        // **点封面 = 打开预览**（与探索页同一条规则 ✓）：只读、不订阅 ✓，
+                        // 也不会点了没反应 ✗；订阅只由下面的按钮触发 ✓。
+                        onTap: () => context.push(
+                          app_paths.REMOTE_PLAYLIST_PAGE,
+                          extra: (
+                            platform: summary.platform,
+                            playlistId: summary.id,
+                            name: summary.name,
+                            coverUri: summary.coverUri,
+                            creator: summary.creator,
+                            trackCount: summary.trackCount,
+                            ranked: false,
+                          ),
+                        ),
                         semanticLabel:
                             '${summary.name}，来自'
                             '${platformLabelForIdentityOnly(summary.identity)}，'
-                            '用下方的「订阅」按钮订阅',
+                            '点击预览（不会订阅）',
                         footer: TextButton(
                           onPressed: _subscribing.contains(widget.platform)
                               ? null

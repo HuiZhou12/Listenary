@@ -896,7 +896,9 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('★ 订阅成功则**会**跳进详情页（上一条"不跳转"的正向对照）', (tester) async {
+  testWidgets('★ 订阅成功：**留在原地**并提示已订阅（不再自动跳详情页 ✓ 用户指出反直觉 ✗）', (
+    tester,
+  ) async {
     final service = _ExploreService(
       capabilities: OnlineMusicCapabilities(
         searchablePlatforms: const [],
@@ -964,12 +966,19 @@ void main() {
     expect(find.text('能打开的歌单'), findsOneWidget);
 
     await tester.tap(find.text('订阅'));
-    await tester.pumpAndSettle();
+    // 只推进到"提示已经出现"为止 ✓ —— 用 pumpAndSettle 会把 Toast 的自动消失也等完 ✗，
+    // 那时提示已经没了，断言就成了假失败。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
 
-    // 正向：成功订阅**确实**会进详情页 —— 这才让上一条的"不跳转"有意义。
+    // 2026-10-12 起：订阅只是"放进媒体库" ✓ —— **不再自动跳详情页** ✗（用户指出反直觉 ✓）。
+    // 断言三件事：① 留在探索页 ✓；② **订阅真的入账** ✓（用户可见的结果 ✓）；
+    // ③ 没有跳走 ✓。提示本身是装饰性的，时序不稳就不硬断 ✓。
+    expect(find.text('能打开的歌单'), findsOneWidget);
+    expect(repository.listSubscriptions(), hasLength(1));
     expect(
       find.text('stub:${app_paths.ONLINE_PLAYLIST_DETAIL_PAGE}'),
-      findsOneWidget,
+      findsNothing,
     );
 
     await tester.pump(const Duration(seconds: 3));

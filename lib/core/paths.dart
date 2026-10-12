@@ -28,6 +28,8 @@ const String PLAYLISTS_PAGE = '/playlists';
 const String PLAYLIST_DETAIL_PAGE = '/playlists/detail';
 const String ONLINE_PLAYLISTS_PAGE = '/playlists/online';
 const String ONLINE_PLAYLIST_DETAIL_PAGE = '/playlists/online/detail';
+// **远程歌单预览**（2026-10-12）：只读、不订阅 —— 点榜单/歌单封面进这里 ✓。
+const String REMOTE_PLAYLIST_PAGE = '/playlists/online/preview';
 const String PERSONAL_PLAYLIST_DETAIL_PAGE = '/playlists/personal/detail';
 
 const String NOW_PLAYING_PAGE = '/nowplaying';
