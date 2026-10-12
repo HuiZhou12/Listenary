@@ -12,11 +12,11 @@ import 'package:pure_music/services/music_platform/provider/online_music_respons
 
 import 'live_response_fixtures.g.dart';
 
-/// 网易云六项发现类能力的**可直接粘贴配置**（人工验收清单 §1.1 的配套件）。
+/// 网易云七项发现类能力的**可直接粘贴配置**（人工验收清单 §1.1 的配套件）。
 ///
-/// 为什么要有这个文件：人工验收里最费事、最容易配错的一步，是照着文档手动配六项能力
+/// 为什么要有这个文件：人工验收里最费事、最容易配错的一步，是照着文档手动配七项能力
 /// （请求路径 + 列表路径 + 每个字段映射）。配错的特征恰恰是"**不报错、但内容少了/错了**"。
-/// 这里把六项配置**写成代码**，因此：
+/// 这里把七项配置**写成代码**，因此：
 ///   1. **字段与转换必须通过应用自己的校验**（`domainFieldsFor` + `expectedFieldKinds`）——
 ///      配错会直接编译期/测试期失败，而不是等你到界面上踩；
 ///   2. 它们能**往返 JSON**（`toJson` → `fromJson`），即"粘进设置页的 JSON 一定能被解析"；
@@ -26,7 +26,7 @@ import 'live_response_fixtures.g.dart';
 /// 样本来源均为 2026-10-08 的实测响应（`http://127.0.0.1:3000`）。
 JsonPath _p(String source) => JsonPath.tryParse(source)!;
 
-/// 网易云六项能力的**统一成功谓词**：业务码必须是 `200`。
+/// 网易云七项能力的**统一成功谓词**：业务码必须是 `200`。
 ///
 /// 为什么必须写它（能力映射 §6.9 的硬性要求）：真实服务在**上游风控**时会返回
 /// **`code 2001` + 列表全空** —— 若不校验业务码，界面就会把"被挡下"渲染成"**这个平台没有内容**"，
@@ -75,6 +75,11 @@ OnlineMusicDeclarativeCapabilityBinding _search() =>
             candidates: [_p('name')],
             transform: OnlineMusicFieldTransform.asString,
             required: true,
+          ),
+          // 艺人 id（与 artists 同序）：曲目行据此打开艺人页（2026-10-12）✓。
+          OnlineMusicDomainField.artistIds: OnlineMusicFieldSpec(
+            candidates: [_p('artists[*].id')],
+            transform: OnlineMusicFieldTransform.asStringList,
           ),
           OnlineMusicDomainField.artists: OnlineMusicFieldSpec(
             candidates: [_p('artists[*].name')],
@@ -138,6 +143,10 @@ OnlineMusicDeclarativeCapabilityBinding _playlist() =>
             candidates: [_p('name')],
             transform: OnlineMusicFieldTransform.asString,
             required: true,
+          ),
+          OnlineMusicDomainField.artistIds: OnlineMusicFieldSpec(
+            candidates: [_p('ar[*].id')],
+            transform: OnlineMusicFieldTransform.asStringList,
           ),
           OnlineMusicDomainField.artists: OnlineMusicFieldSpec(
             candidates: [_p('ar[*].name')],
@@ -309,6 +318,10 @@ OnlineMusicDeclarativeCapabilityBinding _newSongs() =>
             transform: OnlineMusicFieldTransform.asString,
             required: true,
           ),
+          OnlineMusicDomainField.artistIds: OnlineMusicFieldSpec(
+            candidates: [_p('song.artists[*].id')],
+            transform: OnlineMusicFieldTransform.asStringList,
+          ),
           OnlineMusicDomainField.artists: OnlineMusicFieldSpec(
             candidates: [_p('song.artists[*].name')],
             transform: OnlineMusicFieldTransform.asStringList,
@@ -333,6 +346,72 @@ OnlineMusicDeclarativeCapabilityBinding _newSongs() =>
       ),
     );
 
+/// **艺人详情**（`artist`，2026-10-12 实测形状）：
+/// `/artists?id=` 返回 `{code, artist, hotSongs, more}` —— 标量在 `artist` 下、
+/// 热门曲目在 `hotSongs` 下（用新形状 `ar`/`al`/`dt`）。
+OnlineMusicDeclarativeCapabilityBinding _artist() =>
+    OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(
+        path: '/artists',
+        query: [
+          OnlineMusicParamBinding(
+            name: 'id',
+            source: OnlineMusicInputSource.artistId,
+          ),
+        ],
+      ),
+      response: OnlineMusicResponseSpec(
+        success: _neteaseSuccess(),
+        fieldsRootPath: _p('artist'),
+        listPath: _p('hotSongs'),
+        fields: {
+          OnlineMusicDomainField.artistName: OnlineMusicFieldSpec(
+            candidates: [_p('name')],
+            transform: OnlineMusicFieldTransform.asString,
+            required: true,
+          ),
+          OnlineMusicDomainField.artistAvatarUri: OnlineMusicFieldSpec(
+            candidates: [_p('picUrl')],
+            transform: OnlineMusicFieldTransform.asHttpsUri,
+          ),
+          OnlineMusicDomainField.artistDescription: OnlineMusicFieldSpec(
+            candidates: [_p('briefDesc')],
+            transform: OnlineMusicFieldTransform.asString,
+          ),
+          OnlineMusicDomainField.trackId: OnlineMusicFieldSpec(
+            candidates: [_p('id')],
+            transform: OnlineMusicFieldTransform.asInt,
+            required: true,
+          ),
+          OnlineMusicDomainField.title: OnlineMusicFieldSpec(
+            candidates: [_p('name')],
+            transform: OnlineMusicFieldTransform.asString,
+            required: true,
+          ),
+          OnlineMusicDomainField.artistIds: OnlineMusicFieldSpec(
+            candidates: [_p('ar[*].id')],
+            transform: OnlineMusicFieldTransform.asStringList,
+          ),
+          OnlineMusicDomainField.artists: OnlineMusicFieldSpec(
+            candidates: [_p('ar[*].name')],
+            transform: OnlineMusicFieldTransform.asStringList,
+          ),
+          OnlineMusicDomainField.album: OnlineMusicFieldSpec(
+            candidates: [_p('al.name')],
+            transform: OnlineMusicFieldTransform.asString,
+          ),
+          OnlineMusicDomainField.coverUri: OnlineMusicFieldSpec(
+            candidates: [_p('al.picUrl')],
+            transform: OnlineMusicFieldTransform.asHttpsUri,
+          ),
+          OnlineMusicDomainField.duration: OnlineMusicFieldSpec(
+            candidates: [_p('dt')],
+            transform: OnlineMusicFieldTransform.asDurationMs,
+          ),
+        },
+      ),
+    );
+
 Map<OnlineMusicCapability, OnlineMusicDeclarativeCapabilityBinding>
 _recipe() => {
   OnlineMusicCapability.search: _search(),
@@ -341,6 +420,8 @@ _recipe() => {
   OnlineMusicCapability.playlistCategories: _playlistCategories(),
   OnlineMusicCapability.chartList: _chartList(),
   OnlineMusicCapability.newSongs: _newSongs(),
+  // 艺人详情（2026-10-12）：第七份可直接粘贴的配置 ✓。
+  OnlineMusicCapability.artist: _artist(),
 };
 
 void main() {
@@ -408,7 +489,7 @@ void main() {
     ],
   };
 
-  group('网易云六项能力的可直接粘贴配置', () {
+  group('网易云七项能力的可直接粘贴配置', () {
     test('★ 每项只使用该能力允许的领域字段，且转换合法（配错会直接失败）', () {
       _recipe().forEach((capability, binding) {
         final allowed = domainFieldsFor(capability);
@@ -670,7 +751,7 @@ void main() {
     // 上面几条用的是**手写样本**；手写样本可能"恰好成立"，而真实数据不成立。
     // 这里改用脚本抓下来的真实响应（`live_response_fixtures.g.dart`，只把列表裁到前 2 条），
     // 断言**映射结果与原始 JSON 里的值一致** —— 也就是"这份配置在真实数据上取对了"。
-    test('★ 真实响应：六项配置的成功谓词都接受（业务码 200）', () {
+    test('★ 真实响应：七项配置的成功谓词都接受（业务码 200）', () {
       final fixtures = <String, Map<String, Object?>>{
         'search': rawSearch,
         'playlist': rawPlaylist,
@@ -678,6 +759,8 @@ void main() {
         'playlistCategories': rawCategories,
         'newSongs': rawNewSongs,
         'playlistCollection': rawCollection,
+        // 艺人详情（2026-10-12）：真实 `/artists?id=` 的响应 ✓。
+        'artist': rawArtist,
       };
       _recipe().forEach((capability, binding) {
         final body = fixtures[capability.name];
@@ -823,7 +906,38 @@ void main() {
       expect(mapped.first.trackCount, rawFirst['trackCount']);
     });
 
-    test('把六项配置写成可直接复制的 JSON 文件（人工验收清单配套，并当场校验可解析）', () {
+    test('★ 真实响应：艺人配置取到的名字/简介/热门曲目与原始 JSON 一致', () {
+      final raw = rawArtist;
+      final rawArtistMap = raw['artist']! as Map<String, Object?>;
+      final rawSongs = raw['hotSongs']! as List<Object?>;
+
+      final mapped = mapDeclarativeArtistResponse(
+        spec: _artist().response,
+        body: raw,
+        platform: MusicPlatform.netease,
+        // 艺人 id 在**请求**里（响应里没有）⇒ 由调用方回填 ✓。
+        requestedArtistId: '7763',
+      );
+
+      expect(mapped.id, '7763', reason: '身份来自请求，不靠响应编造');
+      expect(mapped.name, rawArtistMap['name'], reason: '艺人名取自 artist.name');
+      expect(
+        mapped.description,
+        rawArtistMap['briefDesc'],
+        reason: '简介取自 artist.briefDesc',
+      );
+      expect(mapped.hotSongs, hasLength(rawSongs.length));
+
+      final first = rawSongs.first! as Map<String, Object?>;
+      final firstAr = (first['ar']! as List<Object?>).first! as Map<String, Object?>;
+      final firstAl = first['al']! as Map<String, Object?>;
+      expect(mapped.hotSongs.first.title, first['name']);
+      expect(mapped.hotSongs.first.artists.first, firstAr['name']);
+      expect(mapped.hotSongs.first.artistIds.first, '${firstAr['id']}');
+      expect(mapped.hotSongs.first.album, firstAl['name']);
+    });
+
+    test('把七项配置写成可直接复制的 JSON 文件（人工验收清单配套，并当场校验可解析）', () {
       const encoder = JsonEncoder.withIndent('  ');
       final directory = Directory('docs/dev/netease-bindings');
       directory.createSync(recursive: true);
@@ -842,7 +956,7 @@ void main() {
         expect(parsed, isA<OnlineMusicDeclarativeCapabilityBinding>());
       });
 
-      expect(written, hasLength(6));
+      expect(written, hasLength(7));
       // ignore: avoid_print
       print('已写出 ${written.length} 个配置：${written.join(', ')}');
     });

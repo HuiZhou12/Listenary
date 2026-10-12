@@ -44,6 +44,9 @@ $top    = Get-Json "$BaseUrl/toplist"
 $cat    = Get-Json "$BaseUrl/playlist/catlist"
 $news   = Get-Json "$BaseUrl/personalized/newsong?limit=$Trim"
 $col    = Get-Json "$BaseUrl/top/playlist?limit=$Trim"
+# artist（2026-10-12 新增）：用搜索结果里的真实艺人 id 抓 /artists（形状 = artist + hotSongs）。
+$artistId = $search.result.songs[0].artists[0].id
+$artist   = Get-Json "$BaseUrl/artists?id=$artistId"
 
 $blocks = [ordered]@{
   rawSearch = ([ordered]@{
@@ -87,6 +90,13 @@ $blocks = [ordered]@{
       playlists = Take $col.playlists $Trim
       total     = $col.total
       more      = $col.more
+    } | ConvertTo-Json -Depth 30 -Compress)
+
+  # artist（2026-10-12）：标量在 artist 下、热门曲目在 hotSongs 下（各裁到 $Trim 条）。
+  rawArtist = ([ordered]@{
+      code     = $artist.code
+      artist   = $artist.artist
+      hotSongs = Take $artist.hotSongs $Trim
     } | ConvertTo-Json -Depth 30 -Compress)
 }
 

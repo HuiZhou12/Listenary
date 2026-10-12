@@ -655,7 +655,13 @@ Object? _applyTransform(OnlineMusicFieldSpec spec, Object? raw) {
       if (raw is! List) return null;
       final result = [
         for (final entry in raw)
-          if (entry is String && entry.trim().isNotEmpty) entry,
+          if (entry is String && entry.trim().isNotEmpty)
+            entry
+          // **数字按字符串取**：平台把 id 给成数字很常见（网易云实测 `ar[*].id` 是 int），
+          // 而身份要的就是字符串 ⇒ 丢掉它会让"艺人 id"这类字段恒为空（2026-10-12 实测踩到）。
+          // 其它类型（对象 / 布尔 / 空串）仍然**丢弃**，不猜 ✓。
+          else if (entry is int)
+            '$entry',
       ];
       return result.isEmpty ? null : result;
   }
