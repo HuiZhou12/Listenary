@@ -87,6 +87,10 @@ class _ExplorePageState extends State<ExplorePage>
   /// 每个平台当前选中的分类（null = 全部）。
   final Map<MusicPlatform, String?> _selectedCategory = {};
 
+  /// 分类 tag 墙的**横向滚动控制器**（按平台各一个 ✓）——
+  /// 墙是"固定 4 行 + 往右滑" ✓，所以要持有控制器才能显示滚动条、并在页面销毁时释放 ✓。
+  final Map<MusicPlatform, ScrollController> _categoryScrolls = {};
+
   /// 榜单：只取**既能列榜、又能取歌单详情**的平台（否则点开是死链）。
   List<MusicPlatform> _chartPlatforms = const [];
   final RemoteLoadState<MusicPlatform, RemotePlaylistSummary> _chartState =
@@ -734,61 +738,93 @@ class _ExplorePageState extends State<ExplorePage>
               message: '该平台没有返回歌单分类。',
             )
           else
-            // **分类 tag 墙**（2026-10-12 按用户图片重做 ✓）：**多栏格、全部展示** ✓ ——
-            // 参考是固定 6 栏 ✓；我们按可用宽度算栏数（宽窗 6 栏 ✓、窄窗减栏 ✓ 不会溢出 ✓）。
-            // 颜色从主题色派生 ✓（同饱和/亮度、只转色相 ✓）⇒ 是本应用的配色，不是贴图 ✓。
-            // 点任何一个 tag 都**进子页面** ✓（不再原地筛选 ✗ —— 那条路会改状态、用户报告一点就崩 ✗）。
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final columns = (constraints.maxWidth / 200).floor().clamp(
-                  2,
-                  6,
-                );
-                final rows = <List<int>>[];
-                for (var i = 0; i < categories.length; i += columns) {
-                  rows.add([
-                    for (
-                      var j = i;
-                      j < i + columns && j < categories.length;
-                      j++
-                    )
-                      j,
-                  ]);
-                }
-                return Column(
-                  children: [
-                    for (final row in rows)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: Spacing.sm),
-                        child: Row(
-                          children: [
-                            for (var k = 0; k < columns; k++) ...[
-                              if (k > 0) const SizedBox(width: Spacing.sm),
-                              Expanded(
-                                child: k < row.length
-                                    ? _CategoryTile(
-                                        label: categories[row[k]].name,
-                                        count: categories[row[k]].count,
-                                        accent: _categoryAccent(scheme, row[k]),
-                                        onTap: () => _openPlatformPlaylists(
-                                          platform,
-                                          categoryId: categories[row[k]].id,
-                                          title:
-                                              '${musicPlatformLabel(platform)}'
-                                              ' · ${categories[row[k]].name}',
-                                        ),
-                                      )
-                                    : const SizedBox.shrink(),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
+            // **分类 tag 墙**（2026-10-12 第三次按用户要求改 ✓）：
+            // 用户指出两件事 —— ① 要**能左右滑动** ✗；② 占的高度太多 ✗。
+            // ⇒ 照参考图的做法：**固定 4 行**，列往右延伸，整块**横向滚动**（带滚动条 ✓）。
+            // 这样高度恒定（4 行）✓、能滑 ✓、也能像图里那样一屏看到很多个 ✓。
+            // 颜色仍从主题色派生 ✓（同饱和/亮度、只转色相 ✓）⇒ 是本应用的配色，不是贴图 ✓。
+            // 点任何一个 tag 都**进子页面** ✓（原地筛选那条路会改状态、用户报告一点就崩 ✗）。
+            _buildCategoryGrid(platform, categories, scheme),
         ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _categoryScrolls.values) {
+      controller.dispose();
+    }
+    _categoryScrolls.clear();
+    // `super.dispose()` 里会跑 `RemoteListLoading` 的取消逻辑（在途请求一并取消 ✓）。
+    super.dispose();
+  }
+
+  /// 分类 tag 墙：**固定 4 行、横向滚动**（2026-10-12 用户要求 ✓）。
+  ///
+  /// 高度只跟行数有关（4 × 44 + 间距 ✓）⇒ 平台给 70 个分类也只是往右延伸 ✓，
+  /// 不再把整页撑长 ✗；`Scrollbar` 给出"这里还能往右"的可见提示 ✓。
+  Widget _buildCategoryGrid(
+    MusicPlatform platform,
+    List<RemotePlaylistCategory> categories,
+    ColorScheme scheme,
+  ) {
+    const rows = 4;
+    const cellWidth = 220.0;
+    final rowCount = categories.length < rows ? categories.length : rows;
+    final columnCount = (categories.length / rows).ceil();
+    final controller = _categoryScrolls.putIfAbsent(
+      platform,
+      ScrollController.new,
+    );
+    return SizedBox(
+      // +12 给横向滚动条留位置 ✓（否则它会盖住最后一行的下沿 ✓）。
+      height: rowCount * 44.0 + (rowCount - 1) * Spacing.sm + 12,
+      child: Scrollbar(
+        controller: controller,
+        thumbVisibility: true,
+        child: SingleChildScrollView(
+          controller: controller,
+          scrollDirection: Axis.horizontal,
+          child: Column(
+            children: [
+              for (var row = 0; row < rowCount; row++)
+                Padding(
+                  padding: EdgeInsets.only(bottom: row == rowCount - 1 ? 0 : Spacing.sm),
+                  child: Row(
+                    children: [
+                      for (var column = 0; column < columnCount; column++) ...[
+                        if (column > 0) const SizedBox(width: Spacing.sm),
+                        SizedBox(
+                          width: cellWidth,
+                          // **列优先**：先竖着读一列，再读右边一列 ✓（与参考图的读法一致 ✓）。
+                          child: column * rows + row < categories.length
+                              ? _CategoryTile(
+                                  label:
+                                      categories[column * rows + row].name,
+                                  count: categories[column * rows + row].count,
+                                  accent: _categoryAccent(
+                                    scheme,
+                                    column * rows + row,
+                                  ),
+                                  onTap: () => _openPlatformPlaylists(
+                                    platform,
+                                    categoryId:
+                                        categories[column * rows + row].id,
+                                    title:
+                                        '${musicPlatformLabel(platform)} · '
+                                        '${categories[column * rows + row].name}',
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -868,9 +904,8 @@ class _ExplorePageState extends State<ExplorePage>
                   fontWeight: AppType.weightSemibold,
                 ),
               ),
-              const SizedBox(width: Spacing.sm),
-              // 「查看全部」→ **平台歌单列表页** ✓（用户要求：这里不要在横向货架里追加，
-              // 改成进子页、由子页**滑到底自动加载** ✓ —— 那才感觉得到"内容更多了" ✓）。
+              // 「查看全部」在**右侧**（2026-10-12 用户指定 ✓）：与平台名分列两端 ✓。
+              const Spacer(),
               TextButton(
                 onPressed: () => _openPlatformPlaylists(
                   platform,

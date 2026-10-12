@@ -137,7 +137,9 @@ void main() {
     // （比原来找整串 "艺人 · 专辑" 更强：分段错了也抓得到 ✓）。
     expect(find.text('Test Artist'), findsOneWidget);
     expect(find.text('Test Album'), findsOneWidget);
-    expect(find.text(' · '), findsOneWidget);
+    // 2026-10-12：平台标识**并进了同一条详情文本**（读起来是 `歌手 · 专辑 · 平台` ✓）⇒
+    // 分隔符从 1 个变成 2 个 ✓（艺人↔专辑、专辑↔平台）。平台不再是行尾的独立徽章 ✓。
+    expect(find.text(' · '), findsNWidgets(2));
     expect(find.text('2:03'), findsOneWidget);
   });
 

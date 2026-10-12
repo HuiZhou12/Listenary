@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/motion.dart';
-import 'package:pure_music/component/online_source_label.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/play_service/active_playback_session.dart';
@@ -199,9 +198,19 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                             children: [
                               Flexible(
                                 // 详情行分段：可点段带下划线 + 悬停提示；不可点段是普通文字 ✓。
+                                // **平台标识并进同一串**（2026-10-12 用户指定 ✓）：读起来就是
+                                // `歌手 · 专辑 · 平台` ✓ —— 它以前是行尾的独立徽章 ✗，
+                                // 那样会飘到最右侧、与详情断开 ✓（用户明确否掉了那种排法 ✗）。
                                 child: widget.detailParts.isEmpty
                                     ? Text(
-                                        widget.details,
+                                        widget.sourceLabel == null
+                                            ? widget.details
+                                            : [
+                                                widget.details,
+                                                widget.sourceLabel!,
+                                              ].where((s) => s.isNotEmpty).join(
+                                                ' · ',
+                                              ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(color: metadataColor),
@@ -210,7 +219,11 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                                         children: [
                                           for (
                                             var i = 0;
-                                            i < widget.detailParts.length;
+                                            i <
+                                                widget.detailParts.length +
+                                                    (widget.sourceLabel == null
+                                                        ? 0
+                                                        : 1);
                                             i++
                                           ) ...[
                                             if (i > 0)
@@ -221,25 +234,30 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                                                 ),
                                               ),
                                             Flexible(
-                                              child: _DetailSegment(
-                                                part: widget.detailParts[i],
-                                                color: metadataColor,
-                                              ),
+                                              child: i <
+                                                      widget
+                                                          .detailParts
+                                                          .length
+                                                  ? _DetailSegment(
+                                                      part: widget
+                                                          .detailParts[i],
+                                                      color: metadataColor,
+                                                    )
+                                                  // 平台段：纯文字、不可点 ✓（点它没有去处 ✓）。
+                                                  : Text(
+                                                      widget.sourceLabel!,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        color: metadataColor,
+                                                      ),
+                                                    ),
                                             ),
                                           ],
                                         ],
                                       ),
                               ),
-                              // **平台标识放在「专辑」之后**（2026-10-12 用户指定 ✓）：
-                              // 顺序是 艺人 · 专辑 · 平台 ✓ —— 不再放到最前面 ✗，
-                              // 也不放到时长那一侧 ✗。
-                              if (widget.sourceLabel case final label?) ...[
-                                const SizedBox(width: Spacing.sm),
-                                OnlineSourceLabel(
-                                  label: label,
-                                  color: metadataColor,
-                                ),
-                              ],
                             ],
                           ),
                         ],
