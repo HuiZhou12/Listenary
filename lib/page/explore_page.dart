@@ -492,6 +492,9 @@ class _ExplorePageState extends State<ExplorePage>
     return ContentSection(
       title: '新专辑',
       subtitle: '各平台最近发布的专辑；点一张打开专辑页',
+      // 「查看全部」→「新发行」页 ✓（与「新歌」一致 ✓）。
+      actionLabel: '查看全部',
+      onAction: () => context.go(app_paths.NEW_RELEASES_PAGE),
       child: Column(
         children: [
           for (final platform in _newAlbumPlatforms)
@@ -581,6 +584,9 @@ class _ExplorePageState extends State<ExplorePage>
     return ContentSection(
       title: '新歌',
       subtitle: '各平台最近发布的曲目；点一行即从该平台的新歌开始播放',
+      // 「查看全部」→「新发行」页 ✓（等价于参考第一个区块的「更多」✓）。
+      actionLabel: '查看全部',
+      onAction: () => context.go(app_paths.NEW_RELEASES_PAGE),
       child: Column(
         children: [
           for (final platform in _newSongPlatforms)

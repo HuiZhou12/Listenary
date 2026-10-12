@@ -20,6 +20,7 @@ import 'package:pure_music/page/online_artist_page.dart';
 import 'package:pure_music/page/online_album_page.dart';
 import 'package:pure_music/page/home_page.dart';
 import 'package:pure_music/page/explore_page.dart';
+import 'package:pure_music/page/new_releases_page.dart';
 import 'package:pure_music/page/chart_list_page.dart';
 import 'package:pure_music/page/playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
@@ -780,6 +781,14 @@ class _EntryState extends State<Entry>
                 path: app_paths.EXPLORE_PAGE,
                 builder: (context, state) => const ExplorePage(),
                 routes: [
+                  // 探索页「新歌 / 新专辑」的「查看全部」落地：参考第一个区块「更多」的目标 ✓。
+                  GoRoute(
+                    path: 'new-releases',
+                    pageBuilder: (context, state) => SlideTransitionPage(
+                      key: state.pageKey,
+                      child: const NewReleasesPage(),
+                    ),
+                  ),
                   // 探索页货架上的「查看全部」落地：榜单全量网格。
                   GoRoute(
                     path: 'charts',

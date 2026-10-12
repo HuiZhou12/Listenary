@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
+import 'package:pure_music/component/online_album_row.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_source_label.dart';
 import 'package:pure_music/component/online_track_entry.dart';
@@ -922,7 +923,8 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
       itemBuilder: (context, index) => switch (entries[index]) {
         _GroupHeaderEntry(:final platform) => _buildGroupHeader(platform),
         _TrackEntry(:final group, :final track) => _buildTrackRow(group, track),
-        _AlbumEntry(:final album) => _buildAlbumRow(album),
+        // 专辑行已抽成公共组件 ✓（搜索结果与「新发行」页共用 ✓，R95 ✓）。
+        _AlbumEntry(:final album) => OnlineAlbumRow(album: album),
         _AlbumFailureEntry(:final platform) => _buildAlbumFailureRow(platform),
         _ArtistEntry(:final artist) => _buildArtistRow(artist),
         _ArtistFailureEntry(:final platform) => _buildArtistFailureRow(
@@ -961,88 +963,8 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
         onTap: () => _selectTrack(group, track),
       );
 
-  /// 一行**专辑结果**：与曲目行混排 ✓，元信息以「**专辑 · 年份 · N 首**」自报家门 ✓。
-  ///
-  /// 自带透明 `Material` ✓ —— 可点区域**不假设**祖先里有 Material（R84 的教训 ✓）。
-  Widget _buildAlbumRow(OnlineAlbumSummary album) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: 2),
-      child: Material(
-        type: MaterialType.transparency,
-        borderRadius: AppRadius.smCircular,
-        child: InkWell(
-          borderRadius: AppRadius.smCircular,
-          onTap: () => context.push(
-            app_paths.ONLINE_ALBUM_PAGE,
-            extra: (
-              platform: album.platform,
-              albumId: album.id,
-              name: album.name,
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: Spacing.sm,
-              vertical: 8.0,
-            ),
-            child: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: AppRadius.xsCircular,
-                  child: SizedBox.square(
-                    dimension: 48.0,
-                    child: RemoteMediaCover(
-                      coverUri: album.coverUri,
-                      placeholder: ColoredBox(
-                        color: scheme.surfaceContainerHighest,
-                        child: Icon(
-                          Symbols.album,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                      cacheWidth: 96,
-                      cacheHeight: 96,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: Spacing.md),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        album.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: scheme.onSurface,
-                          fontSize: AppType.subtitle,
-                          fontWeight: AppType.weightMedium,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _albumDetailsOf(album),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: scheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                ),
-                OnlineSourceLabel(
-                  label: platformLabelForIdentityOnly(album.identity),
-                  color: scheme.onSurfaceVariant,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  /// 一行**专辑结果**：已抽成公共组件 [OnlineAlbumRow] ✓
+  ///（搜索结果与「新发行」页共用一份 ✓ —— 各写一份必然走偏 ✓，R95 ✓）。
 
   /// 一行**艺人结果**：与专辑行同一套做法 ✓（混排 + 类型前缀 ✓；自带透明 Material ✓）。
   Widget _buildArtistRow(OnlineArtistSummary artist) {
@@ -1144,12 +1066,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     );
   }
 
-  /// 专辑结果的元信息：**平台声明**的事实 ✓（类型前缀 + 年份 + 曲目数 ✓）。
-  String _albumDetailsOf(OnlineAlbumSummary album) => [
-    '专辑',
-    if (album.releaseTime case final time?) '${time.year} 年',
-    if (album.trackCount case final count?) '$count 首',
-  ].join(' · ');
+  /// 专辑结果的元信息已随组件搬走 ✓（见 [OnlineAlbumRow.detailsOf] ✓）。
 
   /// 专辑搜索失败：**如实标出** ✓（不静默 ✓，也不影响该平台的曲目结果 ✓）。
   Widget _buildAlbumFailureRow(MusicPlatform platform) {

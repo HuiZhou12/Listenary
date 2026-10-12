@@ -5,6 +5,9 @@ const String ONLINE_MUSIC_PAGE = '/online';
 const String ONLINE_ARTIST_PAGE = '/online/artist';
 // 在线专辑页（`album` 能力，2026-10-12）：同为 `/online` 的子路由 ✓。
 const String ONLINE_ALBUM_PAGE = '/online/album';
+// 「新发行」（专辑和单曲）落地页（2026-10-12）：参考里 Explore 第一个区块「更多」的目标 ✓，
+// 作为 `/explore` 的子路由 ⇒ 与探索页同族 ✓。
+const String NEW_RELEASES_PAGE = '/explore/new-releases';
 const String FAVORITES_PAGE = '/favorites';
 
 const String AUDIOS_PAGE = '/audios';
