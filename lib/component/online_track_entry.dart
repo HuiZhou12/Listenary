@@ -92,6 +92,8 @@ class OnlineTrackEntry extends StatelessWidget {
       track: track,
       details: details,
       enabled: playable,
+      // **读屏标签**（2026-10-12）：照参考产品的行标签格式 ✓（见 [_semanticLabelFor]）。
+      semanticLabel: _semanticLabelFor(track, playable: playable),
       // 来源标签（I1）：任何在线曲目列表里都必须能看出这一行属于哪个平台。
       // **统一取曲目自己的 ref**（而不是外层分组/歌单的字段）—— 两者理论上一致，
       // 但以 ref 为准才不会出现"同一首歌在两页显示不同来源"。
@@ -110,4 +112,17 @@ class OnlineTrackEntry extends StatelessWidget {
     if (!animateEntrance) return row;
     return DirectionalListItemEntrance(identity: track.ref, child: row);
   }
+}
+
+/// 读屏标签：照参考产品的格式 `播放"<曲名> - <艺人> - <时长>"` ✓
+///（不可播放时**不说"播放"** —— 读屏用户不该被告知一个点不动的按钮 ✓）。
+String _semanticLabelFor(MusicTrack track, {required bool playable}) {
+  final parts = <String>[
+    track.title,
+    if (track.artistDisplay.isNotEmpty) track.artistDisplay,
+    if (track.duration != Duration.zero)
+      formatOnlineTrackDuration(track.duration),
+  ];
+  final body = '"${parts.join(' - ')}"';
+  return playable ? '播放$body' : body;
 }

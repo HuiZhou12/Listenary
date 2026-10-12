@@ -57,6 +57,7 @@ class OnlineTrackRow extends StatefulWidget {
     this.sourceLabel,
     this.leadingIndex,
     this.detailParts = const [],
+    this.semanticLabel,
   });
 
   final MusicTrack track;
@@ -88,6 +89,11 @@ class OnlineTrackRow extends StatefulWidget {
   /// 为空时退化成 [details] 一行普通文字 ✓。
   final List<({String text, VoidCallback? onTap, String? tooltip})> detailParts;
 
+  /// **读屏标签**（2026-10-12）：参考产品的曲目行是"一个带完整标签的按钮" ✓
+  ///（形如 `播放"<曲名> - <艺人> - <时长>"`）⇒ 调用方按同一套格式给标签 ✓。
+  /// 为空时读屏只能逐段读出标题/详情/时长（不再是"一个按钮" ✓）。
+  final String? semanticLabel;
+
   @override
   State<OnlineTrackRow> createState() => _OnlineTrackRowState();
 }
@@ -117,7 +123,13 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
         : Colors.transparent;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: 2),
-      child: MouseRegion(
+      // **读屏语义**（2026-10-12）：参考产品的曲目行是"一个带完整标签的按钮" ——
+      // 形如 `播放"<曲名> - <艺人> - <时长>"` ✓；我们此前只有 InkWell（没有标签、没有 button 角色 ✗）。
+      // 用 `Semantics`（container 默认 false ⇒ **不吞掉**行内艺人/专辑两个可点段 ✓）。
+      child: Semantics(
+        label: widget.semanticLabel,
+        button: widget.onTap != null,
+        child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
         child: AnimatedContainer(
@@ -290,6 +302,7 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
               ),
             ),
           ),
+        ),
         ),
       ),
     );
