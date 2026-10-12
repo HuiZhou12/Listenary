@@ -1,7 +1,7 @@
 # Capture real NetEase responses as Dart fixtures for
 #   test/services/music_platform/netease_binding_recipes_test.dart
 #
-# Why: the six paste-ready bindings handed over for manual acceptance must be verified against
+# Why: the EIGHT paste-ready bindings handed over for manual acceptance must be verified against
 # BOTH hand-written samples and real responses. The two catch different bugs:
 #   - hand-written samples prove "if you read the wrong field, you will notice";
 #   - real responses prove "the path exists and yields the right value in the real shape".
@@ -26,7 +26,20 @@ param(
 $ErrorActionPreference = 'Stop'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
+# Upstream risk control sometimes answers 502 / "read ECONNRESET" for a burst of requests;
+# retrying a few times with a growing pause is the known workaround (observed 2026-10-12).
+# Nothing is invented: a failure that survives every retry still aborts the capture.
 function Get-Json([string]$uri) {
+  $attempts = 6
+  for ($i = 1; $i -lt $attempts; $i++) {
+    try {
+      return Invoke-RestMethod -Uri $uri -TimeoutSec 25
+    } catch {
+      $wait = [Math]::Min(2 * $i, 8)
+      Write-Host ("    retry {0}/{1} in {2}s: {3}" -f $i, ($attempts - 1), $wait, $_.Exception.Message.Trim())
+      Start-Sleep -Seconds $wait
+    }
+  }
   return Invoke-RestMethod -Uri $uri -TimeoutSec 25
 }
 

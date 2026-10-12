@@ -866,12 +866,12 @@ void main() {
         'playlistCollection': rawCollection,
         // 艺人详情（2026-10-12）：真实 `/artists?id=` 的响应 ✓。
         'artist': rawArtist,
+        // 专辑详情（2026-10-12 补抓成功 ✓）：真实 `/album?id=` 的响应 ✓。
+        'album': rawAlbum,
       };
       _recipe().forEach((capability, binding) {
-        // ⚠️ 专辑的**真实固件待抓**（2026-10-12 上游连续 502/ECONNRESET，抓取脚本跑不过 ✗）：
-        // 先只校验"已经有真实固件"的能力 ✓；等上游恢复后重跑 `tool/capture_netease_fixtures.ps1`
-        // ⇒ 在下面的表里加上 `'album': rawAlbum` 即可把它纳入（**不伪造固件** ✓）。
-        if (!fixtures.containsKey(capability.name)) return;
+        // 每份配置都必须有**真实固件**（`album` 已于 2026-10-12 补抓 ✓）；
+        // 缺固件时下面那条 `isNotNull` 会**如实报出**，而不是悄悄放过 ✓。
         final body = fixtures[capability.name];
         expect(body, isNotNull, reason: '缺少 ${capability.name} 的真实固件');
         expect(
@@ -1046,9 +1046,50 @@ void main() {
       expect(mapped.hotSongs.first.album, firstAl['name']);
     });
 
+    test('★ 真实响应：专辑配置取到的名字/艺人/曲目数/发行时间与原始 JSON 一致', () {
+      final raw = rawAlbum;
+      final rawAlbumMap = raw['album']! as Map<String, Object?>;
+      final rawSongs = raw['songs']! as List<Object?>;
+      final rawAlbumArtist = rawAlbumMap['artist']! as Map<String, Object?>;
+
+      final mapped = mapDeclarativeAlbumResponse(
+        spec: _album().response,
+        body: raw,
+        platform: MusicPlatform.netease,
+        requestedAlbumId: '${rawAlbumMap['id']}',
+      );
+
+      expect(mapped.id, '${rawAlbumMap['id']}', reason: '身份来自请求 ✓');
+      expect(mapped.name, rawAlbumMap['name'], reason: '名字取自 album.name ✓');
+      expect(mapped.artist, rawAlbumArtist['name'], reason: '专辑艺人取自 album.artist.name ✓');
+      expect(
+        mapped.artistId,
+        '${rawAlbumArtist['id']}',
+        reason: '专辑艺人 id 取自 album.artist.id（有它艺人名才可点 ✓）',
+      );
+      expect(mapped.trackCount, rawAlbumMap['size'], reason: '曲目数取自 album.size ✓');
+      expect(
+        mapped.tracks,
+        hasLength(rawSongs.length),
+        reason: '曲目取自**顶层** songs ✓',
+      );
+      // 真实响应里的 publishTime 必须按**毫秒**解释（当秒读会得到"五万多年"的假数据 ✗）。
+      final publishTime = rawAlbumMap['publishTime']! as int;
+      expect(
+        mapped.releaseTime?.year,
+        DateTime.fromMillisecondsSinceEpoch(publishTime, isUtc: true).year,
+        reason: '发行时间按毫秒换算 ✓',
+      );
+      expect(
+        mapped.releaseTime!.year,
+        greaterThan(1950),
+        reason: '年份必须是个正常年份 ✓',
+      );
+    });
+
     test('专辑配置：标量取自 `album`、曲目取自**顶层** `songs`（实测样本）', () {
-      // ⚠️ 这是**手写样本**（形状照 2026-10-12 实测），**不是**固件；
-      // 真实固件待抓（上游当时连续 502，见上一条测试的说明 ✓）。
+      // ⚠️ 这是**手写样本**（形状照 2026-10-12 实测）：它证明"读错字段会立刻被发现" ✓；
+      // 真实响应由下面那条 `★ 真实响应` 测试覆盖 ✓（两者抓的 bug 不同，都留着 ✓）。
       final raw = <String, Object?>{
         'code': 200,
         'album': {
