@@ -10,6 +10,7 @@ import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/platform_capability_view.dart';
 import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
+import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/preference.dart';
@@ -368,7 +369,7 @@ class _ExplorePageState extends State<ExplorePage>
     // 全量交给「查看全部」的网格页。
     final preview = all.take(widget.chartPreviewLimit).toList(growable: false);
     // 榜单封面**放大 15%**（2026-10-12 用户要求 ✓）：一屏里卡片太多会"眼花缭乱"✗，
-    // 放大后一屏看到更少、但每张更清楚 ✓。只动**榜单**这一块，其余货架保持原尺寸 ✓。
+    // 放大后一屏看到更少、但每张更清楚 ✓。榜单 / 新专辑 / 平台歌单三处一起放大 ✓。
     final width = _cardWidth * 1.15;
     return Padding(
       padding: const EdgeInsets.only(bottom: Spacing.lg),
@@ -490,7 +491,8 @@ class _ExplorePageState extends State<ExplorePage>
   Widget _buildNewAlbumSection(MusicPlatform platform) {
     final scheme = Theme.of(context).colorScheme;
     final albums = _newAlbumState.items(platform);
-    final width = _cardWidth;
+    // 与榜单一致放大 15%（用户要求封面整体放大 ✓）；只影响这一块的货架尺寸 ✓。
+    final width = _cardWidth * 1.15;
     return Padding(
       padding: const EdgeInsets.only(bottom: Spacing.lg),
       child: Column(
@@ -617,33 +619,17 @@ class _ExplorePageState extends State<ExplorePage>
               message: '该平台没有返回新歌。',
             )
           else
-            // **横向货架**（2026-10-12 用户要求 ✓）：此前每个平台一长列曲目 ⇒
-            // 多平台时要往下翻很久才看得到后面的区块 ✗；改成货架后高度固定、
-            // 用左右箭头**横向浏览** ✓（箭头只在能滚的一侧出现 ✓，与其它货架同一条规则 ✓）。
-            HorizontalShelf(
-              itemCount: tracks.length,
-              itemWidth: _cardWidth,
-              itemHeight: RemoteMediaCard.extentFor(
-                width: _cardWidth,
-                hasFooter: false,
+            // **三栏歌曲 item + 横向翻页**（2026-10-12 按用户图片重做 ✓）：
+            // 参考里歌曲是"一栏一条的**行式 item**"（封面 + 歌名 + 艺人/专辑 ✓），
+            // 三栏并排、用左右箭头**横向翻页** ✓ —— 不是卡片货架 ✗（上一版做错了 ✓）。
+            // 这里没有"序号"：参考那块是榜单（序号=名次 ✓），新歌没有名次 ⇒ 不编号 ✓（不编造 ✓）。
+            _NewSongShelf(
+              tracks: tracks,
+              onPlay: (track) => playOnlineSearchResult(
+                context,
+                tracks: tracks,
+                selectedRef: track.ref,
               ),
-              itemBuilder: (context, index) {
-                final track = tracks[index];
-                return RemoteMediaCard(
-                  width: _cardWidth,
-                  title: track.title,
-                  coverUri: track.coverUri,
-                  details: track.artistDisplay,
-                  sourceLabel: platformLabelForRef(track.ref),
-                  placeholderIcon: Symbols.music_note,
-                  onTap: () => playOnlineSearchResult(
-                    context,
-                    tracks: tracks,
-                    selectedRef: track.ref,
-                  ),
-                  semanticLabel: '播放"${track.title} - ${track.artistDisplay}"',
-                );
-              },
             ),
         ],
       ),
@@ -716,28 +702,59 @@ class _ExplorePageState extends State<ExplorePage>
               message: '该平台没有返回歌单分类。',
             )
           else
-            // **分类 tag 墙**（2026-10-12 重做 ✓）：照参考的"左侧色条 + 圆角块"排布 ✓，
-            // 但颜色**从主题色派生**（同饱和/亮度，只转色相 ✓）⇒ 像本应用的配色，不是贴图 ✓。
-            // 点任何一个 tag 都**进子页面** ✓（不再原地筛选 ✗ —— 那条路会改状态，
-            // 用户报告一点就崩 ✗；改成导航后每次都是干净的一次跳转 ✓）。
-            Wrap(
-              spacing: Spacing.sm,
-              runSpacing: Spacing.sm,
-              children: [
-                for (var i = 0; i < categories.length; i++)
-                  _CategoryTile(
-                    label: categories[i].name,
-                    count: categories[i].count,
-                    accent: _categoryAccent(scheme, i),
-                    onTap: () => _openPlatformPlaylists(
-                      platform,
-                      categoryId: categories[i].id,
-                      title:
-                          '${musicPlatformLabel(platform)} · '
-                          '${categories[i].name}',
-                    ),
-                  ),
-              ],
+            // **分类 tag 墙**（2026-10-12 按用户图片重做 ✓）：**多栏格、全部展示** ✓ ——
+            // 参考是固定 6 栏 ✓；我们按可用宽度算栏数（宽窗 6 栏 ✓、窄窗减栏 ✓ 不会溢出 ✓）。
+            // 颜色从主题色派生 ✓（同饱和/亮度、只转色相 ✓）⇒ 是本应用的配色，不是贴图 ✓。
+            // 点任何一个 tag 都**进子页面** ✓（不再原地筛选 ✗ —— 那条路会改状态、用户报告一点就崩 ✗）。
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final columns = (constraints.maxWidth / 200).floor().clamp(
+                  2,
+                  6,
+                );
+                final rows = <List<int>>[];
+                for (var i = 0; i < categories.length; i += columns) {
+                  rows.add([
+                    for (
+                      var j = i;
+                      j < i + columns && j < categories.length;
+                      j++
+                    )
+                      j,
+                  ]);
+                }
+                return Column(
+                  children: [
+                    for (final row in rows)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: Spacing.sm),
+                        child: Row(
+                          children: [
+                            for (var k = 0; k < columns; k++) ...[
+                              if (k > 0) const SizedBox(width: Spacing.sm),
+                              Expanded(
+                                child: k < row.length
+                                    ? _CategoryTile(
+                                        label: categories[row[k]].name,
+                                        count: categories[row[k]].count,
+                                        accent: _categoryAccent(scheme, row[k]),
+                                        onTap: () => _openPlatformPlaylists(
+                                          platform,
+                                          categoryId: categories[row[k]].id,
+                                          title:
+                                              '${musicPlatformLabel(platform)}'
+                                              ' · ${categories[row[k]].name}',
+                                        ),
+                                      )
+                                    : const SizedBox.shrink(),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
         ],
       ),
@@ -791,7 +808,8 @@ class _ExplorePageState extends State<ExplorePage>
     final categoryId = _selectedCategory[platform];
     final key = (platform: platform, categoryId: categoryId);
     final items = _collectionState.items(key);
-    final width = _cardWidth;
+    // 与榜单一致放大 15%（用户要求封面整体放大 ✓）；只影响这一块的货架尺寸 ✓。
+    final width = _cardWidth * 1.15;
     // 选中分类时把分类名写进小标题：否则用户只看到"网易云"，不知道这排是筛过的。
     final categoryName = categoryId == null
         ? null
@@ -917,9 +935,200 @@ Color _categoryAccent(ColorScheme scheme, int index) {
   return base.withHue((base.hue + index * 47) % 360).toColor();
 }
 
-/// **分类 tag**（2026-10-12 新样式 ✓）：参考的是"左侧一条彩条 + 圆角方块 + 名字"✓；
-/// 这是本应用的版本 —— 高度统一 44 ✓、圆角用 `AppRadius.sm` ✓、
-/// 名称后面跟一个**淡色的数量**（平台给了才显示 ✓ —— 不编造 ✓）。
+/// **新歌区块的三栏歌曲货架**（2026-10-12 按用户图片重做 ✓）。
+///
+/// 每个 item 是**一行式条目**（封面 + 歌名 + 艺人/专辑 ✓）—— 不是卡片 ✗；
+/// 三栏并排 ✓，一页放不下就**横向翻页**（可滑动 ✓ 也可以用左右箭头 ✓）。
+/// 左右箭头只在**确实还有一页**时出现 ✓（第一页没有"上一页"、最后一页没有"下一页" ✓），
+/// 与其它货架的箭头规则一致 ✓。
+class _NewSongShelf extends StatefulWidget {
+  const _NewSongShelf({required this.tracks, required this.onPlay});
+
+  final List<MusicTrack> tracks;
+  final void Function(MusicTrack track) onPlay;
+
+  @override
+  State<_NewSongShelf> createState() => _NewSongShelfState();
+}
+
+class _NewSongShelfState extends State<_NewSongShelf> {
+  /// 一行三个歌条目（用户图片就是三栏 ✓）；窄窗口退回两栏，避免挤成一团 ✗。
+  static const _rowsPerPage = 4;
+  static const _itemHeight = 64.0;
+
+  final PageController _controller = PageController();
+  int _page = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth < 900 ? 2 : 3;
+        final perPage = columns * _rowsPerPage;
+        final pageCount = (widget.tracks.length / perPage).ceil();
+        final current = _page.clamp(0, pageCount - 1);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            // 左右翻页（参考的块头就是「更多 + ◀ ▶」✓）：只在真的还有一页时出现 ✓。
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (current > 0)
+                  IconButton(
+                    tooltip: '上一页',
+                    onPressed: () => _controller.previousPage(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOut,
+                    ),
+                    icon: const Icon(Symbols.chevron_left),
+                  ),
+                if (current < pageCount - 1)
+                  IconButton(
+                    tooltip: '下一页',
+                    onPressed: () => _controller.nextPage(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOut,
+                    ),
+                    icon: const Icon(Symbols.chevron_right),
+                  ),
+              ],
+            ),
+            SizedBox(
+              height: _rowsPerPage * _itemHeight,
+              child: PageView.builder(
+                controller: _controller,
+                onPageChanged: (value) => setState(() => _page = value),
+                itemCount: pageCount,
+                itemBuilder: (context, page) => Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var column = 0; column < columns; column++) ...[
+                      if (column > 0) const SizedBox(width: Spacing.md),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            for (var row = 0; row < _rowsPerPage; row++)
+                              SizedBox(
+                                height: _itemHeight,
+                                child:
+                                    page * perPage + column * _rowsPerPage + row <
+                                        widget.tracks.length
+                                    ? _NewSongItem(
+                                        track: widget.tracks[page * perPage +
+                                            column * _rowsPerPage +
+                                            row],
+                                        onTap: () => widget.onPlay(
+                                          widget.tracks[page * perPage +
+                                              column * _rowsPerPage +
+                                              row],
+                                        ),
+                                      )
+                                    : const SizedBox.shrink(),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 一条歌曲 item（照用户图片的排布 ✓）：**封面 + 歌名 + 艺人/专辑**，整行可点即播 ✓。
+/// 参考在标题左边还有序号 —— 那是榜单的名次 ✓；新歌没有名次 ⇒ **不编号** ✓（不编造 ✓）。
+class _NewSongItem extends StatelessWidget {
+  const _NewSongItem({required this.track, required this.onTap});
+
+  final MusicTrack track;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final details = [
+      track.artistDisplay,
+      if (track.album.isNotEmpty) track.album,
+    ].join(' · ');
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: AppRadius.smCircular,
+        child: InkWell(
+          borderRadius: AppRadius.smCircular,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: AppRadius.xsCircular,
+                  child: SizedBox.square(
+                    dimension: 48,
+                    child: RemoteMediaCover(
+                      coverUri: track.coverUri,
+                      placeholder: ColoredBox(
+                        color: scheme.surfaceContainerHighest,
+                        child: Icon(
+                          Symbols.music_note,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      cacheWidth: 96,
+                      cacheHeight: 96,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: Spacing.md),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        track.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: scheme.onSurface,
+                          fontSize: AppType.caption,
+                          fontWeight: AppType.weightMedium,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        details,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// **分类 tag**（2026-10-12 按用户图片重做 ✓）：**撑满格子**的一行格子 ✓ ——
+/// 左侧一条彩条（贴住左边、与格子等高 ✓）+ 名字 + 淡色数量（平台给了才显示 ✓）。
 class _CategoryTile extends StatelessWidget {
   const _CategoryTile({
     required this.label,
@@ -936,61 +1145,50 @@ class _CategoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
-      borderRadius: AppRadius.smCircular,
-      child: InkWell(
+    return SizedBox(
+      height: 44,
+      child: Material(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
         borderRadius: AppRadius.smCircular,
-        onTap: onTap,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 132, minHeight: 44),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          borderRadius: AppRadius.smCircular,
+          onTap: onTap,
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              // 左侧彩条：贴住左边、上圆下圆对齐容器 ⇒ 参考里那种"色标"✓。
-              Container(
-                width: 4,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: accent,
-                  borderRadius: const BorderRadius.horizontal(
-                    left: Radius.circular(AppRadius.sm),
+              // 左侧彩条：撑满格子高度 ✓ ⇒ 就是参考里那种"色标"✓。
+              Container(width: 4, color: accent),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Spacing.md,
                   ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Spacing.md,
-                  vertical: Spacing.sm,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 超长分类名（真实数据里就有很长的那种 ✓）不能把方块撑破 ⇒ 限宽 + 省略 ✓。
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 180),
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: AppType.caption,
-                          color: scheme.onSurface,
-                          fontWeight: AppType.weightMedium,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: AppType.caption,
+                            color: scheme.onSurface,
+                            fontWeight: AppType.weightMedium,
+                          ),
                         ),
                       ),
-                    ),
-                    if (count case final value?) ...[
-                      const SizedBox(width: Spacing.sm),
-                      Text(
-                        '$value',
-                        style: TextStyle(
-                          fontSize: AppType.caption,
-                          color: scheme.onSurfaceVariant,
+                      if (count case final value?) ...[
+                        const SizedBox(width: Spacing.sm),
+                        Text(
+                          '$value',
+                          style: TextStyle(
+                            fontSize: AppType.caption,
+                            color: scheme.onSurfaceVariant,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ],

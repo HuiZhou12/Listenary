@@ -248,7 +248,13 @@ void main() {
       shelf.itemHeight,
       RemoteMediaCard.extentFor(width: shelf.itemWidth, hasFooter: true),
     );
-    expect(shelf.itemWidth, 124, reason: '窄窗口用更小的卡片宽度');
+    // 2026-10-12：榜单 / 新专辑 / 平台歌单三处封面**统一放大 15%** ✓
+    // ⇒ 窄窗口的基础宽（124）之后还有 ×1.15 ✓，这里按放大后的值断言 ✓。
+    expect(
+      shelf.itemWidth,
+      closeTo(124 * 1.15, 0.01),
+      reason: '窄窗口卡片宽度 = 基础宽 × 1.15（封面放大 15% 后的口径 ✓）',
+    );
   });
 
   // ------------------------------------------------------------------ 榜单
@@ -561,19 +567,12 @@ void main() {
     expect(find.text('新歌一'), findsOneWidget);
     expect(find.text('新歌二'), findsOneWidget);
 
-    // 2026-10-12 起这一块是**卡片货架**（不再是一长列行 ✓）：找卡片而不是行 ✓。
-    final cards = tester
-        .widgetList<RemoteMediaCard>(find.byType(RemoteMediaCard))
-        .toList(growable: false);
-    expect(cards, hasLength(2));
-    // 来源身份：每张卡都标出所属平台 ✓。
-    expect(cards.map((card) => card.sourceLabel), everyElement('网易云'));
-    // 副标题 = 艺人 ✓（曲目卡上就是艺人名 ✓）。
-    expect(cards.first.details, '甲');
-    // 可播放 ⇒ 挂上了起播回调 ✓。
-    expect(cards.every((card) => card.onTap != null), isTrue);
-    // 横向浏览由货架承担 ✓（箭头/分页规则由 `horizontal_shelf_test` 覆盖 ✓）。
-    expect(find.byType(HorizontalShelf), findsWidgets);
+    // 2026-10-12 按用户图片改成**三栏歌曲 item**（行式条目 ✓，不是卡片 ✗）：
+    // 封面 + 歌名 + 「艺人 · 专辑」✓ —— 按文字断言 ✓。
+    expect(find.text('甲 · 专辑一'), findsOneWidget);
+    // 横向翻页：两条只有一页 ⇒ **不出现**翻页箭头 ✓（与其它货架同规则：只在真有下一页时出现 ✓）。
+    expect(find.byTooltip('下一页'), findsNothing);
+    expect(find.byTooltip('上一页'), findsNothing);
   });
 
   testWidgets('新歌：只有新歌、没有播放解析的平台整块不出现（点不响比不显示更糟）', (tester) async {

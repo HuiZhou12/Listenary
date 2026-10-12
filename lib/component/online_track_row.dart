@@ -197,16 +197,6 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                           // 而是行尾的小圆点 + 小号低对比文字，详情用 Flexible 先省略。
                           Row(
                             children: [
-                              // **平台标识挪到最左**（2026-10-12 用户要求 ✓）：
-                              // 它此前挂在详情行**末端**、紧挨右侧的时长 ⇒ 两处挤在一起 ✗；
-                              // 现在放行首，离时长最远 ✓（全局生效 ✓）。
-                              if (widget.sourceLabel case final label?) ...[
-                                OnlineSourceLabel(
-                                  label: label,
-                                  color: metadataColor,
-                                ),
-                                const SizedBox(width: Spacing.sm),
-                              ],
                               Flexible(
                                 // 详情行分段：可点段带下划线 + 悬停提示；不可点段是普通文字 ✓。
                                 child: widget.detailParts.isEmpty
@@ -240,6 +230,16 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                                         ],
                                       ),
                               ),
+                              // **平台标识放在「专辑」之后**（2026-10-12 用户指定 ✓）：
+                              // 顺序是 艺人 · 专辑 · 平台 ✓ —— 不再放到最前面 ✗，
+                              // 也不放到时长那一侧 ✗。
+                              if (widget.sourceLabel case final label?) ...[
+                                const SizedBox(width: Spacing.sm),
+                                OnlineSourceLabel(
+                                  label: label,
+                                  color: metadataColor,
+                                ),
+                              ],
                             ],
                           ),
                         ],
