@@ -134,6 +134,12 @@ ActivePlaybackSessionSnapshot _snapshot(ActivePlaybackSessionSource source) =>
 
 final class _RemoteLyricService implements OnlineMusicService {
   @override
+  Future<OnlineAlbum> fetchAlbum({
+    required MusicPlatform platform,
+    required String albumId,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Album detail is not implemented here');
+  @override
   Future<OnlineArtist> fetchArtist({
     required MusicPlatform platform,
     required String artistId,

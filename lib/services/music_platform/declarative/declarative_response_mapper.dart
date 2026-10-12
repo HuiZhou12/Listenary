@@ -101,6 +101,9 @@ MusicTrack _mapTrack(
     artistIds:
         _readStringList(spec, OnlineMusicDomainField.artistIds, element) ??
         const [],
+    albumIds:
+        _readStringList(spec, OnlineMusicDomainField.albumIds, element) ??
+        const [],
     album: _readString(spec, OnlineMusicDomainField.album, element) ?? '',
     coverUri: _readUri(spec, OnlineMusicDomainField.coverUri, element),
     duration:
@@ -189,6 +192,51 @@ ResolvedStream mapDeclarativeResolveResponse({
 /// - `listPath` 指向**热门曲目数组**（网易云在 `hotSongs`）；
 /// - **艺人 id 不在响应里**（它是请求输入）⇒ 由 [requestedArtistId] 传入 ✓
 ///   （与 `playlist` 那边处理 `requestedPlaylistId` 的做法一致）。
+/// 把声明式响应映射成 [OnlineAlbum]（`album` 能力，2026-10-12 新增）。
+///
+/// 与 [mapDeclarativePlaylistResponse]/[mapDeclarativeArtistResponse] 同构：
+/// - `fieldsRootPath` 指向**专辑标量**所在对象（网易云在 `album` 下）；
+/// - `listPath` 指向**曲目数组**（网易云在**顶层** `songs`）；
+/// - **专辑 id 不在响应里**（它是请求输入）⇒ 由 [requestedAlbumId] 传入 ✓。
+OnlineAlbum mapDeclarativeAlbumResponse({
+  required OnlineMusicResponseSpec spec,
+  required Object? body,
+  required MusicPlatform platform,
+  String? platformId,
+  required String requestedAlbumId,
+}) {
+  final root = spec.fieldsRootPath?.read(body) ?? body;
+
+  final tracks = <MusicTrack>[];
+  final listPath = spec.listPath;
+  if (listPath != null) {
+    final rawList = listPath.read(body);
+    if (rawList is! List) {
+      throw const DeclarativeMappingException('列表路径没有取到数组');
+    }
+    for (final element in rawList) {
+      tracks.add(_mapTrack(spec, element, platform));
+    }
+  }
+
+  return OnlineAlbum(
+    platform: platform,
+    platformId: platformId,
+    id: requestedAlbumId,
+    name:
+        _readString(spec, OnlineMusicDomainField.albumName, root) ??
+        requestedAlbumId,
+    coverUri: _readUri(spec, OnlineMusicDomainField.albumCoverUri, root),
+    artist: _readString(spec, OnlineMusicDomainField.albumArtist, root),
+    trackCount: _readIntField(
+      spec,
+      OnlineMusicDomainField.albumTrackCount,
+      root,
+    ),
+    tracks: tracks,
+  );
+}
+
 OnlineArtist mapDeclarativeArtistResponse({
   required OnlineMusicResponseSpec spec,
   required Object? body,
@@ -650,6 +698,9 @@ Object? _applyTransform(OnlineMusicFieldSpec spec, Object? raw) {
         ),
         raw,
       );
+      // 单个值包成单元素列表：**数字同样按字符串取**（专辑 id 在网易云就是 int ✓，
+      // 与 `asStringList` 同一条规则 ⇒ 否则"专辑 id"恒为空 ✓）。
+      if (value is int) return ['$value'];
       return value is String && value.trim().isNotEmpty ? [value] : null;
     case OnlineMusicFieldTransform.asStringList:
       if (raw is! List) return null;

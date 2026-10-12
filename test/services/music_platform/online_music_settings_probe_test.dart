@@ -1106,6 +1106,38 @@ OnlineMusicSettings _allCapabilitiesSettings() => OnlineMusicSettings.fromJson({
             },
           ),
         ).toJson(),
+        // 专辑详情（2026-10-12）：标量在 `album`、曲目在顶层 `songs` ✓（与实测同形）。
+        'album': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(
+            path: '/album',
+            query: [
+              OnlineMusicParamBinding(
+                name: 'id',
+                source: OnlineMusicInputSource.albumId,
+              ),
+            ],
+          ),
+          response: OnlineMusicResponseSpec(
+            success: _codeSuccess,
+            // 复用 `_allCapabilitiesBody` 的既有形状：标量取 `detail`、曲目取 `data` ✓。
+            fieldsRootPath: JsonPath.tryParse('detail'),
+            listPath: JsonPathForTest.data,
+            fields: {
+              OnlineMusicDomainField.albumName: _stringField(
+                JsonPathForTest.name,
+                required: true,
+              ),
+              OnlineMusicDomainField.trackId: _stringField(
+                JsonPathForTest.id,
+                required: true,
+              ),
+              OnlineMusicDomainField.title: _stringField(
+                JsonPathForTest.name,
+                required: true,
+              ),
+            },
+          ),
+        ).toJson(),
         'artist': OnlineMusicDeclarativeCapabilityBinding(
           request: const OnlineMusicRequestSpec(
             path: '/artists',

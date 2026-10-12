@@ -27,6 +27,7 @@ const platformCapabilityRows =
       (label: '榜单', available: _chartList),
       (label: '新歌', available: _newSongs),
       (label: '艺人详情', available: _artist),
+      (label: '专辑详情', available: _album),
       (label: '歌词', available: _lyrics),
       (label: '播放解析', available: _resolvable),
     ];
@@ -46,6 +47,10 @@ bool _playlistCategories(OnlineMusicCapabilities c, MusicPlatform p) =>
 /// 艺人详情：能取"艺人 + 热门曲目"的平台（热门曲目要点得响 ⇒ 见 [OnlineMusicCapabilities]）。
 bool _artist(OnlineMusicCapabilities c, MusicPlatform p) =>
     c.playableArtistPlatforms.contains(p);
+
+/// 专辑详情：能取"专辑 + 曲目"的平台（同上，曲目也要点得响 ✓）。
+bool _album(OnlineMusicCapabilities c, MusicPlatform p) =>
+    c.playableAlbumPlatforms.contains(p);
 
 bool _chartList(OnlineMusicCapabilities c, MusicPlatform p) =>
     c.chartPlatforms.contains(p);

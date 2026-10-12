@@ -63,6 +63,8 @@ final class CompositeOnlineMusicService
       newSongPlatforms: registry.platformsFor(OnlineMusicCapability.newSongs),
       // 艺人详情（2026-10-12）：注册表按"该平台是否配了 artist 能力"决定 ✓。
       artistPlatforms: registry.platformsFor(OnlineMusicCapability.artist),
+      // 专辑详情（2026-10-12）✓。
+      albumPlatforms: registry.platformsFor(OnlineMusicCapability.album),
       lyricPlatforms: registry.platformsFor(OnlineMusicCapability.lyric),
       unavailableSearchReasons: reasons,
     );
@@ -205,6 +207,22 @@ final class CompositeOnlineMusicService
       platform: platform,
       limit: limit,
       offset: offset,
+      cancelToken: cancelToken,
+    ),
+  );
+
+  /// 专辑详情（`album`）：按实体 ID 取"专辑元数据 + 曲目"。
+  @override
+  Future<OnlineAlbum> fetchAlbum({
+    required MusicPlatform platform,
+    required String albumId,
+    required OnlineMusicCancelToken cancelToken,
+  }) => _dispatch(
+    platform,
+    OnlineMusicCapability.album,
+    (provider) => provider.fetchAlbum(
+      platform: platform,
+      albumId: albumId,
       cancelToken: cancelToken,
     ),
   );

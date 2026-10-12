@@ -78,6 +78,13 @@ abstract interface class OnlineMusicProvider {
     required OnlineMusicCancelToken cancelToken,
   });
 
+  /// **专辑详情**（`album`，2026-10-12）：按实体 ID 取"专辑元数据 + 曲目"。
+  Future<OnlineAlbum> fetchAlbum({
+    required MusicPlatform platform,
+    required String albumId,
+    required OnlineMusicCancelToken cancelToken,
+  });
+
   Future<MusicLyrics> fetchLyrics(
     PlatformTrackRef ref, {
     required OnlineMusicCancelToken cancelToken,
@@ -170,6 +177,13 @@ abstract class UnsupportedOnlineMusicProvider implements OnlineMusicProvider {
   Future<OnlineArtist> fetchArtist({
     required MusicPlatform platform,
     required String artistId,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => throw unsupportedCapability();
+
+  @override
+  Future<OnlineAlbum> fetchAlbum({
+    required MusicPlatform platform,
+    required String albumId,
     required OnlineMusicCancelToken cancelToken,
   }) async => throw unsupportedCapability();
 

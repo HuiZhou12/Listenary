@@ -30,6 +30,12 @@ enum OnlineMusicInputSource {
   /// 取值是**平台自己的艺人标识**：网易云实测 `/artists?id=<id>`（此前实测返回
   /// 艺人信息 + `hotSongs`）。界面必须把平台给出的 id 原样回传，不能自己拼。
   artistId,
+
+  /// **专辑 id**（`album` 能力的必填输入，2026-10-12 新增）。
+  ///
+  /// 取值是**平台自己的专辑标识**：网易云实测 `/album?id=<id>`（返回 `album` 元数据 + `songs`）。
+  /// 界面必须把平台给出的 id 原样回传，不能自己拼。
+  albumId,
   quality,
 }
 

@@ -48,6 +48,13 @@
 /// 拆成两个能力反而要求两倍配置、且两者必须同源才不矛盾。
 ///
 /// **它需要实体 ID**（艺人 id 在请求里、不在响应里）⇒ 按既有设计**不参与服务级探测** ✓。
+/// **专辑详情**（`album`，2026-10-12 新增）：回答"这张专辑是什么 + 它有哪些曲目"。
+///
+/// 与 [playlist] 同形（元数据 + 曲目列表），但**语义不同**：专辑有"发行时间/曲目数/专辑艺人"
+/// 这些歌单没有的东西，真实服务也是**另一个接口**（网易云实测 `/album?id=` 返回
+/// `{code, album, songs}`）。参考产品的专辑页把曲目**编号**列出（我们照此 ✓）。
+///
+/// 它同样**需要实体 ID**（专辑 id 在请求里、不在响应里）⇒ 不参与服务级探测 ✓。
 enum OnlineMusicCapability {
   search,
   playlist,
@@ -56,6 +63,7 @@ enum OnlineMusicCapability {
   chartList,
   newSongs,
   artist,
+  album,
   lyric,
   stream,
 }
@@ -71,6 +79,7 @@ String onlineMusicCapabilityLabel(OnlineMusicCapability capability) =>
       OnlineMusicCapability.chartList => '榜单',
       OnlineMusicCapability.newSongs => '新歌',
       OnlineMusicCapability.artist => '艺人详情',
+      OnlineMusicCapability.album => '专辑详情',
       OnlineMusicCapability.lyric => '歌词',
       OnlineMusicCapability.stream => '播放解析',
     };

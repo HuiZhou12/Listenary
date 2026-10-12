@@ -185,6 +185,7 @@ final class MusicTrack {
     required this.title,
     required Iterable<String> artists,
     Iterable<String> artistIds = const [],
+    Iterable<String> albumIds = const [],
     this.album = '',
     this.coverUri,
     this.duration = Duration.zero,
@@ -193,6 +194,7 @@ final class MusicTrack {
     Map<String, String> rawQualityHints = const {},
   }) : artists = List.unmodifiable(artists),
        artistIds = List.unmodifiable(artistIds),
+       albumIds = List.unmodifiable(albumIds),
        rawQualityHints = Map.unmodifiable(rawQualityHints);
 
   final PlatformTrackRef ref;
@@ -204,6 +206,9 @@ final class MusicTrack {
   /// 真实服务通常把两者放在同一个数组里（网易云 `ar[*].name` 与 `ar[*].id`），
   /// 所以映射时取两条**同序**路径；某一平台缺 id 时这里为空 ⇒ 界面**不显示可点**（不猜 ✓）。
   final List<String> artistIds;
+
+  /// **专辑 id**（2026-10-12 新增）：曲目行里的专辑名可以据此打开专辑页 ✓。
+  final List<String> albumIds;
   final String album;
   final Uri? coverUri;
   final Duration duration;
@@ -348,6 +353,43 @@ final class OnlineArtist {
   final Uri? avatarUri;
   final String? description;
   final List<MusicTrack> hotSongs;
+
+  /// 自定义平台的稳定 ID（内置平台为 null ⇒ identity = builtin）。
+  final String? platformId;
+
+  PlatformIdentity get identity =>
+      PlatformIdentity(platform, platformId: platformId);
+}
+
+/// 一张**在线专辑**（`album` 能力，2026-10-12 新增）：标量信息 + **曲目**。
+///
+/// 形状与 [RemotePlaylist]/[OnlineArtist] 同构（"元数据 + 曲目列表"），因为真实服务就是这样：
+/// 网易云实测 `/album?id=` 返回 `{code, album, songs}` —— 元数据在 `album`、曲目在顶层 `songs` ✓。
+final class OnlineAlbum {
+  OnlineAlbum({
+    required this.platform,
+    required this.id,
+    required this.name,
+    this.coverUri,
+    this.artist,
+    this.trackCount,
+    this.platformId,
+    Iterable<MusicTrack> tracks = const [],
+  }) : tracks = List.unmodifiable(tracks);
+
+  final MusicPlatform platform;
+
+  /// 平台自己的专辑标识（**来自请求输入**，不是响应字段 ✓）。
+  final String id;
+  final String name;
+  final Uri? coverUri;
+
+  /// 专辑艺人（平台自己的文案；可为空 ✓）。
+  final String? artist;
+
+  /// 平台声明的曲目数（`size`）；**与 [tracks] 的实际条数不必相等** ✓。
+  final int? trackCount;
+  final List<MusicTrack> tracks;
 
   /// 自定义平台的稳定 ID（内置平台为 null ⇒ identity = builtin）。
   final String? platformId;

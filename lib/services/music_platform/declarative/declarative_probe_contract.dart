@@ -79,6 +79,13 @@ const declarativeProbeCapabilityContracts =
         probeable: false,
         notProbeableReason: probeNeedsEntityIdReason,
       ),
+      // 专辑详情同理（专辑 id 在请求里）✓。
+      DeclarativeProbeCapabilityContract(
+        capability: OnlineMusicCapability.album,
+        unit: '',
+        probeable: false,
+        notProbeableReason: probeNeedsEntityIdReason,
+      ),
       DeclarativeProbeCapabilityContract(
         capability: OnlineMusicCapability.lyric,
         unit: '',

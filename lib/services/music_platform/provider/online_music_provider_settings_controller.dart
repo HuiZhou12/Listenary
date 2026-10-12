@@ -581,6 +581,9 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
 
     /// 艺人详情（`artist`）试跑要用的**艺人 ID**（2026-10-12 新增）。
     String? artistId,
+
+    /// 专辑详情（`album`）试跑要用的**专辑 ID**（2026-10-12 新增）。
+    String? albumId,
     String quality = defaultDeclarativeTestQuality,
     OnlineMusicCancelToken? cancelToken,
   }) async {
@@ -639,6 +642,16 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
         failureKind: DeclarativeTestFailureKind.config,
       );
     }
+    // 专辑 id 同理 ✓。
+    final effectiveAlbumId = albumId ?? trackId;
+    if (capability == OnlineMusicCapability.album &&
+        (effectiveAlbumId == null || effectiveAlbumId.trim().isEmpty)) {
+      return const DeclarativeCapabilityTestResult(
+        ok: false,
+        failureReason: '试跑专辑详情需要先填一个专辑 ID',
+        failureKind: DeclarativeTestFailureKind.config,
+      );
+    }
 
     // P-30（Spec D4:A）：**不支持的字段转换必须在保存或试跑时明确报错**，
     // 不得放行之后在映射层静默返回 null。保存路径早就有这道闸门，试跑以前**没有** ——
@@ -690,6 +703,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
           trackId: trackId,
           playlistId: effectivePlaylistId,
           artistId: effectiveArtistId,
+          albumId: effectiveAlbumId,
           quality: quality,
         ),
         transport: transport,
@@ -733,6 +747,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
         trackId: trackId,
         requestedPlaylistId: effectivePlaylistId,
         requestedArtistId: effectiveArtistId,
+        requestedAlbumId: effectiveAlbumId,
         quality: quality,
       );
       return evaluated.withRequestSummary(requestSummary);
@@ -774,6 +789,7 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     required String? trackId,
     required String? requestedPlaylistId,
     required String? requestedArtistId,
+    required String? requestedAlbumId,
     required String quality,
   }) async {
     if (!declarativeResponseIsSuccess(
@@ -865,6 +881,43 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
             mappedSummary: isEmpty
                 ? '没有可验证的数据（空结果）'
                 : '艺人「${artist.name}」· ${artist.hotSongs.length} 首热门曲目',
+            failureReason: isEmpty
+                ? declarativeEmptyResultNote('没有解析出任何曲目')
+                : null,
+          );
+        }
+
+      case OnlineMusicCapability.album:
+        {
+          // 专辑详情：标量（名字/封面/艺人/曲目数）+ 曲目。
+          // 与歌单/艺人同款判据：**配置缺项**（没配列表路径）与**空结果**必须分开说，
+          // 而空的曲目列表只能算"未能确认"✓。
+          if (binding.response.listPath == null) {
+            return DeclarativeCapabilityTestResult(
+              ok: false,
+              statusCode: response.statusCode,
+              responsePreview: preview,
+              failureReason: '专辑详情没有配置「列表路径」（曲目数组所在位置），因此取不到曲目',
+              failureKind: DeclarativeTestFailureKind.config,
+            );
+          }
+          final album = mapDeclarativeAlbumResponse(
+            spec: binding.response,
+            body: response.data,
+            platform: definition.contentPlatform,
+            requestedAlbumId: requestedAlbumId!,
+          );
+          final isEmpty = album.tracks.isEmpty;
+          return DeclarativeCapabilityTestResult(
+            ok: !isEmpty,
+            explicitConfidence: isEmpty
+                ? DeclarativeVerificationConfidence.unconfirmed
+                : null,
+            statusCode: response.statusCode,
+            responsePreview: preview,
+            mappedSummary: isEmpty
+                ? '没有可验证的数据（空结果）'
+                : '专辑「${album.name}」· ${album.tracks.length} 首曲目',
             failureReason: isEmpty
                 ? declarativeEmptyResultNote('没有解析出任何曲目')
                 : null,

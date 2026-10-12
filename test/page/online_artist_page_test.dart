@@ -169,6 +169,12 @@ void main() {
 
 /// 极简假件：只实现页面用到的成员，其余交给 `noSuchMethod`（Dart 允许 ✓）。
 final class _FakeArtistService implements OnlineMusicService {
+  @override
+  Future<OnlineAlbum> fetchAlbum({
+    required MusicPlatform platform,
+    required String albumId,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Album detail is not implemented here');
   _FakeArtistService(this.artist) : failure = null;
   _FakeArtistService.failing(this.failure) : artist = null;
 

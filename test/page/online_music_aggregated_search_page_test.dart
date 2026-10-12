@@ -359,6 +359,12 @@ final class _SearchCall {
 /// `UnimplementedError`，用例失败时才能看到真实断言）。
 final class _FakeAggregatedService implements OnlineMusicService {
   @override
+  Future<OnlineAlbum> fetchAlbum({
+    required MusicPlatform platform,
+    required String albumId,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Album detail is not implemented here');
+  @override
   Future<OnlineArtist> fetchArtist({
     required MusicPlatform platform,
     required String artistId,

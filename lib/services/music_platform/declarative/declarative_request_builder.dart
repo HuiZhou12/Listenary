@@ -18,6 +18,7 @@ final class DeclarativeInputs {
     this.playlistId,
     this.categoryId,
     this.artistId,
+    this.albumId,
     this.quality,
   });
 
@@ -30,6 +31,7 @@ final class DeclarativeInputs {
   final String? playlistId;
   final String? categoryId;
   final String? artistId;
+  final String? albumId;
   final String? quality;
 
   Object? valueOf(OnlineMusicInputSource source) => switch (source) {
@@ -42,6 +44,7 @@ final class DeclarativeInputs {
     OnlineMusicInputSource.playlistId => playlistId,
     OnlineMusicInputSource.categoryId => categoryId,
     OnlineMusicInputSource.artistId => artistId,
+    OnlineMusicInputSource.albumId => albumId,
     OnlineMusicInputSource.quality => quality,
   };
 
@@ -55,6 +58,7 @@ final class DeclarativeInputs {
     'playlistId': ?playlistId,
     'categoryId': ?categoryId,
     'artistId': ?artistId,
+    'albumId': ?albumId,
     'quality': ?quality,
   };
 }

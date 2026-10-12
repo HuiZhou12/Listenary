@@ -42,6 +42,13 @@ void main() {
         OnlineMusicDomainField.artists: OnlineMusicFieldReader.textList,
         // 艺人 id 与"艺术家"同序（用于打开艺人页，2026-10-12）。
         OnlineMusicDomainField.artistIds: OnlineMusicFieldReader.textList,
+        // 专辑 id（用于打开专辑页，2026-10-12）✓。
+        OnlineMusicDomainField.albumIds: OnlineMusicFieldReader.textList,
+        // album（专辑详情，2026-10-12）：名字/专辑艺人是文本、封面是 Uri、曲目数是整数。
+        OnlineMusicDomainField.albumName: OnlineMusicFieldReader.text,
+        OnlineMusicDomainField.albumCoverUri: OnlineMusicFieldReader.uri,
+        OnlineMusicDomainField.albumArtist: OnlineMusicFieldReader.text,
+        OnlineMusicDomainField.albumTrackCount: OnlineMusicFieldReader.integer,
         OnlineMusicDomainField.album: OnlineMusicFieldReader.text,
         OnlineMusicDomainField.coverUri: OnlineMusicFieldReader.uri,
         OnlineMusicDomainField.duration: OnlineMusicFieldReader.duration,

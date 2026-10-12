@@ -817,8 +817,8 @@ void main() {
         .length;
     expect(
       missingOnNetease,
-      5,
-      reason: '内置实现有 4 项、共 9 个能力 ⇒ 网易云卡应缺 5 项',
+      6,
+      reason: '内置实现有 4 项、共 10 个能力 ⇒ 网易云卡应缺 6 项',
     );
     expect(
       find.descendant(
@@ -2101,6 +2101,7 @@ void main() {
     const needsId = {
       OnlineMusicCapability.playlist,
       OnlineMusicCapability.artist,
+      OnlineMusicCapability.album,
       OnlineMusicCapability.lyric,
       OnlineMusicCapability.stream,
     };
@@ -2679,6 +2680,8 @@ void main() {
     }
 
     await enter('试跑用的关键词', '自定义词');
+    // 能力清单多一行（艺人/专辑）会把表单顶下去 ⇒ 每个字段都先滚到它再填 ✓。
+    await scrollCapabilityFormTo(tester, '试跑用的每页数量', maxAttempts: 30);
     await enter('试跑用的每页数量', '7');
 
     await tester.tap(find.widgetWithText(TextButton, '试跑'));
@@ -2761,6 +2764,21 @@ OnlineMusicDeclarativeCapabilityBinding validBindingFor(
         fields: {
           trackId: field(trackId, 'id', asInt),
           title: field(title, 'name', asString),
+        },
+      ),
+    ),
+    // 专辑详情：标量在 `album`，曲目在**顶层** `songs`（与网易云实测一致）。
+    OnlineMusicCapability.album => OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(path: '/album'),
+      response: OnlineMusicResponseSpec(
+        fieldsRootPath: JsonPath.tryParse('album'),
+        listPath: JsonPath.tryParse('songs'),
+        fields: {
+          OnlineMusicDomainField.albumName: field(
+            OnlineMusicDomainField.albumName,
+            'name',
+            asString,
+          ),
         },
       ),
     ),

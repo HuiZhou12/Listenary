@@ -16,6 +16,9 @@ enum OnlineMusicDomainField {
 
   /// **艺人 id**（与 [artists] 同序；用于"点艺人名打开艺人页"，2026-10-12 新增）。
   artistIds,
+
+  /// **专辑 id**（用于"点专辑名打开专辑页"，2026-10-12 新增）。
+  albumIds,
   album,
   coverUri,
   duration,
@@ -37,6 +40,16 @@ enum OnlineMusicDomainField {
   artistAvatarUri,
   /// 艺人简介（平台自己的文案；可为空）。
   artistDescription,
+
+  // album（专辑详情，2026-10-12）：标量部分；曲目**复用**上面的曲目字段。
+  /// 专辑名。
+  albumName,
+  /// 专辑封面（http(s)）。
+  albumCoverUri,
+  /// 专辑艺人（平台自己的文案）。
+  albumArtist,
+  /// 专辑曲目数（平台声明的 `size`）。
+  albumTrackCount,
 
   // 歌单分类（playlistCategories）
   categoryId,
@@ -154,15 +167,20 @@ OnlineMusicFieldReader fieldReaderOf(OnlineMusicDomainField field) =>
       OnlineMusicDomainField.lyricTranslation ||
       OnlineMusicDomainField.artistName ||
       OnlineMusicDomainField.artistDescription ||
+      OnlineMusicDomainField.albumName ||
+      OnlineMusicDomainField.albumArtist ||
       OnlineMusicDomainField.lyricRomanization => OnlineMusicFieldReader.text,
       OnlineMusicDomainField.artists ||
-      OnlineMusicDomainField.artistIds => OnlineMusicFieldReader.textList,
+      OnlineMusicDomainField.artistIds ||
+      OnlineMusicDomainField.albumIds => OnlineMusicFieldReader.textList,
       OnlineMusicDomainField.coverUri ||
       OnlineMusicDomainField.artistAvatarUri ||
+      OnlineMusicDomainField.albumCoverUri ||
       OnlineMusicDomainField.playlistCoverUri ||
       OnlineMusicDomainField.streamUrl => OnlineMusicFieldReader.uri,
       OnlineMusicDomainField.playlistTrackCount ||
       OnlineMusicDomainField.categoryCount ||
+      OnlineMusicDomainField.albumTrackCount ||
       OnlineMusicDomainField.streamBitrate => OnlineMusicFieldReader.integer,
       OnlineMusicDomainField.duration => OnlineMusicFieldReader.duration,
       OnlineMusicDomainField.streamExpiresAt =>
@@ -515,6 +533,11 @@ final class OnlineMusicResponseSpec {
         if (listPath == null && fieldsRootPath == null) {
           issues.add('艺人详情能力必须配置字段根路径或列表路径');
         }
+      case OnlineMusicCapability.album:
+        // 专辑详情同理：标量在 `album`、曲目在顶层 `songs` ✓。
+        if (listPath == null && fieldsRootPath == null) {
+          issues.add('专辑详情能力必须配置字段根路径或列表路径');
+        }
       case OnlineMusicCapability.newSongs:
         // 新歌就是一个曲目数组，与搜索同构。
         if (listPath == null) {
@@ -576,6 +599,7 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.title,
         OnlineMusicDomainField.artists,
         OnlineMusicDomainField.artistIds,
+        OnlineMusicDomainField.albumIds,
         OnlineMusicDomainField.album,
         OnlineMusicDomainField.coverUri,
         OnlineMusicDomainField.duration,
@@ -601,6 +625,7 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.title,
         OnlineMusicDomainField.artists,
         OnlineMusicDomainField.artistIds,
+        OnlineMusicDomainField.albumIds,
         OnlineMusicDomainField.album,
         OnlineMusicDomainField.coverUri,
         OnlineMusicDomainField.duration,
@@ -641,6 +666,24 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.title,
         OnlineMusicDomainField.artists,
         OnlineMusicDomainField.artistIds,
+        OnlineMusicDomainField.albumIds,
+        OnlineMusicDomainField.album,
+        OnlineMusicDomainField.coverUri,
+        OnlineMusicDomainField.duration,
+      };
+    case OnlineMusicCapability.album:
+      // 专辑详情 = 标量（名字/封面/专辑艺人/曲目数）× 曲目（曲目字段与搜索相同）。
+      // 曲目里也允许 `artistIds` ⇒ 专辑页的每一行同样能**点开艺人页** ✓。
+      return const {
+        OnlineMusicDomainField.albumName,
+        OnlineMusicDomainField.albumCoverUri,
+        OnlineMusicDomainField.albumArtist,
+        OnlineMusicDomainField.albumTrackCount,
+        OnlineMusicDomainField.trackId,
+        OnlineMusicDomainField.title,
+        OnlineMusicDomainField.artists,
+        OnlineMusicDomainField.artistIds,
+        OnlineMusicDomainField.albumIds,
         OnlineMusicDomainField.album,
         OnlineMusicDomainField.coverUri,
         OnlineMusicDomainField.duration,
@@ -656,6 +699,7 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.title,
         OnlineMusicDomainField.artists,
         OnlineMusicDomainField.artistIds,
+        OnlineMusicDomainField.albumIds,
         OnlineMusicDomainField.album,
         OnlineMusicDomainField.coverUri,
         OnlineMusicDomainField.duration,
@@ -720,6 +764,9 @@ Set<OnlineMusicDomainField> requiredFieldsFor(
     case OnlineMusicCapability.artist:
       // 至少要能确定"这是谁"；**热门曲目可以为空**（艺人可能没有）⇒ 不要求曲目字段 ✓。
       return const {OnlineMusicDomainField.artistName};
+    case OnlineMusicCapability.album:
+      // 至少要能确定"这是哪张专辑"；曲目可以为空 ✓。
+      return const {OnlineMusicDomainField.albumName};
     case OnlineMusicCapability.lyric:
       return const {};
   }

@@ -41,6 +41,13 @@ final class ChkszOnlineMusicProvider
   final String providerId;
 
   @override
+  Future<OnlineAlbum> fetchAlbum({
+    required MusicPlatform platform,
+    required String albumId,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => throw unsupportedCapability();
+
+  @override
   Future<OnlineArtist> fetchArtist({
     required MusicPlatform platform,
     required String artistId,

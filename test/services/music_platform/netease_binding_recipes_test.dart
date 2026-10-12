@@ -12,11 +12,11 @@ import 'package:pure_music/services/music_platform/provider/online_music_respons
 
 import 'live_response_fixtures.g.dart';
 
-/// 网易云七项发现类能力的**可直接粘贴配置**（人工验收清单 §1.1 的配套件）。
+/// 网易云八项发现类能力的**可直接粘贴配置**（人工验收清单 §1.1 的配套件）。
 ///
-/// 为什么要有这个文件：人工验收里最费事、最容易配错的一步，是照着文档手动配七项能力
+/// 为什么要有这个文件：人工验收里最费事、最容易配错的一步，是照着文档手动配八项能力
 /// （请求路径 + 列表路径 + 每个字段映射）。配错的特征恰恰是"**不报错、但内容少了/错了**"。
-/// 这里把七项配置**写成代码**，因此：
+/// 这里把八项配置**写成代码**，因此：
 ///   1. **字段与转换必须通过应用自己的校验**（`domainFieldsFor` + `expectedFieldKinds`）——
 ///      配错会直接编译期/测试期失败，而不是等你到界面上踩；
 ///   2. 它们能**往返 JSON**（`toJson` → `fromJson`），即"粘进设置页的 JSON 一定能被解析"；
@@ -26,7 +26,7 @@ import 'live_response_fixtures.g.dart';
 /// 样本来源均为 2026-10-08 的实测响应（`http://127.0.0.1:3000`）。
 JsonPath _p(String source) => JsonPath.tryParse(source)!;
 
-/// 网易云七项能力的**统一成功谓词**：业务码必须是 `200`。
+/// 网易云八项能力的**统一成功谓词**：业务码必须是 `200`。
 ///
 /// 为什么必须写它（能力映射 §6.9 的硬性要求）：真实服务在**上游风控**时会返回
 /// **`code 2001` + 列表全空** —— 若不校验业务码，界面就会把"被挡下"渲染成"**这个平台没有内容**"，
@@ -80,6 +80,11 @@ OnlineMusicDeclarativeCapabilityBinding _search() =>
           OnlineMusicDomainField.artistIds: OnlineMusicFieldSpec(
             candidates: [_p('artists[*].id')],
             transform: OnlineMusicFieldTransform.asStringList,
+          ),
+          // 专辑 id：曲目行据此打开专辑页 ✓（搜索里专辑是 `album` 对象 ✓）。
+          OnlineMusicDomainField.albumIds: OnlineMusicFieldSpec(
+            candidates: [_p('album.id')],
+            transform: OnlineMusicFieldTransform.asSingleStringList,
           ),
           OnlineMusicDomainField.artists: OnlineMusicFieldSpec(
             candidates: [_p('artists[*].name')],
@@ -147,6 +152,11 @@ OnlineMusicDeclarativeCapabilityBinding _playlist() =>
           OnlineMusicDomainField.artistIds: OnlineMusicFieldSpec(
             candidates: [_p('ar[*].id')],
             transform: OnlineMusicFieldTransform.asStringList,
+          ),
+          // 专辑 id：**单个值**（`al.id` / `album.id` 都是标量）⇒ 用 `asSingleStringList` ✓。
+          OnlineMusicDomainField.albumIds: OnlineMusicFieldSpec(
+            candidates: [_p('al.id')],
+            transform: OnlineMusicFieldTransform.asSingleStringList,
           ),
           OnlineMusicDomainField.artists: OnlineMusicFieldSpec(
             candidates: [_p('ar[*].name')],
@@ -322,6 +332,11 @@ OnlineMusicDeclarativeCapabilityBinding _newSongs() =>
             candidates: [_p('song.artists[*].id')],
             transform: OnlineMusicFieldTransform.asStringList,
           ),
+          // 专辑 id（新歌里专辑是 `song.album` 对象 ✓）。
+          OnlineMusicDomainField.albumIds: OnlineMusicFieldSpec(
+            candidates: [_p('song.album.id')],
+            transform: OnlineMusicFieldTransform.asSingleStringList,
+          ),
           OnlineMusicDomainField.artists: OnlineMusicFieldSpec(
             candidates: [_p('song.artists[*].name')],
             transform: OnlineMusicFieldTransform.asStringList,
@@ -343,6 +358,79 @@ OnlineMusicDeclarativeCapabilityBinding _newSongs() =>
         pagination: const OnlineMusicPaginationSpec(
           kind: OnlineMusicPaginationKind.none,
         ),
+      ),
+    );
+
+/// **专辑详情**（`album`，2026-10-12 实测形状）：
+/// `/album?id=` 返回 `{code, album, songs}` —— 标量在 `album` 下、曲目在**顶层** `songs` 下（新形状 `ar/al/dt`）。
+OnlineMusicDeclarativeCapabilityBinding _album() =>
+    OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(
+        path: '/album',
+        query: [
+          OnlineMusicParamBinding(
+            name: 'id',
+            source: OnlineMusicInputSource.albumId,
+          ),
+        ],
+      ),
+      response: OnlineMusicResponseSpec(
+        success: _neteaseSuccess(),
+        fieldsRootPath: _p('album'),
+        listPath: _p('songs'),
+        fields: {
+          OnlineMusicDomainField.albumName: OnlineMusicFieldSpec(
+            candidates: [_p('name')],
+            transform: OnlineMusicFieldTransform.asString,
+            required: true,
+          ),
+          OnlineMusicDomainField.albumCoverUri: OnlineMusicFieldSpec(
+            candidates: [_p('picUrl')],
+            transform: OnlineMusicFieldTransform.asHttpsUri,
+          ),
+          OnlineMusicDomainField.albumArtist: OnlineMusicFieldSpec(
+            candidates: [_p('artist.name')],
+            transform: OnlineMusicFieldTransform.asString,
+          ),
+          OnlineMusicDomainField.albumTrackCount: OnlineMusicFieldSpec(
+            candidates: [_p('size')],
+            transform: OnlineMusicFieldTransform.asInt,
+          ),
+          OnlineMusicDomainField.trackId: OnlineMusicFieldSpec(
+            candidates: [_p('id')],
+            transform: OnlineMusicFieldTransform.asInt,
+            required: true,
+          ),
+          OnlineMusicDomainField.title: OnlineMusicFieldSpec(
+            candidates: [_p('name')],
+            transform: OnlineMusicFieldTransform.asString,
+            required: true,
+          ),
+          OnlineMusicDomainField.artistIds: OnlineMusicFieldSpec(
+            candidates: [_p('ar[*].id')],
+            transform: OnlineMusicFieldTransform.asStringList,
+          ),
+          OnlineMusicDomainField.albumIds: OnlineMusicFieldSpec(
+            candidates: [_p('al.id')],
+            transform: OnlineMusicFieldTransform.asSingleStringList,
+          ),
+          OnlineMusicDomainField.artists: OnlineMusicFieldSpec(
+            candidates: [_p('ar[*].name')],
+            transform: OnlineMusicFieldTransform.asStringList,
+          ),
+          OnlineMusicDomainField.album: OnlineMusicFieldSpec(
+            candidates: [_p('al.name')],
+            transform: OnlineMusicFieldTransform.asString,
+          ),
+          OnlineMusicDomainField.coverUri: OnlineMusicFieldSpec(
+            candidates: [_p('al.picUrl')],
+            transform: OnlineMusicFieldTransform.asHttpsUri,
+          ),
+          OnlineMusicDomainField.duration: OnlineMusicFieldSpec(
+            candidates: [_p('dt')],
+            transform: OnlineMusicFieldTransform.asDurationMs,
+          ),
+        },
       ),
     );
 
@@ -392,6 +480,11 @@ OnlineMusicDeclarativeCapabilityBinding _artist() =>
             candidates: [_p('ar[*].id')],
             transform: OnlineMusicFieldTransform.asStringList,
           ),
+          // 专辑 id：**单个值**（`al.id` / `album.id` 都是标量）⇒ 用 `asSingleStringList` ✓。
+          OnlineMusicDomainField.albumIds: OnlineMusicFieldSpec(
+            candidates: [_p('al.id')],
+            transform: OnlineMusicFieldTransform.asSingleStringList,
+          ),
           OnlineMusicDomainField.artists: OnlineMusicFieldSpec(
             candidates: [_p('ar[*].name')],
             transform: OnlineMusicFieldTransform.asStringList,
@@ -422,6 +515,8 @@ _recipe() => {
   OnlineMusicCapability.newSongs: _newSongs(),
   // 艺人详情（2026-10-12）：第七份可直接粘贴的配置 ✓。
   OnlineMusicCapability.artist: _artist(),
+  // 专辑详情（2026-10-12）：第八份 ✓。
+  OnlineMusicCapability.album: _album(),
 };
 
 void main() {
@@ -489,7 +584,7 @@ void main() {
     ],
   };
 
-  group('网易云七项能力的可直接粘贴配置', () {
+  group('网易云八项能力的可直接粘贴配置', () {
     test('★ 每项只使用该能力允许的领域字段，且转换合法（配错会直接失败）', () {
       _recipe().forEach((capability, binding) {
         final allowed = domainFieldsFor(capability);
@@ -751,7 +846,7 @@ void main() {
     // 上面几条用的是**手写样本**；手写样本可能"恰好成立"，而真实数据不成立。
     // 这里改用脚本抓下来的真实响应（`live_response_fixtures.g.dart`，只把列表裁到前 2 条），
     // 断言**映射结果与原始 JSON 里的值一致** —— 也就是"这份配置在真实数据上取对了"。
-    test('★ 真实响应：七项配置的成功谓词都接受（业务码 200）', () {
+    test('★ 真实响应：八项配置的成功谓词都接受（业务码 200）', () {
       final fixtures = <String, Map<String, Object?>>{
         'search': rawSearch,
         'playlist': rawPlaylist,
@@ -763,6 +858,10 @@ void main() {
         'artist': rawArtist,
       };
       _recipe().forEach((capability, binding) {
+        // ⚠️ 专辑的**真实固件待抓**（2026-10-12 上游连续 502/ECONNRESET，抓取脚本跑不过 ✗）：
+        // 先只校验"已经有真实固件"的能力 ✓；等上游恢复后重跑 `tool/capture_netease_fixtures.ps1`
+        // ⇒ 在下面的表里加上 `'album': rawAlbum` 即可把它纳入（**不伪造固件** ✓）。
+        if (!fixtures.containsKey(capability.name)) return;
         final body = fixtures[capability.name];
         expect(body, isNotNull, reason: '缺少 ${capability.name} 的真实固件');
         expect(
@@ -937,7 +1036,53 @@ void main() {
       expect(mapped.hotSongs.first.album, firstAl['name']);
     });
 
-    test('把七项配置写成可直接复制的 JSON 文件（人工验收清单配套，并当场校验可解析）', () {
+    test('专辑配置：标量取自 `album`、曲目取自**顶层** `songs`（实测样本）', () {
+      // ⚠️ 这是**手写样本**（形状照 2026-10-12 实测），**不是**固件；
+      // 真实固件待抓（上游当时连续 502，见上一条测试的说明 ✓）。
+      final raw = <String, Object?>{
+        'code': 200,
+        'album': {
+          'id': 93113910,
+          'name': '故里逢春',
+          'picUrl': 'http://p1.music.126.net/x.jpg',
+          'size': 2,
+          'artist': {'name': '阿YueYue'},
+        },
+        'songs': [
+          {
+            'id': 1457113272,
+            'name': '故里逢春',
+            'dt': 218640,
+            'ar': [
+              {'id': 12227865, 'name': '阿YueYue'},
+            ],
+            'al': {
+              'id': 93113910,
+              'name': '故里逢春',
+              'picUrl': 'http://p1.music.126.net/x.jpg',
+            },
+          },
+        ],
+      };
+
+      final mapped = mapDeclarativeAlbumResponse(
+        spec: _album().response,
+        body: raw,
+        platform: MusicPlatform.netease,
+        requestedAlbumId: '93113910',
+      );
+
+      expect(mapped.id, '93113910', reason: '身份来自请求 ✓');
+      expect(mapped.name, '故里逢春', reason: '标量取自 album.name ✓');
+      expect(mapped.artist, '阿YueYue', reason: '专辑艺人取自 album.artist.name ✓');
+      expect(mapped.trackCount, 2, reason: '曲目数取自 album.size ✓');
+      expect(mapped.tracks, hasLength(1), reason: '曲目取自**顶层** songs ✓');
+      expect(mapped.tracks.first.title, '故里逢春');
+      expect(mapped.tracks.first.artistIds, ['12227865']);
+      expect(mapped.tracks.first.albumIds, ['93113910']);
+    });
+
+    test('把八项配置写成可直接复制的 JSON 文件（人工验收清单配套，并当场校验可解析）', () {
       const encoder = JsonEncoder.withIndent('  ');
       final directory = Directory('docs/dev/netease-bindings');
       directory.createSync(recursive: true);
@@ -956,7 +1101,7 @@ void main() {
         expect(parsed, isA<OnlineMusicDeclarativeCapabilityBinding>());
       });
 
-      expect(written, hasLength(7));
+      expect(written, hasLength(8));
       // ignore: avoid_print
       print('已写出 ${written.length} 个配置：${written.join(', ')}');
     });

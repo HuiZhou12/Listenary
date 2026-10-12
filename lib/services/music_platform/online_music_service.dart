@@ -17,6 +17,7 @@ final class OnlineMusicCapabilities {
     Iterable<MusicPlatform> chartPlatforms = const [],
     Iterable<MusicPlatform> newSongPlatforms = const [],
     Iterable<MusicPlatform> artistPlatforms = const [],
+    Iterable<MusicPlatform> albumPlatforms = const [],
     Iterable<MusicPlatform> lyricPlatforms = const [],
     Iterable<PlatformIdentity> resolvableIdentities = const [],
     Map<MusicPlatform, String> unavailableSearchReasons = const {},
@@ -33,6 +34,7 @@ final class OnlineMusicCapabilities {
        chartPlatforms = Set.unmodifiable(chartPlatforms),
        newSongPlatforms = Set.unmodifiable(newSongPlatforms),
        artistPlatforms = Set.unmodifiable(artistPlatforms),
+       albumPlatforms = Set.unmodifiable(albumPlatforms),
        lyricPlatforms = Set.unmodifiable(lyricPlatforms),
        unavailableSearchReasons = Map.unmodifiable(unavailableSearchReasons);
 
@@ -107,6 +109,9 @@ final class OnlineMusicCapabilities {
   /// 能取"艺人 + 热门曲目"的平台（`artist` 能力，2026-10-12 新增）。
   final Set<MusicPlatform> artistPlatforms;
 
+  /// 能取"专辑元数据 + 曲目"的平台（`album` 能力，2026-10-12 新增）。
+  final Set<MusicPlatform> albumPlatforms;
+
   /// 新歌**真的点得动**的平台：必须同时具备新歌与播放解析能力。
   ///
   /// 理由与搜索的 Stream 硬门槛（D3）一致：列表里放一批点不响的曲目，比不显示更糟。
@@ -122,6 +127,12 @@ final class OnlineMusicCapabilities {
   /// 艺人页只对"能播"的平台出现。
   Set<MusicPlatform> get playableArtistPlatforms => {
     for (final platform in artistPlatforms)
+      if (resolvablePlatforms.contains(platform)) platform,
+  };
+
+  /// 能取专辑详情**且曲目点得响**的平台（同 [playableArtistPlatforms] 的理由 ✓）。
+  Set<MusicPlatform> get playableAlbumPlatforms => {
+    for (final platform in albumPlatforms)
       if (resolvablePlatforms.contains(platform)) platform,
   };
 
@@ -293,6 +304,15 @@ abstract interface class OnlineMusicService {
     required String artistId,
     required OnlineMusicCancelToken cancelToken,
   }) => throw UnsupportedError('Artist detail is not supported');
+
+  /// **专辑详情**（`album`，2026-10-12 新增）：专辑元数据 + **曲目**。
+  ///
+  /// 与"歌单详情"形状相同但语义不同：专辑有发行时间/曲目数/专辑艺人，且真实服务是另一个接口。
+  Future<OnlineAlbum> fetchAlbum({
+    required MusicPlatform platform,
+    required String albumId,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Album detail is not supported');
 
   Future<MusicLyrics> fetchLyrics(
     PlatformTrackRef ref, {

@@ -13,7 +13,7 @@ import 'package:pure_music/services/music_platform/provider/online_music_capabil
 /// 2. **新增能力不能悄悄漏掉契约**：`probeContractFor` 找不到就抛错（而不是放过）。
 void main() {
   group('能力契约的完备性', () {
-    test('★ 八个能力**每一个**都有契约（漏补会抛错，而不是悄悄放过）', () {
+    test('★ **每一个**能力都有契约（漏补会抛错，而不是悄悄放过）', () {
       for (final capability in OnlineMusicCapability.values) {
         expect(
           () => probeContractFor(capability),
