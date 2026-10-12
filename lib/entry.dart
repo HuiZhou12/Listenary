@@ -756,7 +756,14 @@ class _EntryState extends State<Entry>
         : app_paths.UPDATING_DIALOG,
     observers: [routeVisibilityObserver],
     routes: [
-      GoRoute(path: '/', redirect: (_, _) => app_paths.AUDIOS_PAGE),
+      // 根路径 = **启动页** ✓（与用户选的启动页同源 ✓，见 `startPageLocationFor`）——
+      // 此前固定跳「音频」✗，而默认启动页是**主页** ✓ ⇒ 从根路径进来会落到别的页 ✗。
+      GoRoute(
+        path: '/',
+        redirect: (_, _) => app_paths.startPageLocationFor(
+          AppPreference.instance.startPage,
+        ),
+      ),
       StatefulShellRoute(
         builder: (context, state, navigationShell) =>
             AppShell(navigationShell: navigationShell),

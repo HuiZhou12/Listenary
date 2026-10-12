@@ -68,3 +68,13 @@ const List<String> START_PAGES = [
 /// 写成常量是因为 `const` 表达式里不能取 `List.length`；**改动 START_PAGES 时必须同步**，
 /// `test/component/side_nav_destination_test.dart` 会守住两者一致。
 const int HOME_START_PAGE_INDEX = 5;
+
+/// **根路径 `/` 应该落到哪一页** ✓（2026-10-12 修正）。
+///
+/// 为什么抽成函数：`/` 的重定向以前**硬编码**成「音频」✗，而启动页的默认值是
+/// [HOME_START_PAGE_INDEX]（**主页**）✓ —— 于是"用户选的启动页"与"从根路径进来看到的页"
+/// 是两套口径 ✗，而且那条重定向**没有测试**钉住 ✗。抽出来之后两者同源 ✓、也能直接测 ✓。
+///
+/// 下标越界时按边界夹住 ✓（与 `AppPreference` 的 `_normalizedBoundedInt` 同一策略 ✓）。
+String startPageLocationFor(int startPageIndex) =>
+    START_PAGES[startPageIndex.clamp(0, START_PAGES.length - 1)];
