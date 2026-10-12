@@ -378,7 +378,7 @@ void main() {
 
   // -------------------------------------------------------------- 歌单分类
 
-  testWidgets('分类 chip 墙：对"能按分类取歌单"的平台出现，并显示分类与数量', (tester) async {
+  testWidgets('分类 tag 墙：对"能按分类取歌单"的平台出现，名字与数量分开显示', (tester) async {
     await pumpExplore(
       tester,
       service: _ExploreService(
@@ -408,106 +408,13 @@ void main() {
     );
 
     expect(find.text('歌单分类'), findsOneWidget);
-    expect(find.text('全部'), findsOneWidget);
-    expect(find.text('华语 · 1945'), findsOneWidget);
-    // 没有数量的分类只显示名字，不编造数字。
+    // 2026-10-12 起：tag 是"名字 +（淡色）数量"两个文字块 ✓，
+    // 不再把数量拼进名字里 ✓；「全部」这种用来原地筛选的 chip 也随原地筛选一起退场 ✓。
+    expect(find.text('华语'), findsOneWidget);
+    expect(find.text('1945'), findsOneWidget);
+    // 没有数量的分类只显示名字，不编造数字 ✓。
     expect(find.text('摇滚'), findsOneWidget);
-  });
-
-  testWidgets('点分类 chip 只请求该分类，并筛选该平台的歌单货架', (tester) async {
-    final service = _ExploreService(
-      capabilities: OnlineMusicCapabilities(
-        searchablePlatforms: const [],
-        resolvablePlatforms: const [],
-        playlistCollectionPlatforms: const [MusicPlatform.netease],
-        playlistCategoryPlatforms: const [MusicPlatform.netease],
-      ),
-      collections: const {
-        MusicPlatform.netease: [
-          RemotePlaylistSummary(
-            platform: MusicPlatform.netease,
-            id: '1',
-            name: '全部歌单',
-          ),
-        ],
-      },
-      categories: const {
-        MusicPlatform.netease: [
-          RemotePlaylistCategory(
-            platform: MusicPlatform.netease,
-            id: '华语',
-            name: '华语',
-          ),
-        ],
-      },
-      categoryCollections: const {
-        '华语': [
-          RemotePlaylistSummary(
-            platform: MusicPlatform.netease,
-            id: '9',
-            name: '华语歌单',
-          ),
-        ],
-      },
-    );
-    await pumpExplore(tester, service: service);
-
-    // 初次加载只请求"全部"（categoryId == null）。
-    expect(service.collectionCalls, hasLength(1));
-    expect(service.collectionCalls.single.categoryId, isNull);
-    expect(find.text('全部歌单'), findsOneWidget);
-
-    await tester.tap(find.text('华语'));
-    await tester.pumpAndSettle();
-
-    // 第二次请求带上该分类，且货架换成分类下的歌单。
-    expect(service.collectionCalls, hasLength(2));
-    expect(service.collectionCalls.last.categoryId, '华语');
-    expect(find.text('华语歌单'), findsOneWidget);
-    expect(find.text('全部歌单'), findsNothing);
-    // 小标题写明筛选状态，否则用户不知道这排被筛过。
-    expect(find.text('网易云 · 华语'), findsOneWidget);
-  });
-
-  testWidgets('再点同一个分类 = 取消筛选，回到"全部"', (tester) async {
-    final service = _ExploreService(
-      capabilities: OnlineMusicCapabilities(
-        searchablePlatforms: const [],
-        resolvablePlatforms: const [],
-        playlistCollectionPlatforms: const [MusicPlatform.netease],
-        playlistCategoryPlatforms: const [MusicPlatform.netease],
-      ),
-      collections: const {
-        MusicPlatform.netease: [
-          RemotePlaylistSummary(
-            platform: MusicPlatform.netease,
-            id: '1',
-            name: '全部歌单',
-          ),
-        ],
-      },
-      categories: const {
-        MusicPlatform.netease: [
-          RemotePlaylistCategory(
-            platform: MusicPlatform.netease,
-            id: '华语',
-            name: '华语',
-          ),
-        ],
-      },
-      categoryCollections: const {'华语': []},
-    );
-    await pumpExplore(tester, service: service);
-
-    await tester.tap(find.text('华语'));
-    await tester.pumpAndSettle();
-    expect(find.text('全部歌单'), findsNothing);
-
-    // 取消筛选：恢复"全部"，且**不会重复请求**已经取过的"全部"。
-    await tester.tap(find.text('取消筛选'));
-    await tester.pumpAndSettle();
-    expect(find.text('全部歌单'), findsOneWidget);
-    expect(service.collectionCalls, hasLength(2));
+    expect(find.text('全部'), findsNothing);
   });
 
   testWidgets('只支持分类、不支持歌单列表的平台：整块 chip 墙不出现（防点不动的 chip）', (tester) async {
@@ -838,214 +745,6 @@ void main() {
       ),
   ];
 
-  testWidgets('★ 取满一页时给「加载更多」，点它按 offset 追加而不是替换', (tester) async {
-    final service = _ExploreService(
-      capabilities: OnlineMusicCapabilities(
-        searchablePlatforms: const [],
-        resolvablePlatforms: const [],
-        playlistCollectionPlatforms: const [MusicPlatform.netease],
-      ),
-      collections: {MusicPlatform.netease: playlists(5)},
-    );
-    // 每页 2 条 ⇒ 第一页取满 ⇒ 应该还有更多。
-    await pumpExplore(tester, service: service, collectionLimit: 2);
-
-    expect(service.collectionCalls.single.offset, 0);
-    expect(find.text('歌单0'), findsOneWidget);
-    expect(find.text('歌单2'), findsNothing);
-    expect(find.text('加载更多'), findsOneWidget);
-
-    await tester.tap(find.text('加载更多'));
-    await tester.pumpAndSettle();
-
-    // 第二次请求从**已加载条数**开始，而不是又从 0 开始。
-    expect(service.collectionCalls, hasLength(2));
-    expect(service.collectionCalls.last.offset, 2);
-    // 追加：原来的还在，新的一页接在后面。
-    expect(find.text('歌单0'), findsOneWidget);
-    expect(find.text('歌单2'), findsOneWidget);
-    expect(find.text('加载更多'), findsOneWidget, reason: '第二页也取满了');
-
-    await tester.tap(find.text('加载更多'));
-    await tester.pumpAndSettle();
-
-    expect(service.collectionCalls.last.offset, 4);
-    // 第三页只有 1 条（不满）⇒ 没有更多了。
-    expect(find.text('加载更多'), findsNothing);
-    expect(find.text('没有更多了'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('★ 一页没取满时直接说「没有更多了」，不给假的加载更多', (tester) async {
-    await pumpExplore(
-      tester,
-      service: _ExploreService(
-        capabilities: OnlineMusicCapabilities(
-          searchablePlatforms: const [],
-          resolvablePlatforms: const [],
-          playlistCollectionPlatforms: const [MusicPlatform.netease],
-        ),
-        collections: {MusicPlatform.netease: playlists(1)},
-      ),
-      collectionLimit: 2,
-    );
-
-    expect(find.text('加载更多'), findsNothing);
-    expect(find.text('没有更多了'), findsOneWidget);
-  });
-
-  testWidgets('一张都没有时不渲染分页区（空态已经说明了一切）', (tester) async {
-    await pumpExplore(
-      tester,
-      service: _ExploreService(
-        capabilities: OnlineMusicCapabilities(
-          searchablePlatforms: const [],
-          resolvablePlatforms: const [],
-          playlistCollectionPlatforms: const [MusicPlatform.netease],
-        ),
-      ),
-      collectionLimit: 2,
-    );
-
-    expect(find.text('该平台没有返回歌单。'), findsOneWidget);
-    expect(find.text('加载更多'), findsNothing);
-    expect(find.text('没有更多了'), findsNothing);
-  });
-
-  testWidgets('★ 「加载更多」失败时：已加载的内容**不被盖掉**，错误显示在分页区', (tester) async {
-    final service = _ExploreService(
-      capabilities: OnlineMusicCapabilities(
-        searchablePlatforms: const [],
-        resolvablePlatforms: const [],
-        playlistCollectionPlatforms: const [MusicPlatform.netease],
-      ),
-      collections: {MusicPlatform.netease: playlists(2)},
-      // 传一个**可变**集合：下面要让它翻页时才失败（首屏必须是成功的）。
-      failingCollections: <MusicPlatform>{},
-    );
-    await pumpExplore(tester, service: service, collectionLimit: 2);
-    expect(find.text('歌单0'), findsOneWidget);
-
-    service.failingCollections.add(MusicPlatform.netease);
-    await tester.tap(find.text('加载更多'));
-    await tester.pumpAndSettle();
-
-    // 关键：已经看到的歌单还在（不能因为翻页失败把列表整个换成错误页）。
-    expect(find.text('歌单0'), findsOneWidget);
-    expect(find.textContaining('平台歌单读取失败'), findsOneWidget);
-    expect(find.text('重试'), findsWidgets);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('★ 配了忽略 offset 的接口时：不出现重复项，且收敛为「没有更多了」', (tester) async {
-    // 分页路径是**用户在设置里填的**；填了一个忽略 offset 的接口（例如 `/personalized`）
-    // 就会每次都返回同一批。没有去重的话：看到重复条目 + 按钮永远点得动。
-    final service = _ExploreService(
-      capabilities: OnlineMusicCapabilities(
-        searchablePlatforms: const [],
-        resolvablePlatforms: const [],
-        playlistCollectionPlatforms: const [MusicPlatform.netease],
-      ),
-      collections: {MusicPlatform.netease: playlists(2)},
-      ignoreOffset: true,
-    );
-    await pumpExplore(tester, service: service, collectionLimit: 2);
-
-    expect(find.byType(RemoteMediaCard), findsNWidgets(2));
-    expect(find.text('加载更多'), findsOneWidget);
-
-    await tester.tap(find.text('加载更多'));
-    await tester.pumpAndSettle();
-
-    // 仍然只有两个（没有把同一批再追加一遍）。
-    expect(find.byType(RemoteMediaCard), findsNWidgets(2));
-    // 一条新的都没有 ⇒ 不再假装还有更多。
-    expect(find.text('加载更多'), findsNothing);
-    expect(find.text('没有更多了'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  // ------------------------------------------------------------------ 刷新
-
-  testWidgets('★ 刷新：回到第一页，并重新从 offset=0 拉取（分页状态被重置）', (tester) async {
-    final service = _ExploreService(
-      capabilities: OnlineMusicCapabilities(
-        searchablePlatforms: const [],
-        resolvablePlatforms: const [],
-        playlistCollectionPlatforms: const [MusicPlatform.netease],
-      ),
-      collections: {MusicPlatform.netease: playlists(5)},
-    );
-    await pumpExplore(tester, service: service, collectionLimit: 2);
-
-    // 先翻一页：offset=2，第 3 条出现。
-    await tester.tap(find.text('加载更多'));
-    await tester.pumpAndSettle();
-    expect(service.collectionCalls.last.offset, 2);
-    expect(find.text('歌单2'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('刷新'));
-    await tester.pumpAndSettle();
-
-    // 刷新是"重新开始"，不是"再追加一页"：offset 回到 0，多出来的页消失。
-    expect(service.collectionCalls.last.offset, 0);
-    expect(find.text('歌单2'), findsNothing);
-    expect(find.text('歌单0'), findsOneWidget);
-    // 第一页又取满了 ⇒ 还能继续翻。
-    expect(find.text('加载更多'), findsOneWidget);
-  });
-
-  testWidgets('★ 刷新：保留当前分类筛选，并按该分类重新拉取', (tester) async {
-    final service = _ExploreService(
-      capabilities: OnlineMusicCapabilities(
-        searchablePlatforms: const [],
-        resolvablePlatforms: const [],
-        playlistCollectionPlatforms: const [MusicPlatform.netease],
-        playlistCategoryPlatforms: const [MusicPlatform.netease],
-      ),
-      collections: const {
-        MusicPlatform.netease: [
-          RemotePlaylistSummary(
-            platform: MusicPlatform.netease,
-            id: '1',
-            name: '全部歌单',
-          ),
-        ],
-      },
-      categories: const {
-        MusicPlatform.netease: [
-          RemotePlaylistCategory(
-            platform: MusicPlatform.netease,
-            id: '华语',
-            name: '华语',
-          ),
-        ],
-      },
-      categoryCollections: const {
-        '华语': [
-          RemotePlaylistSummary(
-            platform: MusicPlatform.netease,
-            id: '9',
-            name: '华语歌单',
-          ),
-        ],
-      },
-    );
-    await pumpExplore(tester, service: service);
-
-    await tester.tap(find.text('华语'));
-    await tester.pumpAndSettle();
-    expect(service.collectionCalls.last.categoryId, '华语');
-
-    await tester.tap(find.byTooltip('刷新'));
-    await tester.pumpAndSettle();
-
-    // 刷新不该把用户选的筛选悄悄丢掉。
-    expect(service.collectionCalls.last.categoryId, '华语');
-    expect(find.text('华语歌单'), findsOneWidget);
-    expect(find.text('网易云 · 华语'), findsOneWidget);
-  });
-
   testWidgets('★ 刷新能从失败中恢复（失败提示不再挂着）', (tester) async {
     final service = _ExploreService(
       capabilities: OnlineMusicCapabilities(
@@ -1362,11 +1061,9 @@ final class _ExploreService implements OnlineMusicService {
     this.failingNewSongs = const {},
     // 新专辑（2026-10-12）：与 `newSongs` 同形的注入点 ✓。
     this.newAlbums = const {},
-    this.ignoreOffset = false,
     this.playlistFailure,
     this.categories = const {},
     this.failingCategories = const {},
-    this.categoryCollections = const {},
   }) : capabilities =
            capabilities ??
            OnlineMusicCapabilities(
@@ -1388,14 +1085,12 @@ final class _ExploreService implements OnlineMusicService {
   final Set<MusicPlatform> failingNewSongs;
 
   /// 模拟"**用户配了一个忽略 offset 的接口**"（分页路径由用户配置，未必真支持翻页）。
-  final bool ignoreOffset;
 
   /// 设了就让 `fetchPlaylist`（= 点「订阅」时真正要打开的详情）失败。
   /// 用来测"配置指向打不开的 id"时的安全网。
   final Object? playlistFailure;
 
   /// 按分类返回的歌单（键是分类 id）。用来证明"选了分类就只请求该分类"。
-  final Map<String, List<RemotePlaylistSummary>> categoryCollections;
 
   /// 记录每次歌单列表请求带的分类（null = 全部）与 offset（分页从哪开始）。
   final List<({MusicPlatform platform, String? categoryId, int offset})>
@@ -1452,14 +1147,11 @@ final class _ExploreService implements OnlineMusicService {
         safeMessage: '${musicPlatformLabel(platform)} 平台歌单读取失败',
       );
     }
-    final source = categoryId != null
-        ? (categoryCollections[categoryId] ?? const <RemotePlaylistSummary>[])
-        : (collections[platform] ?? const <RemotePlaylistSummary>[]);
-    // 真实服务确实是 limit/offset 分页（网易云 `/top/playlist` 实测 offset 有效），
-    // 替身也照做，否则"加载更多"的测试等于没测。
-    // `ignoreOffset` 用来模拟"**用户配了一个忽略 offset 的接口**"（例如 `/personalized`）。
-    final effectiveOffset = ignoreOffset ? 0 : offset;
-    return source.skip(effectiveOffset).take(limit).toList(growable: false);
+    // 2026-10-12：分类筛选不再走这个替身（分类点击改成**进子页面**了 ✓，
+    // 子页面的分类请求由 `platform_playlists_page_test` / `explore_category_tap_test` 覆盖 ✓）。
+    final source = collections[platform] ?? const <RemotePlaylistSummary>[];
+    // 真实服务确实是 limit/offset 分页（网易云 `/top/playlist` 实测 offset 有效）⇒ 替身也照做 ✓。
+    return source.skip(offset).take(limit).toList(growable: false);
   }
 
   @override

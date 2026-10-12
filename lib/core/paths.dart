@@ -8,6 +8,8 @@ const String ONLINE_ALBUM_PAGE = '/online/album';
 // 「新发行」（专辑和单曲）落地页（2026-10-12）：参考里 Explore 第一个区块「更多」的目标 ✓，
 // 作为 `/explore` 的子路由 ⇒ 与探索页同族 ✓。
 const String NEW_RELEASES_PAGE = '/explore/new-releases';
+// 平台歌单列表页（2026-10-12）：探索页「平台歌单 → 查看全部」与「歌单分类 → 点 tag」都进这里 ✓。
+const String PLATFORM_PLAYLISTS_PAGE = '/explore/playlists';
 const String FAVORITES_PAGE = '/favorites';
 
 const String AUDIOS_PAGE = '/audios';

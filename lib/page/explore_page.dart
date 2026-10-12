@@ -222,25 +222,6 @@ class _ExplorePageState extends State<ExplorePage>
     fallback: '读取该平台歌单分类失败',
   );
 
-  /// 选中/清除某个平台的分类。
-  ///
-  /// 选中后**只为该平台的一个分类**发一次请求（已取过的分类直接复用缓存），
-  /// 不会重刷其它平台的内容。
-  Future<void> _selectCategory(
-    MusicPlatform platform,
-    String? categoryId,
-  ) async {
-    if (_selectedCategory[platform] == categoryId) return;
-    setState(() => _selectedCategory[platform] = categoryId);
-    final service = context.read<OnlineMusicService?>();
-    if (service == null) return;
-    final key = (platform: platform, categoryId: categoryId);
-    if (_collectionState.hasLoaded(key) || _collectionState.isLoading(key)) {
-      return;
-    }
-    await _loadCollection(service, platform, categoryId);
-  }
-
   Future<void> _loadCharts(
     OnlineMusicService service,
     MusicPlatform platform,
@@ -344,9 +325,10 @@ class _ExplorePageState extends State<ExplorePage>
         padding: const EdgeInsets.only(bottom: Spacing.bottomNav, right: 20),
         children: [
           _buildCharts(),
-          _buildNewSongs(),
-          // 参考 Explore 的第一个区块是「新专辑与单曲」✓ ⇒ 两块**挨着**放 ✓。
+          // 用户要求（2026-10-12）：**新专辑紧跟在榜单下方** ✓ —— 参考里它和「新歌」同属
+          // 第一个区块「新专辑与单曲」✓，而榜单在前 ✓ ⇒ 现在顺序是 榜单 → 新专辑 → 新歌 ✓。
           _buildNewAlbums(),
+          _buildNewSongs(),
           _buildCategories(),
           _buildPlatformCollections(),
           PlatformCapabilityView(
@@ -698,7 +680,6 @@ class _ExplorePageState extends State<ExplorePage>
   Widget _buildCategoryWall(MusicPlatform platform) {
     final scheme = Theme.of(context).colorScheme;
     final categories = _categoryState.items(platform);
-    final selected = _selectedCategory[platform];
     return Padding(
       padding: const EdgeInsets.only(bottom: Spacing.lg),
       child: Column(
@@ -735,24 +716,25 @@ class _ExplorePageState extends State<ExplorePage>
               message: '该平台没有返回歌单分类。',
             )
           else
+            // **分类 tag 墙**（2026-10-12 重做 ✓）：照参考的"左侧色条 + 圆角块"排布 ✓，
+            // 但颜色**从主题色派生**（同饱和/亮度，只转色相 ✓）⇒ 像本应用的配色，不是贴图 ✓。
+            // 点任何一个 tag 都**进子页面** ✓（不再原地筛选 ✗ —— 那条路会改状态，
+            // 用户报告一点就崩 ✗；改成导航后每次都是干净的一次跳转 ✓）。
             Wrap(
               spacing: Spacing.sm,
               runSpacing: Spacing.sm,
               children: [
-                _CategoryChip(
-                  label: '全部',
-                  selected: selected == null,
-                  onTap: () => _selectCategory(platform, null),
-                ),
-                for (final category in categories)
-                  _CategoryChip(
-                    label: category.count == null
-                        ? category.name
-                        : '${category.name} · ${category.count}',
-                    selected: selected == category.id,
-                    onTap: () => _selectCategory(
+                for (var i = 0; i < categories.length; i++)
+                  _CategoryTile(
+                    label: categories[i].name,
+                    count: categories[i].count,
+                    accent: _categoryAccent(scheme, i),
+                    onTap: () => _openPlatformPlaylists(
                       platform,
-                      selected == category.id ? null : category.id,
+                      categoryId: categories[i].id,
+                      title:
+                          '${musicPlatformLabel(platform)} · '
+                          '${categories[i].name}',
                     ),
                   ),
               ],
@@ -837,11 +819,19 @@ class _ExplorePageState extends State<ExplorePage>
                 ),
               ),
               const SizedBox(width: Spacing.sm),
-              if (categoryId != null)
-                TextButton(
-                  onPressed: () => _selectCategory(platform, null),
-                  child: const Text('取消筛选'),
+              // 「查看全部」→ **平台歌单列表页** ✓（用户要求：这里不要在横向货架里追加，
+              // 改成进子页、由子页**滑到底自动加载** ✓ —— 那才感觉得到"内容更多了" ✓）。
+              TextButton(
+                onPressed: () => _openPlatformPlaylists(
+                  platform,
+                  categoryId: categoryId,
+                  title: categoryId == null
+                      ? '${musicPlatformLabel(platform)} · 歌单'
+                      : '${musicPlatformLabel(platform)} · '
+                            '${categoryName ?? categoryId}',
                 ),
+                child: const Text('查看全部'),
+              ),
             ],
           ),
           const SizedBox(height: Spacing.sm),
@@ -870,9 +860,14 @@ class _ExplorePageState extends State<ExplorePage>
                 details: _detailsOf(summary),
                 sourceLabel: platformLabelForIdentityOnly(summary.identity),
                 placeholderIcon: Symbols.queue_music,
-                onTap: () => _subscribe(summary),
+                // **点卡片本体不再自动订阅**（2026-10-12 用户报告 ✓）：
+                // 此前点一下就会把这张歌单**加进媒体库** ✗（用户没点订阅却订阅了 ✓）。
+                // 现在只有下面的「订阅」按钮会订阅 ✓；卡片本体不做事 ✓
+                //（我们还没有"不进库只看"的预览页 ✗ ⇒ 宁可不做，也不替用户做决定 ✓）。
+                onTap: null,
                 semanticLabel: '${summary.name}，来自'
-                    '${platformLabelForIdentityOnly(summary.identity)}，点击订阅并打开',
+                    '${platformLabelForIdentityOnly(summary.identity)}，'
+                    '用下方的「订阅」按钮订阅',
                 footer: TextButton(
                   onPressed: _subscribing.contains(platform)
                       ? null
@@ -882,99 +877,21 @@ class _ExplorePageState extends State<ExplorePage>
               );
             },
           ),
-          if (items.isNotEmpty)
-            _buildCollectionPager(platform, categoryId, key),
         ],
       ),
     );
   }
 
-  /// 平台歌单的**分页区**：真实服务确实能翻页（网易云 `/top/playlist` 实测
-  /// `offset` 有效、`total=683`），因此不给"加载更多"就等于把大部分歌单藏起来。
-  ///
-  /// ⚠️ 能力层的返回值是**裸列表**，平台的 `total` / `more` 没有传上来，
-  /// 所以"还有没有更多"只能按**上一页是否取满**推断（与搜索页 `hasMore` 的第二重判定同源）。
-  /// 推断错也不会误导：取回一页后发现不满就直接显示"没有更多了"。
-  Widget _buildCollectionPager(
-    MusicPlatform platform,
+  /// 打开「平台歌单列表页」（分类 tag 与「查看全部」都走这里 ✓）。
+  Future<void> _openPlatformPlaylists(
+    MusicPlatform platform, {
+    required String title,
     String? categoryId,
-    _CollectionKey key,
-  ) {
-    final scheme = Theme.of(context).colorScheme;
-    final loading = _collectionState.isLoading(key);
-    if (loading) {
-      return const Padding(
-        padding: EdgeInsets.only(top: Spacing.sm),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: SizedBox.square(
-            dimension: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
-      );
-    }
-    if (_collectionState.error(key) case final message?) {
-      return Padding(
-        padding: const EdgeInsets.only(top: Spacing.sm),
-        child: InlineFailureHint(
-          message: message,
-          onRetry: () => _loadMoreCollection(platform, categoryId),
-        ),
-      );
-    }
-    final hasMore =
-        _collectionState.lastPageCount(key) >= widget.collectionLimit;
-    if (!hasMore) {
-      return Padding(
-        padding: const EdgeInsets.only(top: Spacing.sm),
-        child: Text(
-          '没有更多了',
-          style: TextStyle(
-            color: scheme.onSurfaceVariant,
-            fontSize: AppType.caption,
-          ),
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.only(top: Spacing.sm),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: FilledButton.tonalIcon(
-          key: ValueKey(
-            'explore-collection-more-${platform.name}-${categoryId ?? 'all'}',
-          ),
-          onPressed: () => _loadMoreCollection(platform, categoryId),
-          icon: const Icon(Symbols.expand_more, size: 20),
-          label: const Text('加载更多'),
-        ),
-      ),
-    );
-  }
+  }) => context.push(
+    app_paths.PLATFORM_PLAYLISTS_PAGE,
+    extra: (platform: platform, categoryId: categoryId, title: title),
+  );
 
-  Future<void> _loadMoreCollection(
-    MusicPlatform platform,
-    String? categoryId,
-  ) async {
-    final service = context.read<OnlineMusicService?>();
-    if (service == null) return;
-    final key = (platform: platform, categoryId: categoryId);
-    final offset = _collectionState.items(key).length;
-    await loadRemoteList(
-      _collectionState,
-      key,
-      () => service.fetchPlaylistCollection(
-        platform: platform,
-        limit: widget.collectionLimit,
-        offset: offset,
-        categoryId: categoryId,
-        cancelToken: newCancelToken(),
-      ),
-      fallback: '加载更多失败',
-      append: true,
-    );
-  }
 
   /// 平台歌单卡片：元信息行统一为「**类型 · …**」，类型是「歌单」。
   String _detailsOf(RemotePlaylistSummary summary) {
@@ -993,43 +910,90 @@ class _ExplorePageState extends State<ExplorePage>
   }
 }
 
-/// 分类 chip：选中态用主色容器，与既有 chip 语言一致（不引入新配色）。
-class _CategoryChip extends StatelessWidget {
-  const _CategoryChip({
+/// 分类 tag 的**左侧色条**颜色：从主题色派生（保持同饱和/亮度，只错开色相 ✓）⇒
+/// 一屏里颜色有层次、又不会跑出本应用的配色体系 ✓。
+Color _categoryAccent(ColorScheme scheme, int index) {
+  final base = HSLColor.fromColor(scheme.primary);
+  return base.withHue((base.hue + index * 47) % 360).toColor();
+}
+
+/// **分类 tag**（2026-10-12 新样式 ✓）：参考的是"左侧一条彩条 + 圆角方块 + 名字"✓；
+/// 这是本应用的版本 —— 高度统一 44 ✓、圆角用 `AppRadius.sm` ✓、
+/// 名称后面跟一个**淡色的数量**（平台给了才显示 ✓ —— 不编造 ✓）。
+class _CategoryTile extends StatelessWidget {
+  const _CategoryTile({
     required this.label,
-    required this.selected,
+    required this.accent,
     required this.onTap,
+    this.count,
   });
 
   final String label;
-  final bool selected;
+  final int? count;
+  final Color accent;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: selected
-          ? scheme.primaryContainer
-          : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
       borderRadius: AppRadius.smCircular,
       child: InkWell(
         borderRadius: AppRadius.smCircular,
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: Spacing.md,
-            vertical: 6,
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: AppType.caption,
-              color: selected
-                  ? scheme.onPrimaryContainer
-                  : scheme.onSurfaceVariant,
-              fontWeight: selected ? AppType.weightMedium : null,
-            ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 132, minHeight: 44),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 左侧彩条：贴住左边、上圆下圆对齐容器 ⇒ 参考里那种"色标"✓。
+              Container(
+                width: 4,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: accent,
+                  borderRadius: const BorderRadius.horizontal(
+                    left: Radius.circular(AppRadius.sm),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Spacing.md,
+                  vertical: Spacing.sm,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // 超长分类名（真实数据里就有很长的那种 ✓）不能把方块撑破 ⇒ 限宽 + 省略 ✓。
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 180),
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: AppType.caption,
+                          color: scheme.onSurface,
+                          fontWeight: AppType.weightMedium,
+                        ),
+                      ),
+                    ),
+                    if (count case final value?) ...[
+                      const SizedBox(width: Spacing.sm),
+                      Text(
+                        '$value',
+                        style: TextStyle(
+                          fontSize: AppType.caption,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),

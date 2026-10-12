@@ -21,6 +21,7 @@ import 'package:pure_music/page/online_album_page.dart';
 import 'package:pure_music/page/home_page.dart';
 import 'package:pure_music/page/explore_page.dart';
 import 'package:pure_music/page/new_releases_page.dart';
+import 'package:pure_music/page/platform_playlists_page.dart';
 import 'package:pure_music/page/chart_list_page.dart';
 import 'package:pure_music/page/playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
@@ -788,6 +789,33 @@ class _EntryState extends State<Entry>
                 path: app_paths.EXPLORE_PAGE,
                 builder: (context, state) => const ExplorePage(),
                 routes: [
+                  // 探索页「平台歌单 → 查看全部」与「歌单分类 → 点 tag」的落地 ✓。
+                  GoRoute(
+                    path: 'playlists',
+                    pageBuilder: (context, state) {
+                      final extra =
+                          state.extra
+                              as ({
+                                MusicPlatform platform,
+                                String? categoryId,
+                                String title,
+                              })?;
+                      if (extra == null) {
+                        return SlideTransitionPage(
+                          key: state.pageKey,
+                          child: const ExplorePage(),
+                        );
+                      }
+                      return SlideTransitionPage(
+                        key: state.pageKey,
+                        child: PlatformPlaylistsPage(
+                          platform: extra.platform,
+                          categoryId: extra.categoryId,
+                          title: extra.title,
+                        ),
+                      );
+                    },
+                  ),
                   // 探索页「新歌 / 新专辑」的「查看全部」落地：参考第一个区块「更多」的目标 ✓。
                   GoRoute(
                     path: 'new-releases',
