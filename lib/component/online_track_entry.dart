@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/online_track_row.dart';
 import 'package:pure_music/component/personal_playlist_picker.dart';
+import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
 /// 一条**在线曲目行**：副标题组装 + 来源标记 + 收藏 + 加入歌单 + 播放中高亮 + 进场动画。
@@ -66,6 +68,17 @@ class OnlineTrackEntry extends StatelessWidget {
       onRemove: onRemove,
       isNowPlaying: isOnlineTrackNowPlaying(context, track.ref),
       leadingIndex: leadingIndex,
+      // 曲目带**艺人 id** 时给出入口 ⇒ 详情行可点、打开艺人页 ✓（没带就保持纯文本 ✓）。
+      onArtistTap: track.artistIds.isEmpty
+          ? null
+          : () => context.push(
+              app_paths.ONLINE_ARTIST_PAGE,
+              extra: (
+                platform: track.ref.platform,
+                artistId: track.artistIds.first,
+                name: track.artists.isEmpty ? null : track.artists.first,
+              ),
+            ),
     );
     if (!animateEntrance) return row;
     return DirectionalListItemEntrance(identity: track.ref, child: row);

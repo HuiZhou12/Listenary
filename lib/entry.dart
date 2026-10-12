@@ -16,6 +16,7 @@ import 'package:pure_music/page/folder_detail_page.dart';
 import 'package:pure_music/page/folders_page.dart';
 import 'package:pure_music/page/now_playing_page/page.dart';
 import 'package:pure_music/page/online_music_page.dart';
+import 'package:pure_music/page/online_artist_page.dart';
 import 'package:pure_music/page/home_page.dart';
 import 'package:pure_music/page/explore_page.dart';
 import 'package:pure_music/page/chart_list_page.dart';
@@ -795,6 +796,29 @@ class _EntryState extends State<Entry>
               GoRoute(
                 path: app_paths.ONLINE_MUSIC_PAGE,
                 builder: (context, state) => const OnlineMusicPage(),
+                routes: [
+                  GoRoute(
+                    // 在线艺人页：`extra` 带上平台 + 艺人 id（+ 已知显示名，避免加载白屏 ✓）。
+                    path: 'artist',
+                    pageBuilder: (context, state) {
+                      final extra =
+                          state.extra
+                              as ({
+                                MusicPlatform platform,
+                                String artistId,
+                                String? name,
+                              })?;
+                      return SlideTransitionPage(
+                        key: state.pageKey,
+                        child: OnlineArtistPage(
+                          platform: extra?.platform ?? MusicPlatform.netease,
+                          artistId: extra?.artistId ?? '',
+                          initialName: extra?.name,
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ),
             ],
           ),

@@ -56,6 +56,7 @@ class OnlineTrackRow extends StatefulWidget {
     this.isNowPlaying = false,
     this.sourceLabel,
     this.leadingIndex,
+    this.onArtistTap,
   });
 
   final MusicTrack track;
@@ -79,6 +80,10 @@ class OnlineTrackRow extends StatefulWidget {
   /// **行首序号**（可选）：只有"有排序语义"的列表（榜单/专辑）才给；
   /// 普通歌单传 null ⇒ 不渲染序号（与参考产品的规则一致）。
   final int? leadingIndex;
+
+  /// **打开艺人页**（可选，2026-10-12）：曲目带艺人 id 时由调用方给出 ⇒ 详情行变可点 ✓。
+  /// 为 null 时详情行是纯文本（**不显示可点**，不猜 ✓）。
+  final VoidCallback? onArtistTap;
 
   @override
   State<OnlineTrackRow> createState() => _OnlineTrackRowState();
@@ -178,12 +183,32 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                           Row(
                             children: [
                               Flexible(
-                                child: Text(
-                                  widget.details,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(color: metadataColor),
-                                ),
+                                // 曲目带**艺人 id** 时这一行可点 ⇒ 打开艺人页（2026-10-12）。
+                                // 没带 id 的曲目**不显示可点**（不猜、不假装 ✓）。
+                                child: widget.onArtistTap == null
+                                    ? Text(
+                                        widget.details,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(color: metadataColor),
+                                      )
+                                    : Tooltip(
+                                        message: '查看艺人',
+                                        child: InkWell(
+                                          onTap: widget.onArtistTap,
+                                          borderRadius: AppRadius.xsCircular,
+                                          child: Text(
+                                            widget.details,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: metadataColor,
+                                              decoration: TextDecoration.underline,
+                                              decorationColor: metadataColor,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
                               ),
                               if (widget.sourceLabel case final label?) ...[
                                 const SizedBox(width: Spacing.sm),

@@ -1,6 +1,8 @@
 // ignore_for_file: constant_identifier_names
 
 const String ONLINE_MUSIC_PAGE = '/online';
+// 在线艺人页（`artist` 能力，2026-10-12）：作为 `/online` 的子路由 ⇒ 与其它在线页同族 ✓。
+const String ONLINE_ARTIST_PAGE = '/online/artist';
 const String FAVORITES_PAGE = '/favorites';
 
 const String AUDIOS_PAGE = '/audios';
