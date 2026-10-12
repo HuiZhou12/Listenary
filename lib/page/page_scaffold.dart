@@ -106,22 +106,12 @@ class PageScaffold extends StatelessWidget {
   }
 
   Widget _titleWidget(ColorScheme scheme) {
+    // **语义层级**：参考产品的页面标题是 `heading [level=1]`（如专辑页「世界」✓、艺人页「G.E.M. 鄧紫棋」✓）
+    // ⇒ 这里标成 header，读屏用户才分得出"这是整页的标题"（纯文本是读不出来的 ✗）。
     if (subtitle == null) {
-      return Text(
-        title,
-        style: TextStyle(
-          fontSize: AppType.display,
-          fontWeight: AppType.weightSemibold,
-          color: scheme.onSurface,
-        ),
-        overflow: TextOverflow.ellipsis,
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
+      return Semantics(
+        header: true,
+        child: Text(
           title,
           style: TextStyle(
             fontSize: AppType.display,
@@ -129,6 +119,24 @@ class PageScaffold extends StatelessWidget {
             color: scheme.onSurface,
           ),
           overflow: TextOverflow.ellipsis,
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Semantics(
+          header: true,
+          child: Text(
+            title,
+            style: TextStyle(
+              fontSize: AppType.display,
+              fontWeight: AppType.weightSemibold,
+              color: scheme.onSurface,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         const SizedBox(height: 6.0),
         Text(
