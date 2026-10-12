@@ -372,6 +372,7 @@ final class OnlineAlbum {
     required this.name,
     this.coverUri,
     this.artist,
+    this.artistId,
     this.trackCount,
     this.releaseTime,
     this.platformId,
@@ -387,6 +388,10 @@ final class OnlineAlbum {
 
   /// 专辑艺人（平台自己的文案；可为空 ✓）。
   final String? artist;
+
+  /// **专辑艺人 id**（2026-10-12）：参考产品的专辑页把艺人名做成**链接** ✓
+  /// ⇒ 有 id 时我们也让那行可点（没 id 就是纯文本 ✓，不假装可点 ✓）。
+  final String? artistId;
 
   /// 平台声明的曲目数（`size`）；**与 [tracks] 的实际条数不必相等** ✓。
   final int? trackCount;

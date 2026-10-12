@@ -392,6 +392,11 @@ OnlineMusicDeclarativeCapabilityBinding _album() =>
             candidates: [_p('artist.name')],
             transform: OnlineMusicFieldTransform.asString,
           ),
+          // 专辑艺人 id（参考产品里艺人名是链接 ⇒ 有 id 才可点 ✓）。
+          OnlineMusicDomainField.albumArtistId: OnlineMusicFieldSpec(
+            candidates: [_p('artist.id')],
+            transform: OnlineMusicFieldTransform.asInt,
+          ),
           OnlineMusicDomainField.albumTrackCount: OnlineMusicFieldSpec(
             candidates: [_p('size')],
             transform: OnlineMusicFieldTransform.asInt,
@@ -1052,7 +1057,7 @@ void main() {
           'picUrl': 'http://p1.music.126.net/x.jpg',
           'size': 2,
           'publishTime': 1595952000000,
-          'artist': {'name': '阿YueYue'},
+          'artist': {'id': 12227865, 'name': '阿YueYue'},
         },
         'songs': [
           {
@@ -1081,6 +1086,11 @@ void main() {
       expect(mapped.id, '93113910', reason: '身份来自请求 ✓');
       expect(mapped.name, '故里逢春', reason: '标量取自 album.name ✓');
       expect(mapped.artist, '阿YueYue', reason: '专辑艺人取自 album.artist.name ✓');
+      expect(
+        mapped.artistId,
+        '12227865',
+        reason: '专辑艺人 id 取自 album.artist.id（有它艺人名才可点 ✓）',
+      );
       expect(mapped.trackCount, 2, reason: '曲目数取自 album.size ✓');
       // 毫秒时间戳必须按毫秒理解：1595952000000 ms = 2020-07-29 ✓
       // （若误当秒 ⇒ 年份会是五万多年，这条断言就是防这个 ✗）。

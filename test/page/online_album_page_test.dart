@@ -76,6 +76,7 @@ void main() {
         id: '93113910',
         name: '故里逢春',
         artist: '阿YueYue',
+        artistId: '12227865',
         trackCount: 2,
         releaseTime: DateTime.utc(2020, 7, 29),
         tracks: [track('1', '故里逢春'), track('2', '第二首')],
@@ -96,6 +97,9 @@ void main() {
     // 发行时间只显示**年份** ✓（不写具体日期：毫秒时间戳按 UTC 判定，日期可能差一天 ✓）。
     expect(find.textContaining('2020 年'), findsOneWidget);
     expect(find.textContaining('2020-07-29'), findsNothing);
+    // 有专辑艺人 id ⇒ 艺人名可点（参考产品的专辑页里艺人名就是链接 ✓）；
+    // 曲目行里的艺人段同样可点 ⇒ 一共 1（头部）+ 2（两行）= 3 个入口 ✓。
+    expect(find.byTooltip('查看艺人'), findsNWidgets(3));
   });
 
   testWidgets('平台标注曲目数 ≠ 实际条数 ⇒ 如实说出来（以实际为准）', (tester) async {

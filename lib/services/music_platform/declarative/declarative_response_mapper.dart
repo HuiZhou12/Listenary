@@ -228,6 +228,14 @@ OnlineAlbum mapDeclarativeAlbumResponse({
         requestedAlbumId,
     coverUri: _readUri(spec, OnlineMusicDomainField.albumCoverUri, root),
     artist: _readString(spec, OnlineMusicDomainField.albumArtist, root),
+    artistId: switch (_readOptional(
+      spec,
+      OnlineMusicDomainField.albumArtistId,
+      root,
+    )) {
+      final Object value => '$value',
+      _ => null,
+    },
     trackCount: _readIntField(
       spec,
       OnlineMusicDomainField.albumTrackCount,

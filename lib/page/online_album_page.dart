@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/content_section.dart';
@@ -6,6 +7,7 @@ import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 
@@ -149,7 +151,23 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
         children: [
-          _AlbumHeader(album: album, platformName: platformName),
+          _AlbumHeader(
+            album: album,
+            platformName: platformName,
+            // 参考产品的专辑页里艺人名是**链接** ✓ ⇒ 有艺人 id 时那一行可点 ✓。
+            onArtistTap:
+                (album.artistId == null ||
+                    (album.artist ?? '').trim().isEmpty)
+                ? null
+                : () => context.push(
+                    app_paths.ONLINE_ARTIST_PAGE,
+                    extra: (
+                      platform: album.platform,
+                      artistId: album.artistId,
+                      name: album.artist,
+                    ),
+                  ),
+          ),
           if (mismatch) ...[
             const SizedBox(height: Spacing.sm),
             Row(
@@ -213,10 +231,17 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
 
 /// 专辑头部：封面 + 名字 + 专辑艺人（缺一不可地"有什么说什么" ✓）。
 class _AlbumHeader extends StatelessWidget {
-  const _AlbumHeader({required this.album, required this.platformName});
+  const _AlbumHeader({
+    required this.album,
+    required this.platformName,
+    this.onArtistTap,
+  });
 
   final OnlineAlbum album;
   final String platformName;
+
+  /// 有**专辑艺人 id** 时给出 ⇒ 艺人名可点（打开艺人页 ✓）；为 null 时是纯文本 ✓。
+  final VoidCallback? onArtistTap;
 
   @override
   Widget build(BuildContext context) {
@@ -259,15 +284,41 @@ class _AlbumHeader extends StatelessWidget {
               ),
               if (artist != null && artist.isNotEmpty) ...[
                 const SizedBox(height: Spacing.xs),
-                Text(
-                  artist,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: scheme.onSurface,
-                    fontSize: AppType.subtitle,
+                // 有 id ⇒ 可点（带下划线 + 悬停提示 ✓）；没 id ⇒ 纯文本 ✓。
+                if (onArtistTap == null)
+                  Text(
+                    artist,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: AppType.subtitle,
+                    ),
+                  )
+                else
+                  Tooltip(
+                    message: '查看艺人',
+                    // 自带透明 Material：这个可点区域**不假设**祖先里有 Material ✓
+                    // （否则在没有 Scaffold/Material 的宿主里会直接抛错 ✗）。
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: InkWell(
+                        onTap: onArtistTap,
+                        borderRadius: AppRadius.xsCircular,
+                        child: Text(
+                          artist,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: scheme.onSurface,
+                            fontSize: AppType.subtitle,
+                            decoration: TextDecoration.underline,
+                            decorationColor: scheme.onSurface,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
               ],
               const SizedBox(height: Spacing.xs),
               Text(

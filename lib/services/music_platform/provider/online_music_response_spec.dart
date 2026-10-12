@@ -48,6 +48,9 @@ enum OnlineMusicDomainField {
   albumCoverUri,
   /// 专辑艺人（平台自己的文案）。
   albumArtist,
+  /// **专辑艺人 id**（2026-10-12）：参考产品的专辑页里艺人名是**链接** ✓
+  /// ⇒ 有 id 时我们的专辑页也能点开艺人页（没 id 就保持纯文本 ✓）。
+  albumArtistId,
   /// 专辑曲目数（平台声明的 `size`）。
   albumTrackCount,
   /// 专辑发行时间（**毫秒**时间戳，2026-10-12 实测：网易云 `album.publishTime = 1595952000000`）。
@@ -168,7 +171,9 @@ OnlineMusicFieldReader fieldReaderOf(OnlineMusicDomainField field) =>
       OnlineMusicDomainField.title ||
       OnlineMusicDomainField.playlistId ||
       OnlineMusicDomainField.categoryId ||
-      OnlineMusicDomainField.categoryName => OnlineMusicFieldReader.scalar,
+      OnlineMusicDomainField.categoryName ||
+      // 专辑艺人 id 与其它 id 同类（`scalar`：把 int/字符串插值成身份 ✓）。
+      OnlineMusicDomainField.albumArtistId => OnlineMusicFieldReader.scalar,
       OnlineMusicDomainField.album ||
       // 歌单名在"详情"路径由 `_readString` 读、在"集合"路径由 `_readRequired` 插值读
       // ⇒ 取**交集**（只要 `asString`），两条路径都安全。
@@ -688,12 +693,13 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.duration,
       };
     case OnlineMusicCapability.album:
-      // 专辑详情 = 标量（名字/封面/专辑艺人/曲目数/发行时间）× 曲目（曲目字段与搜索相同）。
+      // 专辑详情 = 标量（名字/封面/专辑艺人+id/曲目数/发行时间）× 曲目（曲目字段与搜索相同）。
       // 曲目里也允许 `artistIds` ⇒ 专辑页的每一行同样能**点开艺人页** ✓。
       return const {
         OnlineMusicDomainField.albumName,
         OnlineMusicDomainField.albumCoverUri,
         OnlineMusicDomainField.albumArtist,
+        OnlineMusicDomainField.albumArtistId,
         OnlineMusicDomainField.albumTrackCount,
         OnlineMusicDomainField.albumReleaseTime,
         OnlineMusicDomainField.trackId,

@@ -1865,6 +1865,7 @@ const _domainFieldLabels = <OnlineMusicDomainField, String>{
   OnlineMusicDomainField.albumName: '专辑名',
   OnlineMusicDomainField.albumCoverUri: '专辑封面',
   OnlineMusicDomainField.albumArtist: '专辑艺人',
+  OnlineMusicDomainField.albumArtistId: '专辑艺人 ID',
   OnlineMusicDomainField.albumTrackCount: '专辑曲目数',
   OnlineMusicDomainField.albumReleaseTime: '发行时间（毫秒时间戳）',
   OnlineMusicDomainField.lyricOriginal: '原文歌词',

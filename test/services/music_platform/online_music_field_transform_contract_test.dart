@@ -48,6 +48,8 @@ void main() {
         OnlineMusicDomainField.albumName: OnlineMusicFieldReader.text,
         OnlineMusicDomainField.albumCoverUri: OnlineMusicFieldReader.uri,
         OnlineMusicDomainField.albumArtist: OnlineMusicFieldReader.text,
+        // 专辑艺人 id 与其它 id 同类（scalar ✓）。
+        OnlineMusicDomainField.albumArtistId: OnlineMusicFieldReader.scalar,
         OnlineMusicDomainField.albumTrackCount: OnlineMusicFieldReader.integer,
         // 发行时间是**毫秒**时间戳 ⇒ 专用语义读取器（2026-10-12）✓。
         OnlineMusicDomainField.albumReleaseTime:
