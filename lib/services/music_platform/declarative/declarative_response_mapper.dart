@@ -192,6 +192,50 @@ ResolvedStream mapDeclarativeResolveResponse({
 /// - `listPath` 指向**热门曲目数组**（网易云在 `hotSongs`）；
 /// - **艺人 id 不在响应里**（它是请求输入）⇒ 由 [requestedArtistId] 传入 ✓
 ///   （与 `playlist` 那边处理 `requestedPlaylistId` 的做法一致）。
+/// 把声明式响应映射成**艺人的专辑列表**（`artistAlbums`，2026-10-12 新增）。
+///
+/// 与其它列表类能力同形：`listPath` 指向专辑数组（网易云在 `hotAlbums` ✓），
+/// **没有**统一的字段根路径（每个专辑就是一个数组元素 ✓）⇒ 字段从元素上读 ✓。
+List<OnlineAlbumSummary> mapDeclarativeArtistAlbumsResponse({
+  required OnlineMusicResponseSpec spec,
+  required Object? body,
+  required MusicPlatform platform,
+  String? platformId,
+}) {
+  final listPath = spec.listPath;
+  if (listPath == null) {
+    throw const DeclarativeMappingException('列表路径没有取到数组');
+  }
+  final rawList = listPath.read(body);
+  if (rawList is! List) {
+    throw const DeclarativeMappingException('列表路径没有取到数组');
+  }
+  return [
+    for (final element in rawList)
+      OnlineAlbumSummary(
+        platform: platform,
+        platformId: platformId,
+        id: '${_readRequired(spec, OnlineMusicDomainField.albumId, element)}',
+        name: _readString(spec, OnlineMusicDomainField.albumName, element) ?? '',
+        coverUri: _readUri(spec, OnlineMusicDomainField.albumCoverUri, element),
+        trackCount: _readIntField(
+          spec,
+          OnlineMusicDomainField.albumTrackCount,
+          element,
+        ),
+        releaseTime: switch (_readIntField(
+          spec,
+          OnlineMusicDomainField.albumReleaseTime,
+          element,
+        )) {
+          final int millis when millis > 0 =>
+            DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true),
+          _ => null,
+        },
+      ),
+  ];
+}
+
 /// 把声明式响应映射成 [OnlineAlbum]（`album` 能力，2026-10-12 新增）。
 ///
 /// 与 [mapDeclarativePlaylistResponse]/[mapDeclarativeArtistResponse] 同构：

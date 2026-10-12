@@ -86,6 +86,13 @@ const declarativeProbeCapabilityContracts =
         probeable: false,
         notProbeableReason: probeNeedsEntityIdReason,
       ),
+      // 艺人专辑列表同理（艺人 id 在请求里）✓。
+      DeclarativeProbeCapabilityContract(
+        capability: OnlineMusicCapability.artistAlbums,
+        unit: '',
+        probeable: false,
+        notProbeableReason: probeNeedsEntityIdReason,
+      ),
       DeclarativeProbeCapabilityContract(
         capability: OnlineMusicCapability.lyric,
         unit: '',

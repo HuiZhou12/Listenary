@@ -275,6 +275,8 @@ class _OnlineMusicCapabilityEditorDialogState
             OnlineMusicCapability.artist => JsonPath.tryParse('hotSongs'),
             // 网易云 `/album` 的曲目在**顶层** `songs` 下（实测）✓。
             OnlineMusicCapability.album => JsonPath.tryParse('songs'),
+            // 艺人专辑列表：网易云 `/artist/album` 把专辑放在 `hotAlbums` 下（实测）✓。
+            OnlineMusicCapability.artistAlbums => JsonPath.tryParse('hotAlbums'),
           },
           fieldsRootPath: switch (widget.capability) {
             OnlineMusicCapability.playlist ||
@@ -284,6 +286,8 @@ class _OnlineMusicCapabilityEditorDialogState
             OnlineMusicCapability.artist => JsonPath.tryParse('artist'),
             // 专辑标量在 `album` 下（`album.name` / `album.picUrl` …）✓。
             OnlineMusicCapability.album => JsonPath.tryParse('album'),
+            // 艺人专辑列表**没有**统一的外层对象（每个专辑就是一个数组元素 ✓）⇒ 不给字段根路径 ✓。
+            OnlineMusicCapability.artistAlbums => null,
             OnlineMusicCapability.search ||
             OnlineMusicCapability.playlistCollection ||
             OnlineMusicCapability.playlistCategories ||
@@ -1863,6 +1867,7 @@ const _domainFieldLabels = <OnlineMusicDomainField, String>{
   OnlineMusicDomainField.artistDescription: '艺人简介',
   // album（专辑详情，2026-10-12）：同样要中文标签（P-64 守卫会逐值检查 ✓）。
   OnlineMusicDomainField.albumName: '专辑名',
+  OnlineMusicDomainField.albumId: '专辑 ID（列表项）',
   OnlineMusicDomainField.albumCoverUri: '专辑封面',
   OnlineMusicDomainField.albumArtist: '专辑艺人',
   OnlineMusicDomainField.albumArtistId: '专辑艺人 ID',
@@ -1915,6 +1920,11 @@ String domainFieldLabel(OnlineMusicDomainField field, {bool required = false}) {
   OnlineMusicCapability.artist => (listPath: true, fieldsRootPath: true),
   // 专辑详情：同为"标量 + 曲目列表"（与歌单详情/艺人详情同形）✓。
   OnlineMusicCapability.album => (listPath: true, fieldsRootPath: true),
+  // 艺人专辑列表：只有列表（专辑就是数组元素 ✓），没有独立的字段根 ✓。
+  OnlineMusicCapability.artistAlbums => (
+    listPath: true,
+    fieldsRootPath: false,
+  ),
   OnlineMusicCapability.playlistCollection ||
   OnlineMusicCapability.playlistCategories ||
   OnlineMusicCapability.chartList ||
@@ -1943,6 +1953,8 @@ OnlineMusicInputSource defaultInputSourceFor(
   OnlineMusicCapability.artist => OnlineMusicInputSource.artistId,
   // 专辑详情要**专辑 id**。
   OnlineMusicCapability.album => OnlineMusicInputSource.albumId,
+  // 艺人专辑列表复用**艺人 ID**（不新增输入源 ✓）。
+  OnlineMusicCapability.artistAlbums => OnlineMusicInputSource.artistId,
   OnlineMusicCapability.lyric ||
   OnlineMusicCapability.stream => OnlineMusicInputSource.trackId,
   OnlineMusicCapability.playlistCollection ||
@@ -2002,6 +2014,13 @@ typedef DeclarativeTestInputs = ({
     limit: false,
     id: true,
     idLabel: '试跑用的专辑 ID',
+  ),
+  // 艺人专辑列表：要**艺人 ID**，并且真的支持 `limit`（网易云实测 ✓）。
+  OnlineMusicCapability.artistAlbums => (
+    keyword: false,
+    limit: true,
+    id: true,
+    idLabel: '试跑用的艺人 ID',
   ),
   OnlineMusicCapability.playlist => (
     keyword: false,

@@ -1,11 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/content_section.dart';
+import 'package:pure_music/component/horizontal_shelf.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_entry.dart';
+import 'package:pure_music/component/remote_media_card.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 
@@ -51,6 +57,16 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
 
   OnlineMusicCancelToken? _token;
 
+  /// **专辑区块**（`artistAlbums`，2026-10-12）：与热门歌曲**各算各的** ✓。
+  ///
+  /// `_albumsSupported` 为 false 时**整块不显示** ✓ —— 平台不支持还摆一个空区块，
+  /// 只会让人以为"这个艺人没有专辑"（那是谎 ✓）。
+  bool _albumsSupported = false;
+  bool _albumsLoading = false;
+  String? _albumsError;
+  List<OnlineAlbumSummary> _albums = const [];
+  OnlineMusicCancelToken? _albumsToken;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -62,7 +78,52 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
   @override
   void dispose() {
     _token?.cancel();
+    _albumsToken?.cancel();
     super.dispose();
+  }
+
+  /// 艺人**专辑列表**（`artistAlbums`）：与热门歌曲**互不影响** ✓
+  ///（热门歌曲失败不该把专辑区块也拖下水，反之亦然 ✓）。
+  Future<void> _loadAlbums(OnlineMusicService service) async {
+    if (!service.capabilities.openableArtistAlbumPlatforms.contains(
+      widget.platform,
+    )) {
+      if (!mounted) return;
+      setState(() {
+        _albumsSupported = false;
+        _albumsLoading = false;
+        _albums = const [];
+      });
+      return;
+    }
+    _albumsToken?.cancel();
+    final token = OnlineMusicCancelToken();
+    _albumsToken = token;
+    setState(() {
+      _albumsSupported = true;
+      _albumsLoading = true;
+      _albumsError = null;
+    });
+    try {
+      final albums = await service.fetchArtistAlbums(
+        platform: widget.platform,
+        artistId: widget.artistId,
+        cancelToken: token,
+      );
+      if (!mounted || token.isCancelled) return;
+      setState(() {
+        _albums = albums;
+        _albumsLoading = false;
+      });
+    } on Object catch (error) {
+      if (!mounted || token.isCancelled) return;
+      setState(() {
+        _albumsLoading = false;
+        _albumsError = error is OnlineMusicException
+            ? error.safeMessage
+            : '读取艺人专辑失败';
+      });
+    }
   }
 
   Future<void> _load() async {
@@ -82,6 +143,8 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
       _loading = true;
       _error = null;
     });
+    // 专辑区块与热门歌曲**并行**加载 ✓（互不阻塞、互不牵连 ✓）。
+    unawaited(_loadAlbums(service));
     try {
       final artist = await service.fetchArtist(
         platform: widget.platform,
@@ -160,9 +223,66 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
                     ],
                   ),
           ),
+          // **专辑区块**（`artistAlbums`）：参考艺人页里「热门歌曲」之后正是「专辑」✓。
+          // 平台不支持时**整块不显示** ✓ —— 摆一个空区块会让人以为"这艺人没有专辑"（那是谎 ✗）。
+          if (_albumsSupported) ...[
+            const SizedBox(height: Spacing.lg),
+            ContentSection(
+              title: '专辑',
+              subtitle: '来自${musicPlatformLabel(artist.platform)}；点一张打开专辑页',
+              child: HorizontalShelf(
+                itemCount: _albums.length,
+                itemWidth: _albumCardWidth,
+                itemHeight: RemoteMediaCard.extentFor(
+                  width: _albumCardWidth,
+                  hasFooter: false,
+                ),
+                loading: _albumsLoading,
+                errorMessage: _albumsError,
+                onRetry: _retryAlbums,
+                emptyMessage: '这位艺人暂时没有公开专辑。',
+                emptyIcon: Symbols.album,
+                itemBuilder: (context, index) {
+                  final album = _albums[index];
+                  return RemoteMediaCard(
+                    width: _albumCardWidth,
+                    title: album.name,
+                    coverUri: album.coverUri,
+                    details: _albumDetailsOf(album),
+                    sourceLabel: platformLabelForIdentityOnly(album.identity),
+                    placeholderIcon: Symbols.album,
+                    onTap: () => context.push(
+                      app_paths.ONLINE_ALBUM_PAGE,
+                      extra: (
+                        platform: album.platform,
+                        albumId: album.id,
+                        name: album.name,
+                      ),
+                    ),
+                    semanticLabel: '${album.name}，打开专辑',
+                  );
+                },
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  /// 专辑卡片的宽度（与 Explore 的货架同一种"能放下就固定宽"的朴素做法 ✓）。
+  static const double _albumCardWidth = 168;
+
+  /// 专辑卡片的元信息：**平台声明**的发行年份与曲目数（有什么说什么 ✓）。
+  String _albumDetailsOf(OnlineAlbumSummary album) => [
+    if (album.releaseTime case final time?) '${time.year} 年',
+    if (album.trackCount case final count?) '$count 首',
+  ].join(' · ');
+
+  void _retryAlbums() {
+    final service = context.read<OnlineMusicService?>();
+    if (service == null) return;
+    unawaited(_loadAlbums(service));
   }
 
   Future<void> _play(OnlineArtist artist, MusicTrack track) =>

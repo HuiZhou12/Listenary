@@ -817,8 +817,8 @@ void main() {
         .length;
     expect(
       missingOnNetease,
-      6,
-      reason: '内置实现有 4 项、共 10 个能力 ⇒ 网易云卡应缺 6 项',
+      7,
+      reason: '内置实现有 4 项、共 11 个能力 ⇒ 网易云卡应缺 7 项',
     );
     expect(
       find.descendant(
@@ -2102,6 +2102,8 @@ void main() {
       OnlineMusicCapability.playlist,
       OnlineMusicCapability.artist,
       OnlineMusicCapability.album,
+      // 艺人专辑列表也要艺人 ID ✓。
+      OnlineMusicCapability.artistAlbums,
       OnlineMusicCapability.lyric,
       OnlineMusicCapability.stream,
     };
@@ -2767,6 +2769,26 @@ OnlineMusicDeclarativeCapabilityBinding validBindingFor(
         },
       ),
     ),
+    // 艺人专辑列表：专辑就在数组元素上（网易云 `/artist/album` 的 `hotAlbums` ✓）。
+    OnlineMusicCapability.artistAlbums =>
+      OnlineMusicDeclarativeCapabilityBinding(
+        request: const OnlineMusicRequestSpec(path: '/artist/album'),
+        response: OnlineMusicResponseSpec(
+          listPath: JsonPath.tryParse('hotAlbums'),
+          fields: {
+            OnlineMusicDomainField.albumId: field(
+              OnlineMusicDomainField.albumId,
+              'id',
+              asInt,
+            ),
+            OnlineMusicDomainField.albumName: field(
+              OnlineMusicDomainField.albumName,
+              'name',
+              asString,
+            ),
+          },
+        ),
+      ),
     // 专辑详情：标量在 `album`，曲目在**顶层** `songs`（与网易云实测一致）。
     OnlineMusicCapability.album => OnlineMusicDeclarativeCapabilityBinding(
       request: const OnlineMusicRequestSpec(path: '/album'),

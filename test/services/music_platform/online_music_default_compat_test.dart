@@ -83,6 +83,7 @@ void main() {
       // artist（2026-10-12）：默认条目**不声明**它，运行时也**不注册**它 ⇒ 两侧都空 ✓。
       OnlineMusicCapability.artist: runtime.artistPlatforms,
       OnlineMusicCapability.album: runtime.albumPlatforms,
+      OnlineMusicCapability.artistAlbums: runtime.artistAlbumPlatforms,
       OnlineMusicCapability.lyric: runtime.lyricPlatforms,
       OnlineMusicCapability.stream: runtime.resolvablePlatforms,
     };

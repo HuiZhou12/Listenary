@@ -42,6 +42,8 @@ enum OnlineMusicDomainField {
   artistDescription,
 
   // album（专辑详情，2026-10-12）：标量部分；曲目**复用**上面的曲目字段。
+  /// **单个专辑 id**（专辑列表里的一项；与 [albumIds] 不同：后者是"曲目所属专辑"的同序列表 ✓）。
+  albumId,
   /// 专辑名。
   albumName,
   /// 专辑封面（http(s)）。
@@ -173,7 +175,9 @@ OnlineMusicFieldReader fieldReaderOf(OnlineMusicDomainField field) =>
       OnlineMusicDomainField.categoryId ||
       OnlineMusicDomainField.categoryName ||
       // 专辑艺人 id 与其它 id 同类（`scalar`：把 int/字符串插值成身份 ✓）。
-      OnlineMusicDomainField.albumArtistId => OnlineMusicFieldReader.scalar,
+      OnlineMusicDomainField.albumArtistId ||
+      // 专辑列表里的单个专辑 id 同理 ✓。
+      OnlineMusicDomainField.albumId => OnlineMusicFieldReader.scalar,
       OnlineMusicDomainField.album ||
       // 歌单名在"详情"路径由 `_readString` 读、在"集合"路径由 `_readRequired` 插值读
       // ⇒ 取**交集**（只要 `asString`），两条路径都安全。
@@ -559,6 +563,11 @@ final class OnlineMusicResponseSpec {
         if (listPath == null && fieldsRootPath == null) {
           issues.add('专辑详情能力必须配置字段根路径或列表路径');
         }
+      case OnlineMusicCapability.artistAlbums:
+        // 艺人专辑列表：只要"能列出专辑" ⇒ **必须**有列表路径 ✓。
+        if (listPath == null) {
+          issues.add('艺人专辑列表能力必须配置列表路径');
+        }
       case OnlineMusicCapability.newSongs:
         // 新歌就是一个曲目数组，与搜索同构。
         if (listPath == null) {
@@ -692,6 +701,16 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.coverUri,
         OnlineMusicDomainField.duration,
       };
+    case OnlineMusicCapability.artistAlbums:
+      // 艺人专辑列表 = 专辑元数据（id/名字/封面/曲目数/发行时间）—— **没有曲目** ✓
+      //（列表项本来就不带曲目，真实服务也不给 ⇒ 不为了"统一"而要求曲目字段 ✓）。
+      return const {
+        OnlineMusicDomainField.albumId,
+        OnlineMusicDomainField.albumName,
+        OnlineMusicDomainField.albumCoverUri,
+        OnlineMusicDomainField.albumTrackCount,
+        OnlineMusicDomainField.albumReleaseTime,
+      };
     case OnlineMusicCapability.album:
       // 专辑详情 = 标量（名字/封面/专辑艺人+id/曲目数/发行时间）× 曲目（曲目字段与搜索相同）。
       // 曲目里也允许 `artistIds` ⇒ 专辑页的每一行同样能**点开艺人页** ✓。
@@ -790,6 +809,12 @@ Set<OnlineMusicDomainField> requiredFieldsFor(
     case OnlineMusicCapability.album:
       // 至少要能确定"这是哪张专辑"；曲目可以为空 ✓。
       return const {OnlineMusicDomainField.albumName};
+    case OnlineMusicCapability.artistAlbums:
+      // 列表项至少要能确定"这是哪张专辑"：**id + 名字** ✓。
+      return const {
+        OnlineMusicDomainField.albumId,
+        OnlineMusicDomainField.albumName,
+      };
     case OnlineMusicCapability.lyric:
       return const {};
   }

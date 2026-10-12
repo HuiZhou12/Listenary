@@ -165,27 +165,114 @@ void main() {
     // 首帧（还没 settle）就应该能看到已知名。
     expect(find.text('Beyond（已知名）'), findsOneWidget);
   });
+
+  testWidgets('平台支持时显示「专辑」区块（参考顺序：热门歌曲 → 专辑）', (tester) async {
+    final service = _FakeArtistService(
+      OnlineArtist(
+        platform: MusicPlatform.netease,
+        id: '7763',
+        name: 'G.E.M.邓紫棋',
+        hotSongs: [track('1', '光年之外')],
+      ),
+      albums: [
+        OnlineAlbumSummary(
+          platform: MusicPlatform.netease,
+          id: '398617121',
+          name: '新的心跳',
+          trackCount: 10,
+          releaseTime: DateTime.utc(2015, 11, 6),
+        ),
+      ],
+    );
+
+    await pumpArtist(tester, service);
+    await settle(tester, find.text('专辑'));
+
+    // 参考艺人页里「专辑」是**热门歌曲之后**的下一个区块 ✓。
+    expect(find.text('热门歌曲'), findsOneWidget);
+    expect(find.text('专辑'), findsOneWidget);
+    expect(find.text('新的心跳'), findsOneWidget);
+    // 卡片元信息只写**平台声明**的事实：年份 + 曲目数 ✓。
+    expect(find.textContaining('2015 年'), findsOneWidget);
+    expect(find.textContaining('10 首'), findsOneWidget);
+  });
+
+  testWidgets('平台**不支持**艺人专辑列表 ⇒ 整块不显示（不摆空区块骗人）', (tester) async {
+    final service = _FakeArtistService(
+      OnlineArtist(
+        platform: MusicPlatform.netease,
+        id: '7763',
+        name: 'Beyond',
+        hotSongs: [track('9', '灰色轨迹')],
+      ),
+      albumsSupported: false,
+    );
+
+    await pumpArtist(tester, service);
+    await settle(tester, find.text('热门歌曲'));
+
+    expect(
+      find.text('专辑'),
+      findsNothing,
+      reason: '不支持却摆一个空区块 ⇒ 会让人以为"这艺人没有专辑"（那是谎 ✗）',
+    );
+  });
 }
+
+/// 一行测试曲目（带艺人 id ⇒ 详情行的艺人段可点 ✓）。
+MusicTrack track(String id, String title) => MusicTrack(
+  ref: const PlatformTrackRef(platform: MusicPlatform.netease, trackId: '1'),
+  title: title,
+  artists: const ['G.E.M.邓紫棋'],
+  artistIds: const ['7763'],
+  albumIds: const ['398617121'],
+);
 
 /// 极简假件：只实现页面用到的成员，其余交给 `noSuchMethod`（Dart 允许 ✓）。
 final class _FakeArtistService implements OnlineMusicService {
-  @override
-  Future<OnlineAlbum> fetchAlbum({
-    required MusicPlatform platform,
-    required String albumId,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Album detail is not implemented here');
-  _FakeArtistService(this.artist) : failure = null;
-  _FakeArtistService.failing(this.failure) : artist = null;
+  _FakeArtistService(
+    this.artist, {
+    this.albums = const [],
+    this.albumsSupported = true,
+  }) : failure = null;
+
+  _FakeArtistService.failing(this.failure)
+    : artist = null,
+      albums = const [],
+      albumsSupported = true;
 
   final OnlineArtist? artist;
+  final List<OnlineAlbumSummary> albums;
+
+  /// `false` ⇒ 能力集合里**不声明**艺人专辑列表 ⇒ 页面应**整块不显示** ✓。
+  final bool albumsSupported;
   final Object? failure;
 
   @override
   OnlineMusicCapabilities get capabilities => OnlineMusicCapabilities(
     searchablePlatforms: const [],
     resolvablePlatforms: const [],
+    albumPlatforms: albumsSupported ? const [MusicPlatform.netease] : const [],
+    artistAlbumPlatforms: albumsSupported
+        ? const [MusicPlatform.netease]
+        : const [],
   );
+
+  @override
+  Future<List<OnlineAlbumSummary>> fetchArtistAlbums({
+    required MusicPlatform platform,
+    required String artistId,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => albums;
+
+  @override
+  Future<OnlineAlbum> fetchAlbum({
+    required MusicPlatform platform,
+    required String albumId,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Album detail is not implemented here');
 
   @override
   Future<OnlineArtist> fetchArtist({

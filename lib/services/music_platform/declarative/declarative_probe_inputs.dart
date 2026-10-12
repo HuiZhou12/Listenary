@@ -65,6 +65,8 @@ DeclarativeProbeInputRequirement probeInputRequirementFor(
   OnlineMusicCapability.playlist ||
   OnlineMusicCapability.artist ||
   OnlineMusicCapability.album ||
+  // 艺人专辑列表同样要实体 ID（艺人 id 在请求里 ✓）⇒ 不参与服务级探测 ✓。
+  OnlineMusicCapability.artistAlbums ||
   OnlineMusicCapability.lyric ||
   OnlineMusicCapability.stream => const DeclarativeProbeInputRequirement(),
 };

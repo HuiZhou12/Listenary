@@ -64,6 +64,15 @@ enum OnlineMusicCapability {
   newSongs,
   artist,
   album,
+  /// **艺人的专辑列表**（`artistAlbums`，2026-10-12 新增）：参考产品艺人页的「专辑」区块 ✓。
+  ///
+  /// 与 [artist]（"艺人 + 热门歌曲"）分开，因为真实服务是**另一个接口**：
+  /// 网易云实测 `/artist/album?id=` 返回 `{code, artist, hotAlbums, more, kindTabs}` ✓
+  /// （D2：一个能力不做多请求 ✓）。输入复用**艺人 id** ✓（不再新增输入源 ✓）。
+  ///
+  /// 参考艺人页的分区顺序是：**热门歌曲 → 专辑 → 单曲和迷你专辑 → 视频 → 现场表演** ✓
+  /// ⇒ 这一版先做「专辑」✓；「单曲」是同形但另一个接口 ✓，留作下一步 ✓（不假装有 ✓）。
+  artistAlbums,
   lyric,
   stream,
 }
@@ -80,6 +89,7 @@ String onlineMusicCapabilityLabel(OnlineMusicCapability capability) =>
       OnlineMusicCapability.newSongs => '新歌',
       OnlineMusicCapability.artist => '艺人详情',
       OnlineMusicCapability.album => '专辑详情',
+      OnlineMusicCapability.artistAlbums => '艺人专辑列表',
       OnlineMusicCapability.lyric => '歌词',
       OnlineMusicCapability.stream => '播放解析',
     };

@@ -63,6 +63,8 @@ $artist   = Get-Json "$BaseUrl/artists?id=$artistId"
 # album（2026-10-12 新增）：用同一首歌的专辑 id 抓 /album（形状 = album + 顶层 songs）。
 $albumId  = $search.result.songs[0].album.id
 $album    = Get-Json "$BaseUrl/album?id=$albumId"
+# artistAlbums（2026-10-12 新增）：同一个艺人的专辑列表（形状 = hotAlbums 数组）。
+$artistAlbums = Get-Json "$BaseUrl/artist/album?id=$artistId&limit=$Trim"
 
 $blocks = [ordered]@{
   rawSearch = ([ordered]@{
@@ -120,6 +122,13 @@ $blocks = [ordered]@{
       code  = $album.code
       album = $album.album
       songs = Take $album.songs $Trim
+    } | ConvertTo-Json -Depth 30 -Compress)
+
+  # artistAlbums（2026-10-12）：专辑就在 hotAlbums 数组里（裁到 $Trim 条）。
+  rawArtistAlbums = ([ordered]@{
+      code      = $artistAlbums.code
+      hotAlbums = Take $artistAlbums.hotAlbums $Trim
+      more      = $artistAlbums.more
     } | ConvertTo-Json -Depth 30 -Compress)
 }
 

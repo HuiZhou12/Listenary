@@ -937,6 +937,10 @@ int _countListEntries(JsonPath? listPath, Object? body) {
   OnlineMusicCapability.album => throw UnsupportedError(
     '专辑详情需要专辑 ID，不参与服务级探测（请用「试跑」验证这份配置）',
   ),
+  // 艺人专辑列表同理（艺人 id 在请求里 ✓）。
+  OnlineMusicCapability.artistAlbums => throw UnsupportedError(
+    '艺人专辑列表需要艺人 ID，不参与服务级探测（请用「试跑」验证这份配置）',
+  ),
   OnlineMusicCapability.search || OnlineMusicCapability.newSongs => (
     count: mapDeclarativeSearchResponse(
       spec: binding.response,

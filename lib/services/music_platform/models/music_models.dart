@@ -361,6 +361,41 @@ final class OnlineArtist {
       PlatformIdentity(platform, platformId: platformId);
 }
 
+/// **专辑列表里的一项**（`artistAlbums` 能力，2026-10-12 新增）：只有元数据，**没有曲目** ✓。
+///
+/// 与 [OnlineAlbum]（专辑详情，**带曲目**）刻意分开：列表项本来就没有曲目，
+/// 真实服务（网易云 `/artist/album`）也只给元数据 ✓ ⇒ 不为了"统一"而塞空列表 ✓。
+final class OnlineAlbumSummary {
+  OnlineAlbumSummary({
+    required this.platform,
+    required this.id,
+    required this.name,
+    this.coverUri,
+    this.trackCount,
+    this.releaseTime,
+    this.platformId,
+  });
+
+  final MusicPlatform platform;
+
+  /// 平台自己的专辑标识。
+  final String id;
+  final String name;
+  final Uri? coverUri;
+
+  /// 平台声明的曲目数（`size`）。
+  final int? trackCount;
+
+  /// 发行时间（**UTC**；平台给的是**毫秒**时间戳 ✓）。
+  final DateTime? releaseTime;
+
+  /// 自定义平台的稳定 ID（内置平台为 null ⇒ identity = builtin）。
+  final String? platformId;
+
+  PlatformIdentity get identity =>
+      PlatformIdentity(platform, platformId: platformId);
+}
+
 /// 一张**在线专辑**（`album` 能力，2026-10-12 新增）：标量信息 + **曲目**。
 ///
 /// 形状与 [RemotePlaylist]/[OnlineArtist] 同构（"元数据 + 曲目列表"），因为真实服务就是这样：
