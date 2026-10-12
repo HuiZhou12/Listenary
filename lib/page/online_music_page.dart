@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
+import 'package:pure_music/component/online_source_label.dart';
 import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
+import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
@@ -107,6 +111,23 @@ final class _EmptyGroupEntry extends _SearchEntry {
   final MusicPlatform platform;
 }
 
+/// **专辑结果行**（2026-10-12 ✓）：与曲目行**混在同一个列表**里 ✓，
+/// 靠行首的「**专辑 · …**」类型前缀自报家门 ✓ —— 与参考产品"混合结果 + 类型前缀"的做法一致 ✓
+///（详见 `docs/specs/home-explore-reference-analysis.md` §4.0 的订正 ✓）。
+final class _AlbumEntry extends _SearchEntry {
+  const _AlbumEntry(this.album);
+
+  final OnlineAlbumSummary album;
+}
+
+/// **专辑搜索失败的提示行**（只属于该平台 ✓）：不静默 ✓ ——
+/// 否则"没有专辑"与"专辑搜索失败"看起来一模一样 ✗。
+final class _AlbumFailureEntry extends _SearchEntry {
+  const _AlbumFailureEntry(this.platform);
+
+  final MusicPlatform platform;
+}
+
 final class _FooterEntry extends _SearchEntry {
   const _FooterEntry(this.group);
 
@@ -136,6 +157,12 @@ class OnlineMusicPage extends StatefulWidget {
 
 class _OnlineMusicPageState extends State<OnlineMusicPage> {
   late final TextEditingController _searchController = TextEditingController();
+  /// 搜索结果里的**专辑**（2026-10-12）：按平台各存一份 ✓（与曲目分组一一对应 ✓）。
+  final Map<MusicPlatform, List<OnlineAlbumSummary>> _albums = {};
+
+  /// 专辑搜索失败的平台（**只影响该平台的专辑行** ✓，曲目结果照常显示 ✓）。
+  final Set<MusicPlatform> _albumsFailed = {};
+
   _OnlineSearchStatus _status = _OnlineSearchStatus.idle;
 
   /// 已搜索的平台分组（顺序 = `builtinMusicPlatforms`）。
@@ -293,6 +320,60 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     );
   }
 
+  /// **搜专辑**（2026-10-12）：只对"搜得出来、且专辑打得开"的平台 ✓
+  ///（`openableSearchAlbumPlatforms` ✓ —— 搜出来点不开比不显示更糟 ✗）。
+  ///
+  /// 与曲目结果**并行**加载 ✓；单个平台失败**只影响该平台的专辑行** ✓，
+  /// 而且会**如实标出**失败 ✓（否则"搜不到专辑"与"专辑搜索失败"看起来一样 ✗）。
+  Future<void> _loadAlbums({
+    required OnlineMusicService service,
+    required List<MusicPlatform> platforms,
+    required String keyword,
+    required OnlineMusicCancelToken token,
+    required int generation,
+  }) async {
+    final targets = [
+      for (final platform in platforms)
+        if (service.capabilities.openableSearchAlbumPlatforms.contains(
+          platform,
+        ))
+          platform,
+    ];
+    if (targets.isEmpty) return;
+    final results = await Future.wait([
+      for (final platform in targets)
+        () async {
+          try {
+            final albums = await service.searchAlbums(
+              platform: platform,
+              keyword: keyword,
+              limit: _searchPageSize,
+              offset: 0,
+              cancelToken: token,
+            );
+            return (
+              platform: platform,
+              albums: albums,
+              failed: false,
+            );
+          } on Object {
+            return (
+              platform: platform,
+              albums: const <OnlineAlbumSummary>[],
+              failed: true,
+            );
+          }
+        }(),
+    ]);
+    if (!mounted || generation != _generation) return;
+    setState(() {
+      for (final result in results) {
+        if (result.albums.isNotEmpty) _albums[result.platform] = result.albums;
+        if (result.failed) _albumsFailed.add(result.platform);
+      }
+    });
+  }
+
   Future<void> _submitSearch() async {
     final query = normalizedSearchQuery(_searchController.text);
     if (query.isEmpty) {
@@ -324,8 +405,26 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
           for (final platform in platforms)
             _PlatformSearchState(platform: platform),
         ]);
+      // 专辑结果与曲目结果**同时开跑** ✓（清掉上一次的 ✓）。
+      _albums.clear();
+      _albumsFailed.clear();
       _error = null;
     });
+
+    // 专辑与曲目**并行**：专辑失败只影响专辑行 ✓（曲目照常 ✓）。
+    // 用**可空**读取（与本页其它地方一致 ✓：服务未注入时应静默跳过 ✓，不能抛 ✗）。
+    final albumService = context.read<OnlineMusicService?>();
+    if (albumService != null) {
+      unawaited(
+        _loadAlbums(
+          service: albumService,
+          platforms: platforms,
+          keyword: query,
+          token: token,
+          generation: generation,
+        ),
+      );
+    }
 
     try {
       final result = await _request(
@@ -703,6 +802,17 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
       for (final track in group.items) {
         entries.add(_TrackEntry(group, track));
       }
+      // **专辑结果与曲目混排** ✓（同一平台内：曲目之后接专辑 ✓）——
+      // 每行以「专辑 · …」自报家门 ✓，与参考"混合结果 + 类型前缀"一致 ✓。
+      final albums = _albums[group.platform];
+      if (albums != null) {
+        for (final album in albums) {
+          entries.add(_AlbumEntry(album));
+        }
+      }
+      if (_albumsFailed.contains(group.platform)) {
+        entries.add(_AlbumFailureEntry(group.platform));
+      }
       entries.add(_FooterEntry(group));
     }
     return entries;
@@ -717,6 +827,8 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
       itemBuilder: (context, index) => switch (entries[index]) {
         _GroupHeaderEntry(:final platform) => _buildGroupHeader(platform),
         _TrackEntry(:final group, :final track) => _buildTrackRow(group, track),
+        _AlbumEntry(:final album) => _buildAlbumRow(album),
+        _AlbumFailureEntry(:final platform) => _buildAlbumFailureRow(platform),
         _FailureEntry(:final group) => _buildFailureRow(group),
         _EmptyGroupEntry(:final platform) => _buildEmptyGroupRow(platform),
         _FooterEntry(:final group) => _buildLoadMoreFooter(group),
@@ -749,6 +861,116 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
         track: track,
         onTap: () => _selectTrack(group, track),
       );
+
+  /// 一行**专辑结果**：与曲目行混排 ✓，元信息以「**专辑 · 年份 · N 首**」自报家门 ✓。
+  ///
+  /// 自带透明 `Material` ✓ —— 可点区域**不假设**祖先里有 Material（R84 的教训 ✓）。
+  Widget _buildAlbumRow(OnlineAlbumSummary album) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: 2),
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: AppRadius.smCircular,
+        child: InkWell(
+          borderRadius: AppRadius.smCircular,
+          onTap: () => context.push(
+            app_paths.ONLINE_ALBUM_PAGE,
+            extra: (
+              platform: album.platform,
+              albumId: album.id,
+              name: album.name,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: Spacing.sm,
+              vertical: 8.0,
+            ),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: AppRadius.xsCircular,
+                  child: SizedBox.square(
+                    dimension: 48.0,
+                    child: RemoteMediaCover(
+                      coverUri: album.coverUri,
+                      placeholder: ColoredBox(
+                        color: scheme.surfaceContainerHighest,
+                        child: Icon(
+                          Symbols.album,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      cacheWidth: 96,
+                      cacheHeight: 96,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: Spacing.md),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        album.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: scheme.onSurface,
+                          fontSize: AppType.subtitle,
+                          fontWeight: AppType.weightMedium,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _albumDetailsOf(album),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+                OnlineSourceLabel(
+                  label: platformLabelForIdentityOnly(album.identity),
+                  color: scheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 专辑结果的元信息：**平台声明**的事实 ✓（类型前缀 + 年份 + 曲目数 ✓）。
+  String _albumDetailsOf(OnlineAlbumSummary album) => [
+    '专辑',
+    if (album.releaseTime case final time?) '${time.year} 年',
+    if (album.trackCount case final count?) '$count 首',
+  ].join(' · ');
+
+  /// 专辑搜索失败：**如实标出** ✓（不静默 ✓，也不影响该平台的曲目结果 ✓）。
+  Widget _buildAlbumFailureRow(MusicPlatform platform) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+      child: Row(
+        children: [
+          Icon(Symbols.album, size: 16.0, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 8.0),
+          Expanded(
+            child: Text(
+              '${musicPlatformLabel(platform)}的专辑结果没取到（曲目结果不受影响）',
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   /// 单平台失败：只影响这个分组，其它平台的结果照常显示（D6 / §8）。
   Widget _buildFailureRow(_PlatformSearchState group) {
