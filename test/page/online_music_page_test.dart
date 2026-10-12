@@ -133,7 +133,11 @@ void main() {
     expect(calls.single.limit, 30);
     expect(calls.single.offset, 0);
     expect(find.text('Explicit Result'), findsOneWidget);
-    expect(find.text('Test Artist · Test Album'), findsOneWidget);
+    // 详情行现在是**分段渲染**（艺人 / 专辑各一段 + 中间的分隔符）⇒ 逐段断言 ✓
+    // （比原来找整串 "艺人 · 专辑" 更强：分段错了也抓得到 ✓）。
+    expect(find.text('Test Artist'), findsOneWidget);
+    expect(find.text('Test Album'), findsOneWidget);
+    expect(find.text(' · '), findsOneWidget);
     expect(find.text('2:03'), findsOneWidget);
   });
 

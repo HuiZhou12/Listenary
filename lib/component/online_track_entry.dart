@@ -46,10 +46,46 @@ class OnlineTrackEntry extends StatelessWidget {
         track.ref.hasValidIdentity &&
         track.availability != TrackAvailability.unavailable &&
         track.availability != TrackAvailability.paid;
+    final artistText = track.artistDisplay;
+    final albumText = track.album;
     final details = [
-      if (track.artistDisplay.isNotEmpty) track.artistDisplay,
-      if (track.album.isNotEmpty) track.album,
+      if (artistText.isNotEmpty) artistText,
+      if (albumText.isNotEmpty) albumText,
     ].join(' · ');
+    // 详情行**分段**（2026-10-12）：带了对应 id 的那一段才可点 ⇒ 艺人页 / 专辑页 ✓。
+    // 没有 id 的段保持纯文本（不猜、不假装可点 ✓）。
+    final detailParts = <({String text, VoidCallback? onTap, String? tooltip})>[
+      if (artistText.isNotEmpty)
+        (
+          text: artistText,
+          onTap: track.artistIds.isEmpty
+              ? null
+              : () => context.push(
+                  app_paths.ONLINE_ARTIST_PAGE,
+                  extra: (
+                    platform: track.ref.platform,
+                    artistId: track.artistIds.first,
+                    name: track.artists.isEmpty ? null : track.artists.first,
+                  ),
+                ),
+          tooltip: track.artistIds.isEmpty ? null : '查看艺人',
+        ),
+      if (albumText.isNotEmpty)
+        (
+          text: albumText,
+          onTap: track.albumIds.isEmpty
+              ? null
+              : () => context.push(
+                  app_paths.ONLINE_ALBUM_PAGE,
+                  extra: (
+                    platform: track.ref.platform,
+                    albumId: track.albumIds.first,
+                    name: albumText,
+                  ),
+                ),
+          tooltip: track.albumIds.isEmpty ? null : '查看专辑',
+        ),
+    ];
     // 与既有各页一致（非空查找）：收藏状态是这一行的必要输入，页面必须提供它。
     final favorites = context.watch<PersonalOnlinePlaylistController>();
     final row = OnlineTrackRow(
@@ -68,17 +104,8 @@ class OnlineTrackEntry extends StatelessWidget {
       onRemove: onRemove,
       isNowPlaying: isOnlineTrackNowPlaying(context, track.ref),
       leadingIndex: leadingIndex,
-      // 曲目带**艺人 id** 时给出入口 ⇒ 详情行可点、打开艺人页 ✓（没带就保持纯文本 ✓）。
-      onArtistTap: track.artistIds.isEmpty
-          ? null
-          : () => context.push(
-              app_paths.ONLINE_ARTIST_PAGE,
-              extra: (
-                platform: track.ref.platform,
-                artistId: track.artistIds.first,
-                name: track.artists.isEmpty ? null : track.artists.first,
-              ),
-            ),
+      // 详情行分段（艺人 / 专辑）✓；没带 id 的段由上面构造成不可点 ✓。
+      detailParts: detailParts,
     );
     if (!animateEntrance) return row;
     return DirectionalListItemEntrance(identity: track.ref, child: row);

@@ -56,7 +56,7 @@ class OnlineTrackRow extends StatefulWidget {
     this.isNowPlaying = false,
     this.sourceLabel,
     this.leadingIndex,
-    this.onArtistTap,
+    this.detailParts = const [],
   });
 
   final MusicTrack track;
@@ -81,9 +81,12 @@ class OnlineTrackRow extends StatefulWidget {
   /// 普通歌单传 null ⇒ 不渲染序号（与参考产品的规则一致）。
   final int? leadingIndex;
 
-  /// **打开艺人页**（可选，2026-10-12）：曲目带艺人 id 时由调用方给出 ⇒ 详情行变可点 ✓。
-  /// 为 null 时详情行是纯文本（**不显示可点**，不猜 ✓）。
-  final VoidCallback? onArtistTap;
+  /// **详情行的分段**（2026-10-12）：每段可带自己的点击目标。
+  ///
+  /// 只有"确实带 id"的那一段才给 `onTap`（艺人名要 `artistIds`、专辑名要 `albumIds` ✓）；
+  /// 没给的部分就是**纯文本** —— 界面上不出现"看着能点、其实点不动"的东西 ✓。
+  /// 为空时退化成 [details] 一行普通文字 ✓。
+  final List<({String text, VoidCallback? onTap, String? tooltip})> detailParts;
 
   @override
   State<OnlineTrackRow> createState() => _OnlineTrackRowState();
@@ -183,31 +186,36 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                           Row(
                             children: [
                               Flexible(
-                                // 曲目带**艺人 id** 时这一行可点 ⇒ 打开艺人页（2026-10-12）。
-                                // 没带 id 的曲目**不显示可点**（不猜、不假装 ✓）。
-                                child: widget.onArtistTap == null
+                                // 详情行分段：可点段带下划线 + 悬停提示；不可点段是普通文字 ✓。
+                                child: widget.detailParts.isEmpty
                                     ? Text(
                                         widget.details,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(color: metadataColor),
                                       )
-                                    : Tooltip(
-                                        message: '查看艺人',
-                                        child: InkWell(
-                                          onTap: widget.onArtistTap,
-                                          borderRadius: AppRadius.xsCircular,
-                                          child: Text(
-                                            widget.details,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: metadataColor,
-                                              decoration: TextDecoration.underline,
-                                              decorationColor: metadataColor,
+                                    : Row(
+                                        children: [
+                                          for (
+                                            var i = 0;
+                                            i < widget.detailParts.length;
+                                            i++
+                                          ) ...[
+                                            if (i > 0)
+                                              Text(
+                                                ' · ',
+                                                style: TextStyle(
+                                                  color: metadataColor,
+                                                ),
+                                              ),
+                                            Flexible(
+                                              child: _DetailSegment(
+                                                part: widget.detailParts[i],
+                                                color: metadataColor,
+                                              ),
                                             ),
-                                          ),
-                                        ),
+                                          ],
+                                        ],
                                       ),
                               ),
                               if (widget.sourceLabel case final label?) ...[
@@ -321,6 +329,37 @@ class _OnlineTrackCover extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// 详情行的一段：**可点**时带下划线与悬停提示；**不可点**就是普通文字 ✓。
+class _DetailSegment extends StatelessWidget {
+  const _DetailSegment({required this.part, required this.color});
+
+  final ({String text, VoidCallback? onTap, String? tooltip}) part;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final onTap = part.onTap;
+    final text = Text(
+      part.text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        color: color,
+        decoration: onTap == null ? null : TextDecoration.underline,
+        decorationColor: color,
+      ),
+    );
+    if (onTap == null) return text;
+    final link = InkWell(
+      onTap: onTap,
+      borderRadius: AppRadius.xsCircular,
+      child: text,
+    );
+    final tooltip = part.tooltip;
+    return tooltip == null ? link : Tooltip(message: tooltip, child: link);
   }
 }
 
