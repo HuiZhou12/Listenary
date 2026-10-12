@@ -18,6 +18,33 @@ void main() {
     database.dispose();
   });
 
+  test('v6：艺人 / 专辑的 id 一起存下来，读回来还在（没带 id 就是空，不编造）', () {
+    // 为什么要有这条：主页「继续听」与「我的收藏」的行是**从库里读回来**的 ✓，
+    // 而 v6 之前库里只有名字没有 id ✗ ⇒ 那两处的"艺人 / 专辑"入口点不动 ✓。
+    repository.upsertTrack(
+      _track(
+        id: 't1',
+        artists: const ['甲'],
+        artistIds: const ['ar1'],
+        albumIds: const ['al1'],
+      ),
+      updatedAt: DateTime.utc(2026, 10, 12),
+    );
+    final stored = repository.findTrack(_ref('t1'))!;
+    expect(stored.artists, ['甲']);
+    expect(stored.artistIds, ['ar1'], reason: '艺人 id 必须写进库、读得回来');
+    expect(stored.albumIds, ['al1'], reason: '专辑 id 必须写进库、读得回来');
+
+    // 没带 id 的曲目（例如平台就是没给）⇒ 读回来是空列表 ✓ —— 不许拿名字凑一个假 id ✓。
+    repository.upsertTrack(
+      _track(id: 't2'),
+      updatedAt: DateTime.utc(2026, 10, 12),
+    );
+    final plain = repository.findTrack(_ref('t2'))!;
+    expect(plain.artistIds, isEmpty);
+    expect(plain.albumIds, isEmpty);
+  });
+
   test('upserts and reads safe track metadata with ordered artists', () {
     final updatedAt = DateTime.utc(2026, 8, 17, 10);
     repository.upsertTrack(
@@ -517,14 +544,18 @@ MusicTrack _track({
   required String id,
   String title = 'Track',
   List<String> artists = const ['Artist'],
+  List<String> artistIds = const [],
   String album = 'Album',
+  List<String> albumIds = const [],
   Uri? coverUri,
   Duration duration = const Duration(minutes: 3),
 }) => MusicTrack(
   ref: _ref(id),
   title: title,
   artists: artists,
+  artistIds: artistIds,
   album: album,
+  albumIds: albumIds,
   coverUri: coverUri ?? Uri.https('example.test', '/cover.jpg'),
   duration: duration,
   availability: TrackAvailability.playable,

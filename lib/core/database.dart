@@ -4,7 +4,7 @@ import 'package:pure_music/core/settings.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqlite3/sqlite3.dart';
 
-const latestAppDatabaseVersion = 5;
+const latestAppDatabaseVersion = 6;
 
 class AppDb {
   AppDb._();
@@ -93,6 +93,24 @@ CREATE TABLE IF NOT EXISTS album_colors (
   _migrateAppDatabase(db);
 }
 
+/// 给表**补一列**（已经存在就跳过 ✓）—— 迁移里做幂等加列用 ✓。
+///
+/// 为什么不直接 `ALTER TABLE`：全新库的建表语句已经带上了这些列 ✓，
+/// 而迁移是**按版本顺序**跑的（全新库会从 v1 一路走到最新 ✓）⇒ 直接 ALTER 会重复加列报错 ✗。
+void _addColumnIfMissing(
+  Database db,
+  String table,
+  String column,
+  String type,
+) {
+  final existing = db
+      .select('PRAGMA table_info($table)')
+      .map((row) => row['name'] as String)
+      .toSet();
+  if (existing.contains(column)) return;
+  db.execute('ALTER TABLE $table ADD COLUMN $column $type');
+}
+
 void _migrateAppDatabase(Database db) {
   db.execute('BEGIN');
   try {
@@ -124,6 +142,8 @@ CREATE TABLE IF NOT EXISTS online_tracks (
   track_id TEXT NOT NULL,
   title TEXT NOT NULL,
   album TEXT NOT NULL DEFAULT '',
+  -- v6 起建表就带上（老库由下面的 v6 块补 ✓）：专辑 id，可空 ✓。
+  album_id TEXT,
   cover_uri TEXT,
   duration_ms INTEGER NOT NULL DEFAULT 0 CHECK(duration_ms >= 0),
   availability TEXT NOT NULL DEFAULT 'unknown',
@@ -138,6 +158,8 @@ CREATE TABLE IF NOT EXISTS online_track_artists (
   track_id TEXT NOT NULL,
   ordinal INTEGER NOT NULL CHECK(ordinal >= 0),
   name TEXT NOT NULL,
+  -- v6 起建表就带上（老库由下面的 v6 块补 ✓）：艺人 id，可空 ✓。
+  artist_id TEXT,
   PRIMARY KEY (platform, track_id, ordinal),
   FOREIGN KEY (platform, track_id)
     REFERENCES online_tracks(platform, track_id) ON DELETE CASCADE
@@ -212,6 +234,18 @@ CREATE INDEX IF NOT EXISTS idx_online_playlist_items_playlist
       _ensureOnlineSchemaShape(db);
       db.execute('PRAGMA user_version = 5');
     }
+    if (version < 6) {
+      // v6（2026-10-12）：给"继续听 / 我的收藏"补回**艺人 id / 专辑 id** ✓。
+      // 为什么：这两处的行是从本地库读回来的 ✓，而库里只存了**艺人名**与**专辑名** ✗
+      // ⇒ 重启之后没有 id ⇒ 行上的"艺人 / 专辑"入口点不动 ✗（在线列表里都有 ✓，就这两处没有）。
+      // 两列都**可空** ✓：老数据补不上就是 NULL ✓，界面据此**不显示**入口 ✓（不编造 ✓）。
+      //
+      // ⚠️ 必须**幂等** ✓：全新库走的是 v5 建表（已经带这两列 ✓）后再落到这里 ⇒
+      // 直接 ALTER 会 "duplicate column name" ✗ ⇒ 先查列再加 ✓。
+      _addColumnIfMissing(db, 'online_tracks', 'album_id', 'TEXT');
+      _addColumnIfMissing(db, 'online_track_artists', 'artist_id', 'TEXT');
+      db.execute('PRAGMA user_version = 6');
+    }
     db.execute('COMMIT');
   } catch (_) {
     db.execute('ROLLBACK');
@@ -231,6 +265,8 @@ const _onlineTableExpectedColumns = <String, List<String>>{
     'track_id',
     'title',
     'album',
+    // v6（2026-10-12）：专辑 id（可空 ✓ —— 老数据补不上就是 NULL ✓）。
+    'album_id',
     'cover_uri',
     'duration_ms',
     'availability',
@@ -238,7 +274,14 @@ const _onlineTableExpectedColumns = <String, List<String>>{
     'created_at',
     'updated_at',
   ],
-  'online_track_artists': ['platform', 'track_id', 'ordinal', 'name'],
+  'online_track_artists': [
+    'platform',
+    'track_id',
+    'ordinal',
+    'name',
+    // v6（2026-10-12）：艺人 id（可空 ✓）。
+    'artist_id',
+  ],
   'online_play_history': ['platform', 'track_id', 'play_count', 'last_played_at'],
   'online_playlists': [
     'id',

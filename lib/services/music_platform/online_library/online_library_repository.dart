@@ -107,7 +107,7 @@ final class OnlineLibraryRepository {
 
   MusicTrack? findTrack(PlatformTrackRef ref) {
     final rows = _db.select(
-      'SELECT platform, track_id, title, album, cover_uri, duration_ms, '
+      'SELECT platform, track_id, title, album, album_id, cover_uri, duration_ms, '
       'availability FROM online_tracks WHERE platform = ? AND track_id = ?',
       [_platformIdentityValue(ref.identity), _requiredTrackId(ref.trackId)],
     );
@@ -231,7 +231,7 @@ final class OnlineLibraryRepository {
     final base = _readPlaylistSnapshot(rows.single);
     final playlist = base.playlist;
     final itemRows = _db.select(
-      'SELECT t.platform, t.track_id, t.title, t.album, t.cover_uri, '
+      'SELECT t.platform, t.track_id, t.title, t.album, t.album_id, t.cover_uri, '
       't.duration_ms, t.availability FROM online_playlist_items i '
       'JOIN online_tracks t ON t.platform = i.platform AND t.track_id = i.track_id '
       'WHERE i.playlist_id = ? ORDER BY i.sort_order, i.rowid',
@@ -680,7 +680,7 @@ final class OnlineLibraryRepository {
   PersonalOnlinePlaylistSnapshot _readPersonalPlaylistFromRow(Row row) {
     final localId = row['id'] as int;
     final trackRows = _db.select(
-      'SELECT t.platform, t.track_id, t.title, t.album, t.cover_uri, '
+      'SELECT t.platform, t.track_id, t.title, t.album, t.album_id, t.cover_uri, '
       't.duration_ms, t.availability, i.added_at '
       'FROM online_playlist_items i JOIN online_tracks t '
       'ON t.platform = i.platform AND t.track_id = i.track_id '
@@ -723,15 +723,19 @@ final class OnlineLibraryRepository {
     final coverUri = _safeCoverUri(track.coverUri);
     final quality = _optionalQuality(lastQuality);
     final timestamp = updatedAt.toUtc().toIso8601String();
+    // v6：多存一个**专辑 id** ✓（可空 ✓）—— 只有它才能让"继续听/收藏"的行
+    // 重新提供"打开专辑"入口 ✗（此前只存了专辑名 ⇒ 重启后无 id 可用 ✓）。
+    final albumId = track.albumIds.isEmpty ? null : track.albumIds.first;
     _db.execute(
       'INSERT INTO online_tracks('
-      'platform, track_id, title, album, cover_uri, duration_ms, availability, '
-      'last_quality, created_at, updated_at) '
-      'VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
+      'platform, track_id, title, album, album_id, cover_uri, duration_ms, '
+      'availability, last_quality, created_at, updated_at) '
+      'VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
       'ON CONFLICT(platform, track_id) DO UPDATE SET '
       'title = excluded.title, '
       "album = CASE WHEN excluded.album <> '' THEN excluded.album "
       'ELSE online_tracks.album END, '
+      'album_id = COALESCE(excluded.album_id, online_tracks.album_id), '
       'cover_uri = COALESCE(excluded.cover_uri, online_tracks.cover_uri), '
       'duration_ms = CASE WHEN excluded.duration_ms > 0 '
       'THEN excluded.duration_ms ELSE online_tracks.duration_ms END, '
@@ -744,6 +748,7 @@ final class OnlineLibraryRepository {
         trackId,
         title,
         track.album.trim(),
+        albumId,
         coverUri,
         track.duration.inMilliseconds,
         track.availability.name,
@@ -763,13 +768,23 @@ final class OnlineLibraryRepository {
       'WHERE platform = ? AND track_id = ?',
       [platform, trackId],
     );
+    // v6：每位艺人**连同它的 id** 一起存 ✓（id 缺失就是 null ✓ —— 不编造 ✓）。
     final statement = _db.prepare(
-      'INSERT INTO online_track_artists(platform, track_id, ordinal, name) '
-      'VALUES(?, ?, ?, ?)',
+      'INSERT INTO online_track_artists(platform, track_id, ordinal, name, artist_id) '
+      'VALUES(?, ?, ?, ?, ?)',
     );
     try {
       for (var index = 0; index < artists.length; index++) {
-        statement.execute([platform, trackId, index, artists[index]]);
+        final artistId = index < track.artistIds.length
+            ? track.artistIds[index]
+            : null;
+        statement.execute([
+          platform,
+          trackId,
+          index,
+          artists[index],
+          artistId,
+        ]);
       }
     } finally {
       statement.dispose();
@@ -801,24 +816,33 @@ final class OnlineLibraryRepository {
     );
   }
 
-  MusicTrack _readTrack(Row row, {List<String>? artists}) {
+  MusicTrack _readTrack(
+    Row row, {
+    List<({String name, String? id})>? artists,
+  }) {
     // F5-P-39（P4）：读回平台时**必须**用身份解析（`_parsePlatform` 只认内置名，
 // 遇到自定义平台的稳定 ID 会抛 FormatException ⇒ 数据可读不回来）。
     final platform =
         _parsePlatformIdentity(row['platform'] as String)?.platform ??
         MusicPlatform.custom;
     final trackId = row['track_id'] as String;
-    final resolvedArtists =
-        artists ??
+    // v6：艺人**名字与 id 一起**读回 ✓（id 可能为 null ⇒ 那一位就没有"打开艺人"入口 ✓）。
+    final resolved = artists ??
         _db
             .select(
-              'SELECT name FROM online_track_artists '
+              'SELECT name, artist_id FROM online_track_artists '
               'WHERE platform = ? AND track_id = ? ORDER BY ordinal',
               [row['platform'], trackId],
             )
-            .map((artist) => artist['name'] as String)
+            .map(
+              (artist) => (
+                name: artist['name'] as String,
+                id: artist['artist_id'] as String?,
+              ),
+            )
             .toList(growable: false);
     final rawCoverUri = row['cover_uri'] as String?;
+    final albumId = row['album_id'] as String?;
     return MusicTrack(
       ref: PlatformTrackRef(
         platform: platform,
@@ -826,8 +850,16 @@ final class OnlineLibraryRepository {
         trackId: trackId,
       ),
       title: row['title'] as String,
-      artists: resolvedArtists,
+      artists: resolved.map((artist) => artist.name).toList(growable: false),
+      // v6：有 id 才带上 ✓（没有就是空列表 ⇒ 界面不给入口 ✓，不编造 ✓）。
+      artistIds: [
+        for (final artist in resolved)
+          if (artist.id != null && artist.id!.isNotEmpty) artist.id!,
+      ],
       album: row['album'] as String,
+      albumIds: [
+        if (albumId != null && albumId.isNotEmpty) albumId,
+      ],
       coverUri: rawCoverUri == null ? null : Uri.tryParse(rawCoverUri),
       duration: Duration(milliseconds: row['duration_ms'] as int),
       availability: _parseAvailability(row['availability'] as String),
@@ -840,7 +872,7 @@ final class OnlineLibraryRepository {
   }) {
     final rows = _db
         .select(
-          'SELECT t.platform, t.track_id, t.title, t.album, t.cover_uri, '
+          'SELECT t.platform, t.track_id, t.title, t.album, t.album_id, t.cover_uri, '
           't.duration_ms, t.availability, t.last_quality, h.play_count, '
           'h.last_played_at FROM online_play_history h '
           'JOIN online_tracks t ON t.platform = h.platform '
@@ -871,7 +903,10 @@ final class OnlineLibraryRepository {
         .toList(growable: false);
   }
 
-  Map<String, List<String>> _readArtistsForTracks(List<Row> tracks) {
+  /// 批量读某个平台若干曲目的艺人（**名字 + id** ✓，v6 起带 id ✓）。
+  Map<String, List<({String name, String? id})>> _readArtistsForTracks(
+    List<Row> tracks,
+  ) {
     if (tracks.isEmpty) return const {};
     final refs = <(String, String)>[];
     final seen = <String>{};
@@ -883,7 +918,7 @@ final class OnlineLibraryRepository {
       }
     }
 
-    final artists = <String, List<String>>{};
+    final artists = <String, List<({String name, String? id})>>{};
     const batchSize = 250;
     for (var offset = 0; offset < refs.length; offset += batchSize) {
       final end = offset + batchSize < refs.length
@@ -901,7 +936,7 @@ final class OnlineLibraryRepository {
           ..add(ref.$2);
       }
       final rows = _db.select(
-        'SELECT platform, track_id, name FROM online_track_artists '
+        'SELECT platform, track_id, name, artist_id FROM online_track_artists '
         'WHERE $conditions ORDER BY platform, track_id, ordinal',
         parameters,
       );
@@ -910,7 +945,12 @@ final class OnlineLibraryRepository {
           row['platform'] as String,
           row['track_id'] as String,
         );
-        artists.putIfAbsent(key, () => []).add(row['name'] as String);
+        artists
+            .putIfAbsent(key, () => [])
+            .add((
+              name: row['name'] as String,
+              id: row['artist_id'] as String?,
+            ));
       }
     }
     return artists;
