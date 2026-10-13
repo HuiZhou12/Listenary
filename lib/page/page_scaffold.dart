@@ -29,6 +29,9 @@ class PageScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // 分隔渐变也取**页面真正的底色** ✓（主题里是 `surfaceContainerLow` ✓）——
+    // 用 `surface` 会与页面有细微色差、在某些主题下显出边 ✗。
+    final pageBackground = Theme.of(context).scaffoldBackgroundColor;
     final hasHeader = title != null || actions.isNotEmpty;
 
     return Padding(
@@ -60,7 +63,7 @@ class PageScaffold extends StatelessWidget {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    scheme.surfaceContainer.withValues(alpha: 0.08),
+                    pageBackground.withValues(alpha: 0.08),
                     Colors.transparent,
                   ],
                 ),

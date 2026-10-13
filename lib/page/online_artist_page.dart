@@ -436,46 +436,53 @@ class _ArtistHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // **页面真正的底色** ✓（主题里 `scaffoldBackgroundColor = surfaceContainerLow` ✓）——
+    // 渐变必须用它，否则与页面差一点、会显出边缘 ✗（用户指出的那个白边 ✓）。
+    final pageBackground = Theme.of(context).scaffoldBackgroundColor;
     final description = artist.description?.trim();
     return ClipRRect(
       borderRadius: AppRadius.mdCircular,
-      child: AspectRatio(
-        aspectRatio: 16 / 7,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            RemoteMediaCover(
-              coverUri: artist.avatarUri,
-              placeholder: const ColoredBox(color: Color(0xFF1B1B1B)),
-              // ⚠️ 缓存尺寸必须与**源图比例**同族（这里用方形 ✓）：
-              // `cacheWidth/cacheHeight` 会**按这两个数改解码尺寸** ✗ —— 之前写 1200×525，
-              // 方形艺人图就被**拉扁**了 ✗（用户一眼看出来的"压扁" ✓）。
-              // 正确做法：方形缓存 + `BoxFit.cover` 自己去裁 ✓（只裁不形变 ✓）。
-              cacheWidth: 1024,
-              cacheHeight: 1024,
-            ),
-            // 渐变**用主题的页面色**（用户纠正 ✓）：不是黑色 ✗ —— 这样照片底部就是
-            // "沉进页面背景"，和整页颜色**对得上** ✓（换主题/换明暗都自动跟随 ✓）。
-            // 方向 ✓：**只有从底部最深 → 往上渐淡** ✗（不是"深-淡-深"）。
-            // 陡缓 ✓（用户第二次纠正）：不透明段只留到 32% ✓，之后**一路缓到画面顶端** ✓，
-            // 中间再加一个停靠点 ⇒ 过渡更柔、不会在某一小段里"唰"地变没 ✓。
-            // 底部一段仍接近不透明 ✓ ⇒ 名字与简介坐在"页面色"上，
-            // 所以下面的文字要用主题的 `onSurface` ✓（白色在浅色主题上会看不见 ✗）。
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [
-                    scheme.surface,
-                    scheme.surface,
-                    scheme.surface.withValues(alpha: 0.55),
-                    scheme.surface.withValues(alpha: 0.0),
-                  ],
-                  stops: const [0, 0.32, 0.66, 1],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // **至少** 16:7 的大图 ✓，但内容（名字 + 简介 + 动作）变高时 hero **跟着长** ✓ ——
+          // 之前把高度写死成 `AspectRatio(16/7)` ✗ ⇒ 简介一「展开」就
+          // `BOTTOM OVERFLOWED BY 164 PIXELS` ✗（用户截图为证 ✓）。
+          final minHeight = constraints.maxWidth * 7 / 16;
+          return ConstrainedBox(
+            constraints: BoxConstraints(minHeight: minHeight),
+            // 照片与渐变用 `Positioned.fill` **铺满最终高度** ✓；内容自己决定这个高度 ✓。
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: RemoteMediaCover(
+                    coverUri: artist.avatarUri,
+                    placeholder: const ColoredBox(color: Color(0xFF1B1B1B)),
+                    // ⚠️ 缓存尺寸必须与**源图比例**同族（这里用方形 ✓）：
+                    // `cacheWidth/cacheHeight` 会**按这两个数改解码尺寸** ✗ —— 之前写 1200×525，
+                    // 方形艺人图就被**拉扁**了 ✗（用户一眼看出来的"压扁" ✓）。
+                    // 正确做法：方形缓存 + `BoxFit.cover` 自己去裁 ✓（只裁不形变 ✓）。
+                    cacheWidth: 1024,
+                    cacheHeight: 1024,
+                  ),
                 ),
-              ),
-            ),
+                // 渐变铺满整幅 ✓（hero 长高时它也跟着长 ✓），颜色 = 页面真正刷的那层色 ✓。
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [
+                          pageBackground,
+                          pageBackground,
+                          pageBackground.withValues(alpha: 0.55),
+                          pageBackground.withValues(alpha: 0.0),
+                        ],
+                        stops: const [0, 0.32, 0.66, 1],
+                      ),
+                    ),
+                  ),
+                ),
             Align(
               alignment: Alignment.bottomLeft,
               child: Padding(
@@ -527,8 +534,10 @@ class _ArtistHero extends StatelessWidget {
                 ),
               ),
             ),
-          ],
-        ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
