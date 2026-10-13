@@ -435,6 +435,7 @@ class _ArtistHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final description = artist.description?.trim();
     return ClipRRect(
       borderRadius: AppRadius.mdCircular,
@@ -453,20 +454,22 @@ class _ArtistHero extends StatelessWidget {
               cacheWidth: 1024,
               cacheHeight: 1024,
             ),
-            // 底部压暗：让人名与简介在**任何照片**上都读得清 ✓
-            //（用户指出上一版"没有渐变" ✗ —— 之前起得太低、太淡 ⇒ 看不出压暗 ✓）。
-            const DecoratedBox(
+            // 渐变**用主题的页面色**（用户纠正 ✓）：不是黑色 ✗ —— 这样照片底部就是
+            // "沉进页面背景"，和整页颜色**对得上** ✓（换主题/换明暗都自动跟随 ✓）。
+            // 方向也按用户要求 ✓：**只有从底部最深 → 往上渐淡** ✓（不是"深-淡-深" ✗）。
+            // 底部一段**保持接近不透明** ✓ ⇒ 名字与简介坐在"页面色"上，
+            // 所以下面的文字要用主题的 `onSurface` ✓（白色在浅色主题上会看不见 ✗）。
+            DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
                   colors: [
-                    Color(0x66000000),
-                    Color(0x00000000),
-                    Color(0x99000000),
-                    Color(0xE6000000),
+                    scheme.surface,
+                    scheme.surface,
+                    scheme.surface.withValues(alpha: 0.0),
                   ],
-                  stops: [0, 0.22, 0.62, 1],
+                  stops: const [0, 0.42, 0.85],
                 ),
               ),
             ),
@@ -487,10 +490,11 @@ class _ArtistHero extends StatelessWidget {
                         key: const Key('artistHeroName'),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: AppType.display,
                           fontWeight: AppType.weightBold,
-                          color: Colors.white,
+                          // 坐在"页面色"上 ⇒ 用主题文字色 ✓（白色在浅色主题看不见 ✗）。
+                          color: scheme.onSurface,
                         ),
                       ),
                     ),
@@ -509,8 +513,8 @@ class _ArtistHero extends StatelessWidget {
                         const SizedBox(width: Spacing.md),
                         Text(
                           musicPlatformLabel(artist.platform),
-                          style: const TextStyle(
-                            color: Colors.white70,
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant,
                             fontSize: AppType.caption,
                           ),
                         ),
@@ -545,8 +549,10 @@ class _ExpandableDescriptionState extends State<_ExpandableDescription> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    // 文字坐在"页面色"上（渐变底部是主题页面色 ✓）⇒ 跟随主题 ✓，不再写死白色 ✗。
     final style = TextStyle(
-      color: Colors.white.withValues(alpha: 0.85),
+      color: scheme.onSurfaceVariant,
       fontSize: AppType.body,
       height: 1.4,
     );
@@ -575,7 +581,7 @@ class _ExpandableDescriptionState extends State<_ExpandableDescription> {
               TextButton(
                 onPressed: () => setState(() => _expanded = !_expanded),
                 style: TextButton.styleFrom(
-                  foregroundColor: Colors.white,
+                  foregroundColor: scheme.onSurface,
                   padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
                   minimumSize: const Size(0, 32),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
