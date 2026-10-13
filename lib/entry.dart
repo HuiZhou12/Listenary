@@ -16,6 +16,7 @@ import 'package:pure_music/page/folder_detail_page.dart';
 import 'package:pure_music/page/folders_page.dart';
 import 'package:pure_music/page/now_playing_page/page.dart';
 import 'package:pure_music/page/online_music_page.dart';
+import 'package:pure_music/page/artist_hot_songs_page.dart';
 import 'package:pure_music/page/online_artist_page.dart';
 import 'package:pure_music/page/online_album_page.dart';
 import 'package:pure_music/page/home_page.dart';
@@ -884,6 +885,26 @@ class _EntryState extends State<Entry>
                         ),
                       );
                     },
+                    routes: [
+                      // 艺人页「全部显示」→ 全部热门歌曲 ✓（2026-10-12）。
+                      GoRoute(
+                        path: 'hot-songs',
+                        pageBuilder: (context, state) {
+                          final extra =
+                              state.extra as ({OnlineArtist artist})?;
+                          if (extra == null) {
+                            return SlideTransitionPage(
+                              key: state.pageKey,
+                              child: const OnlineMusicPage(),
+                            );
+                          }
+                          return SlideTransitionPage(
+                            key: state.pageKey,
+                            child: ArtistHotSongsPage(artist: extra.artist),
+                          );
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),

@@ -53,14 +53,16 @@ void main() {
   );
 
   Future<void> settle(WidgetTester tester, Finder finder) async {
-    for (var attempt = 0; attempt < 20; attempt++) {
+    // 2026-10-12：艺人页加了 hero（大图 + 简介 + 展开判定）⇒ 首帧到"数据都就绪"之间
+    // 需要的帧数变多 ✓ ⇒ 把预算从 20 提到 60（仍然是"等不到就失败" ✓，不是放宽断言 ✓）。
+    for (var attempt = 0; attempt < 60; attempt++) {
       await tester.pump(const Duration(milliseconds: 50));
       if (finder.evaluate().isNotEmpty) return;
     }
     throw TestFailure('等不到 ${finder.describeMatch(Plurality.one)}');
   }
 
-  testWidgets('显示艺人名字/简介与热门曲目；带艺人 id 的行可点（提示「查看艺人」）', (tester) async {
+  testWidgets('艺人页：hero 里只出现一次名字；热门曲目按表格列显示；专辑列可点', (tester) async {
     final service = _FakeArtistService(
       OnlineArtist(
         platform: MusicPlatform.netease,
@@ -73,12 +75,16 @@ void main() {
             title: '光年之外',
             artists: ['G.E.M.邓紫棋'],
             artistIds: ['7763'],
+            album: '新的心跳',
+            albumIds: ['al-1'],
           ),
           MusicTrack(
             ref: const PlatformTrackRef(platform: MusicPlatform.netease, trackId: '2'),
             title: '泡沫',
             artists: ['G.E.M.邓紫棋'],
             artistIds: ['7763'],
+            album: 'Xposed',
+            albumIds: ['al-2'],
           ),
         ],
       ),
@@ -87,13 +93,17 @@ void main() {
     await pumpArtist(tester, service);
     await settle(tester, find.text('光年之外'));
 
-    expect(find.text('G.E.M.邓紫棋'), findsWidgets);
+    // **页面级大标题只有一个**（2026-10-12 用户要求 ✓）：页壳不再画标题 ✗，
+    // 名字的大标题只在 hero 里 ✓ —— 之前是"顶栏一次 + hero 一次"⇒ 两遍同名 ✗。
+    // （表格"艺人"列里还会出现同名文字 ✓，那是**每行的数据** ✓，参考页也是这样 ✓。）
+    expect(find.byKey(const Key('artistHeroName')), findsOneWidget);
     expect(find.text('香港女创作歌手'), findsOneWidget);
     expect(find.text('光年之外'), findsOneWidget);
     expect(find.text('泡沫'), findsOneWidget);
     expect(find.text('热门歌曲'), findsOneWidget);
-    // 带艺人 id ⇒ 有"查看艺人"入口 ✓（没有 id 时不会出现，见下一条）。
-    expect(find.byTooltip('查看艺人'), findsNWidgets(2));
+    // 表格里的**专辑列可点** ✓（带 `albumIds` 才有 ✓ —— 我们正在艺人页上，
+    // 艺人列再点自己是空动作 ✗，所以入口放在专辑列 ✓）。
+    expect(find.byTooltip('查看专辑'), findsNWidgets(2));
   });
 
   testWidgets('曲目**没有** artistIds 时，详情行不给可点（不猜 ✓）', (tester) async {
@@ -230,12 +240,18 @@ void main() {
     );
 
     await pumpArtist(tester, service);
-    await settle(tester, find.text('单曲和迷你专辑'));
+    // 2026-10-12：hero 变成通栏大图（~520px）⇒ 「单曲和迷你专辑」会被顶到**视口之外** ✗。
+    // `find.text` 默认**跳过离屏节点** ⇒ 这里要显式 `skipOffstage: false` ✓
+    // —— 断的是"这页有没有这个区块" ✓，不是"它此刻在不在屏幕上" ✓。
+    await settle(
+      tester,
+      find.text('单曲和迷你专辑', skipOffstage: false),
+    );
 
-    expect(find.text('热门歌曲'), findsOneWidget);
-    expect(find.text('单曲和迷你专辑'), findsOneWidget);
-    expect(find.text('唯一'), findsOneWidget);
-    expect(find.text('泡沫'), findsOneWidget);
+    expect(find.text('热门歌曲', skipOffstage: false), findsOneWidget);
+    expect(find.text('单曲和迷你专辑', skipOffstage: false), findsOneWidget);
+    expect(find.text('唯一', skipOffstage: false), findsOneWidget);
+    expect(find.text('泡沫', skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('平台**不支持**艺人单曲列表 ⇒ 整块不显示（不摆空区块骗人）', (tester) async {

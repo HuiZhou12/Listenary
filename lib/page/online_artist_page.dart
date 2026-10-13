@@ -224,9 +224,6 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
   Widget build(BuildContext context) {
     final artist = _artist;
     final title = artist?.name ?? widget.initialName ?? '艺人';
-    final subtitle = artist == null
-        ? musicPlatformLabel(widget.platform)
-        : '${musicPlatformLabel(widget.platform)} · ${artist.hotSongs.length} 首热门曲目';
 
     if (_error case final message?) {
       return PageScaffold(
@@ -245,20 +242,33 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
       );
     }
 
+    // **成功时页壳不画标题**（2026-10-12 用户要求 ✓）：名字就在 hero 里 ✓，
+    // 页壳再写一遍就是"同一个名字出现两次" ✗ —— 参考页顶部也只有 hero ✓。
     return PageScaffold(
-      title: title,
-      subtitle: subtitle,
-      actions: [
-        IconButton(tooltip: '刷新', onPressed: _load, icon: const Icon(Symbols.refresh)),
-      ],
+      title: null,
+      actions: const [],
       body: ListView(
         padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
         children: [
-          _ArtistHeader(artist: artist),
+          _ArtistHero(
+            artist: artist,
+            onShuffle: () => _shuffleHotSongs(artist),
+          ),
           const SizedBox(height: Spacing.lg),
           ContentSection(
             title: '热门歌曲',
             subtitle: '来自${musicPlatformLabel(artist.platform)}；点一行即从该艺人的热门歌曲开始播放',
+            // 「**全部显示**」→ 子页面（参考页里热门歌曲下面正是它 ✓）。
+            // 只在**确实超过预览条数**时给 ✓（不超过还给就是骗人 ✗）。
+            actionLabel: artist.hotSongs.length > _hotSongsPreview
+                ? '全部显示'
+                : null,
+            onAction: artist.hotSongs.length > _hotSongsPreview
+                ? () => context.push(
+                    app_paths.ARTIST_HOT_SONGS_PAGE,
+                    extra: (artist: artist),
+                  )
+                : null,
             child: artist.hotSongs.isEmpty
                 // **空是合法的**（艺人可能确实没有热门曲目）⇒ 中性提示、**不给重试** ✓。
                 ? const InlineEmptyHint(
@@ -267,8 +277,9 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
                   )
                 : Column(
                     children: [
-                      for (final track in artist.hotSongs)
-                        OnlineTrackEntry(
+                      // **一次只显示这么多**（参考页是 5 行 ✓），其余进子页面 ✓。
+                      for (final track in artist.hotSongs.take(_hotSongsPreview))
+                        _ArtistTrackRow(
                           track: track,
                           onTap: () => _play(artist, track),
                         ),
@@ -327,6 +338,23 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  /// 热门歌曲的**预览条数**：参考页正好显示 5 行，其余交给「全部显示」进子页 ✓。
+  static const int _hotSongsPreview = 5;
+
+  /// 「随机播放」：把这一批热门曲目**本地打乱**后从第一首开始播 ✓
+  ///（我们没有任何"平台推荐顺序"可用 ⇒ 不假装有 ✓；打乱是**我们自己的**行为 ✓）。
+  Future<void> _shuffleHotSongs(OnlineArtist artist) async {
+    if (artist.hotSongs.isEmpty) return;
+    final shuffled = [...artist.hotSongs]..shuffle();
+    await playOnlineTrackSelection(
+      context,
+      OnlineTrackSelection.fromResultPage(
+        tracks: shuffled,
+        selectedRef: shuffled.first.ref,
       ),
     );
   }
@@ -393,75 +421,278 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
       );
 }
 
-/// 艺人头部：头像 + 名字 + 简介（简介为空时整块不占位 ✓）。
-class _ArtistHeader extends StatelessWidget {
-  const _ArtistHeader({required this.artist});
+/// **艺人名片（hero）**：按参考页做 —— 一张**通栏照片** ✓，底部压一层渐变保证白字可读 ✓，
+/// 左下依次是**名字**（大 ✓）、**简介**（超出两行时给「展开」✓）、动作行 ✓。
+///
+/// 诚实说明：我们只有**方形头像**（`picUrl` ✓），没有宽幅横幅 ✗ ⇒ 这里用**同一张真图**
+/// 放大裁切（`BoxFit.cover` ✓）——是**同一张艺人本人的图** ✓，不是编造素材 ✓。
+/// 参考页上的「每月听众」「订阅 N」「合辑」我们**没有数据/能力** ⇒ **不显示** ✓。
+class _ArtistHero extends StatelessWidget {
+  const _ArtistHero({required this.artist, required this.onShuffle});
 
   final OnlineArtist artist;
+  final VoidCallback onShuffle;
+
+  @override
+  Widget build(BuildContext context) {
+    final description = artist.description?.trim();
+    return ClipRRect(
+      borderRadius: AppRadius.mdCircular,
+      child: AspectRatio(
+        aspectRatio: 16 / 7,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            RemoteMediaCover(
+              coverUri: artist.avatarUri,
+              placeholder: const ColoredBox(color: Color(0xFF1B1B1B)),
+              cacheWidth: 1200,
+              cacheHeight: 525,
+            ),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x00000000), Color(0xCC000000)],
+                  stops: [0.35, 1],
+                ),
+              ),
+            ),
+            Align(
+              alignment: Alignment.bottomLeft,
+              child: Padding(
+                padding: const EdgeInsets.all(Spacing.xl),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Semantics(
+                      header: true,
+                      child: Text(
+                        artist.name,
+                        // Key 只为测试用 ✓：断言"**页面级大标题只有这一个**"（防止再出现
+                        // "顶栏一次 + hero 一次"那种重复 ✗）；表格"艺人"列里的同名文字是**数据** ✓。
+                        key: const Key('artistHeroName'),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: AppType.display,
+                          fontWeight: AppType.weightBold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    if (description != null && description.isNotEmpty) ...[
+                      const SizedBox(height: Spacing.sm),
+                      _ExpandableDescription(text: description, maxLines: 2),
+                    ],
+                    const SizedBox(height: Spacing.md),
+                    Row(
+                      children: [
+                        FilledButton.icon(
+                          onPressed: onShuffle,
+                          icon: const Icon(Symbols.shuffle, size: 18),
+                          label: const Text('随机播放'),
+                        ),
+                        const SizedBox(width: Spacing.md),
+                        Text(
+                          musicPlatformLabel(artist.platform),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: AppType.caption,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// **可展开的简介**（2026-10-12 用户补充要求 ✓）：
+/// 描述**超出指定行数**时才出现「**展开**」✓（不超出就不显示按钮 ✗ —— 那会骗人 ✓）；
+/// 点它展开成全文 ✓，再点变「收起」✓。
+class _ExpandableDescription extends StatefulWidget {
+  const _ExpandableDescription({required this.text, this.maxLines = 2});
+
+  final String text;
+  final int maxLines;
+
+  @override
+  State<_ExpandableDescription> createState() => _ExpandableDescriptionState();
+}
+
+class _ExpandableDescriptionState extends State<_ExpandableDescription> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      color: Colors.white.withValues(alpha: 0.85),
+      fontSize: AppType.body,
+      height: 1.4,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 先**量一遍**：只有真的超高才给「展开」✓（宽度未知时按"需要展开"处理 ✗ → 这里宽度已知 ✓）。
+        final painter = TextPainter(
+          text: TextSpan(text: widget.text, style: style),
+          maxLines: widget.maxLines,
+          textDirection: Directionality.of(context),
+        )..layout(maxWidth: constraints.maxWidth);
+        final overflows = painter.didExceedMaxLines;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              widget.text,
+              style: style,
+              maxLines: _expanded ? null : widget.maxLines,
+              overflow: _expanded
+                  ? TextOverflow.visible
+                  : TextOverflow.ellipsis,
+            ),
+            if (overflows)
+              TextButton(
+                onPressed: () => setState(() => _expanded = !_expanded),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(_expanded ? '收起' : '展开'),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// **热门歌曲的一行**（按参考页的表格排布 ✓）：封面 ｜ 曲名 ｜ 艺人 ｜ 专辑。
+///
+/// 参考页还有一列「播放次数 N 万」✗ —— 那是视频平台的观看数 ✓，我们**没有**这个数据 ✗
+/// ⇒ **不显示该列** ✓（编一个数字就是伪造 ✓）；改用我们真有的「**专辑**」✓。
+class _ArtistTrackRow extends StatelessWidget {
+  const _ArtistTrackRow({required this.track, required this.onTap});
+
+  final MusicTrack track;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final description = artist.description?.trim();
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ClipRRect(
-          borderRadius: AppRadius.mdCircular,
-          child: SizedBox.square(
-            dimension: 96,
-            child: RemoteMediaCover(
-              coverUri: artist.avatarUri,
-              placeholder: ColoredBox(
-                color: scheme.surfaceContainerHighest,
-                child: Icon(
-                  Symbols.artist,
-                  color: scheme.onSurfaceVariant,
+    final metaStyle = TextStyle(
+      color: scheme.onSurfaceVariant,
+      fontSize: AppType.caption,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: AppRadius.smCircular,
+        child: InkWell(
+          borderRadius: AppRadius.smCircular,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: Spacing.sm,
+              vertical: 6,
+            ),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: AppRadius.xsCircular,
+                  child: SizedBox.square(
+                    dimension: 40,
+                    child: RemoteMediaCover(
+                      coverUri: track.coverUri,
+                      placeholder: ColoredBox(
+                        color: scheme.surfaceContainerHighest,
+                        child: Icon(
+                          Symbols.music_note,
+                          size: 18,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      cacheWidth: 80,
+                      cacheHeight: 80,
+                    ),
+                  ),
                 ),
-              ),
-              cacheWidth: 192,
-              cacheHeight: 192,
+                const SizedBox(width: Spacing.md),
+                Expanded(
+                  flex: 4,
+                  child: Text(
+                    track.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: AppType.body,
+                      fontWeight: AppType.weightMedium,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: Spacing.sm),
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    track.artistDisplay,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: metaStyle,
+                  ),
+                ),
+                if (track.album.isNotEmpty) ...[
+                  const SizedBox(width: Spacing.sm),
+                  Expanded(
+                    flex: 3,
+                    // **专辑这一列可点**（用户要求：艺人 / 专辑入口要覆盖到 ✓）——
+                    // 艺人列不点（我们**正在**这个艺人的页面上 ✓，再点自己是空动作 ✗）。
+                    child: track.albumIds.isEmpty
+                        ? Text(
+                            track.album,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: metaStyle,
+                          )
+                        : Tooltip(
+                            message: '查看专辑',
+                            child: InkWell(
+                              borderRadius: AppRadius.xsCircular,
+                              onTap: () => context.push(
+                                app_paths.ONLINE_ALBUM_PAGE,
+                                extra: (
+                                  platform: track.ref.platform,
+                                  albumId: track.albumIds.first,
+                                  name: track.album,
+                                ),
+                              ),
+                              child: Text(
+                                track.album,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: metaStyle,
+                              ),
+                            ),
+                          ),
+                  ),
+                ],
+              ],
             ),
           ),
         ),
-        const SizedBox(width: Spacing.lg),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                artist.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: AppType.hero,
-                  fontWeight: AppType.weightSemibold,
-                ),
-              ),
-              const SizedBox(height: Spacing.xs),
-              Text(
-                musicPlatformLabel(artist.platform),
-                style: TextStyle(
-                  color: scheme.onSurfaceVariant,
-                  fontSize: AppType.caption,
-                ),
-              ),
-              if (description != null && description.isNotEmpty) ...[
-                const SizedBox(height: Spacing.sm),
-                Text(
-                  description,
-                  maxLines: 6,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: scheme.onSurfaceVariant,
-                    fontSize: AppType.body,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

@@ -3,6 +3,8 @@
 const String ONLINE_MUSIC_PAGE = '/online';
 // 在线艺人页（`artist` 能力，2026-10-12）：作为 `/online` 的子路由 ⇒ 与其它在线页同族 ✓。
 const String ONLINE_ARTIST_PAGE = '/online/artist';
+// 艺人的**全部热门歌曲**（2026-10-12）：艺人页「全部显示」的目标 ✓；作为 `/online/artist` 的子路由 ✓。
+const String ARTIST_HOT_SONGS_PAGE = '/online/artist/hot-songs';
 // 在线专辑页（`album` 能力，2026-10-12）：同为 `/online` 的子路由 ✓。
 const String ONLINE_ALBUM_PAGE = '/online/album';
 // 「新发行」（专辑和单曲）落地页（2026-10-12）：参考里 Explore 第一个区块「更多」的目标 ✓，

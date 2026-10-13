@@ -8,16 +8,20 @@ import 'package:flutter/material.dart';
 ///
 /// 小屏幕时，标题在上、操作按钮在下，互不挤压；
 /// 中大屏幕时，标题和操作按钮在同一行排列。
+///
+/// **[title] 可空**（2026-10-12）：有些页面自己就有"大标题"（例如艺人页的 hero 里
+/// 已经写着艺人名 ✓）⇒ 页壳再画一遍就是**同一个名字出现两次** ✗。
+/// 传 `null` 时页壳**不渲染标题块**（也不画那条分隔渐变 ✓），正文直接从顶部开始 ✓。
 class PageScaffold extends StatelessWidget {
   const PageScaffold({
     super.key,
-    required this.title,
+    this.title,
     this.subtitle,
-    required this.actions,
+    this.actions = const [],
     required this.body,
   });
 
-  final String title;
+  final String? title;
   final String? subtitle;
   final List<Widget> actions;
   final Widget body;
@@ -25,6 +29,7 @@ class PageScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final hasHeader = title != null || actions.isNotEmpty;
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -34,32 +39,34 @@ class PageScaffold extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ResponsiveBuilder(
-            builder: (context, screenType) {
-              return Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: switch (screenType) {
-                  ScreenType.small => _buildSmallLayout(scheme),
-                  ScreenType.medium ||
-                  ScreenType.large =>
-                    _buildWideLayout(scheme),
-                },
-              );
-            },
-          ),
-          Container(
-            height: 10,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  scheme.surfaceContainer.withValues(alpha: 0.08),
-                  Colors.transparent,
-                ],
+          if (hasHeader) ...[
+            ResponsiveBuilder(
+              builder: (context, screenType) {
+                return Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: switch (screenType) {
+                    ScreenType.small => _buildSmallLayout(scheme),
+                    ScreenType.medium ||
+                    ScreenType.large =>
+                      _buildWideLayout(scheme),
+                  },
+                );
+              },
+            ),
+            Container(
+              height: 10,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    scheme.surfaceContainer.withValues(alpha: 0.08),
+                    Colors.transparent,
+                  ],
+                ),
               ),
             ),
-          ),
+          ],
           Expanded(child: body),
         ],
       ),
@@ -74,7 +81,7 @@ class PageScaffold extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        _titleWidget(scheme),
+        if (title != null) _titleWidget(scheme),
         const SizedBox(height: 16.0),
         Wrap(spacing: 8.0, runSpacing: 8.0, children: actions),
       ],
@@ -88,8 +95,8 @@ class PageScaffold extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Expanded(child: _titleWidget(scheme)),
-        const SizedBox(width: 16.0),
+        if (title != null) Expanded(child: _titleWidget(scheme)),
+        if (title != null) const SizedBox(width: 16.0),
         Flexible(
           child: Align(
             alignment: Alignment.centerRight,
@@ -108,6 +115,7 @@ class PageScaffold extends StatelessWidget {
   Widget _titleWidget(ColorScheme scheme) {
     // **语义层级**：参考产品的页面标题是 `heading [level=1]`（如专辑页「世界」✓、艺人页「G.E.M. 鄧紫棋」✓）
     // ⇒ 这里标成 header，读屏用户才分得出"这是整页的标题"（纯文本是读不出来的 ✗）。
+    final title = this.title ?? '';
     if (subtitle == null) {
       return Semantics(
         header: true,
