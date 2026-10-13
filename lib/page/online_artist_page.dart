@@ -456,8 +456,10 @@ class _ArtistHero extends StatelessWidget {
             ),
             // 渐变**用主题的页面色**（用户纠正 ✓）：不是黑色 ✗ —— 这样照片底部就是
             // "沉进页面背景"，和整页颜色**对得上** ✓（换主题/换明暗都自动跟随 ✓）。
-            // 方向也按用户要求 ✓：**只有从底部最深 → 往上渐淡** ✓（不是"深-淡-深" ✗）。
-            // 底部一段**保持接近不透明** ✓ ⇒ 名字与简介坐在"页面色"上，
+            // 方向 ✓：**只有从底部最深 → 往上渐淡** ✗（不是"深-淡-深"）。
+            // 陡缓 ✓（用户第二次纠正）：不透明段只留到 32% ✓，之后**一路缓到画面顶端** ✓，
+            // 中间再加一个停靠点 ⇒ 过渡更柔、不会在某一小段里"唰"地变没 ✓。
+            // 底部一段仍接近不透明 ✓ ⇒ 名字与简介坐在"页面色"上，
             // 所以下面的文字要用主题的 `onSurface` ✓（白色在浅色主题上会看不见 ✗）。
             DecoratedBox(
               decoration: BoxDecoration(
@@ -467,9 +469,10 @@ class _ArtistHero extends StatelessWidget {
                   colors: [
                     scheme.surface,
                     scheme.surface,
+                    scheme.surface.withValues(alpha: 0.55),
                     scheme.surface.withValues(alpha: 0.0),
                   ],
-                  stops: const [0, 0.42, 0.85],
+                  stops: const [0, 0.32, 0.66, 1],
                 ),
               ),
             ),
