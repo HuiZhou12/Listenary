@@ -8,6 +8,7 @@ import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/remote_cover_cache.dart';
 import 'package:pure_music/component/remote_load_state.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/page_scaffold.dart';
@@ -201,15 +202,28 @@ class _RemotePlaylistPageState extends State<RemotePlaylistPage>
                   track.artistDisplay.toLowerCase().contains(query))
                 track,
           ];
-    final playable = [
+    // **"能不能播"问解析侧**（2026-10-12 用户纠正 ✓）：内容平台的 `availability` 只说明它自己
+    // 放不放（要不要会员 ✓）；我们的播放解析（`stream`）是**独立能力、可路由到别的平台** ✓
+    // ⇒ 判据用 `capabilities.canResolveIdentity(...)`（"谁握有播放权限" ✓）。
+    final service = context.read<OnlineMusicService?>();
+    final resolvable = [
       for (final track in visible)
-        if (track.availability == TrackAvailability.playable) track,
+        if (service?.capabilities.canResolveIdentity(track.ref.identity) ??
+            false)
+          track,
     ];
 
-    // 与本地歌单两页**同一个**主按钮样式 ✓（这三页各写一份，数值一致 ✓）。
-    const primaryActionStyle = ButtonStyle(
-      fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
-      padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
+    // **每个动作按钮都给同一套显式样式**（用户指出高度不齐 ✗）：
+    // 只给「播放全部」加样式、其它按钮走默认高度 ⇒ 一排按钮高矮不一 ✗（本地歌单页是都给 ✓）。
+    // 注意：`AppRadius.smCircular` 不是编译期常量 ⇒ 这里**不能**加 `const` ✗。
+    final actionStyle = ButtonStyle(
+      fixedSize: const WidgetStatePropertyAll(Size.fromHeight(40)),
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 16),
+      ),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+      ),
     );
 
     // **统一骨架** ✓：与「本地歌单」两页同一个 [UniDetailPage] ✓。
@@ -254,36 +268,48 @@ class _RemotePlaylistPageState extends State<RemotePlaylistPage>
       searchQuery: _searchQuery,
       onSearchChanged: (value) => setState(() => _searchQuery = value),
       extraActions: [
-        FilledButton.icon(
-          onPressed: playable.isEmpty
-              ? null
-              : () => playOnlineTrackSelection(
-                  context,
-                  OnlineTrackSelection.fromResultPage(
-                    tracks: playable,
-                    selectedRef: playable.first.ref,
+        // **灰色 = 真的按不了**（用户问过 ✓）：这一批曲目若**全部不可播**（待解锁/需会员 ✓）
+        // 就禁用 ✓（不给按了没反应的按钮 ✓）；但**必须说明理由** ✗ ⇒ 悬停提示讲清楚 ✓。
+        Tooltip(
+          message: resolvable.isEmpty
+              ? '当前没有任何平台握有这些曲目的播放解析权限 ⇒ 所以按不了'
+              : '从这批曲目开始播放（由握有解析权限的平台解析）',
+          child: FilledButton.icon(
+            onPressed: resolvable.isEmpty
+                ? null
+                : () => playOnlineTrackSelection(
+                    context,
+                    OnlineTrackSelection.fromResultPage(
+                      tracks: resolvable,
+                      selectedRef: resolvable.first.ref,
+                      // **不要再按内容平台的标记二次过滤** ✗（用户指出的那个错 ✓）。
+                      onlyPlayable: false,
+                    ),
                   ),
-                ),
-          icon: const Icon(Symbols.play_arrow, size: 20),
-          label: const Text('播放全部'),
-          style: primaryActionStyle,
+            icon: const Icon(Symbols.play_arrow, size: 20),
+            label: const Text('播放全部'),
+            style: actionStyle,
+          ),
         ),
         if (_subscribed)
           FilledButton.tonalIcon(
             onPressed: null,
             icon: const Icon(Symbols.check, size: 20),
             label: const Text('已订阅'),
+            style: actionStyle,
           )
         else
           FilledButton.tonalIcon(
             onPressed: _subscribing ? null : () => unawaited(_subscribe()),
             icon: const Icon(Symbols.add, size: 20),
             label: const Text('订阅'),
+            style: actionStyle,
           ),
         FilledButton.tonalIcon(
           onPressed: () => unawaited(_load()),
           icon: const Icon(Symbols.refresh, size: 20),
           label: const Text('刷新'),
+          style: actionStyle,
         ),
       ],
     );

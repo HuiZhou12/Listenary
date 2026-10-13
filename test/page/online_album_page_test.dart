@@ -95,9 +95,9 @@ void main() {
     expect(find.text('阿YueYue'), findsWidgets);
     // 2026-10-12：专辑页改成与「本地歌单」两页**同一个骨架**（UniDetailPage ✓）⇒
     // 骨架里**没有**"曲目"这种小节标题 ✗（旧结构才有 ✓）⇒ 这条断言随之去掉 ✓。
-    // 专辑曲目是**有序集合** ⇒ 序号必须真的渲染出来 ✓（1、2）。
-    expect(find.text('1'), findsOneWidget);
-    expect(find.text('2'), findsOneWidget);
+    // 而且**曲目不标序号**（用户裁定 ✓：专辑不是排行榜 ✗）⇒ 断言"没有序号" ✓。
+    expect(find.text('1'), findsNothing);
+    expect(find.text('2'), findsNothing);
     // 平台标注数 == 实际条数 ⇒ **不出现**那句差异提示 ✓。
     expect(find.textContaining('平台标注这张专辑有'), findsNothing);
     // 发行时间只显示**年份** ✓（不写具体日期：毫秒时间戳按 UTC 判定，日期可能差一天 ✓）。

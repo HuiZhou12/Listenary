@@ -8,6 +8,7 @@ import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/remote_cover_cache.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/page/page_scaffold.dart';
@@ -20,9 +21,10 @@ import 'package:pure_music/services/music_platform/index.dart';
 /// [UniDetailPage] ✓（主图 + 标题/副标题 + 动作区 + 曲目列表 ✓）。
 ///
 /// 元素按**专辑这个接口实际有什么**来定 ✓：
-/// - **有**：封面/专辑名/专辑艺人/发行年份 ✓、曲目**带行首序号**（专辑曲目**有序** ✓，
-///   与参考产品一致 ✓）、播放全部 ✓、刷新 ✓、列表/网格切换 ✓、搜索 ✓；
-/// - **没有（因此不出现 ✗）**：排序（专辑顺序就是唱片顺序，不能被我们重排 ✓）、
+/// - **有**：封面/专辑名/专辑艺人/发行年份 ✓、曲目列表 ✓、播放全部 ✓、查看艺人 ✓、
+///   刷新 ✓、列表/网格切换 ✓、搜索 ✓；
+/// - **没有（因此不出现 ✗）**：**行首序号**（2026-10-12 用户裁定 ✓：专辑不是排行榜，
+///   序号反而误导 ✗ —— 序号只留给**名次集合**：榜单 ✓）、排序（专辑顺序＝唱片顺序 ✓）、
 ///   洗牌（同上 ✓）、收藏（专辑本身不可收藏 ✓）。
 ///
 /// 三态如实区分（与 Home/Explore/艺人页同一条纪律 ✓）：
@@ -203,15 +205,30 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
                   track.artistDisplay.toLowerCase().contains(query))
                 track,
           ];
-    final playable = [
+    // **"能不能播"要问解析侧，不是问内容平台**（2026-10-12 用户纠正 ✓）：
+    // 内容平台的 `availability` 只说明**它自己**放不放（例如要会员 ✓）；
+    // 而我们的播放解析（`stream`）是**独立能力、可以路由到别的平台** ✓
+    // ⇒ 判据用 `capabilities.canResolveIdentity(...)`（"谁握有播放权限" ✓）。
+    final service = context.read<OnlineMusicService?>();
+    final resolvable = [
       for (final track in tracks)
-        if (track.availability == TrackAvailability.playable) track,
+        if (service?.capabilities.canResolveIdentity(track.ref.identity) ??
+            false)
+          track,
     ];
 
-    // 与本地歌单两页**同一个**主按钮样式 ✓。
-    const primaryActionStyle = ButtonStyle(
-      fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
-      padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
+    // **每个动作按钮都给同一套显式样式**（用户指出高度不齐 ✗）：
+    // 只给「播放全部」加样式、其它按钮走 M3 默认高度 ⇒ 一排按钮**高矮不一** ✗。
+    // 本地歌单页是"每个按钮都显式给样式" ⇒ 所以它那一排是齐的 ✓（照它来 ✓）。
+    // 注意：`AppRadius.smCircular` 不是编译期常量 ⇒ 这里**不能**加 `const` ✗。
+    final actionStyle = ButtonStyle(
+      fixedSize: const WidgetStatePropertyAll(Size.fromHeight(40)),
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 16),
+      ),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+      ),
     );
 
     // **统一骨架** ✓。
@@ -229,8 +246,8 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
       secondaryContentBuilder: (context, track, index, msc, view) =>
           OnlineTrackEntry(
             track: track,
-            // 专辑曲目是**有序集合** ⇒ 给出序号 ✓（与参考产品一致 ✓）。
-            leadingIndex: index + 1,
+            // **专辑曲目不标序号**（2026-10-12 用户裁定 ✓）：唱片顺序已经在歌单内部体现，
+            // 行首再放"1、2、3"反而像排行榜 ✗ ⇒ 去掉 ✓（序号只留给**名次集合**：榜单 ✓）。
             onTap: () => playOnlineTrackSelection(
               context,
               OnlineTrackSelection.fromResultPage(
@@ -248,19 +265,29 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
       searchQuery: _searchQuery,
       onSearchChanged: (value) => setState(() => _searchQuery = value),
       extraActions: [
-        FilledButton.icon(
-          onPressed: playable.isEmpty
-              ? null
-              : () => playOnlineTrackSelection(
-                  context,
-                  OnlineTrackSelection.fromResultPage(
-                    tracks: playable,
-                    selectedRef: playable.first.ref,
+        // **灰色不是坏了**（用户问过 ✓）：这一专辑的曲目若**全部不可播**（例如都需解锁/会员 ✓），
+        // 按钮就按不了 —— 但我们不能让它"灰得没理由" ✗ ⇒ 用悬停说明讲清楚 ✓
+        //（Disabled 按钮自己收不到 hover ✓，`Tooltip` 会自己接管这块区域 ✓）。
+        Tooltip(
+          message: resolvable.isEmpty
+              ? '当前没有任何平台握有这些曲目的播放解析权限 ⇒ 所以按不了'
+              : '从这张专辑的第一首开始播放（由握有解析权限的平台解析）',
+          child: FilledButton.icon(
+            onPressed: resolvable.isEmpty
+                ? null
+                : () => playOnlineTrackSelection(
+                    context,
+                    OnlineTrackSelection.fromResultPage(
+                      tracks: resolvable,
+                      selectedRef: resolvable.first.ref,
+                      // **不要再按内容平台的标记二次过滤** ✗（用户指出的那个错 ✓）。
+                      onlyPlayable: false,
+                    ),
                   ),
-                ),
-          icon: const Icon(Symbols.play_arrow, size: 20),
-          label: const Text('播放全部'),
-          style: primaryActionStyle,
+            icon: const Icon(Symbols.play_arrow, size: 20),
+            label: const Text('播放全部'),
+            style: actionStyle,
+          ),
         ),
         if (artist != null && artist.isNotEmpty)
           FilledButton.tonalIcon(
@@ -269,11 +296,13 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
                 : () => _openArtist(album),
             icon: const Icon(Symbols.artist, size: 20),
             label: const Text('查看艺人'),
+            style: actionStyle,
           ),
         FilledButton.tonalIcon(
           onPressed: () => unawaited(_load()),
           icon: const Icon(Symbols.refresh, size: 20),
           label: const Text('刷新'),
+          style: actionStyle,
         ),
       ],
     );

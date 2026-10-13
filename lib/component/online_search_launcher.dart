@@ -15,17 +15,27 @@ final class OnlineTrackSelection {
     this.requestedQuality,
   }) : tracks = List.unmodifiable(tracks);
 
+  /// 从"结果页的一批曲目"里发起播放 ✓。
+  ///
+  /// **[onlyPlayable]**（2026-10-12 新增）：默认仍按内容平台声明的 `availability` 过滤 ✓
+  ///（老调用点语义不变 ✓）。但**内容平台的标记不等于能不能播** ✗ ——
+  /// 播放解析（`stream`）是**独立能力、可以路由到另一个平台** ✓（用户指出的正是这一点 ✓）。
+  /// ⇒ 已经按"**解析权限在哪个平台**"（`capabilities.canResolveIdentity` ✓）筛过的调用方，
+  /// 传 `onlyPlayable: false` ✓，别再拿内容平台的标记二次过滤 ✗。
   factory OnlineTrackSelection.fromResultPage({
     required Iterable<MusicTrack> tracks,
     required PlatformTrackRef selectedRef,
+    bool onlyPlayable = true,
   }) {
-    final playableTracks = tracks
-        .where(
-          (track) =>
-              track.availability != TrackAvailability.unavailable &&
-              track.availability != TrackAvailability.paid,
-        )
-        .toList(growable: false);
+    final playableTracks = onlyPlayable
+        ? tracks
+              .where(
+                (track) =>
+                    track.availability != TrackAvailability.unavailable &&
+                    track.availability != TrackAvailability.paid,
+              )
+              .toList(growable: false)
+        : List<MusicTrack>.unmodifiable(tracks);
     final selectedIndex = playableTracks.indexWhere(
       (track) => track.ref == selectedRef,
     );
