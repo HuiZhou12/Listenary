@@ -6,25 +6,31 @@ import 'package:provider/provider.dart';
 import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_entry.dart';
+import 'package:pure_music/component/remote_cover_cache.dart';
 import 'package:pure_music/component/remote_load_state.dart';
-import 'package:pure_music/component/remote_media_cover.dart';
-import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/page_scaffold.dart';
+import 'package:pure_music/page/uni_detail_page.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/online_playlist_controller.dart';
 
-/// **远程歌单预览页**（2026-10-12 新增 ✓）。
+/// **远程歌单预览页**（2026-10-12 新增 ✓；同日改为**统一骨架** ✓）。
 ///
-/// 为什么要有它：此前"看歌单"必须**先订阅** ✗ —— 因为详情页只读本地库
-/// （`OnlinePlaylistDetailPage({required localId})` ✗）。用户点封面于是要么被
-/// **偷偷订阅**（榜单卡片 ✗），要么**毫无反应**（平台歌单卡片 ✗），两条都不对 ✓。
+/// 为什么要有它：此前"看歌单"必须**先订阅** ✗ —— 因为详情页只读本地库 ✓。
+/// 用户点封面于是要么被**偷偷订阅**（榜单卡片 ✗），要么**毫无反应**（平台歌单卡片 ✗）。
 ///
-/// 现在的规则（用户确认的直觉 ✓）：
+/// 现在的规则 ✓：
 /// - **点封面 = 打开本页预览** ✓ —— **只读**，一个字节都不写库 ✗（`fetchPlaylist` 直接用 ✓）；
-/// - 页内「**订阅**」= 只入库 ✓，**不跳转** ✗（订阅完还留在这一页 ✓，按钮变成"已订阅"✓）；
-/// - 想看自己订阅的那份（可同步、带收藏态）⇒ 从媒体库进订阅详情页 ✓。
+/// - 页内「**订阅**」= 只入库 ✓，**不跳转** ✗（订阅完还留在这页 ✓，按钮变成"已订阅"✓）；
+/// - 想看自己订阅的那份（可同步 ✓）⇒ 从媒体库进订阅详情页 ✓。
+///
+/// **骨架统一**（用户要求 ✓）：与「本地歌单」那两页用**同一个** [UniDetailPage] ✓
+///（主图 + 标题/副标题 + 动作区 + 曲目列表 ✓）。
+/// 元素按这个接口**有什么放什么** ✓：
+/// - 有：播放全部 ✓、订阅 ✓、刷新 ✓、列表/网格切换 ✓、搜索 ✓；
+/// - 没有（因此不出现 ✗）：排序（这里没有"名次/添加时间"可排 ✓）、洗牌
+///   （未订阅的临时列表，洗牌语义含糊 ✓ —— 本地歌单页也把洗牌关掉了 ✓）。
 class RemotePlaylistPage extends StatefulWidget {
   const RemotePlaylistPage({
     super.key,
@@ -60,6 +66,8 @@ class _RemotePlaylistPageState extends State<RemotePlaylistPage>
   final RemoteLoadState<int, MusicTrack> _tracks =
       RemoteLoadState<int, MusicTrack>();
   RemotePlaylist? _detail;
+  Future<ImageProvider?> _primaryPic = Future.value(null);
+  String _searchQuery = '';
   bool _subscribed = false;
   bool _subscribing = false;
   bool _started = false;
@@ -88,11 +96,23 @@ class _RemotePlaylistPageState extends State<RemotePlaylistPage>
         playlistId: widget.playlistId,
         cancelToken: newCancelToken(),
       );
-      if (mounted) setState(() => _detail = detail);
+      if (mounted) {
+        setState(() {
+          _detail = detail;
+          _primaryPic = _coverProvider(detail.coverUri);
+        });
+      }
       return detail.tracks;
     },
     fallback: '读取该歌单失败',
   );
+
+  Future<ImageProvider?> _coverProvider(Uri? uri) async {
+    if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+      return null;
+    }
+    return CachedRemoteImageProvider(uri.toString());
+  }
 
   /// 「订阅」= 只入库 ✓，**不跳转** ✗（用户问过"点订阅为啥会自动进详情" ✓ —— 现在不会了 ✓）。
   Future<void> _subscribe() async {
@@ -126,137 +146,146 @@ class _RemotePlaylistPageState extends State<RemotePlaylistPage>
     );
   }
 
-  Future<void> _play(Iterable<MusicTrack> tracks, MusicTrack track) =>
-      playOnlineTrackSelection(
-        context,
-        OnlineTrackSelection.fromResultPage(
-          tracks: tracks,
-          selectedRef: track.ref,
-        ),
-      );
-
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final tracks = _tracks.items(_key);
     final detail = _detail;
-    final creator = detail?.creator ?? widget.creator;
+    final tracks = _tracks.items(_key);
+    final name = detail?.name ?? widget.name;
+    final creator = (detail?.creator ?? widget.creator)?.trim();
     final count = detail?.trackCount ?? widget.trackCount;
-    final details = [
-      '歌单',
+    final coverUri = detail?.coverUri ?? widget.coverUri;
+    final subtitle = [
+      musicPlatformLabel(widget.platform),
       if (creator != null && creator.isNotEmpty) creator,
-      if (count != null) '$count 首',
+      if (count != null) '$count 首歌曲',
+      '预览（未订阅，不会写进媒体库）',
     ].join(' · ');
 
-    return PageScaffold(
-      title: detail?.name ?? widget.name,
-      subtitle: '${musicPlatformLabel(widget.platform)} · 预览（未订阅，不会写进媒体库）',
-      actions: [
-        IconButton(
-          tooltip: '刷新',
-          onPressed: () => unawaited(_load()),
-          icon: const Icon(Symbols.refresh),
+    // **加载 / 失败 / 空** 这三种"还没有内容"的状态仍走页壳 ✓ —— 与本地歌单页一致
+    //（它们也是先 PageScaffold 报错、有内容了才用 UniDetailPage ✓）。
+    if (_tracks.isLoading(_key) && tracks.isEmpty) {
+      return PageScaffold(
+        title: name,
+        subtitle: subtitle,
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    final error = _tracks.error(_key);
+    if (tracks.isEmpty && error != null) {
+      return PageScaffold(
+        title: name,
+        subtitle: subtitle,
+        body: InlineFailureHint(
+          message: error,
+          onRetry: () => unawaited(_load()),
         ),
-        if (_subscribed)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
-            child: Center(
-              child: Text(
-                '已订阅',
-                style: TextStyle(color: scheme.onSurfaceVariant),
+      );
+    }
+    if (tracks.isEmpty) {
+      return PageScaffold(
+        title: name,
+        subtitle: subtitle,
+        body: const InlineEmptyHint(
+          icon: Symbols.music_off,
+          message: '这个歌单没有可播放的曲目。',
+        ),
+      );
+    }
+
+    final query = _searchQuery.trim().toLowerCase();
+    final visible = query.isEmpty
+        ? tracks
+        : [
+            for (final track in tracks)
+              if (track.title.toLowerCase().contains(query) ||
+                  track.artistDisplay.toLowerCase().contains(query))
+                track,
+          ];
+    final playable = [
+      for (final track in visible)
+        if (track.availability == TrackAvailability.playable) track,
+    ];
+
+    // 与本地歌单两页**同一个**主按钮样式 ✓（这三页各写一份，数值一致 ✓）。
+    const primaryActionStyle = ButtonStyle(
+      fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+      padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
+    );
+
+    // **统一骨架** ✓：与「本地歌单」两页同一个 [UniDetailPage] ✓。
+    return UniDetailPage<RemotePlaylist, MusicTrack, Object>(
+      pref: AppPreference.instance.onlinePlaylistDetailPagePref,
+      primaryContent:
+          detail ??
+          RemotePlaylist(
+            platform: widget.platform,
+            id: widget.playlistId,
+            name: name,
+            coverUri: coverUri,
+            creator: creator,
+            trackCount: count,
+          ),
+      primaryPic: _primaryPic,
+      backgroundPic: Future.value(null),
+      picShape: PicShape.rrect,
+      title: name,
+      subtitle: subtitle,
+      secondaryContent: visible,
+      secondaryContentBuilder: (context, track, index, msc, view) =>
+          OnlineTrackEntry(
+            track: track,
+            onTap: () => playOnlineTrackSelection(
+              context,
+              OnlineTrackSelection.fromResultPage(
+                tracks: visible,
+                selectedRef: track.ref,
               ),
             ),
-          )
-        else
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
-            child: FilledButton.tonalIcon(
-              onPressed: _subscribing ? null : () => unawaited(_subscribe()),
-              icon: const Icon(Symbols.add, size: 18),
-              label: const Text('订阅'),
-            ),
+            // 只有**名次集合**（榜单）才给序号 ✓ —— 普通歌单给了就是编排名 ✗。
+            leadingIndex: widget.ranked ? index + 1 : null,
           ),
-      ],
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: Spacing.bottomNav, right: 20),
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: AppRadius.mdCircular,
-                child: SizedBox.square(
-                  dimension: 140,
-                  child: RemoteMediaCover(
-                    coverUri: detail?.coverUri ?? widget.coverUri,
-                    placeholder: ColoredBox(
-                      color: scheme.surfaceContainerHighest,
-                      child: Icon(
-                        Symbols.queue_music,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                    cacheWidth: 280,
-                    cacheHeight: 280,
+      // 洗牌 / 排序在这个页面上**不成立**（没有名次或添加时间可排 ✓）⇒ 两个开关都关掉 ✓，
+      // 「骨架」仍是同一套 ✓（用户要求：骨架统一、元素按接口定 ✓）。
+      enableShufflePlay: false,
+      enableSortMethod: false,
+      enableSortOrder: false,
+      enableSecondaryContentViewSwitch: true,
+      enableSearch: true,
+      searchQuery: _searchQuery,
+      onSearchChanged: (value) => setState(() => _searchQuery = value),
+      extraActions: [
+        FilledButton.icon(
+          onPressed: playable.isEmpty
+              ? null
+              : () => playOnlineTrackSelection(
+                  context,
+                  OnlineTrackSelection.fromResultPage(
+                    tracks: playable,
+                    selectedRef: playable.first.ref,
                   ),
                 ),
-              ),
-              const SizedBox(width: Spacing.lg),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      detail?.name ?? widget.name,
-                      style: TextStyle(
-                        color: scheme.onSurface,
-                        fontSize: AppType.hero,
-                        fontWeight: AppType.weightBold,
-                      ),
-                    ),
-                    const SizedBox(height: Spacing.sm),
-                    Text(
-                      details,
-                      style: TextStyle(color: scheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: Spacing.md),
-                    if (tracks.isNotEmpty)
-                      FilledButton.icon(
-                        onPressed: () => _play(tracks, tracks.first),
-                        icon: const Icon(Symbols.play_arrow),
-                        label: const Text('播放全部'),
-                      ),
-                  ],
-                ),
-              ),
-            ],
+          icon: const Icon(Symbols.play_arrow, size: 20),
+          label: const Text('播放全部'),
+          style: primaryActionStyle,
+        ),
+        if (_subscribed)
+          FilledButton.tonalIcon(
+            onPressed: null,
+            icon: const Icon(Symbols.check, size: 20),
+            label: const Text('已订阅'),
+          )
+        else
+          FilledButton.tonalIcon(
+            onPressed: _subscribing ? null : () => unawaited(_subscribe()),
+            icon: const Icon(Symbols.add, size: 20),
+            label: const Text('订阅'),
           ),
-          const SizedBox(height: Spacing.lg),
-          if (_tracks.isLoading(_key) && tracks.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: Spacing.xl),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_tracks.error(_key) case final message? when tracks.isEmpty)
-            InlineFailureHint(
-              message: message,
-              onRetry: () => unawaited(_load()),
-            )
-          else if (tracks.isEmpty)
-            const InlineEmptyHint(
-              icon: Symbols.music_off,
-              message: '这个歌单没有可播放的曲目。',
-            )
-          else
-            for (var index = 0; index < tracks.length; index++)
-              OnlineTrackEntry(
-                track: tracks[index],
-                onTap: () => _play(tracks, tracks[index]),
-                // 只有**名次集合**（榜单）才给序号 ✓ —— 普通歌单给了就是编排名 ✗。
-                leadingIndex: widget.ranked ? index + 1 : null,
-              ),
-        ],
-      ),
+        FilledButton.tonalIcon(
+          onPressed: () => unawaited(_load()),
+          icon: const Icon(Symbols.refresh, size: 20),
+          label: const Text('刷新'),
+        ),
+      ],
     );
   }
 }
