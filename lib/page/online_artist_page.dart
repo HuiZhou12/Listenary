@@ -451,7 +451,11 @@ class _ArtistHero extends StatelessWidget {
           return ConstrainedBox(
             constraints: BoxConstraints(minHeight: minHeight),
             // 照片与渐变用 `Positioned.fill` **铺满最终高度** ✓；内容自己决定这个高度 ✓。
+            // ⚠️ `alignment: bottomLeft` 是必须写的 ✓：内容作为**非定位子节点**时，
+            // Stack 按**自己的** alignment 放它 ✗ —— 上一版漏了这句 ⇒ 文字跑到**顶部**、
+            // 下面空出一大片（用户："好丑啊" ✓）✓。现在退回**左下角压在照片上** ✓（上一版的观感 ✓）。
             child: Stack(
+              alignment: Alignment.bottomLeft,
               children: [
                 Positioned.fill(
                   child: RemoteMediaCover(
@@ -534,6 +538,16 @@ class _ArtistHero extends StatelessWidget {
                 ),
               ),
             ),
+                // **底部实心压条**（用户发现"底部一像素照片侧漏" ✓）：
+                // 渐变的最后一段在**非整数高度**下会留下一行没被画到 ✗ ⇒ 照片从那条缝里露出来 ✓。
+                // 这条 2px 的页面底色把缝隙**盖死** ✓（比调 stops 稳 ✓）。
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 2,
+                  child: ColoredBox(color: pageBackground),
+                ),
               ],
             ),
           );
@@ -557,7 +571,18 @@ class _ExpandableDescription extends StatefulWidget {
 }
 
 class _ExpandableDescriptionState extends State<_ExpandableDescription> {
+  /// 展开后的**高度上限**（用户要求 ✓）：描述过长就**限高 + 出滚动条** ✓，
+  /// 不让它把 hero 一直撑高 ✗（那会把整页顶得很难看 ✓）。
+  static const double _expandedMaxHeight = 140;
+
+  final ScrollController _scroll = ScrollController();
   bool _expanded = false;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -581,14 +606,28 @@ class _ExpandableDescriptionState extends State<_ExpandableDescription> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              widget.text,
-              style: style,
-              maxLines: _expanded ? null : widget.maxLines,
-              overflow: _expanded
-                  ? TextOverflow.visible
-                  : TextOverflow.ellipsis,
-            ),
+            if (!_expanded)
+              Text(
+                widget.text,
+                style: style,
+                maxLines: widget.maxLines,
+                overflow: TextOverflow.ellipsis,
+              )
+            else
+              // **展开态**：限高 + 可滚动 + 可见滚动条 ✓（内容再长也不会把 hero 撑爆 ✓）。
+              ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxHeight: _expandedMaxHeight,
+                ),
+                child: Scrollbar(
+                  controller: _scroll,
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    controller: _scroll,
+                    child: Text(widget.text, style: style),
+                  ),
+                ),
+              ),
             if (overflows)
               TextButton(
                 onPressed: () => setState(() => _expanded = !_expanded),
