@@ -43,10 +43,15 @@ void main() {
       child: Provider<OnlineMusicService>.value(
         value: service,
         child: MaterialApp(
-          home: OnlineAlbumPage(
-            platform: MusicPlatform.netease,
-            albumId: '93113910',
-            initialName: initialName,
+          // 2026-10-12：专辑页换成统一骨架（UniDetailPage ✓），它自带一个**搜索框** ✗ ——
+          // `TextField` 需要 `Material` 祖先 ⇒ 宿主必须套一层 `Scaffold` ✓
+          //（真实应用里由外壳提供 ✓，所以只有测试宿主需要补 ✓）。
+          home: Scaffold(
+            body: OnlineAlbumPage(
+              platform: MusicPlatform.netease,
+              albumId: '93113910',
+              initialName: initialName,
+            ),
           ),
         ),
       ),
@@ -88,7 +93,8 @@ void main() {
 
     expect(find.text('故里逢春'), findsWidgets);
     expect(find.text('阿YueYue'), findsWidgets);
-    expect(find.text('曲目'), findsOneWidget);
+    // 2026-10-12：专辑页改成与「本地歌单」两页**同一个骨架**（UniDetailPage ✓）⇒
+    // 骨架里**没有**"曲目"这种小节标题 ✗（旧结构才有 ✓）⇒ 这条断言随之去掉 ✓。
     // 专辑曲目是**有序集合** ⇒ 序号必须真的渲染出来 ✓（1、2）。
     expect(find.text('1'), findsOneWidget);
     expect(find.text('2'), findsOneWidget);
@@ -97,9 +103,10 @@ void main() {
     // 发行时间只显示**年份** ✓（不写具体日期：毫秒时间戳按 UTC 判定，日期可能差一天 ✓）。
     expect(find.textContaining('2020 年'), findsOneWidget);
     expect(find.textContaining('2020-07-29'), findsNothing);
-    // 有专辑艺人 id ⇒ 艺人名可点（参考产品的专辑页里艺人名就是链接 ✓）；
-    // 曲目行里的艺人段同样可点 ⇒ 一共 1（头部）+ 2（两行）= 3 个入口 ✓。
-    expect(find.byTooltip('查看艺人'), findsNWidgets(3));
+    // 有专辑艺人 id ⇒ 艺人名可点：**两行曲目**各自的艺人段都可点 ✓（2 个），
+    // 另外动作区还有一个「查看艺人」按钮 ✓（按文字断言，它不是 tooltip ✓）。
+    expect(find.byTooltip('查看艺人'), findsNWidgets(2));
+    expect(find.text('查看艺人'), findsOneWidget);
   });
 
   testWidgets('平台标注曲目数 ≠ 实际条数 ⇒ 如实说出来（以实际为准）', (tester) async {

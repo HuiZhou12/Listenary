@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -5,24 +7,31 @@ import 'package:provider/provider.dart';
 import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_entry.dart';
-import 'package:pure_music/component/remote_media_cover.dart';
-import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/component/remote_cover_cache.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/page/page_scaffold.dart';
+import 'package:pure_music/page/uni_detail_page.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 
-/// **在线专辑页**（`album` 能力，2026-10-12 新增）。
+/// **在线专辑页**（`album` 能力，2026-10-12 新增；同日改为**统一骨架** ✓）。
 ///
-/// 与参考产品的专辑页对齐的一点：专辑曲目是**有顺序**的 ⇒ **列出序号** ✓
-/// （行组件的 `leadingIndex` 正是为此准备的；普通歌单/收藏列表则**不给**序号 ✓）。
+/// **骨架统一**（用户要求 ✓）：与「本地歌单」两页、以及歌单预览页用**同一个**
+/// [UniDetailPage] ✓（主图 + 标题/副标题 + 动作区 + 曲目列表 ✓）。
 ///
-/// 三态如实区分（与 Home/Explore/艺人页同一条纪律）：
-/// - **失败** ⇒ 可读错误 + 重试；
-/// - **空**（这张专辑确实没有曲目）⇒ 中性提示、**不给重试**；
+/// 元素按**专辑这个接口实际有什么**来定 ✓：
+/// - **有**：封面/专辑名/专辑艺人/发行年份 ✓、曲目**带行首序号**（专辑曲目**有序** ✓，
+///   与参考产品一致 ✓）、播放全部 ✓、刷新 ✓、列表/网格切换 ✓、搜索 ✓；
+/// - **没有（因此不出现 ✗）**：排序（专辑顺序就是唱片顺序，不能被我们重排 ✓）、
+///   洗牌（同上 ✓）、收藏（专辑本身不可收藏 ✓）。
+///
+/// 三态如实区分（与 Home/Explore/艺人页同一条纪律 ✓）：
+/// - **失败** ⇒ 可读错误 + 重试 ✓；
+/// - **空**（这张专辑确实没有曲目）⇒ 中性提示、**不给重试** ✓；
 /// - 加载中先用调用方给的专辑名占位（不白屏 ✓）。
 ///
-/// **两个"曲目数"不混为一谈** ✓：平台在响应里标注的 `size` 与**实际取到的曲目条数**可能不同；
-/// 界面默认显示**实际条数**（我们真的拿到的 ✓），只有两者**不一致**时才把平台标注也说出来 ✓。
+/// **两个"曲目数"不混为一谈** ✓：平台标注的 `size` 与**实际取到的条数**可能不同 ⇒
+/// 默认显示实际条数 ✓，只有不一致时才把平台标注也说出来 ✓（写进副标题 ✓）。
 class OnlineAlbumPage extends StatefulWidget {
   const OnlineAlbumPage({
     super.key,
@@ -48,14 +57,16 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
   String? _error;
   bool _loading = true;
   bool _started = false;
+  String _searchQuery = '';
   OnlineMusicCancelToken? _token;
+  Future<ImageProvider?> _primaryPic = Future.value(null);
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_started) return;
     _started = true;
-    _load();
+    unawaited(_load());
   }
 
   @override
@@ -91,6 +102,7 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
       setState(() {
         _album = album;
         _loading = false;
+        _primaryPic = _coverProvider(album.coverUri);
       });
     } on Object catch (error) {
       if (!mounted || token.isCancelled) return;
@@ -103,237 +115,165 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
     }
   }
 
+  Future<ImageProvider?> _coverProvider(Uri? uri) async {
+    if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+      return null;
+    }
+    return CachedRemoteImageProvider(uri.toString());
+  }
+
+  void _openArtist(OnlineAlbum album) {
+    final artistId = album.artistId;
+    if (artistId == null || artistId.isEmpty) return;
+    context.push(
+      app_paths.ONLINE_ARTIST_PAGE,
+      extra: (
+        platform: album.platform,
+        artistId: artistId,
+        name: album.artist,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final album = _album;
     final title = album?.name ?? widget.initialName ?? '专辑';
     final platformName = musicPlatformLabel(widget.platform);
-    final source = '来源：$platformName';
+    // 平台标注的曲目数只在**与实际条数不一致**时说，避免把两个数混成一个 ✓。
+    final declared = album?.trackCount;
+    final actual = album?.tracks.length ?? 0;
+    final mismatch = declared != null && declared != actual;
+    final releaseYear = album?.releaseTime?.year;
+    final artist = album?.artist?.trim();
+    final subtitle = [
+      '来源：$platformName',
+      if (artist != null && artist.isNotEmpty) artist,
+      if (releaseYear != null) '$releaseYear 年',
+      if (album != null) '$actual 首曲目',
+      // 不一致时**明说差异** ✓（以实际为准 ✓）—— 沿用既有措辞 ✓。
+      if (mismatch)
+        '平台标注这张专辑有 $declared 首，本次实际取到 $actual 首（以实际为准）',
+    ].join(' · ');
 
+    // 失败 / 加载中仍走页壳 ✓（与本地歌单页、预览页一致 ✓）。
     if (_error case final message?) {
       return PageScaffold(
         title: title,
-        subtitle: source,
+        subtitle: '来源：$platformName',
         actions: [
           IconButton(
             tooltip: '刷新',
-            onPressed: _load,
+            onPressed: () => unawaited(_load()),
             icon: const Icon(Symbols.refresh),
           ),
         ],
-        body: InlineFailureHint(message: message, onRetry: _load),
+        body: InlineFailureHint(
+          message: message,
+          onRetry: () => unawaited(_load()),
+        ),
       );
     }
     if (_loading || album == null) {
       return PageScaffold(
         title: title,
-        subtitle: source,
-        actions: const [],
+        subtitle: '来源：$platformName',
         body: const Center(child: CircularProgressIndicator()),
       );
     }
-
-    // 平台标注的曲目数只在**与实际条数不一致**时说，避免把两个数混成一个 ✓。
-    final declared = album.trackCount;
-    final actual = album.tracks.length;
-    final mismatch = declared != null && declared != actual;
-
-    return PageScaffold(
-      title: title,
-      subtitle: '$source · $actual 首曲目',
-      actions: [
-        IconButton(
-          tooltip: '刷新',
-          onPressed: _load,
-          icon: const Icon(Symbols.refresh),
-        ),
-      ],
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
-        children: [
-          _AlbumHeader(
-            album: album,
-            platformName: platformName,
-            // 参考产品的专辑页里艺人名是**链接** ✓ ⇒ 有艺人 id 时那一行可点 ✓。
-            onArtistTap:
-                (album.artistId == null ||
-                    (album.artist ?? '').trim().isEmpty)
-                ? null
-                : () => context.push(
-                    app_paths.ONLINE_ARTIST_PAGE,
-                    extra: (
-                      platform: album.platform,
-                      artistId: album.artistId,
-                      name: album.artist,
-                    ),
-                  ),
-          ),
-          if (mismatch) ...[
-            const SizedBox(height: Spacing.sm),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Symbols.info,
-                  size: 18,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: Spacing.sm),
-                Expanded(
-                  child: Text(
-                    '平台标注这张专辑有 $declared 首，本次实际取到 $actual 首'
-                    '（以实际取到的为准 ✓）。',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: AppType.body,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-          const SizedBox(height: Spacing.lg),
-          ContentSection(
-            title: '曲目',
-            subtitle: '专辑曲目**有顺序** ⇒ 行首给序号；点一行即从这张专辑开始播放',
-            child: album.tracks.isEmpty
-                // **空是合法的**（专辑可能确实没有曲目）⇒ 中性提示、**不给重试** ✓。
-                ? const InlineEmptyHint(
-                    icon: Symbols.music_off,
-                    message: '这张专辑暂时没有曲目。',
-                  )
-                : Column(
-                    children: [
-                      for (var i = 0; i < album.tracks.length; i++)
-                        OnlineTrackEntry(
-                          track: album.tracks[i],
-                          // 专辑曲目是**有序集合** ⇒ 给出序号 ✓（与参考产品一致）。
-                          leadingIndex: i + 1,
-                          onTap: () => _play(album, album.tracks[i]),
-                        ),
-                    ],
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _play(OnlineAlbum album, MusicTrack track) =>
-      playOnlineTrackSelection(
-        context,
-        OnlineTrackSelection.fromResultPage(
-          tracks: album.tracks,
-          selectedRef: track.ref,
+    // **空（这张专辑确实没有曲目）** ⇒ 中性提示、**不给重试** ✓ —— 与歌单预览页同一条做法 ✓
+    //（空 ≠ 失败：空态出现"重试"会让人以为读取出错了 ✗）。
+    if (album.tracks.isEmpty) {
+      return PageScaffold(
+        title: album.name,
+        subtitle: subtitle,
+        body: const InlineEmptyHint(
+          icon: Symbols.music_off,
+          message: '这张专辑暂时没有曲目。',
         ),
       );
-}
+    }
 
-/// 专辑头部：封面 + 名字 + 专辑艺人（缺一不可地"有什么说什么" ✓）。
-class _AlbumHeader extends StatelessWidget {
-  const _AlbumHeader({
-    required this.album,
-    required this.platformName,
-    this.onArtistTap,
-  });
+    final query = _searchQuery.trim().toLowerCase();
+    final tracks = query.isEmpty
+        ? album.tracks
+        : [
+            for (final track in album.tracks)
+              if (track.title.toLowerCase().contains(query) ||
+                  track.artistDisplay.toLowerCase().contains(query))
+                track,
+          ];
+    final playable = [
+      for (final track in tracks)
+        if (track.availability == TrackAvailability.playable) track,
+    ];
 
-  final OnlineAlbum album;
-  final String platformName;
+    // 与本地歌单两页**同一个**主按钮样式 ✓。
+    const primaryActionStyle = ButtonStyle(
+      fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+      padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
+    );
 
-  /// 有**专辑艺人 id** 时给出 ⇒ 艺人名可点（打开艺人页 ✓）；为 null 时是纯文本 ✓。
-  final VoidCallback? onArtistTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final artist = album.artist?.trim();
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ClipRRect(
-          borderRadius: AppRadius.mdCircular,
-          child: SizedBox.square(
-            dimension: 128,
-            child: RemoteMediaCover(
-              coverUri: album.coverUri,
-              placeholder: ColoredBox(
-                color: scheme.surfaceContainerHighest,
-                child: Icon(
-                  Symbols.album,
-                  color: scheme.onSurfaceVariant,
-                ),
+    // **统一骨架** ✓。
+    return UniDetailPage<OnlineAlbum, MusicTrack, Object>(
+      pref: AppPreference.instance.albumDetailPagePref,
+      primaryContent: album,
+      primaryPic: _primaryPic,
+      backgroundPic: Future.value(null),
+      picShape: PicShape.rrect,
+      title: album.name,
+      subtitle: subtitle,
+      // 专辑里这一块叫「曲目」（唱片语境 ✓）；骨架允许改这个标题 ✓（默认是「歌曲」✓）。
+      secondaryContentTitle: '曲目',
+      secondaryContent: tracks,
+      secondaryContentBuilder: (context, track, index, msc, view) =>
+          OnlineTrackEntry(
+            track: track,
+            // 专辑曲目是**有序集合** ⇒ 给出序号 ✓（与参考产品一致 ✓）。
+            leadingIndex: index + 1,
+            onTap: () => playOnlineTrackSelection(
+              context,
+              OnlineTrackSelection.fromResultPage(
+                tracks: tracks,
+                selectedRef: track.ref,
               ),
-              cacheWidth: 256,
-              cacheHeight: 256,
             ),
           ),
-        ),
-        const SizedBox(width: Spacing.lg),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                album.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: AppType.hero,
-                  fontWeight: AppType.weightSemibold,
-                ),
-              ),
-              if (artist != null && artist.isNotEmpty) ...[
-                const SizedBox(height: Spacing.xs),
-                // 有 id ⇒ 可点（带下划线 + 悬停提示 ✓）；没 id ⇒ 纯文本 ✓。
-                if (onArtistTap == null)
-                  Text(
-                    artist,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: scheme.onSurface,
-                      fontSize: AppType.subtitle,
-                    ),
-                  )
-                else
-                  Tooltip(
-                    message: '查看艺人',
-                    // 自带透明 Material：这个可点区域**不假设**祖先里有 Material ✓
-                    // （否则在没有 Scaffold/Material 的宿主里会直接抛错 ✗）。
-                    child: Material(
-                      type: MaterialType.transparency,
-                      child: InkWell(
-                        onTap: onArtistTap,
-                        borderRadius: AppRadius.xsCircular,
-                        child: Text(
-                          artist,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: scheme.onSurface,
-                            fontSize: AppType.subtitle,
-                            decoration: TextDecoration.underline,
-                            decorationColor: scheme.onSurface,
-                          ),
-                        ),
-                      ),
-                    ),
+      // 排序与洗牌都关掉 ✓：专辑顺序**就是唱片顺序**，不该被我们重排 ✓。
+      enableShufflePlay: false,
+      enableSortMethod: false,
+      enableSortOrder: false,
+      enableSecondaryContentViewSwitch: true,
+      enableSearch: true,
+      searchQuery: _searchQuery,
+      onSearchChanged: (value) => setState(() => _searchQuery = value),
+      extraActions: [
+        FilledButton.icon(
+          onPressed: playable.isEmpty
+              ? null
+              : () => playOnlineTrackSelection(
+                  context,
+                  OnlineTrackSelection.fromResultPage(
+                    tracks: playable,
+                    selectedRef: playable.first.ref,
                   ),
-              ],
-              const SizedBox(height: Spacing.xs),
-              Text(
-                // 只显示**年份**：平台给的是毫秒时间戳，跨年边界按 UTC 判定 ✓
-                // ⇒ 具体日期可能差一天，不写具体日期 ✓（模型里也是这么约定的）。
-                album.releaseTime == null
-                    ? platformName
-                    : '$platformName · ${album.releaseTime!.year} 年',
-                style: TextStyle(
-                  color: scheme.onSurfaceVariant,
-                  fontSize: AppType.caption,
                 ),
-              ),
-            ],
+          icon: const Icon(Symbols.play_arrow, size: 20),
+          label: const Text('播放全部'),
+          style: primaryActionStyle,
+        ),
+        if (artist != null && artist.isNotEmpty)
+          FilledButton.tonalIcon(
+            onPressed: (album.artistId ?? '').isEmpty
+                ? null
+                : () => _openArtist(album),
+            icon: const Icon(Symbols.artist, size: 20),
+            label: const Text('查看艺人'),
           ),
+        FilledButton.tonalIcon(
+          onPressed: () => unawaited(_load()),
+          icon: const Icon(Symbols.refresh, size: 20),
+          label: const Text('刷新'),
         ),
       ],
     );
