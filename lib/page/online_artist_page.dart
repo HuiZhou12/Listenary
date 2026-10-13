@@ -446,16 +446,27 @@ class _ArtistHero extends StatelessWidget {
             RemoteMediaCover(
               coverUri: artist.avatarUri,
               placeholder: const ColoredBox(color: Color(0xFF1B1B1B)),
-              cacheWidth: 1200,
-              cacheHeight: 525,
+              // ⚠️ 缓存尺寸必须与**源图比例**同族（这里用方形 ✓）：
+              // `cacheWidth/cacheHeight` 会**按这两个数改解码尺寸** ✗ —— 之前写 1200×525，
+              // 方形艺人图就被**拉扁**了 ✗（用户一眼看出来的"压扁" ✓）。
+              // 正确做法：方形缓存 + `BoxFit.cover` 自己去裁 ✓（只裁不形变 ✓）。
+              cacheWidth: 1024,
+              cacheHeight: 1024,
             ),
+            // 底部压暗：让人名与简介在**任何照片**上都读得清 ✓
+            //（用户指出上一版"没有渐变" ✗ —— 之前起得太低、太淡 ⇒ 看不出压暗 ✓）。
             const DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Color(0x00000000), Color(0xCC000000)],
-                  stops: [0.35, 1],
+                  colors: [
+                    Color(0x66000000),
+                    Color(0x00000000),
+                    Color(0x99000000),
+                    Color(0xE6000000),
+                  ],
+                  stops: [0, 0.22, 0.62, 1],
                 ),
               ),
             ),
