@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/content_section.dart';
+import 'package:pure_music/component/home_greeting_header.dart';
 import 'package:pure_music/component/horizontal_shelf.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_entry.dart';
@@ -346,6 +347,10 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: Spacing.bottomNav, right: 20),
         children: [
+          // **问候头**（2026-10-12 新增 ✓）：主页最顶端、靠左大字 ✓、无头像 ✓。
+          // 这一步**只加不改** ✗ —— 主页其余元素保持原样 ✓（整页重置等用户看过效果再动 ✓）。
+          // `{{user_name}}` 目前是开发期占位「佬友」✓，cookie 推荐能力上线后换账号昵称 ✓。
+          const HomeGreetingHeader(),
           _buildHistory(history),
           _buildFavorites(),
           _buildPersonalPlaylists(personal),
