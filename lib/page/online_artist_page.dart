@@ -442,8 +442,12 @@ class _ArtistHero extends StatelessWidget {
     final description = artist.description?.trim();
     return ClipRRect(
       borderRadius: AppRadius.mdCircular,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
+      // **页面色兜底**（用户两次报"照片侧漏" ✓）：hero 内部任何没被画到的亚像素缝隙，
+      // 露出来的都会是**页面色** ✓，而不是照片 ✓（照片只画在它自己那块 fill 上 ✓）。
+      child: ColoredBox(
+        color: pageBackground,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
           // **至少** 16:7 的大图 ✓，但内容（名字 + 简介 + 动作）变高时 hero **跟着长** ✓ ——
           // 之前把高度写死成 `AspectRatio(16/7)` ✗ ⇒ 简介一「展开」就
           // `BOTTOM OVERFLOWED BY 164 PIXELS` ✗（用户截图为证 ✓）。
@@ -545,13 +549,15 @@ class _ArtistHero extends StatelessWidget {
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  height: 2,
+                  // 加厚到 6px ✓（2px 时仍被报"还有缝" ✗）。
+                  height: 6,
                   child: ColoredBox(color: pageBackground),
                 ),
               ],
             ),
           );
         },
+        ),
       ),
     );
   }

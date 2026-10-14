@@ -238,17 +238,10 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
         '${snapshot.playlist.trackCount ?? allTracks.length} 首歌曲 · 只读订阅',
       ].join(' · '),
       secondaryContent: tracks,
+      // **不标序号**（2026-10-12 用户裁定 ✓）：歌单（含从榜单订阅进来的 ✓）里每首歌都挂
+      // "1、2、3"只会让列表显得吵 ✗ ⇒ 序号不再使用 ✓（组件保留该能力 ✓，留给将来真需要的地方 ✓）。
       secondaryContentBuilder:
-          (context, track, index, msc, view) => _buildTrackRow(
-            track,
-            tracks,
-            // 名次集合（榜单订阅）才显示行首序号；判据记在偏好里（不动 DB schema ✓）。
-            leadingIndex: AppPreference.instance.isRankedSubscription(
-              widget.localId,
-            )
-                ? index + 1
-                : null,
-          ),
+          (context, track, index, msc, view) => _buildTrackRow(track, tracks),
       enableShufflePlay: false,
       enableSortMethod: hasEnoughItemsToSort(allTracks.length),
       enableSortOrder: hasEnoughItemsToSort(allTracks.length),

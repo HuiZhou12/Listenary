@@ -171,14 +171,16 @@ void main() {
     },
   );
 
-  testWidgets('★ 名次集合（榜单订阅）显示行首序号；普通歌单不显示', (tester) async {
+  testWidgets('★ 歌单详情**一律不显示行首序号**（含名次集合，2026-10-12 用户裁定 ✓）', (
+    tester,
+  ) async {
     final saved = repository.replaceSubscriptionSnapshot(_playlist());
     await controller.loadSubscriptions();
 
     // 单例偏好会被这一条改动 ⇒ 用后还原（避免污染其它测试）。
     addTearDown(() => AppPreference.instance.rankedSubscriptions = []);
 
-    // ① 普通歌单：**不该**出现行首序号（参考产品的规则：普通歌单不编号）。
+    // ① 普通歌单：不显示（一直都是）。
     AppPreference.instance.rankedSubscriptions = [];
     await _pump(
       tester,
@@ -187,13 +189,10 @@ void main() {
       OnlinePlaylistDetailPage(localId: saved.localId),
     );
     await _pumpUntilFound(tester, find.text('Remote Track'));
-    expect(
-      find.text('1'),
-      findsNothing,
-      reason: '普通歌单不该有行首序号（规则照参考产品：榜单/专辑才有）',
-    );
+    expect(find.text('1'), findsNothing, reason: '普通歌单不该有行首序号');
 
-    // ② 标成名次集合：**应**出现序号 1（对照才算真断言）。
+    // ② **标成名次集合也不显示** ✓ —— 用户裁定："榜单歌单里每首歌的序号去掉" ✓
+    //（一整列 1、2、3 只会让列表显得吵 ✗；序号能力仍留在行组件里 ✓）。
     AppPreference.instance.markRankedSubscription(saved.localId);
     await _pump(
       tester,
@@ -204,8 +203,8 @@ void main() {
     await _pumpUntilFound(tester, find.text('Remote Track'));
     expect(
       find.text('1'),
-      findsOneWidget,
-      reason: '名次集合（从榜单订阅）必须显示行首序号',
+      findsNothing,
+      reason: '名次集合也不再显示行首序号（用户裁定 ✓）',
     );
   });
 

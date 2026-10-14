@@ -255,8 +255,8 @@ class _RemotePlaylistPageState extends State<RemotePlaylistPage>
                 selectedRef: track.ref,
               ),
             ),
-            // 只有**名次集合**（榜单）才给序号 ✓ —— 普通歌单给了就是编排名 ✗。
-            leadingIndex: widget.ranked ? index + 1 : null,
+            // **不标序号**（2026-10-12 用户裁定 ✓）：歌单里每首歌都带"1、2、3"只会让列表显得吵 ✗
+            //（组件仍保留这个能力 ✓，留给将来真需要的地方 ✓）。
           ),
       // 洗牌 / 排序在这个页面上**不成立**（没有名次或添加时间可排 ✓）⇒ 两个开关都关掉 ✓，
       // 「骨架」仍是同一套 ✓（用户要求：骨架统一、元素按接口定 ✓）。
