@@ -73,6 +73,16 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   final RemoteLoadState<MusicPlatform, MusicTrack> _newSongState =
       RemoteLoadState<MusicPlatform, MusicTrack>();
 
+  /// **「猜你喜欢」货架**（`recommendedTracks` 能力，2026-10-12 新增 ✓）。
+  ///
+  /// 与「新曲上线」同一条规矩 ✓：只对**能播放**的平台出现 ✓
+  ///（`playableRecommendedTrackPlatforms` ✓ —— 列一堆点不响的不如不显示 ✗）。
+  /// **没有任何平台具备该能力时**，主页保留那块**诚实展位** ✓（写明要接什么接口 ✓），
+  /// 而不是摆一个空货架 ✗ —— 这样"还没配"与"配上但没有推荐"一眼可辨 ✓。
+  List<MusicPlatform> _recommendedPlatforms = const [];
+  final RemoteLoadState<MusicPlatform, MusicTrack> _recommendedState =
+      RemoteLoadState<MusicPlatform, MusicTrack>();
+
   @override
   void initState() {
     super.initState();
@@ -122,6 +132,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     unawaited(_loadFavorites());
     unawaited(_loadCollections());
     unawaited(_loadNewSongs());
+    unawaited(_loadRecommended());
   }
 
   Future<void> _refreshAll() async {
@@ -133,6 +144,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       _loadFavorites(),
       _loadCollections(),
       _loadNewSongs(),
+      _loadRecommended(),
     ]);
   }
 
@@ -195,8 +207,126 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     fallback: '读取该平台新歌失败',
   );
 
-  Widget _buildNewSongs() {
-    if (_newSongPlatforms.isEmpty) return const SizedBox.shrink();
+  /// **推荐曲目**（`recommendedTracks` ✓）：与「新歌」同一套做法 ✓ ——
+  /// 只对**能播放**的平台加载 ✓，单平台失败不影响其它平台 ✓。
+  Future<void> _loadRecommended() async {
+    final service = context.read<OnlineMusicService?>();
+    final platforms = service == null
+        ? const <MusicPlatform>[]
+        : [
+            for (final platform in builtinMusicPlatforms)
+              if (service.capabilities.playableRecommendedTrackPlatforms
+                  .contains(platform))
+                platform,
+          ];
+    if (!mounted) return;
+    setState(() => _recommendedPlatforms = platforms);
+    if (service == null) return;
+    await Future.wait([
+      for (final platform in platforms)
+        _loadRecommendedFor(service, platform),
+    ]);
+  }
+
+  Future<void> _loadRecommendedFor(
+    OnlineMusicService service,
+    MusicPlatform platform,
+  ) => loadRemoteList(
+    _recommendedState,
+    platform,
+    () => service.fetchRecommendedTracks(
+      platform: platform,
+      limit: widget.collectionLimit,
+      offset: 0,
+      cancelToken: newCancelToken(),
+    ),
+    fallback: '读取该平台推荐曲目失败',
+  );
+
+  /// 「猜你喜欢」：**有平台具备该能力**就是真货架 ✓；一个都没有 ⇒ 保留**诚实展位** ✓
+  ///（写明要接什么 ✓，不摆空货架 ✗）。"凭据没配/失效"由**平台自己的失败态**如实呈现 ✓
+  ///（与"没有推荐"分开 ✓）。
+  Widget _buildRecommended() {
+    if (_recommendedPlatforms.isEmpty) {
+      return const HomePlaceholderShelf(
+        title: '猜你喜欢',
+        subtitle: '根据你的口味挑出来的歌',
+        source: '官方推荐接口（需要登录 Cookie）',
+        icon: Symbols.favorite,
+      );
+    }
+    return ContentSection(
+      title: '猜你喜欢',
+      subtitle: '各平台按你的账号推荐的曲目；点一行即从该平台的推荐开始播放',
+      child: Column(
+        children: [
+          for (final platform in _recommendedPlatforms)
+            _buildRecommendedSection(platform),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecommendedSection(MusicPlatform platform) {
+    final scheme = Theme.of(context).colorScheme;
+    final tracks = _recommendedState.items(platform);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Spacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            musicPlatformLabel(platform),
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontSize: AppType.caption,
+              fontWeight: AppType.weightSemibold,
+            ),
+          ),
+          const SizedBox(height: Spacing.sm),
+          if (_recommendedState.isLoading(platform))
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: Spacing.lg),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_recommendedState.error(platform) case final message?)
+            InlineFailureHint(
+              message: message,
+              onRetry: () => _retryRecommended(platform),
+            )
+          else if (tracks.isEmpty)
+            // **空 ≠ 失败**：平台没有推荐（或者今天就是没有 ✓）⇒ 中性提示、不给重试 ✓。
+            // 凭据失效会走上面的失败分支 ✓ —— 两者不混 ✓。
+            const InlineEmptyHint(
+              icon: Symbols.favorite,
+              message: '该平台这次没有给推荐（也可能今天就是没有）。',
+            )
+          else
+            Column(
+              children: [
+                for (final track in tracks)
+                  OnlineTrackEntry(
+                    track: track,
+                    onTap: () => playOnlineSearchResult(
+                      context,
+                      tracks: tracks,
+                      selectedRef: track.ref,
+                    ),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _retryRecommended(MusicPlatform platform) async {
+    final service = context.read<OnlineMusicService?>();
+    if (service == null) return;
+    await _loadRecommendedFor(service, platform);
+  }
+
+  Widget _buildNewSongs() {    if (_newSongPlatforms.isEmpty) return const SizedBox.shrink();
     return ContentSection(
       title: '新歌上线',
       subtitle: '各平台最近发布的曲目；点一行即从该平台的新歌开始播放',
@@ -384,13 +514,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
             source: '官方视频推荐接口（本应用目前只能播音频）',
             icon: Symbols.movie,
           ),
-          // ⑤ 猜你喜欢（缺：官方推荐接口 ✓）
-          const HomePlaceholderShelf(
-            title: '猜你喜欢',
-            subtitle: '根据你的口味挑出来的歌',
-            source: '官方推荐接口（需要登录 Cookie）',
-            icon: Symbols.favorite,
-          ),
+          // ⑤ 猜你喜欢（**有推荐能力就是真货架** ✓；没有就保留诚实展位 ✓）
+          _buildRecommended(),
           // ⑥ 来自你的媒体库（真实：收藏 ✓ + 自建歌单 ✓ —— 图上是一块，我们拆成两块更清楚 ✓）
           _buildFavorites(),
           _buildPersonalPlaylists(personal),
