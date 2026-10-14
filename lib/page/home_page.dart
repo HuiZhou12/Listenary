@@ -6,6 +6,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/home_greeting_header.dart';
+import 'package:pure_music/component/home_placeholder_shelf.dart';
 import 'package:pure_music/component/horizontal_shelf.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_entry.dart';
@@ -347,14 +348,85 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: Spacing.bottomNav, right: 20),
         children: [
-          // **问候头**（2026-10-12 新增 ✓）：主页最顶端、靠左大字 ✓、无头像 ✓。
-          // 这一步**只加不改** ✗ —— 主页其余元素保持原样 ✓（整页重置等用户看过效果再动 ✓）。
-          // `{{user_name}}` 目前是开发期占位「佬友」✓，cookie 推荐能力上线后换账号昵称 ✓。
+          // ================= 主页重置（2026-10-12，照用户给的 YT Music 图 ✓）=================
+          // 顺序与图一致 ✓；**有真实数据的接真实数据** ✓，缺的做成**诚实展位** ✓
+          //（展位写明"要接什么接口"✓，不塞假内容 ✗）。
           const HomeGreetingHeader(),
+
+          // ① 再听一遍（真实：本地在线历史 ✓）
           _buildHistory(history),
+          // ② 老歌重温（真实：历史里**播放次数最高**的那批 ✓ —— 复用既有的 `topPlayed` ✓）
+          _buildTopPlayed(history),
+          // ③ 翻唱与混音（缺：我们没有这类版权内容 ✓）
+          const HomePlaceholderShelf(
+            title: '翻唱与混音',
+            subtitle: '同一首歌的不同版本，总有一版对味',
+            source: '第三方内容源（本应用没有这类版权内容）',
+            icon: Symbols.mic,
+          ),
+          // ④ 为你推荐的音乐视频（缺：我们只能播音频 ✓）
+          const HomePlaceholderShelf(
+            title: '为你推荐的音乐视频',
+            subtitle: '用视频的形式给你推荐歌',
+            source: '官方视频推荐接口（本应用目前只能播音频）',
+            icon: Symbols.movie,
+          ),
+          // ⑤ 猜你喜欢（缺：官方推荐接口 ✓）
+          const HomePlaceholderShelf(
+            title: '猜你喜欢',
+            subtitle: '根据你的口味挑出来的歌',
+            source: '官方推荐接口（需要登录 Cookie）',
+            icon: Symbols.favorite,
+          ),
+          // ⑥ 来自你的媒体库（真实：收藏 ✓ + 自建歌单 ✓ —— 图上是一块，我们拆成两块更清楚 ✓）
           _buildFavorites(),
           _buildPersonalPlaylists(personal),
+          // ⑦ 关注的艺人（缺：官方接口 ✓）
+          const HomePlaceholderShelf(
+            title: '关注的艺人',
+            subtitle: '你关注的艺人的最新动态',
+            source: '官方「关注的艺人」接口（需要登录 Cookie）',
+            icon: Symbols.artist,
+          ),
+          // ⑧ 来自社区（缺 ✓）
+          const HomePlaceholderShelf(
+            title: '来自社区',
+            subtitle: '其他听众在做、在听的歌单',
+            source: '官方社区接口（需要登录 Cookie）',
+            icon: Symbols.groups,
+          ),
+          // ⑨ 为你推荐的专辑（缺 ✓）
+          const HomePlaceholderShelf(
+            title: '为你推荐的专辑',
+            subtitle: '整套听完的那种推荐',
+            source: '官方推荐接口（需要登录 Cookie）',
+            icon: Symbols.album,
+          ),
+          // ⑩ 新曲上线（真实：各平台新歌 ✓）
           _buildNewSongs(),
+          // ⑪⑫⑬ 官方三件套（都缺 ✓）
+          const HomePlaceholderShelf(
+            title: 'Recap',
+            subtitle: '这一段时间你的听歌小结',
+            source: '官方 Recap 接口（需要登录 Cookie）',
+            icon: Symbols.insights,
+          ),
+          const HomePlaceholderShelf(
+            title: '每日发现',
+            subtitle: '每天换一批，专门给你挑的',
+            source: '官方每日推荐接口（需要登录 Cookie）',
+            icon: Symbols.explore,
+          ),
+          const HomePlaceholderShelf(
+            title: '个性化合辑',
+            subtitle: '按心情与场景混出来的合辑',
+            source: '官方个性化合辑接口（需要登录 Cookie）',
+            icon: Symbols.auto_awesome,
+          ),
+
+          // ================= 图里没有、但我们本来就有的价值（保留 ✓）=================
+          // 用户这轮的指令是"元素全部推翻、采用 YT 设计" ✓ —— 但这两块是我们**已有的真实能力** ✓
+          // （各平台歌单 ✓ 与平台能力诊断 ✓），删掉是纯损失 ✗ ⇒ 放在最后保留 ✓，你要删说一句即可 ✓。
           _buildCollections(service),
           PlatformCapabilityView(
             capabilities: service?.capabilities,
@@ -370,7 +442,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   Widget _buildHistory(OnlineHistoryViewSnapshot history) {
     final entries = history.recent.take(widget.previewLimit).toList();
     return ContentSection(
-      title: '继续听',
+      // 照用户给的 YT 图改名 ✓：原来是「继续听」✓，图上第一块叫「再听一遍」✓。
+      title: '再听一遍',
       subtitle: '来自在线播放历史（按曲目自己的来源标注）',
       actionLabel: '查看全部',
       onAction: () => context.go('${app_paths.STATS_PAGE}?source=online'),
@@ -389,6 +462,41 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
                     onTap: () => playOnlineHistoryEntry(
                       context,
                       entries: history.recent,
+                      selectedRef: entry.track.ref,
+                    ),
+                  ),
+              ],
+            ),
+    );
+  }
+
+  // ------------------------------------------------------------- 老歌重温
+
+  /// 「老歌重温」（照用户给的 YT 图第 2 块 ✓）：**真实数据** ✓ ——
+  /// 直接复用历史里已有的 `topPlayed`（按**播放次数**排序 ✓）。
+  /// 文案如实 ✓：它说的是"你反复听过的那批" ✓，不假装是"年代久远的老歌" ✗（我们没有年代数据 ✓）。
+  Widget _buildTopPlayed(OnlineHistoryViewSnapshot history) {
+    final entries = history.topPlayed.take(widget.previewLimit).toList();
+    return ContentSection(
+      title: '老歌重温',
+      subtitle: '你反复听过的那几首（按播放次数排序）',
+      actionLabel: '查看全部',
+      onAction: () => context.go('${app_paths.STATS_PAGE}?source=online'),
+      child: entries.isEmpty
+          ? InlineEmptyHint(
+              icon: Symbols.replay,
+              message: history.status == OnlineHistoryLoadStatus.failed
+                  ? '播放历史读取失败，可稍后重试。'
+                  : '还没有反复听过的曲目：某一首听上几遍，它会出现在这里。',
+            )
+          : Column(
+              children: [
+                for (final entry in entries)
+                  _buildTrackRow(
+                    entry.track,
+                    onTap: () => playOnlineHistoryEntry(
+                      context,
+                      entries: history.topPlayed,
                       selectedRef: entry.track.ref,
                     ),
                   ),

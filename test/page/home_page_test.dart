@@ -121,8 +121,16 @@ void main() {
 
   testWidgets('保证 1：空数据时给出可读的空状态，且配置说明可用', (tester) async {    await pumpHome(tester, service: _HomeService());
 
-    // 五个区块都在，且顺序是"你的内容 → 平台内容 → 配置诊断"。
-    final titles = ['继续听', '我的收藏', '我的在线歌单', '来自平台的歌单', '平台能力'];
+    // 2026-10-12 主页按用户给的 YT 图重置 ✓ ⇒ 区块与顺序都变了 ✓（这里只钉**关键几个** ✓，
+    // 顺序：问候头之后 再听一遍 → 老歌重温 → … 收藏/歌单 … → 来自平台的歌单 → 平台能力 ✓）。
+    final titles = [
+      '再听一遍',
+      '老歌重温',
+      '我的收藏',
+      '我的在线歌单',
+      '来自平台的歌单',
+      '平台能力',
+    ];
     for (final title in titles) {
       expect(find.text(title), findsOneWidget, reason: '$title 区块必须存在');
     }
@@ -176,15 +184,19 @@ void main() {
     repository.toggleFavorite(_track('n2', MusicPlatform.netease));
     await pumpHome(tester, service: _HomeService());
 
-    // 历史区里两条（netease + qq），收藏区一条 QQ、一条网易云。
-    expect(find.byType(OnlineTrackRow), findsNWidgets(4));
+    // 历史区两条（netease + qq）+ 收藏区一条 QQ、一条网易云；
+    // 2026-10-12 起还有「老歌重温」（`topPlayed` ✓）—— 它对同一批历史再列一次
+    // ⇒ 同样的歌会**再出现一遍** ✓（真实数据 ✓，不是重复 bug ✓）⇒ 共 6 行 ✓。
+    expect(find.byType(OnlineTrackRow), findsNWidgets(6));
     final labels = tester
         .widgetList<OnlineTrackRow>(find.byType(OnlineTrackRow))
         .map((row) => row.sourceLabel)
         .toList(growable: false);
     expect(labels, contains('网易云'));
     expect(labels, contains('QQ音乐'));
-    expect(labels.where((label) => label == 'QQ音乐'), hasLength(2));
+    // q1 这首 QQ 曲目现在会出现**三次** ✓：再听一遍 ✓ + 老歌重温 ✓ + 收藏 ✓
+    //（三块都是真实数据 ✓，各自独立 ✓ —— 不是重复渲染 ✗）。
+    expect(labels.where((label) => label == 'QQ音乐'), hasLength(3));
   });
 
   testWidgets('保证 4：平台歌单按平台分组，单平台失败不影响其它平台', (tester) async {
@@ -313,10 +325,16 @@ void main() {
 
     // 窄窗口下不允许出现 RenderFlex overflow（溢出会以异常形式抛出）。
     expect(tester.takeException(), isNull);
-    expect(find.text('继续听'), findsOneWidget);
+    expect(find.text('再听一遍'), findsOneWidget);
 
     // 滚到「来自平台的歌单」区：横滑卡片同样不能在窄窗口里溢出。
-    await tester.drag(find.byType(ListView).first, const Offset(0, -700));
+    // 2026-10-12 主页重置后有十几个货架 ✓ ⇒ 一次拖 700 已经够不到了 ✗ ⇒
+    // 用 `scrollUntilVisible` 一直滚到它出现为止 ✓（比"猜一个像素数"稳 ✓）。
+    await tester.scrollUntilVisible(
+      find.text('来自平台的歌单'),
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text('来自平台的歌单'), findsOneWidget);
@@ -347,7 +365,7 @@ void main() {
   testWidgets('★ 继续听「查看全部」→ 统计页的**在线**来源（query 不能丢）', (tester) async {
     await pumpHome(tester, service: _HomeService());
 
-    await tester.tap(seeAllOf('继续听'));
+    await tester.tap(seeAllOf('再听一遍'));
     await tester.pumpAndSettle();
 
     // 只断言路径会让"query 丢了"溜过去：这个跳转的语义**全在 source=online 上**，
@@ -420,7 +438,7 @@ void main() {
     await pumpHome(tester); // 刻意不注册 OnlineMusicService
 
     expect(tester.takeException(), isNull);
-    expect(find.text('继续听'), findsOneWidget);
+    expect(find.text('再听一遍'), findsOneWidget);
 
     await expandCapabilities(tester);
     // 与"配了服务但没有能力"时的"未配置"**不是同一句话** —— 这里连服务都没有。
