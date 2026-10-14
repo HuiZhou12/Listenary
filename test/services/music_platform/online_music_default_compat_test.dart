@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_composition.dart';
+import 'package:pure_music/services/music_platform/online_music_request.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider.dart';
@@ -88,6 +89,9 @@ void main() {
       OnlineMusicCapability.newAlbums: runtime.newAlbumPlatforms,
       OnlineMusicCapability.searchAlbums: runtime.searchableAlbumPlatforms,
       OnlineMusicCapability.searchArtists: runtime.searchableArtistPlatforms,
+      // 推荐曲目（2026-10-12）✓：默认条目不声明它 ⇒ 两侧都空 ✓。
+      OnlineMusicCapability.recommendedTracks:
+          runtime.recommendedTrackPlatforms,
       OnlineMusicCapability.lyric: runtime.lyricPlatforms,
       OnlineMusicCapability.stream: runtime.resolvablePlatforms,
     };
@@ -184,6 +188,14 @@ void main() {
 }
 
 final class _AllCapabilityProvider extends UnsupportedOnlineMusicProvider {
+  @override
+  Future<List<MusicTrack>> fetchRecommendedTracks({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Recommended tracks are not implemented here');
+
   _AllCapabilityProvider(this.providerId, this.platform);
 
   @override

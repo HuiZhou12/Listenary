@@ -526,6 +526,14 @@ void main() {
 }
 
 final class _CollectionProvider extends UnsupportedOnlineMusicProvider {
+  @override
+  Future<List<MusicTrack>> fetchRecommendedTracks({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Recommended tracks are not implemented here');
+
   _CollectionProvider(this.providerId, {required this.platforms});
 
   @override

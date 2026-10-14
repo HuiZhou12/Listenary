@@ -435,6 +435,37 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
     );
   }
 
+  /// **推荐曲目**（`recommendedTracks`，2026-10-12 新增 ✓）：与"新歌/搜索"同构 ✓
+  ///（都是曲目数组 ✓）⇒ 共用同一个响应映射，只取曲目部分 ✓。
+  ///
+  /// 凭据（cookie）**不在这一层处理** ✓：它由请求头按 `credentialReference` 从**安全槽位**取 ✓
+  /// ⇒ 明文配置里永远没有凭据 ✓（沿用既有机制，不新增通道 ✓）。
+  @override
+  Future<List<MusicTrack>> fetchRecommendedTracks({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    final binding = _requireBinding(
+      OnlineMusicCapability.recommendedTracks,
+      platform,
+    );
+    return _run(
+      binding: binding,
+      cancelToken: cancelToken,
+      inputs: DeclarativeInputs(limit: limit, offset: offset, page: 1),
+      map: (body) => mapDeclarativeSearchResponse(
+        spec: binding.response,
+        body: body,
+        platform: platform,
+        platformId: platformId,
+        limit: limit,
+        offset: offset,
+      ).items,
+    );
+  }
+
   @override
   Future<List<MusicTrack>> fetchNewSongs({
     required MusicPlatform platform,

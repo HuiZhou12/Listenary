@@ -369,6 +369,22 @@ abstract interface class OnlineMusicService {
     required OnlineMusicCancelToken cancelToken,
   }) => throw UnsupportedError('New songs are not supported');
 
+  /// **推荐曲目**（`recommendedTracks`，2026-10-12 新增 ✓）：平台按**这个账号**推荐什么歌 ✓。
+  ///
+  /// 与 [fetchNewSongs] 的区别是**语义**（不是形状 ✓）：新歌回答"平台最近发布了什么"✓，
+  /// 推荐曲目回答"**平台觉得你会喜欢什么**"✓ —— 同一份配置换个账号，结果就不同 ✓。
+  /// 因此它的配置**通常需要凭据**（cookie ✓）；凭据按既有机制走**安全槽位** ✓
+  ///（`requiresCredential` + 请求头的 `credentialReference` ✓），**绝不写进明文配置** ✗。
+  ///
+  /// 形状与 [fetchNewSongs] 相同（曲目数组 ✓）⇒ 调用方按实际返回条数展示 ✓，
+  /// **不得据此推断分页** ✓（真实服务未必支持 `offset` ✓）。
+  Future<List<MusicTrack>> fetchRecommendedTracks({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Recommended tracks are not supported');
+
   /// **艺人详情**（`artist`，2026-10-12 新增）：艺人标量信息 + **热门曲目**。
   ///
   /// 为什么与"新歌"分开：它是**按实体 ID 取单条**（艺人 id 由调用方给出），

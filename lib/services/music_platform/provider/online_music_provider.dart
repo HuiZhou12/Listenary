@@ -71,6 +71,15 @@ abstract interface class OnlineMusicProvider {
     required OnlineMusicCancelToken cancelToken,
   });
 
+  /// **推荐曲目**（`recommendedTracks`，2026-10-12 新增 ✓）：平台按**这个账号**推荐什么歌 ✓
+  ///（形状与 [fetchNewSongs] 同构 ✓，语义不同 ✓ ⇒ 配置通常要带凭据 ✓）。
+  Future<List<MusicTrack>> fetchRecommendedTracks({
+    required MusicPlatform platform,
+    int limit,
+    int offset,
+    required OnlineMusicCancelToken cancelToken,
+  });
+
   /// **按关键词搜索艺人**（`searchArtists`，2026-10-12 新增）：输出是**艺人摘要** ✓。
   Future<List<OnlineArtistSummary>> searchArtists({
     required MusicPlatform platform,

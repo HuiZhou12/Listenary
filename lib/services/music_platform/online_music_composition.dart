@@ -211,6 +211,14 @@ OnlineMusicComposition createOnlineMusicComposition({
 
 /// 一个条目对外就是一个 Provider：内部按能力把调用分派给内置实现或声明式引擎。
 final class _ConfiguredMusicProvider implements OnlineMusicProvider {
+  @override
+  Future<List<MusicTrack>> fetchRecommendedTracks({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Recommended tracks are not implemented here');
+
   _ConfiguredMusicProvider({
     required this.providerId,
     required Map<OnlineMusicCapability, OnlineMusicProvider> delegates,
@@ -513,6 +521,14 @@ final class _ConfiguredMusicProvider implements OnlineMusicProvider {
 /// 但它在**能力声明上与真实实现一致** —— 否则平台卡与路由会把它当"没有这个条目"，
 /// 用户看到的是"没有可用来源"而不是"你的服务地址填错了"。
 final class _UnusableBaseUrlProvider implements OnlineMusicProvider {
+  @override
+  Future<List<MusicTrack>> fetchRecommendedTracks({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Recommended tracks are not implemented here');
+
   _UnusableBaseUrlProvider({
     required this.providerId,
     required this.reason,

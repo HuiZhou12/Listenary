@@ -19,6 +19,14 @@ import 'package:pure_music/services/music_platform/provider/online_music_quality
 /// 因此同一份实现可以按不同连接/认证配置注册成多个条目。
 final class ChkszOnlineMusicProvider
     implements OnlineMusicProvider, OnlineMusicCredentialController {
+  @override
+  Future<List<MusicTrack>> fetchRecommendedTracks({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Recommended tracks are not implemented here');
+
   ChkszOnlineMusicProvider({
     required ChkszRuntime runtime,
     this.providerId = defaultOnlineMusicProviderId,

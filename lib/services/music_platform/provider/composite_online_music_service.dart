@@ -61,6 +61,10 @@ final class CompositeOnlineMusicService
       ),
       chartPlatforms: registry.platformsFor(OnlineMusicCapability.chartList),
       newSongPlatforms: registry.platformsFor(OnlineMusicCapability.newSongs),
+      // 推荐曲目（2026-10-12）✓：有该能力候选的平台（界面另加"点得响"门槛 ✓）。
+      recommendedTrackPlatforms: registry.platformsFor(
+        OnlineMusicCapability.recommendedTracks,
+      ),
       // 新专辑（2026-10-12）✓。
       newAlbumPlatforms: registry.platformsFor(OnlineMusicCapability.newAlbums),
       // 搜索专辑（2026-10-12）✓。
@@ -222,6 +226,25 @@ final class CompositeOnlineMusicService
     platform,
     OnlineMusicCapability.newSongs,
     (provider) => provider.fetchNewSongs(
+      platform: platform,
+      limit: limit,
+      offset: offset,
+      cancelToken: cancelToken,
+    ),
+  );
+
+  /// 推荐曲目（`recommendedTracks`，2026-10-12 新增 ✓）：形状与"新歌"同构 ✓，
+  /// 语义是"**平台按这个账号**推荐什么" ✓（所以配置通常要带凭据 ✓）。
+  @override
+  Future<List<MusicTrack>> fetchRecommendedTracks({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => _dispatch(
+    platform,
+    OnlineMusicCapability.recommendedTracks,
+    (provider) => provider.fetchRecommendedTracks(
       platform: platform,
       limit: limit,
       offset: offset,

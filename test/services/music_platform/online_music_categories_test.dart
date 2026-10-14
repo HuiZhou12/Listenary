@@ -343,6 +343,14 @@ void main() {
 
 /// 只实现"分类索引"（可选再加"歌单列表"）的 Provider 替身。
 final class _CategoryProvider extends UnsupportedOnlineMusicProvider {
+  @override
+  Future<List<MusicTrack>> fetchRecommendedTracks({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Recommended tracks are not implemented here');
+
   _CategoryProvider(
     this.providerId, {
     required this.platforms,
