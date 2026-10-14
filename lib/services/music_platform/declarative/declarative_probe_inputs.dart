@@ -75,7 +75,9 @@ DeclarativeProbeInputRequirement probeInputRequirementFor(
   OnlineMusicCapability.newAlbums ||
   OnlineMusicCapability.playlistCollection ||
   OnlineMusicCapability.playlistCategories ||
-  OnlineMusicCapability.chartList => const DeclarativeProbeInputRequirement(
+  OnlineMusicCapability.chartList ||
+  // 推荐曲目：由服务端按**账号**决定给什么 ✓（我们只给数量 ✓）⇒ 与"新歌"同一组 ✓、**可探测** ✓。
+  OnlineMusicCapability.recommendedTracks => const DeclarativeProbeInputRequirement(
     optionalWithDefault: {DeclarativeProbeInput.limit},
   ),
   // 需要实体 ID 的能力不属于服务级探测（由候选策略排除；这里也如实声明"无要求"）。

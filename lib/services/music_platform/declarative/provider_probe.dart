@@ -972,7 +972,10 @@ int _countListEntries(JsonPath? listPath, Object? body) {
     ).length,
     unit: probeResultUnitFor(candidate.capability),
   ),
-  OnlineMusicCapability.search || OnlineMusicCapability.newSongs => (
+  OnlineMusicCapability.search ||
+  OnlineMusicCapability.newSongs ||
+  // 推荐曲目与搜索/新歌**同构**（都是曲目数组 ✓）⇒ 探测复用同一个映射 ✓。
+  OnlineMusicCapability.recommendedTracks => (
     count: mapDeclarativeSearchResponse(
       spec: binding.response,
       body: body,

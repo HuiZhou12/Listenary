@@ -33,6 +33,7 @@ const platformCapabilityRows =
       (label: '新专辑', available: _newAlbums),
       (label: '搜索专辑', available: _searchAlbums),
       (label: '搜索艺人', available: _searchArtists),
+      (label: '推荐曲目', available: _recommendedTracks),
       (label: '歌词', available: _lyrics),
       (label: '播放解析', available: _resolvable),
     ];
@@ -78,6 +79,11 @@ bool _searchAlbums(OnlineMusicCapabilities c, MusicPlatform p) =>
 /// 搜索艺人：**搜得出来、又打得开艺人页**的平台 ✓（同一条判据 ✓）。
 bool _searchArtists(OnlineMusicCapabilities c, MusicPlatform p) =>
     c.openableSearchArtistPlatforms.contains(p);
+
+/// 推荐曲目：与「新歌」同一条判据 —— 曲目**点得响**才显示 ✓
+///（推荐里混着点不动的歌，比不显示更糟 ✗）。
+bool _recommendedTracks(OnlineMusicCapabilities c, MusicPlatform p) =>
+    c.playableRecommendedTrackPlatforms.contains(p);
 
 bool _chartList(OnlineMusicCapabilities c, MusicPlatform p) =>
     c.chartPlatforms.contains(p);

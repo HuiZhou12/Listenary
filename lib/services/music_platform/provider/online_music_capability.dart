@@ -96,6 +96,19 @@ enum OnlineMusicCapability {
   /// 与 [searchAlbums] 同形：同一个真实接口的另一个 `type` ✓
   ///（网易云实测 `/cloudsearch?type=100` → `result.artists` ✓）；输入复用 `keyword` ✓；**可探测** ✓。
   searchArtists,
+  /// **推荐曲目**（`recommendedTracks`，2026-10-12 新增）：回答"平台给**这个账号**推荐了什么歌" ✓。
+  ///
+  /// 为什么是新能力：它是**账号相关**的语义 ✓ —— 同一首请求，换个账号结果就不同 ✓；
+  /// 与 [newSongs]（"平台最近发布了什么" ✓，与账号无关 ✓）是两件事 ✓。
+  /// 真实服务里也是另一个接口（网易云 `/recommend/songs` ✓ 需要登录 ✓）。
+  ///
+  /// ⚠️ **它通常需要凭据（cookie）** ✓：按既有机制，凭据走**安全槽位** ✓
+  ///（`requiresCredential` + 请求头的 `credentialReference` ✓），**绝不写进明文配置** ✗。
+  /// 凭据失效是**独立状态** ✓（见面文案要如实说"凭据失效"，**不能**混成"没有推荐" ✗）。
+  ///
+  /// 输出是**标准曲目数组** ✓ ⇒ 不加新领域字段、也不需要新映射函数 ✓（与 [newSongs] 同构 ✓）。
+  /// **可探测** ✓（与 [search] 同判据 ✓）；界面要求该平台具备 [stream] ✓（点不响不如不显示 ✓）。
+  recommendedTracks,
   lyric,
   stream,
 }
@@ -117,6 +130,7 @@ String onlineMusicCapabilityLabel(OnlineMusicCapability capability) =>
       OnlineMusicCapability.newAlbums => '新专辑',
       OnlineMusicCapability.searchAlbums => '搜索专辑',
       OnlineMusicCapability.searchArtists => '搜索艺人',
+      OnlineMusicCapability.recommendedTracks => '推荐曲目',
       OnlineMusicCapability.lyric => '歌词',
       OnlineMusicCapability.stream => '播放解析',
     };

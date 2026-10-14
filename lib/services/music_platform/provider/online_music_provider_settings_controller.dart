@@ -1209,7 +1209,9 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
           );
         }
 
-      case OnlineMusicCapability.newSongs:
+      case OnlineMusicCapability.newSongs ||
+          // 推荐曲目与"新歌"**同构**（都是曲目数组 ✓）⇒ 试跑复用同一个映射 ✓。
+          OnlineMusicCapability.recommendedTracks:
         {
           // 新歌与搜索同构（都是曲目数组），试跑复用同一个映射。
           final tracks = mapDeclarativeSearchResponse(

@@ -16,6 +16,7 @@ final class OnlineMusicCapabilities {
     Iterable<MusicPlatform> playlistCategoryPlatforms = const [],
     Iterable<MusicPlatform> chartPlatforms = const [],
     Iterable<MusicPlatform> newSongPlatforms = const [],
+    Iterable<MusicPlatform> recommendedTrackPlatforms = const [],
     Iterable<MusicPlatform> newAlbumPlatforms = const [],
     Iterable<MusicPlatform> searchableAlbumPlatforms = const [],
     Iterable<MusicPlatform> searchableArtistPlatforms = const [],
@@ -38,6 +39,7 @@ final class OnlineMusicCapabilities {
        ),
        chartPlatforms = Set.unmodifiable(chartPlatforms),
        newSongPlatforms = Set.unmodifiable(newSongPlatforms),
+    recommendedTrackPlatforms = Set.unmodifiable(recommendedTrackPlatforms),
        newAlbumPlatforms = Set.unmodifiable(newAlbumPlatforms),
        searchableAlbumPlatforms = Set.unmodifiable(searchableAlbumPlatforms),
        searchableArtistPlatforms = Set.unmodifiable(searchableArtistPlatforms),
@@ -137,6 +139,12 @@ final class OnlineMusicCapabilities {
   /// 能列**艺人单曲**的平台（`artistSongs` 能力，2026-10-12 新增）。
   final Set<MusicPlatform> artistSongPlatforms;
 
+  /// 能取**推荐曲目**（`recommendedTracks` 能力，2026-10-12 新增）的平台 ✓。
+  ///
+  /// ⚠️ 它通常是**账号相关**的 ✓（同一请求换个账号结果不同 ✓）⇒ 配置里多半要带凭据 ✓，
+  /// 而凭据按既有机制走**安全槽位** ✓（`requiresCredential` + 请求头的 `credentialReference` ✓）。
+  final Set<MusicPlatform> recommendedTrackPlatforms;
+
   /// 新歌**真的点得动**的平台：必须同时具备新歌与播放解析能力。
   ///
   /// 理由与搜索的 Stream 硬门槛（D3）一致：列表里放一批点不响的曲目，比不显示更糟。
@@ -150,6 +158,13 @@ final class OnlineMusicCapabilities {
   Set<MusicPlatform> get openableNewAlbumPlatforms => {
     for (final platform in newAlbumPlatforms)
       if (albumPlatforms.contains(platform)) platform,
+  };
+
+  /// 推荐曲目**真的点得动**的平台：必须同时具备推荐曲目与播放解析能力 ✓
+  ///（与 [playableNewSongPlatforms] 完全同一条理由 ✓：列一批点不响的不如不显示 ✗）。
+  Set<MusicPlatform> get playableRecommendedTrackPlatforms => {
+    for (final platform in recommendedTrackPlatforms)
+      if (resolvablePlatforms.contains(platform)) platform,
   };
 
   /// 搜索页「专辑」分区**打得开**的平台：既要能搜专辑，又要能打开专辑详情 ✓

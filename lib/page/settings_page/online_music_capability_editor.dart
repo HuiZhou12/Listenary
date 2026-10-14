@@ -289,6 +289,11 @@ class _OnlineMusicCapabilityEditorDialogState
             OnlineMusicCapability.searchArtists => JsonPath.tryParse(
               'result.artists',
             ),
+            // 推荐曲目：网易云 `/recommend/songs` 把曲目放在 `data.dailySongs`（实测）✓
+            // —— 只作**起手默认值** ✓。
+            OnlineMusicCapability.recommendedTracks => JsonPath.tryParse(
+              'data.dailySongs',
+            ),
           },
           fieldsRootPath: switch (widget.capability) {
             OnlineMusicCapability.playlist ||
@@ -312,7 +317,9 @@ class _OnlineMusicCapabilityEditorDialogState
             OnlineMusicCapability.playlistCollection ||
             OnlineMusicCapability.playlistCategories ||
             OnlineMusicCapability.chartList ||
-            OnlineMusicCapability.newSongs => null,
+            OnlineMusicCapability.newSongs ||
+            // 推荐曲目同样是"一个曲目数组"（每个曲目就是一个数组元素 ✓）⇒ 不要字段根路径 ✓。
+            OnlineMusicCapability.recommendedTracks => null,
           },
         ),
       );
@@ -1958,6 +1965,11 @@ String domainFieldLabel(OnlineMusicDomainField field, {bool required = false}) {
   OnlineMusicCapability.searchAlbums => (listPath: true, fieldsRootPath: false),
   // 搜索艺人：同上 ✓。
   OnlineMusicCapability.searchArtists => (listPath: true, fieldsRootPath: false),
+  // 推荐曲目：与"新歌"同构 —— 一个曲目数组，元素自带全部元数据 ✓。
+  OnlineMusicCapability.recommendedTracks => (
+    listPath: true,
+    fieldsRootPath: false,
+  ),
   OnlineMusicCapability.playlistCollection ||
   OnlineMusicCapability.playlistCategories ||
   OnlineMusicCapability.chartList ||
@@ -2001,7 +2013,9 @@ OnlineMusicInputSource defaultInputSourceFor(
   OnlineMusicCapability.playlistCollection ||
   OnlineMusicCapability.playlistCategories ||
   OnlineMusicCapability.chartList ||
-  OnlineMusicCapability.newSongs => OnlineMusicInputSource.limit,
+  OnlineMusicCapability.newSongs ||
+  // 推荐曲目也是"由服务端决定给什么"（按账号推荐 ✓），最可能要填的是数量 ✓。
+  OnlineMusicCapability.recommendedTracks => OnlineMusicInputSource.limit,
 };
 
 /// 试跑要用的**真实输入**（P-49）：由编辑器按能力决定填哪些，控制器只看值。
@@ -2036,7 +2050,9 @@ typedef DeclarativeTestInputs = ({
   OnlineMusicCapability.playlistCollection ||
   OnlineMusicCapability.playlistCategories ||
   OnlineMusicCapability.chartList ||
-  OnlineMusicCapability.newSongs => (
+  OnlineMusicCapability.newSongs ||
+  // 推荐曲目：试跑只需要数量 ✓（没有关键词、也没有实体 ID ✓）。
+  OnlineMusicCapability.recommendedTracks => (
     keyword: false,
     limit: true,
     id: false,

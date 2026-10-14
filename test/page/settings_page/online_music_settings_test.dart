@@ -827,8 +827,9 @@ void main() {
         .length;
     expect(
       missingOnNetease,
-      11,
-      reason: '内置实现有 4 项、共 15 个能力 ⇒ 网易云卡应缺 11 项',
+      // 2026-10-12：新增「推荐曲目」⇒ 能力 16 个、内置实现 4 个 ⇒ 缺 12 项 ✓。
+      12,
+      reason: '内置实现有 4 项、共 16 个能力 ⇒ 网易云卡应缺 12 项',
     );
     expect(
       find.descendant(
@@ -2800,6 +2801,18 @@ OnlineMusicDeclarativeCapabilityBinding validBindingFor(
         },
       ),
     ),
+    // 推荐曲目：与"新歌/搜索"同构（曲目数组 ✓）—— 网易云 `/recommend/songs` 在 `data.dailySongs` ✓。
+    OnlineMusicCapability.recommendedTracks =>
+      OnlineMusicDeclarativeCapabilityBinding(
+        request: const OnlineMusicRequestSpec(path: '/recommend/songs'),
+        response: OnlineMusicResponseSpec(
+          listPath: JsonPath.tryParse('data.dailySongs'),
+          fields: {
+            trackId: field(trackId, 'id', asInt),
+            title: field(title, 'name', asString),
+          },
+        ),
+      ),
     // 搜索艺人：艺人在 `result.artists` 下（网易云 `/cloudsearch?type=100` ✓）。
     OnlineMusicCapability.searchArtists =>
       OnlineMusicDeclarativeCapabilityBinding(

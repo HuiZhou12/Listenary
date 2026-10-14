@@ -598,6 +598,11 @@ final class OnlineMusicResponseSpec {
         if (listPath == null) {
           issues.add('新歌能力必须配置列表路径');
         }
+      case OnlineMusicCapability.recommendedTracks:
+        // 推荐曲目同样是**一个曲目数组**（与搜索/新歌同构 ✓）⇒ 必须有列表路径 ✓。
+        if (listPath == null) {
+          issues.add('推荐曲目能力必须配置列表路径');
+        }
       case OnlineMusicCapability.lyric:
         // 至少要有一个歌词字段，否则永远取不到歌词（配置错误，不是"这首没歌词"）。
         if (!const [
@@ -716,6 +721,18 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
       };
     case OnlineMusicCapability.newSongs:
       // 新歌就是一个曲目数组：字段集与搜索**完全相同**（不新增领域字段）。
+      return const {
+        OnlineMusicDomainField.trackId,
+        OnlineMusicDomainField.title,
+        OnlineMusicDomainField.artists,
+        OnlineMusicDomainField.artistIds,
+        OnlineMusicDomainField.albumIds,
+        OnlineMusicDomainField.album,
+        OnlineMusicDomainField.coverUri,
+        OnlineMusicDomainField.duration,
+      };
+    case OnlineMusicCapability.recommendedTracks:
+      // 推荐曲目同样是曲目数组 ⇒ 与搜索/新歌**同一组字段** ✓（不新增领域字段 ✓）。
       return const {
         OnlineMusicDomainField.trackId,
         OnlineMusicDomainField.title,
@@ -861,6 +878,12 @@ Set<OnlineMusicDomainField> requiredFieldsFor(
       };
     case OnlineMusicCapability.newSongs:
       // 与搜索同样的最低要求：至少能确定"是哪首歌、叫什么"。
+      return const {
+        OnlineMusicDomainField.trackId,
+        OnlineMusicDomainField.title,
+      };
+    case OnlineMusicCapability.recommendedTracks:
+      // 与搜索/新歌同样的最低要求 ✓。
       return const {
         OnlineMusicDomainField.trackId,
         OnlineMusicDomainField.title,
