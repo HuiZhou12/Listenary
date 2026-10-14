@@ -119,6 +119,15 @@ enum OnlineMusicCapability {
   /// 值存**安全槽位** ✓、明文配置里没有它 ✗（有守卫测试钉住 ✓）。
   /// 它**不参与服务级探测**？—— 不：它**可探测** ✓（给 `limit` 即可 ✓，与 [playlistCollection] 同判据 ✓）。
   recommendedPlaylists,
+  /// **关注的艺人**（`followedArtists`，2026-10-12 新增 ✓）：回答"**这个账号**关注了哪些艺人" ✓。
+  ///
+  /// 输出是**艺人摘要数组** ✓（与 [searchArtists] 同形 ✓ ⇒ 复用 `OnlineArtistSummary`
+  /// 与既有的艺人列表映射 ✓，不新增领域字段 ✓）。
+  /// 真实服务：网易云 `/artist/sublist` ✓（实测可通 ✓ —— 若账号没关注任何艺人，它会
+  /// **如实返回 0 条** ✓，界面要给**中性空态**而不是失败 ✗）。
+  ///
+  /// **需要凭据** ✓（走安全槽位 ✓，明文配置里没有 ✗）；**可探测** ✓（不需要实体 ID ✓）。
+  followedArtists,
   lyric,
   stream,
 }
@@ -142,6 +151,7 @@ String onlineMusicCapabilityLabel(OnlineMusicCapability capability) =>
       OnlineMusicCapability.searchArtists => '搜索艺人',
       OnlineMusicCapability.recommendedTracks => '推荐曲目',
       OnlineMusicCapability.recommendedPlaylists => '推荐歌单',
+      OnlineMusicCapability.followedArtists => '关注的艺人',
       OnlineMusicCapability.lyric => '歌词',
       OnlineMusicCapability.stream => '播放解析',
     };

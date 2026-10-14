@@ -275,6 +275,32 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
     );
   }
 
+  /// **关注的艺人**（`followedArtists`，2026-10-12 新增 ✓）：与"搜索艺人"**同构** ✓
+  ///（都是艺人摘要数组 ✓）⇒ 共用同一套映射 ✓。凭据由请求头按引用从安全槽位取 ✓。
+  @override
+  Future<List<OnlineArtistSummary>> fetchFollowedArtists({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    final binding = _requireBinding(
+      OnlineMusicCapability.followedArtists,
+      platform,
+    );
+    return _run(
+      binding: binding,
+      cancelToken: cancelToken,
+      inputs: DeclarativeInputs(limit: limit, offset: offset, page: 1),
+      map: (body) => mapDeclarativeArtistListResponse(
+        spec: binding.response,
+        body: body,
+        platform: platform,
+        platformId: platformId,
+      ),
+    );
+  }
+
   @override
   Future<List<OnlineArtistSummary>> searchArtists({
     required MusicPlatform platform,

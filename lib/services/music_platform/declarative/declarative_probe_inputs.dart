@@ -79,7 +79,9 @@ DeclarativeProbeInputRequirement probeInputRequirementFor(
   // 推荐曲目：由服务端按**账号**决定给什么 ✓（我们只给数量 ✓）⇒ 与"新歌"同一组 ✓、**可探测** ✓。
   OnlineMusicCapability.recommendedTracks ||
   // 推荐歌单：同上（按账号 ✓，只给数量 ✓）⇒ 也可探测 ✓。
-  OnlineMusicCapability.recommendedPlaylists => const DeclarativeProbeInputRequirement(
+  OnlineMusicCapability.recommendedPlaylists ||
+  // 关注艺人：查"这个账号关注了谁" ✓ ⇒ 不需要关键词、**可探测** ✓。
+  OnlineMusicCapability.followedArtists => const DeclarativeProbeInputRequirement(
     optionalWithDefault: {DeclarativeProbeInput.limit},
   ),
   // 需要实体 ID 的能力不属于服务级探测（由候选策略排除；这里也如实声明"无要求"）。

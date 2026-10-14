@@ -480,6 +480,55 @@ OnlineMusicDeclarativeCapabilityBinding _recommendedPlaylists() =>
       ),
     );
 
+/// **关注的艺人**（`followedArtists`，2026-10-12 新增 ✓）：**这个账号**关注了谁 ✓。
+///
+/// `/artist/sublist` → `{code, data: [...], count, hasMore}` ✓（实测可通 ✓；若账号没关注
+/// 任何人 ⇒ **如实返回 0 条** ✓，界面给中性空态 ✓）。
+///
+/// 凭据同前两份 ✓：`Cookie` 头 `sensitive: true` + 只填 `credentialReference` ✓、`value` 空 ✓。
+/// `limit` 是实测**被接受**的参数（`?limit=5` 返回 200 ✓）—— 是否严格生效无法在 0 条时验证 ✓，
+/// 但它是这类列表的常规参数 ✓ ⇒ 保留并在此**如实标注** ✓。
+OnlineMusicDeclarativeCapabilityBinding _followedArtists() =>
+    OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(
+        path: '/artist/sublist',
+        query: [
+          OnlineMusicParamBinding(
+            name: 'limit',
+            source: OnlineMusicInputSource.limit,
+          ),
+        ],
+        headers: [
+          OnlineMusicHeaderSpec(
+            name: 'Cookie',
+            value: '',
+            sensitive: true,
+            credentialReference: 'neteaseCookie',
+          ),
+        ],
+      ),
+      response: OnlineMusicResponseSpec(
+        success: _neteaseSuccess(),
+        listPath: _p('data'),
+        fields: {
+          OnlineMusicDomainField.artistId: OnlineMusicFieldSpec(
+            candidates: [_p('id')],
+            transform: OnlineMusicFieldTransform.asInt,
+            required: true,
+          ),
+          OnlineMusicDomainField.artistName: OnlineMusicFieldSpec(
+            candidates: [_p('name')],
+            transform: OnlineMusicFieldTransform.asString,
+            required: true,
+          ),
+          OnlineMusicDomainField.artistAvatarUri: OnlineMusicFieldSpec(
+            candidates: [_p('picUrl')],
+            transform: OnlineMusicFieldTransform.asHttpsUri,
+          ),
+        },
+      ),
+    );
+
 /// **搜索艺人**（`searchArtists`，2026-10-12 实测形状）：
 /// `/cloudsearch?keywords=&type=100` → `{code, result: {artists: [...], artistCount}}` ✓
 ///（`type=100` 同样是 DSL 既有的**固定值**参数 ✓）。
@@ -902,6 +951,8 @@ _recipe() => {
   OnlineMusicCapability.recommendedTracks: _recommendedTracks(),
   // 推荐歌单（2026-10-12）：第十五份 ✓ —— 同样带**凭据引用** ✓（不是明文 ✗）。
   OnlineMusicCapability.recommendedPlaylists: _recommendedPlaylists(),
+  // 关注的艺人（2026-10-12）：第十六份 ✓ —— 同样带**凭据引用** ✓。
+  OnlineMusicCapability.followedArtists: _followedArtists(),
 };
 
 void main() {
@@ -1259,6 +1310,9 @@ void main() {
         'recommendedTracks': rawRecommendedTracks,
         // 推荐歌单（2026-10-12）：真实 `/recommend/resource` 的响应 ✓（实测 6 张 ✓）。
         'recommendedPlaylists': rawRecommendedPlaylists,
+        // 关注艺人（2026-10-12）：真实 `/artist/sublist` 的响应 ✓。
+        // ⚠️ 该账号**没有关注任何艺人** ⇒ 真实固件就是**空数组** ✓（如实记录 ✓，不造数据 ✗）。
+        'followedArtists': rawFollowedArtists,
       };
       _recipe().forEach((capability, binding) {
         // 每份配置都必须有**真实固件**（`album` 已于 2026-10-12 补抓 ✓）；
@@ -1706,7 +1760,7 @@ void main() {
         expect(parsed, isA<OnlineMusicDeclarativeCapabilityBinding>());
       });
 
-      expect(written, hasLength(15));
+      expect(written, hasLength(16));
       // ignore: avoid_print
       print('已写出 ${written.length} 个配置：${written.join(', ')}');
     });

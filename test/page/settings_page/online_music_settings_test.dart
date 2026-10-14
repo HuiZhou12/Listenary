@@ -827,9 +827,9 @@ void main() {
         .length;
     expect(
       missingOnNetease,
-      // 2026-10-12：新增「推荐曲目」与「推荐歌单」⇒ 能力 17 个、内置实现 4 个 ⇒ 缺 13 项 ✓。
-      13,
-      reason: '内置实现有 4 项、共 17 个能力 ⇒ 网易云卡应缺 13 项',
+      // 2026-10-12：新增「推荐曲目 / 推荐歌单 / 关注的艺人」⇒ 能力 18 个、内置 4 个 ⇒ 缺 14 项 ✓。
+      14,
+      reason: '内置实现有 4 项、共 18 个能力 ⇒ 网易云卡应缺 14 项',
     );
     expect(
       find.descendant(
@@ -2810,6 +2810,26 @@ OnlineMusicDeclarativeCapabilityBinding validBindingFor(
           fields: {
             trackId: field(trackId, 'id', asInt),
             title: field(title, 'name', asString),
+          },
+        ),
+      ),
+    // 关注艺人：与"搜索艺人"同构（艺人摘要数组 ✓）—— 网易云 `/artist/sublist` 在 `data` ✓。
+    OnlineMusicCapability.followedArtists =>
+      OnlineMusicDeclarativeCapabilityBinding(
+        request: const OnlineMusicRequestSpec(path: '/artist/sublist'),
+        response: OnlineMusicResponseSpec(
+          listPath: JsonPath.tryParse('data'),
+          fields: {
+            OnlineMusicDomainField.artistId: field(
+              OnlineMusicDomainField.artistId,
+              'id',
+              asInt,
+            ),
+            OnlineMusicDomainField.artistName: field(
+              OnlineMusicDomainField.artistName,
+              'name',
+              asString,
+            ),
           },
         ),
       ),

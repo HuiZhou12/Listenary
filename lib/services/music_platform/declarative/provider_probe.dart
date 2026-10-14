@@ -946,7 +946,9 @@ int _countListEntries(JsonPath? listPath, Object? body) {
     '艺人单曲列表需要艺人 ID，不参与服务级探测（请用「试跑」验证这份配置）',
   ),
   // 搜索艺人：与"搜索专辑"同一套（数组类 ✓）⇒ 用艺人列表映射数一数 ✓。
-  OnlineMusicCapability.searchArtists => (
+  OnlineMusicCapability.searchArtists ||
+  // 关注艺人与"搜索艺人"**同构**（都是艺人摘要数组 ✓）⇒ 复用同一个映射 ✓。
+  OnlineMusicCapability.followedArtists => (
     count: mapDeclarativeArtistListResponse(
       spec: binding.response,
       body: body,

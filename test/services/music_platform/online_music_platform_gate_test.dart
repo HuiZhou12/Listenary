@@ -150,6 +150,14 @@ void main() {
 
 final class _FakeProvider extends UnsupportedOnlineMusicProvider {
   @override
+  Future<List<OnlineArtistSummary>> fetchFollowedArtists({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Followed artists are not implemented here');
+
+  @override
   Future<List<RemotePlaylistSummary>> fetchRecommendedPlaylists({
     required MusicPlatform platform,
     int limit = 30,

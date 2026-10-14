@@ -69,6 +69,10 @@ final class CompositeOnlineMusicService
       recommendedPlaylistPlatforms: registry.platformsFor(
         OnlineMusicCapability.recommendedPlaylists,
       ),
+      // 关注艺人（2026-10-12）✓：按候选给（界面另加"艺人页打得开"门槛 ✓）。
+      followedArtistPlatforms: registry.platformsFor(
+        OnlineMusicCapability.followedArtists,
+      ),
       // 新专辑（2026-10-12）✓。
       newAlbumPlatforms: registry.platformsFor(OnlineMusicCapability.newAlbums),
       // 搜索专辑（2026-10-12）✓。
@@ -268,6 +272,25 @@ final class CompositeOnlineMusicService
     platform,
     OnlineMusicCapability.recommendedTracks,
     (provider) => provider.fetchRecommendedTracks(
+      platform: platform,
+      limit: limit,
+      offset: offset,
+      cancelToken: cancelToken,
+    ),
+  );
+
+  /// 关注的艺人（`followedArtists`，2026-10-12 新增 ✓）：与"搜索艺人"同构 ✓，
+  /// 语义是"**这个账号**关注了谁" ✓（所以配置通常要带凭据 ✓）。
+  @override
+  Future<List<OnlineArtistSummary>> fetchFollowedArtists({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => _dispatch(
+    platform,
+    OnlineMusicCapability.followedArtists,
+    (provider) => provider.fetchFollowedArtists(
       platform: platform,
       limit: limit,
       offset: offset,

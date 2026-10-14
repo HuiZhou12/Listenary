@@ -92,6 +92,15 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   _recommendedPlaylistState =
       RemoteLoadState<MusicPlatform, RemotePlaylistSummary>();
 
+  /// **「关注的艺人」货架**（`followedArtists` 能力，2026-10-12 新增 ✓）。
+  ///
+  /// 判据：**既列得出、艺人页又打得开** ✓（`openableFollowedArtistPlatforms` ✓）。
+  /// ⚠️ 账号没关注任何人时平台会**如实返回 0 条** ✓ ⇒ 走**中性空态**（不是失败 ✓）。
+  List<MusicPlatform> _followedArtistPlatforms = const [];
+  final RemoteLoadState<MusicPlatform, OnlineArtistSummary>
+  _followedArtistState =
+      RemoteLoadState<MusicPlatform, OnlineArtistSummary>();
+
   @override
   void initState() {
     super.initState();
@@ -143,6 +152,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     unawaited(_loadNewSongs());
     unawaited(_loadRecommended());
     unawaited(_loadRecommendedPlaylists());
+    unawaited(_loadFollowedArtists());
   }
 
   Future<void> _refreshAll() async {
@@ -156,6 +166,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       _loadNewSongs(),
       _loadRecommended(),
       _loadRecommendedPlaylists(),
+      _loadFollowedArtists(),
     ]);
   }
 
@@ -471,6 +482,129 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     await _loadRecommendedPlaylistsFor(service, platform);
   }
 
+  /// **关注的艺人**（`followedArtists` ✓）：与"推荐歌单"同一套做法 ✓。
+  Future<void> _loadFollowedArtists() async {
+    final service = context.read<OnlineMusicService?>();
+    final platforms = service == null
+        ? const <MusicPlatform>[]
+        : [
+            for (final platform in builtinMusicPlatforms)
+              if (service.capabilities.openableFollowedArtistPlatforms.contains(
+                platform,
+              ))
+                platform,
+          ];
+    if (!mounted) return;
+    setState(() => _followedArtistPlatforms = platforms);
+    if (service == null) return;
+    await Future.wait([
+      for (final platform in platforms)
+        _loadFollowedArtistsFor(service, platform),
+    ]);
+  }
+
+  Future<void> _loadFollowedArtistsFor(
+    OnlineMusicService service,
+    MusicPlatform platform,
+  ) => loadRemoteList(
+    _followedArtistState,
+    platform,
+    () => service.fetchFollowedArtists(
+      platform: platform,
+      limit: widget.collectionLimit,
+      offset: 0,
+      cancelToken: newCancelToken(),
+    ),
+    fallback: '读取该平台关注的艺人失败',
+  );
+
+  Widget _buildFollowedArtists() {
+    if (_followedArtistPlatforms.isEmpty) {
+      return const HomePlaceholderShelf(
+        title: '关注的艺人',
+        subtitle: '你关注的艺人的最新动态',
+        source: '官方「关注的艺人」接口（需要登录 Cookie）',
+        icon: Symbols.artist,
+      );
+    }
+    return ContentSection(
+      title: '关注的艺人',
+      subtitle: '各平台按你的账号关注的人；点一位打开艺人页',
+      child: Column(
+        children: [
+          for (final platform in _followedArtistPlatforms)
+            _buildFollowedArtistSection(platform),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFollowedArtistSection(MusicPlatform platform) {
+    final scheme = Theme.of(context).colorScheme;
+    final artists = _followedArtistState.items(platform);
+    final width = _cardWidth;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Spacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            musicPlatformLabel(platform),
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontSize: AppType.caption,
+              fontWeight: AppType.weightSemibold,
+            ),
+          ),
+          const SizedBox(height: Spacing.sm),
+          HorizontalShelf(
+            loading: _followedArtistState.isLoading(platform) &&
+                artists.isEmpty,
+            errorMessage: artists.isEmpty
+                ? _followedArtistState.error(platform)
+                : null,
+            onRetry: () => _retryFollowedArtists(platform),
+            // **空 ≠ 失败**：这个账号可能真的没关注任何人 ✓（如实说 ✓）。
+            emptyMessage: '这个账号在${musicPlatformLabel(platform)}没有关注任何艺人。',
+            emptyIcon: Symbols.artist,
+            itemCount: artists.length,
+            itemWidth: width,
+            itemHeight: RemoteMediaCard.extentFor(
+              width: width,
+              hasFooter: false,
+            ),
+            itemBuilder: (context, index) {
+              final artist = artists[index];
+              return RemoteMediaCard(
+                width: width,
+                title: artist.name,
+                coverUri: artist.avatarUri,
+                details: '艺人',
+                sourceLabel: platformLabelForIdentityOnly(artist.identity),
+                placeholderIcon: Symbols.artist,
+                onTap: () => context.push(
+                  app_paths.ONLINE_ARTIST_PAGE,
+                  extra: (
+                    platform: artist.platform,
+                    artistId: artist.id,
+                    name: artist.name,
+                  ),
+                ),
+                semanticLabel: '${artist.name}，打开艺人页',
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _retryFollowedArtists(MusicPlatform platform) async {
+    final service = context.read<OnlineMusicService?>();
+    if (service == null) return;
+    await _loadFollowedArtistsFor(service, platform);
+  }
+
   Widget _buildNewSongs() {    if (_newSongPlatforms.isEmpty) return const SizedBox.shrink();
     return ContentSection(
       title: '新歌上线',
@@ -664,13 +798,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
           // ⑥ 来自你的媒体库（真实：收藏 ✓ + 自建歌单 ✓ —— 图上是一块，我们拆成两块更清楚 ✓）
           _buildFavorites(),
           _buildPersonalPlaylists(personal),
-          // ⑦ 关注的艺人（缺：官方接口 ✓）
-          const HomePlaceholderShelf(
-            title: '关注的艺人',
-            subtitle: '你关注的艺人的最新动态',
-            source: '官方「关注的艺人」接口（需要登录 Cookie）',
-            icon: Symbols.artist,
-          ),
+          // ⑦ 关注的艺人（**有该能力就是真货架** ✓；没有就保留诚实展位 ✓）
+          _buildFollowedArtists(),
           // ⑧ 来自社区（缺 ✓）
           const HomePlaceholderShelf(
             title: '来自社区',

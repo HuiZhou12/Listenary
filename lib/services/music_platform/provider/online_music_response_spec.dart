@@ -598,6 +598,11 @@ final class OnlineMusicResponseSpec {
         if (listPath == null) {
           issues.add('搜索艺人能力必须配置列表路径');
         }
+      case OnlineMusicCapability.followedArtists:
+        // 关注艺人：与"搜索艺人"同构 —— 一个艺人摘要数组 ✓。
+        if (listPath == null) {
+          issues.add('关注艺人能力必须配置列表路径');
+        }
       case OnlineMusicCapability.newSongs:
         // 新歌就是一个曲目数组，与搜索同构。
         if (listPath == null) {
@@ -765,6 +770,13 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
         OnlineMusicDomainField.artistName,
         OnlineMusicDomainField.artistAvatarUri,
       };
+    case OnlineMusicCapability.followedArtists:
+      // 关注艺人 = 同一组艺人元数据 ✓（不新增领域字段 ✓）。
+      return const {
+        OnlineMusicDomainField.artistId,
+        OnlineMusicDomainField.artistName,
+        OnlineMusicDomainField.artistAvatarUri,
+      };
     case OnlineMusicCapability.searchAlbums:
       // 搜索专辑 = 专辑元数据（与 `newAlbums` **同一组字段** ✓）—— 没有曲目 ✓。
       return const {
@@ -917,6 +929,12 @@ Set<OnlineMusicDomainField> requiredFieldsFor(
       return const {OnlineMusicDomainField.albumName};
     case OnlineMusicCapability.searchArtists:
       // 艺人条目至少要能确定"这是谁"：**id + 名字** ✓。
+      return const {
+        OnlineMusicDomainField.artistId,
+        OnlineMusicDomainField.artistName,
+      };
+    case OnlineMusicCapability.followedArtists:
+      // 同理：至少 id + 名字 ✓。
       return const {
         OnlineMusicDomainField.artistId,
         OnlineMusicDomainField.artistName,

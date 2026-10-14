@@ -80,6 +80,8 @@ $searchArtists = Get-Json "$BaseUrl/cloudsearch?keywords=%E6%B5%B7%E9%98%94%E5%A
 $recommended = Get-Json "$BaseUrl/recommend/songs"
 # recommendedPlaylists（2026-10-12 新增）：按账号推荐的歌单（形状 = 顶层 recommend 数组 ✓）。
 $recommendedPlaylists = Get-Json "$BaseUrl/recommend/resource"
+# followedArtists（2026-10-12 新增）：账号关注的艺人（形状 = data 数组 ✓；0 关注时就是空数组 ✓）。
+$followedArtists = Get-Json "$BaseUrl/artist/sublist?limit=$Trim"
 
 $blocks = [ordered]@{
   rawSearch = ([ordered]@{
@@ -192,6 +194,13 @@ $blocks = [ordered]@{
   rawRecommendedPlaylists = ([ordered]@{
       code      = $recommendedPlaylists.code
       recommend = Take $recommendedPlaylists.recommend $Trim
+    } | ConvertTo-Json -Depth 30 -Compress)
+
+  # followedArtists（2026-10-12）：关注的艺人在 data 里（裁到 $Trim 条 ✓；可能为空 ✓）。
+  rawFollowedArtists = ([ordered]@{
+      code  = $followedArtists.code
+      count = $followedArtists.count
+      data  = Take $followedArtists.data $Trim
     } | ConvertTo-Json -Depth 30 -Compress)
 }
 

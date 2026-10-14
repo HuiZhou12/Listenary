@@ -89,6 +89,15 @@ abstract interface class OnlineMusicProvider {
     required OnlineMusicCancelToken cancelToken,
   });
 
+  /// **关注的艺人**（`followedArtists`，2026-10-12 新增 ✓）：按**账号**关注的艺人摘要 ✓
+  ///（与 [searchArtists] 同形 ✓ ⇒ 复用同一套映射 ✓）。
+  Future<List<OnlineArtistSummary>> fetchFollowedArtists({
+    required MusicPlatform platform,
+    int limit,
+    int offset,
+    required OnlineMusicCancelToken cancelToken,
+  });
+
   /// **按关键词搜索艺人**（`searchArtists`，2026-10-12 新增）：输出是**艺人摘要** ✓。
   Future<List<OnlineArtistSummary>> searchArtists({
     required MusicPlatform platform,

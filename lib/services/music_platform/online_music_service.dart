@@ -18,6 +18,7 @@ final class OnlineMusicCapabilities {
     Iterable<MusicPlatform> newSongPlatforms = const [],
     Iterable<MusicPlatform> recommendedTrackPlatforms = const [],
     Iterable<MusicPlatform> recommendedPlaylistPlatforms = const [],
+    Iterable<MusicPlatform> followedArtistPlatforms = const [],
     Iterable<MusicPlatform> newAlbumPlatforms = const [],
     Iterable<MusicPlatform> searchableAlbumPlatforms = const [],
     Iterable<MusicPlatform> searchableArtistPlatforms = const [],
@@ -44,6 +45,7 @@ final class OnlineMusicCapabilities {
     recommendedPlaylistPlatforms = Set.unmodifiable(
       recommendedPlaylistPlatforms,
     ),
+    followedArtistPlatforms = Set.unmodifiable(followedArtistPlatforms),
        newAlbumPlatforms = Set.unmodifiable(newAlbumPlatforms),
        searchableAlbumPlatforms = Set.unmodifiable(searchableAlbumPlatforms),
        searchableArtistPlatforms = Set.unmodifiable(searchableArtistPlatforms),
@@ -152,6 +154,9 @@ final class OnlineMusicCapabilities {
   /// 能取**推荐歌单**（`recommendedPlaylists` 能力，2026-10-12 新增）的平台 ✓（同样通常要凭据 ✓）。
   final Set<MusicPlatform> recommendedPlaylistPlatforms;
 
+  /// 能取**关注的艺人**（`followedArtists` 能力，2026-10-12 新增）的平台 ✓（同样通常要凭据 ✓）。
+  final Set<MusicPlatform> followedArtistPlatforms;
+
   /// 新歌**真的点得动**的平台：必须同时具备新歌与播放解析能力。
   ///
   /// 理由与搜索的 Stream 硬门槛（D3）一致：列表里放一批点不响的曲目，比不显示更糟。
@@ -179,6 +184,13 @@ final class OnlineMusicCapabilities {
   Set<MusicPlatform> get openableRecommendedPlaylistPlatforms => {
     for (final platform in recommendedPlaylistPlatforms)
       if (playlistPlatforms.contains(platform)) platform,
+  };
+
+  /// 关注的艺人**打得开**的平台：既要能取"关注的艺人" ✓，又要能打开**艺人页** ✓
+  ///（点进去是死链比不显示更糟 ✗ —— 与「搜索艺人」同一条判据 ✓）。
+  Set<MusicPlatform> get openableFollowedArtistPlatforms => {
+    for (final platform in followedArtistPlatforms)
+      if (artistPlatforms.contains(platform)) platform,
   };
 
   /// 搜索页「专辑」分区**打得开**的平台：既要能搜专辑，又要能打开专辑详情 ✓
@@ -409,6 +421,17 @@ abstract interface class OnlineMusicService {
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
   }) => throw UnsupportedError('Recommended playlists are not supported');
+
+  /// **关注的艺人**（`followedArtists`，2026-10-12 新增 ✓）：**这个账号**关注了哪些艺人 ✓。
+  ///
+  /// 输出与 [searchArtists] 同形（**艺人摘要数组** ✓）⇒ 复用同一套映射 ✓，不加领域字段 ✓。
+  /// **需要凭据** ✓（走安全槽位 ✓）；账号没关注任何人时**如实返回空列表** ✓（空 ≠ 失败 ✓）。
+  Future<List<OnlineArtistSummary>> fetchFollowedArtists({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Followed artists are not supported');
 
   /// **艺人详情**（`artist`，2026-10-12 新增）：艺人标量信息 + **热门曲目**。
   ///
