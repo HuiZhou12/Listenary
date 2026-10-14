@@ -446,6 +446,29 @@ void main() {
     expect(find.text('去配置'), findsWidgets);
   });
 
+  testWidgets('★ 凭据型货架失败时给出"可能是凭据"的指引', (tester) async {
+    // 为什么要有这条：推荐类能力**按设计需要 cookie** ✓ ⇒ 失败时最可能是凭据没配/过期 ✓。
+    // 界面必须把这条**说出来**（否则用户只看到"读取失败"，不知道去哪修 ✓）。
+    await pumpHome(
+      tester,
+      service: _HomeService(
+        capabilities: OnlineMusicCapabilities(
+          searchablePlatforms: const [],
+          // 能取推荐曲目 + 能解析 ⇒ 货架出现 ✓；替身**故意抛错** ⇒ 走失败态 ✓。
+          resolvablePlatforms: const [MusicPlatform.netease],
+          recommendedTrackPlatforms: const [MusicPlatform.netease],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('可能的原因：登录凭据没配置或已过期'),
+      findsOneWidget,
+      reason: '凭据型货架的失败必须给出可执行的指引 ✓',
+    );
+  });
+
   testWidgets('★ Home 有「新歌上线」货架（对齐参考 Home 的「新曲上线」，只对能播放的平台出现）', (
     tester,
   ) async {

@@ -289,6 +289,18 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     );
   }
 
+  /// **凭据型货架的失败提示**（2026-10-12 ✓）。
+  ///
+  /// 为什么单独加这一行：**猜你喜欢 / 为你推荐的歌单 / 关注的艺人**这三个货架背后的能力
+  /// **按设计就需要 cookie** ✓（配方里带 `Cookie` 敏感头 + 凭据引用 ✓）⇒ 失败时**最可能**
+  /// 是"凭据没配或已过期" ✓。**其它货架不加** ✗ —— 它们的能力不需要凭据，加了就是误导 ✓。
+  ///
+  /// 措辞是"**可能的原因**"✓：登录失效只是最常见的那一种 ✓，网络/风控同样会失败 ✓
+  /// ⇒ 不把话说成"一定是凭据问题" ✗（那就是在编一个我们并不确知的诊断 ✓）。
+  String _credentialFailureHint(String message) =>
+      '$message\n可能的原因：登录凭据没配置或已过期。'
+      '到「设置 → 在线音乐 → 该平台条目」重新填写凭据并保存，再回来重试。';
+
   Widget _buildRecommendedSection(MusicPlatform platform) {
     final scheme = Theme.of(context).colorScheme;
     final tracks = _recommendedState.items(platform);
@@ -313,7 +325,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
             )
           else if (_recommendedState.error(platform) case final message?)
             InlineFailureHint(
-              message: message,
+              // **凭据型货架**：失败时给出可能原因与去处 ✓（见 `_credentialFailureHint` ✓）。
+              message: _credentialFailureHint(message),
               onRetry: () => _retryRecommended(platform),
             )
           else if (tracks.isEmpty)
@@ -410,6 +423,11 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     final scheme = Theme.of(context).colorScheme;
     final items = _recommendedPlaylistState.items(platform);
     final width = _cardWidth;
+    // 有内容时把失败留给"加载更多/底部"处理 ✓；这里只负责首屏的失败 ✓（并补上凭据指引 ✓）。
+    final loadError = _recommendedPlaylistState.error(platform);
+    final errorMessage = items.isEmpty && loadError != null
+        ? _credentialFailureHint(loadError)
+        : null;
     return Padding(
       padding: const EdgeInsets.only(bottom: Spacing.lg),
       child: Column(
@@ -427,9 +445,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
           HorizontalShelf(
             loading:
                 _recommendedPlaylistState.isLoading(platform) && items.isEmpty,
-            errorMessage: items.isEmpty
-                ? _recommendedPlaylistState.error(platform)
-                : null,
+            errorMessage: errorMessage,
             onRetry: () => _retryRecommendedPlaylists(platform),
             emptyMessage: '该平台这次没有给推荐（也可能今天就是没有）。',
             emptyIcon: Symbols.queue_music,
@@ -543,6 +559,11 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     final scheme = Theme.of(context).colorScheme;
     final artists = _followedArtistState.items(platform);
     final width = _cardWidth;
+    // 与"推荐歌单"同一条：首屏失败时补上**凭据可能失效**的指引 ✓。
+    final loadError = _followedArtistState.error(platform);
+    final errorMessage = artists.isEmpty && loadError != null
+        ? _credentialFailureHint(loadError)
+        : null;
     return Padding(
       padding: const EdgeInsets.only(bottom: Spacing.lg),
       child: Column(
@@ -560,9 +581,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
           HorizontalShelf(
             loading: _followedArtistState.isLoading(platform) &&
                 artists.isEmpty,
-            errorMessage: artists.isEmpty
-                ? _followedArtistState.error(platform)
-                : null,
+            errorMessage: errorMessage,
             onRetry: () => _retryFollowedArtists(platform),
             // **空 ≠ 失败**：这个账号可能真的没关注任何人 ✓（如实说 ✓）。
             emptyMessage: '这个账号在${musicPlatformLabel(platform)}没有关注任何艺人。',
