@@ -74,6 +74,10 @@ $newAlbums = Get-Json "$BaseUrl/album/new?limit=$Trim"
 $searchAlbums = Get-Json "$BaseUrl/cloudsearch?keywords=%E6%B5%B7%E9%98%94%E5%A4%A9%E7%A9%BA&type=10&limit=$Trim"
 # searchArtists（2026-10-12 新增）：按关键词搜艺人（形状 = result.artists；type=100 是固定值 ✓）。
 $searchArtists = Get-Json "$BaseUrl/cloudsearch?keywords=%E6%B5%B7%E9%98%94%E5%A4%A9%E7%A9%BA&type=100&limit=$Trim"
+# recommendedTracks（2026-10-12 新增）：每日推荐曲目（形状 = data.dailySongs 数组 ✓）。
+# 注意：它**按账号**给结果 ⇒ 取决于本地服务当前登录的是谁 ✓；没有登录时这里会返回失败码 ✓
+#（那时**如实**把响应记下来，测试会照实看到"没有 200" ✓，我们不编一份假的 ✗）。
+$recommended = Get-Json "$BaseUrl/recommend/songs"
 
 $blocks = [ordered]@{
   rawSearch = ([ordered]@{
@@ -170,6 +174,15 @@ $blocks = [ordered]@{
       result = [ordered]@{
         artists     = Take $searchArtists.result.artists $Trim
         artistCount = $searchArtists.result.artistCount
+      }
+    } | ConvertTo-Json -Depth 30 -Compress)
+
+  # recommendedTracks（2026-10-12）：曲目在 data.dailySongs 里（裁到 $Trim 条 ✓）。
+  # 只记**服务真的返回了什么** ✓：没有登录时 code 不是 200 ✓，测试就会照实看到"没有 200" ✓。
+  rawRecommendedTracks = ([ordered]@{
+      code = $recommended.code
+      data = [ordered]@{
+        dailySongs = Take $recommended.data.dailySongs $Trim
       }
     } | ConvertTo-Json -Depth 30 -Compress)
 }

@@ -361,6 +361,72 @@ OnlineMusicDeclarativeCapabilityBinding _newSongs() =>
       ),
     );
 
+/// **推荐曲目**（`recommendedTracks`，2026-10-12 新增 ✓）：平台按**这个账号**推荐什么 ✓。
+///
+/// `/recommend/songs` → `{code, data: {dailySongs: [...]}}` ✓（曲目是标准形状 ✓）。
+///
+/// ⚠️ **凭据（cookie）走安全槽位** ✓：请求头 `Cookie` 标成 **`sensitive: true`** ✓
+/// 且只填 `credentialReference` ✓ —— **`value` 留空** ✓。
+/// 校验会**拒绝**"敏感头填明文" ✗ ⇒ 明文配置里**永远没有 cookie** ✓（这正是要守住的那条线 ✓）。
+///
+/// 说明：这一版**没有**给 `/recommend/songs` 加 `limit` 等参数 ✗ ——
+/// 我们**没有实测**它对不对 ✓ ⇒ 宁可不发（不凭印象加参数 ✓）。
+OnlineMusicDeclarativeCapabilityBinding _recommendedTracks() =>
+    OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(
+        path: '/recommend/songs',
+        headers: [
+          OnlineMusicHeaderSpec(
+            name: 'Cookie',
+            // **留空** ✓：真正的值从**安全槽位**按下面的引用取 ✓。
+            value: '',
+            sensitive: true,
+            credentialReference: 'neteaseCookie',
+          ),
+        ],
+      ),
+      response: OnlineMusicResponseSpec(
+        success: _neteaseSuccess(),
+        listPath: _p('data.dailySongs'),
+        fields: {
+          OnlineMusicDomainField.trackId: OnlineMusicFieldSpec(
+            candidates: [_p('id')],
+            transform: OnlineMusicFieldTransform.asInt,
+            required: true,
+          ),
+          OnlineMusicDomainField.title: OnlineMusicFieldSpec(
+            candidates: [_p('name')],
+            transform: OnlineMusicFieldTransform.asString,
+            required: true,
+          ),
+          OnlineMusicDomainField.artists: OnlineMusicFieldSpec(
+            candidates: [_p('ar[*].name')],
+            transform: OnlineMusicFieldTransform.asStringList,
+          ),
+          OnlineMusicDomainField.artistIds: OnlineMusicFieldSpec(
+            candidates: [_p('ar[*].id')],
+            transform: OnlineMusicFieldTransform.asStringList,
+          ),
+          OnlineMusicDomainField.albumIds: OnlineMusicFieldSpec(
+            candidates: [_p('al.id')],
+            transform: OnlineMusicFieldTransform.asSingleStringList,
+          ),
+          OnlineMusicDomainField.album: OnlineMusicFieldSpec(
+            candidates: [_p('al.name')],
+            transform: OnlineMusicFieldTransform.asString,
+          ),
+          OnlineMusicDomainField.coverUri: OnlineMusicFieldSpec(
+            candidates: [_p('al.picUrl')],
+            transform: OnlineMusicFieldTransform.asHttpsUri,
+          ),
+          OnlineMusicDomainField.duration: OnlineMusicFieldSpec(
+            candidates: [_p('dt')],
+            transform: OnlineMusicFieldTransform.asDurationMs,
+          ),
+        },
+      ),
+    );
+
 /// **搜索艺人**（`searchArtists`，2026-10-12 实测形状）：
 /// `/cloudsearch?keywords=&type=100` → `{code, result: {artists: [...], artistCount}}` ✓
 ///（`type=100` 同样是 DSL 既有的**固定值**参数 ✓）。
@@ -779,6 +845,8 @@ _recipe() => {
   OnlineMusicCapability.searchAlbums: _searchAlbums(),
   // 搜索艺人（2026-10-12）：第十三份 ✓。
   OnlineMusicCapability.searchArtists: _searchArtists(),
+  // 推荐曲目（2026-10-12）：第十四份 ✓ —— **唯一一份带凭据引用的** ✓（见 `_recommendedTracks` ✓）。
+  OnlineMusicCapability.recommendedTracks: _recommendedTracks(),
 };
 
 void main() {
@@ -1130,6 +1198,10 @@ void main() {
         'searchAlbums': rawSearchAlbums,
         // 搜索艺人（2026-10-12）：真实 `/cloudsearch?type=100` 的响应 ✓。
         'searchArtists': rawSearchArtists,
+        // 推荐曲目（2026-10-12）：真实 `/recommend/songs` 的响应 ✓
+        //（**按账号** ⇒ 取决于本地服务当前登录的是谁 ✓；没登录时它会如实记下非 200 的 code ✓，
+        // 测试就照实看到"没有 200" ✓ —— 我们不编一份假的 ✗）。
+        'recommendedTracks': rawRecommendedTracks,
       };
       _recipe().forEach((capability, binding) {
         // 每份配置都必须有**真实固件**（`album` 已于 2026-10-12 补抓 ✓）；
@@ -1529,6 +1601,35 @@ void main() {
       expect(mapped.tracks.first.albumIds, ['93113910']);
     });
 
+    test('★ 凭据守卫：敏感请求头只许放"引用"，绝不许放明文值', () {
+      // 为什么要有这条：推荐曲目这类**账号相关**能力要靠 cookie ✓，而 cookie 一旦写进
+      // 明文配置就是**把用户账号留在磁盘上** ✗（`docs/` 还随时可能被复制/分享 ✓）。
+      // 既有机制是"安全槽位 + 引用" ✓ ⇒ 这里把它**钉成断言**，防止以后有人图省事直接填值 ✗。
+      var sensitiveHeaders = 0;
+      for (final entry in _recipe().entries) {
+        for (final header in entry.value.request.headers) {
+          if (!header.sensitive) continue;
+          sensitiveHeaders++;
+          expect(
+            header.value,
+            isEmpty,
+            reason: '${entry.key.name} 的敏感头 ${header.name} 不许带明文值 ✗',
+          );
+          expect(
+            header.credentialReference,
+            isNotNull,
+            reason: '${entry.key.name} 的敏感头 ${header.name} 必须指向凭据槽位 ✓',
+          );
+        }
+      }
+      // 至少要有**一个**敏感头（否则这条守卫等于没测 ✗）。
+      expect(
+        sensitiveHeaders,
+        greaterThan(0),
+        reason: '至少"推荐曲目"应当带一个凭据引用型敏感头 ✓',
+      );
+    });
+
     test('把十三项配置写成可直接复制的 JSON 文件（人工验收清单配套，并当场校验可解析）', () {
       const encoder = JsonEncoder.withIndent('  ');
       final directory = Directory('docs/dev/netease-bindings');
@@ -1548,7 +1649,7 @@ void main() {
         expect(parsed, isA<OnlineMusicDeclarativeCapabilityBinding>());
       });
 
-      expect(written, hasLength(13));
+      expect(written, hasLength(14));
       // ignore: avoid_print
       print('已写出 ${written.length} 个配置：${written.join(', ')}');
     });
