@@ -83,6 +83,15 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   final RemoteLoadState<MusicPlatform, MusicTrack> _recommendedState =
       RemoteLoadState<MusicPlatform, MusicTrack>();
 
+  /// **「为你推荐的歌单」货架**（`recommendedPlaylists` 能力，2026-10-12 新增 ✓）。
+  ///
+  /// 判据与「新专辑」一致 ✓：**既列得出、又打得开**（`openableRecommendedPlaylistPlatforms` ✓）
+  /// —— 点进去是死链比不显示更糟 ✗。
+  List<MusicPlatform> _recommendedPlaylistPlatforms = const [];
+  final RemoteLoadState<MusicPlatform, RemotePlaylistSummary>
+  _recommendedPlaylistState =
+      RemoteLoadState<MusicPlatform, RemotePlaylistSummary>();
+
   @override
   void initState() {
     super.initState();
@@ -133,6 +142,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     unawaited(_loadCollections());
     unawaited(_loadNewSongs());
     unawaited(_loadRecommended());
+    unawaited(_loadRecommendedPlaylists());
   }
 
   Future<void> _refreshAll() async {
@@ -145,6 +155,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       _loadCollections(),
       _loadNewSongs(),
       _loadRecommended(),
+      _loadRecommendedPlaylists(),
     ]);
   }
 
@@ -324,6 +335,140 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     final service = context.read<OnlineMusicService?>();
     if (service == null) return;
     await _loadRecommendedFor(service, platform);
+  }
+
+  /// **推荐歌单**（`recommendedPlaylists` ✓）：与"歌单列表"同一套做法 ✓。
+  Future<void> _loadRecommendedPlaylists() async {
+    final service = context.read<OnlineMusicService?>();
+    final platforms = service == null
+        ? const <MusicPlatform>[]
+        : [
+            for (final platform in builtinMusicPlatforms)
+              if (service.capabilities.openableRecommendedPlaylistPlatforms
+                  .contains(platform))
+                platform,
+          ];
+    if (!mounted) return;
+    setState(() => _recommendedPlaylistPlatforms = platforms);
+    if (service == null) return;
+    await Future.wait([
+      for (final platform in platforms)
+        _loadRecommendedPlaylistsFor(service, platform),
+    ]);
+  }
+
+  Future<void> _loadRecommendedPlaylistsFor(
+    OnlineMusicService service,
+    MusicPlatform platform,
+  ) => loadRemoteList(
+    _recommendedPlaylistState,
+    platform,
+    () => service.fetchRecommendedPlaylists(
+      platform: platform,
+      limit: widget.collectionLimit,
+      offset: 0,
+      cancelToken: newCancelToken(),
+    ),
+    fallback: '读取该平台推荐歌单失败',
+  );
+
+  /// 「为你推荐的歌单」✓ —— **名字如实** ♥：平台给的就是**歌单**（网易云 `/recommend/resource` 实测 ✓），
+  /// 不是"推荐的专辑" ✗ ⇒ 不沿用参考图里那个名字（那会名不副实 ✓）。
+  Widget _buildRecommendedPlaylists() {
+    if (_recommendedPlaylistPlatforms.isEmpty) {
+      return const HomePlaceholderShelf(
+        title: '为你推荐的歌单',
+        subtitle: '平台按你的账号挑的歌单',
+        source: '官方推荐接口（需要登录 Cookie）',
+        icon: Symbols.queue_music,
+      );
+    }
+    return ContentSection(
+      title: '为你推荐的歌单',
+      subtitle: '各平台按你的账号推荐；点一张**预览**（不会自动订阅 ✓）',
+      child: Column(
+        children: [
+          for (final platform in _recommendedPlaylistPlatforms)
+            _buildRecommendedPlaylistSection(platform),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecommendedPlaylistSection(MusicPlatform platform) {
+    final scheme = Theme.of(context).colorScheme;
+    final items = _recommendedPlaylistState.items(platform);
+    final width = _cardWidth;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Spacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            musicPlatformLabel(platform),
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontSize: AppType.caption,
+              fontWeight: AppType.weightSemibold,
+            ),
+          ),
+          const SizedBox(height: Spacing.sm),
+          HorizontalShelf(
+            loading:
+                _recommendedPlaylistState.isLoading(platform) && items.isEmpty,
+            errorMessage: items.isEmpty
+                ? _recommendedPlaylistState.error(platform)
+                : null,
+            onRetry: () => _retryRecommendedPlaylists(platform),
+            emptyMessage: '该平台这次没有给推荐（也可能今天就是没有）。',
+            emptyIcon: Symbols.queue_music,
+            itemCount: items.length,
+            itemWidth: width,
+            itemHeight: RemoteMediaCard.extentFor(
+              width: width,
+              hasFooter: false,
+            ),
+            itemBuilder: (context, index) {
+              final summary = items[index];
+              return RemoteMediaCard(
+                width: width,
+                title: summary.name,
+                coverUri: summary.coverUri,
+                details: [
+                  '歌单',
+                  if (summary.creator case final creator?
+                      when creator.isNotEmpty)
+                    creator,
+                  if (summary.trackCount case final count?) '$count 首',
+                ].join(' · '),
+                sourceLabel: platformLabelForIdentityOnly(summary.identity),
+                placeholderIcon: Symbols.queue_music,
+                // 与探索页同一条规则 ✓：**点封面 = 只读预览**（不是偷偷订阅 ✗）。
+                onTap: () => context.push(
+                  app_paths.REMOTE_PLAYLIST_PAGE,
+                  extra: (
+                    platform: summary.platform,
+                    playlistId: summary.id,
+                    name: summary.name,
+                    coverUri: summary.coverUri,
+                    creator: summary.creator,
+                    trackCount: summary.trackCount,
+                    ranked: false,
+                  ),
+                ),
+                semanticLabel: '${summary.name}，点击预览（不会订阅）',
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _retryRecommendedPlaylists(MusicPlatform platform) async {
+    final service = context.read<OnlineMusicService?>();
+    if (service == null) return;
+    await _loadRecommendedPlaylistsFor(service, platform);
   }
 
   Widget _buildNewSongs() {    if (_newSongPlatforms.isEmpty) return const SizedBox.shrink();
@@ -533,13 +678,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
             source: '官方社区接口（需要登录 Cookie）',
             icon: Symbols.groups,
           ),
-          // ⑨ 为你推荐的专辑（缺 ✓）
-          const HomePlaceholderShelf(
-            title: '为你推荐的专辑',
-            subtitle: '整套听完的那种推荐',
-            source: '官方推荐接口（需要登录 Cookie）',
-            icon: Symbols.album,
-          ),
+          // ⑨ 为你推荐的**歌单**（名字如实 ✓：平台给的是歌单 ✓；有该能力就是真货架 ✓）
+          _buildRecommendedPlaylists(),
           // ⑩ 新曲上线（真实：各平台新歌 ✓）
           _buildNewSongs(),
           // ⑪⑫⑬ 官方三件套（都缺 ✓）
@@ -549,12 +689,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
             source: '官方 Recap 接口（需要登录 Cookie）',
             icon: Symbols.insights,
           ),
-          const HomePlaceholderShelf(
-            title: '每日发现',
-            subtitle: '每天换一批，专门给你挑的',
-            source: '官方每日推荐接口（需要登录 Cookie）',
-            icon: Symbols.explore,
-          ),
+          // ⑫ **每日发现：与「猜你喜欢」同源**（网易云实测两处都指向同一个每日推荐接口 ✓）
+          // ⇒ **不摆两块重复内容** ✗ —— 这里不再单独放展位 ✓（已在「猜你喜欢」呈现 ✓）。
           const HomePlaceholderShelf(
             title: '个性化合辑',
             subtitle: '按心情与场景混出来的合辑',

@@ -827,9 +827,9 @@ void main() {
         .length;
     expect(
       missingOnNetease,
-      // 2026-10-12：新增「推荐曲目」⇒ 能力 16 个、内置实现 4 个 ⇒ 缺 12 项 ✓。
-      12,
-      reason: '内置实现有 4 项、共 16 个能力 ⇒ 网易云卡应缺 12 项',
+      // 2026-10-12：新增「推荐曲目」与「推荐歌单」⇒ 能力 17 个、内置实现 4 个 ⇒ 缺 13 项 ✓。
+      13,
+      reason: '内置实现有 4 项、共 17 个能力 ⇒ 网易云卡应缺 13 项',
     );
     expect(
       find.descendant(
@@ -2962,6 +2962,18 @@ OnlineMusicDeclarativeCapabilityBinding validBindingFor(
         request: const OnlineMusicRequestSpec(path: '/top/playlist'),
         response: OnlineMusicResponseSpec(
           listPath: JsonPath.tryParse('playlists'),
+          fields: {
+            playlistId: field(playlistId, 'id', asInt),
+            playlistName: field(playlistName, 'name', asString),
+          },
+        ),
+      ),
+    // 推荐歌单：与"歌单列表"同构（歌单摘要数组 ✓）—— 网易云 `/recommend/resource` 在 `recommend` ✓。
+    OnlineMusicCapability.recommendedPlaylists =>
+      OnlineMusicDeclarativeCapabilityBinding(
+        request: const OnlineMusicRequestSpec(path: '/recommend/resource'),
+        response: OnlineMusicResponseSpec(
+          listPath: JsonPath.tryParse('recommend'),
           fields: {
             playlistId: field(playlistId, 'id', asInt),
             playlistName: field(playlistName, 'name', asString),

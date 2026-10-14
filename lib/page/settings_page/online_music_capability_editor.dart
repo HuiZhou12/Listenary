@@ -294,6 +294,10 @@ class _OnlineMusicCapabilityEditorDialogState
             OnlineMusicCapability.recommendedTracks => JsonPath.tryParse(
               'data.dailySongs',
             ),
+            // 推荐歌单：网易云 `/recommend/resource` 把歌单放在**顶层** `recommend`（实测）✓。
+            OnlineMusicCapability.recommendedPlaylists => JsonPath.tryParse(
+              'recommend',
+            ),
           },
           fieldsRootPath: switch (widget.capability) {
             OnlineMusicCapability.playlist ||
@@ -319,7 +323,9 @@ class _OnlineMusicCapabilityEditorDialogState
             OnlineMusicCapability.chartList ||
             OnlineMusicCapability.newSongs ||
             // 推荐曲目同样是"一个曲目数组"（每个曲目就是一个数组元素 ✓）⇒ 不要字段根路径 ✓。
-            OnlineMusicCapability.recommendedTracks => null,
+            OnlineMusicCapability.recommendedTracks ||
+            // 推荐歌单同理：数组元素自带元数据 ✓。
+            OnlineMusicCapability.recommendedPlaylists => null,
           },
         ),
       );
@@ -1970,6 +1976,11 @@ String domainFieldLabel(OnlineMusicDomainField field, {bool required = false}) {
     listPath: true,
     fieldsRootPath: false,
   ),
+  // 推荐歌单：与"歌单列表"同构 —— 一个歌单摘要数组 ✓。
+  OnlineMusicCapability.recommendedPlaylists => (
+    listPath: true,
+    fieldsRootPath: false,
+  ),
   OnlineMusicCapability.playlistCollection ||
   OnlineMusicCapability.playlistCategories ||
   OnlineMusicCapability.chartList ||
@@ -2015,7 +2026,9 @@ OnlineMusicInputSource defaultInputSourceFor(
   OnlineMusicCapability.chartList ||
   OnlineMusicCapability.newSongs ||
   // 推荐曲目也是"由服务端决定给什么"（按账号推荐 ✓），最可能要填的是数量 ✓。
-  OnlineMusicCapability.recommendedTracks => OnlineMusicInputSource.limit,
+  OnlineMusicCapability.recommendedTracks ||
+  // 推荐歌单同理（按账号 ✓）。
+  OnlineMusicCapability.recommendedPlaylists => OnlineMusicInputSource.limit,
 };
 
 /// 试跑要用的**真实输入**（P-49）：由编辑器按能力决定填哪些，控制器只看值。
@@ -2052,7 +2065,9 @@ typedef DeclarativeTestInputs = ({
   OnlineMusicCapability.chartList ||
   OnlineMusicCapability.newSongs ||
   // 推荐曲目：试跑只需要数量 ✓（没有关键词、也没有实体 ID ✓）。
-  OnlineMusicCapability.recommendedTracks => (
+  OnlineMusicCapability.recommendedTracks ||
+  // 推荐歌单同上一组 ✓。
+  OnlineMusicCapability.recommendedPlaylists => (
     keyword: false,
     limit: true,
     id: false,

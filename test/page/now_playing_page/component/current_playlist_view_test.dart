@@ -431,6 +431,14 @@ final class _Gateway implements RemoteQueuePlaybackGateway {
 
 final class _OnlineService implements OnlineMusicService {
   @override
+  Future<List<RemotePlaylistSummary>> fetchRecommendedPlaylists({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Recommended playlists are not implemented here');
+
+  @override
   Future<List<MusicTrack>> fetchRecommendedTracks({
     required MusicPlatform platform,
     int limit = 30,

@@ -109,6 +109,16 @@ enum OnlineMusicCapability {
   /// 输出是**标准曲目数组** ✓ ⇒ 不加新领域字段、也不需要新映射函数 ✓（与 [newSongs] 同构 ✓）。
   /// **可探测** ✓（与 [search] 同判据 ✓）；界面要求该平台具备 [stream] ✓（点不响不如不显示 ✓）。
   recommendedTracks,
+  /// **推荐歌单**（`recommendedPlaylists`，2026-10-12 新增 ✓）：平台按**这个账号**推荐哪些歌单 ✓。
+  ///
+  /// 与 [recommendedTracks] 同源但**是另一种内容**（歌单摘要 vs 曲目 ✓）⇒ 单独一个能力 ✓
+  ///（D2：一个能力不做多请求 ✓）。真实服务：网易云 `/recommend/resource` ✓
+  ///（实测返回 `{code, recommend: [...]}` ✓，**需要登录** ✓）。
+  ///
+  /// **通常需要凭据** ✓ ⇒ 与 [recommendedTracks] 同一条线：走请求头的 `credentialReference` ✓、
+  /// 值存**安全槽位** ✓、明文配置里没有它 ✗（有守卫测试钉住 ✓）。
+  /// 它**不参与服务级探测**？—— 不：它**可探测** ✓（给 `limit` 即可 ✓，与 [playlistCollection] 同判据 ✓）。
+  recommendedPlaylists,
   lyric,
   stream,
 }
@@ -131,6 +141,7 @@ String onlineMusicCapabilityLabel(OnlineMusicCapability capability) =>
       OnlineMusicCapability.searchAlbums => '搜索专辑',
       OnlineMusicCapability.searchArtists => '搜索艺人',
       OnlineMusicCapability.recommendedTracks => '推荐曲目',
+      OnlineMusicCapability.recommendedPlaylists => '推荐歌单',
       OnlineMusicCapability.lyric => '歌词',
       OnlineMusicCapability.stream => '播放解析',
     };

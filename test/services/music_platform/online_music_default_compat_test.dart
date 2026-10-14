@@ -92,6 +92,9 @@ void main() {
       // 推荐曲目（2026-10-12）✓：默认条目不声明它 ⇒ 两侧都空 ✓。
       OnlineMusicCapability.recommendedTracks:
           runtime.recommendedTrackPlatforms,
+      // 推荐歌单（2026-10-12）✓：同上 ✓。
+      OnlineMusicCapability.recommendedPlaylists:
+          runtime.recommendedPlaylistPlatforms,
       OnlineMusicCapability.lyric: runtime.lyricPlatforms,
       OnlineMusicCapability.stream: runtime.resolvablePlatforms,
     };
@@ -188,6 +191,14 @@ void main() {
 }
 
 final class _AllCapabilityProvider extends UnsupportedOnlineMusicProvider {
+  @override
+  Future<List<RemotePlaylistSummary>> fetchRecommendedPlaylists({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Recommended playlists are not implemented here');
+
   @override
   Future<List<MusicTrack>> fetchRecommendedTracks({
     required MusicPlatform platform,

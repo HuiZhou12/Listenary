@@ -427,6 +427,59 @@ OnlineMusicDeclarativeCapabilityBinding _recommendedTracks() =>
       ),
     );
 
+/// **推荐歌单**（`recommendedPlaylists`，2026-10-12 新增 ✓）：按**账号**推荐哪些歌单 ✓。
+///
+/// `/recommend/resource` → `{code, recommend: [...]}` ✓（实测返回 6 张 ✓；歌单摘要是标准形状 ✓）。
+///
+/// 凭据与 [OnlineMusicCapability.recommendedTracks] 同一条线 ✓：`Cookie` 头标 `sensitive: true` ✓、
+/// 只填 `credentialReference` ✓、**`value` 留空** ✓ ⇒ 明文配置里没有 cookie ✓。
+OnlineMusicDeclarativeCapabilityBinding _recommendedPlaylists() =>
+    OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(
+        path: '/recommend/resource',
+        headers: [
+          OnlineMusicHeaderSpec(
+            name: 'Cookie',
+            value: '',
+            sensitive: true,
+            credentialReference: 'neteaseCookie',
+          ),
+        ],
+      ),
+      response: OnlineMusicResponseSpec(
+        success: _neteaseSuccess(),
+        listPath: _p('recommend'),
+        fields: {
+          OnlineMusicDomainField.playlistId: OnlineMusicFieldSpec(
+            candidates: [_p('id')],
+            transform: OnlineMusicFieldTransform.asInt,
+            required: true,
+          ),
+          OnlineMusicDomainField.playlistName: OnlineMusicFieldSpec(
+            candidates: [_p('name')],
+            transform: OnlineMusicFieldTransform.asString,
+            required: true,
+          ),
+          OnlineMusicDomainField.playlistCoverUri: OnlineMusicFieldSpec(
+            candidates: [_p('picUrl')],
+            transform: OnlineMusicFieldTransform.asHttpsUri,
+          ),
+          OnlineMusicDomainField.playlistCreator: OnlineMusicFieldSpec(
+            candidates: [_p('creator.nickname')],
+            transform: OnlineMusicFieldTransform.asString,
+          ),
+          OnlineMusicDomainField.playlistTrackCount: OnlineMusicFieldSpec(
+            candidates: [_p('trackCount')],
+            transform: OnlineMusicFieldTransform.asInt,
+          ),
+          OnlineMusicDomainField.playlistUpdateFrequency: OnlineMusicFieldSpec(
+            candidates: [_p('updateFrequency')],
+            transform: OnlineMusicFieldTransform.asString,
+          ),
+        },
+      ),
+    );
+
 /// **搜索艺人**（`searchArtists`，2026-10-12 实测形状）：
 /// `/cloudsearch?keywords=&type=100` → `{code, result: {artists: [...], artistCount}}` ✓
 ///（`type=100` 同样是 DSL 既有的**固定值**参数 ✓）。
@@ -847,6 +900,8 @@ _recipe() => {
   OnlineMusicCapability.searchArtists: _searchArtists(),
   // 推荐曲目（2026-10-12）：第十四份 ✓ —— **唯一一份带凭据引用的** ✓（见 `_recommendedTracks` ✓）。
   OnlineMusicCapability.recommendedTracks: _recommendedTracks(),
+  // 推荐歌单（2026-10-12）：第十五份 ✓ —— 同样带**凭据引用** ✓（不是明文 ✗）。
+  OnlineMusicCapability.recommendedPlaylists: _recommendedPlaylists(),
 };
 
 void main() {
@@ -1202,6 +1257,8 @@ void main() {
         //（**按账号** ⇒ 取决于本地服务当前登录的是谁 ✓；没登录时它会如实记下非 200 的 code ✓，
         // 测试就照实看到"没有 200" ✓ —— 我们不编一份假的 ✗）。
         'recommendedTracks': rawRecommendedTracks,
+        // 推荐歌单（2026-10-12）：真实 `/recommend/resource` 的响应 ✓（实测 6 张 ✓）。
+        'recommendedPlaylists': rawRecommendedPlaylists,
       };
       _recipe().forEach((capability, binding) {
         // 每份配置都必须有**真实固件**（`album` 已于 2026-10-12 补抓 ✓）；
@@ -1649,7 +1706,7 @@ void main() {
         expect(parsed, isA<OnlineMusicDeclarativeCapabilityBinding>());
       });
 
-      expect(written, hasLength(14));
+      expect(written, hasLength(15));
       // ignore: avoid_print
       print('已写出 ${written.length} 个配置：${written.join(', ')}');
     });

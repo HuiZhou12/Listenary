@@ -78,6 +78,8 @@ $searchArtists = Get-Json "$BaseUrl/cloudsearch?keywords=%E6%B5%B7%E9%98%94%E5%A
 # 注意：它**按账号**给结果 ⇒ 取决于本地服务当前登录的是谁 ✓；没有登录时这里会返回失败码 ✓
 #（那时**如实**把响应记下来，测试会照实看到"没有 200" ✓，我们不编一份假的 ✗）。
 $recommended = Get-Json "$BaseUrl/recommend/songs"
+# recommendedPlaylists（2026-10-12 新增）：按账号推荐的歌单（形状 = 顶层 recommend 数组 ✓）。
+$recommendedPlaylists = Get-Json "$BaseUrl/recommend/resource"
 
 $blocks = [ordered]@{
   rawSearch = ([ordered]@{
@@ -184,6 +186,12 @@ $blocks = [ordered]@{
       data = [ordered]@{
         dailySongs = Take $recommended.data.dailySongs $Trim
       }
+    } | ConvertTo-Json -Depth 30 -Compress)
+
+  # recommendedPlaylists（2026-10-12）：歌单在顶层 recommend 里（裁到 $Trim 条 ✓）。
+  rawRecommendedPlaylists = ([ordered]@{
+      code      = $recommendedPlaylists.code
+      recommend = Take $recommendedPlaylists.recommend $Trim
     } | ConvertTo-Json -Depth 30 -Compress)
 }
 

@@ -80,6 +80,15 @@ abstract interface class OnlineMusicProvider {
     required OnlineMusicCancelToken cancelToken,
   });
 
+  /// **推荐歌单**（`recommendedPlaylists`，2026-10-12 新增 ✓）：按**账号**推荐的歌单摘要 ✓
+  ///（与 [fetchPlaylistCollection] 同形 ✓ ⇒ 复用同一套映射 ✓）。
+  Future<List<RemotePlaylistSummary>> fetchRecommendedPlaylists({
+    required MusicPlatform platform,
+    int limit,
+    int offset,
+    required OnlineMusicCancelToken cancelToken,
+  });
+
   /// **按关键词搜索艺人**（`searchArtists`，2026-10-12 新增）：输出是**艺人摘要** ✓。
   Future<List<OnlineArtistSummary>> searchArtists({
     required MusicPlatform platform,

@@ -548,6 +548,11 @@ final class OnlineMusicResponseSpec {
         if (listPath == null) {
           issues.add('歌单列表能力必须配置列表路径');
         }
+      case OnlineMusicCapability.recommendedPlaylists:
+        // 推荐歌单与歌单列表同构：一个歌单摘要数组 ✓。
+        if (listPath == null) {
+          issues.add('推荐歌单能力必须配置列表路径');
+        }
       case OnlineMusicCapability.chartList:
         // 榜单索引与歌单列表同构：一个数组，每个元素是一个名次集合的元数据。
         if (listPath == null) {
@@ -692,6 +697,16 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
       };
     case OnlineMusicCapability.playlistCollection:
       // 歌单集合只有歌单自身的字段，**没有任何曲目字段**（Spec §19.2）。
+      return const {
+        OnlineMusicDomainField.playlistId,
+        OnlineMusicDomainField.playlistName,
+        OnlineMusicDomainField.playlistCoverUri,
+        OnlineMusicDomainField.playlistCreator,
+        OnlineMusicDomainField.playlistTrackCount,
+        OnlineMusicDomainField.playlistUpdateFrequency,
+      };
+    case OnlineMusicCapability.recommendedPlaylists:
+      // 推荐歌单与歌单集合**同一组字段** ✓（不新增领域字段 ✓）。
       return const {
         OnlineMusicDomainField.playlistId,
         OnlineMusicDomainField.playlistName,
@@ -860,6 +875,12 @@ Set<OnlineMusicDomainField> requiredFieldsFor(
       };
     case OnlineMusicCapability.playlistCollection:
       // 每个歌单摘要至少要有 id 与名字，否则列表里出现空条目。
+      return const {
+        OnlineMusicDomainField.playlistId,
+        OnlineMusicDomainField.playlistName,
+      };
+    case OnlineMusicCapability.recommendedPlaylists:
+      // 同理：至少 id + 名字 ✓。
       return const {
         OnlineMusicDomainField.playlistId,
         OnlineMusicDomainField.playlistName,

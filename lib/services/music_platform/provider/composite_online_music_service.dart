@@ -65,6 +65,10 @@ final class CompositeOnlineMusicService
       recommendedTrackPlatforms: registry.platformsFor(
         OnlineMusicCapability.recommendedTracks,
       ),
+      // 推荐歌单（2026-10-12）✓：同样按候选给（界面另加"打得开"门槛 ✓）。
+      recommendedPlaylistPlatforms: registry.platformsFor(
+        OnlineMusicCapability.recommendedPlaylists,
+      ),
       // 新专辑（2026-10-12）✓。
       newAlbumPlatforms: registry.platformsFor(OnlineMusicCapability.newAlbums),
       // 搜索专辑（2026-10-12）✓。
@@ -175,6 +179,25 @@ final class CompositeOnlineMusicService
       limit: limit,
       offset: offset,
       categoryId: categoryId,
+      cancelToken: cancelToken,
+    ),
+  );
+
+  /// 推荐歌单（`recommendedPlaylists`，2026-10-12 新增 ✓）：形状与"歌单列表"同构 ✓，
+  /// 语义是"**平台按这个账号**推荐哪些歌单" ✓（所以配置通常要带凭据 ✓）。
+  @override
+  Future<List<RemotePlaylistSummary>> fetchRecommendedPlaylists({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => _dispatch(
+    platform,
+    OnlineMusicCapability.recommendedPlaylists,
+    (provider) => provider.fetchRecommendedPlaylists(
+      platform: platform,
+      limit: limit,
+      offset: offset,
       cancelToken: cancelToken,
     ),
   );

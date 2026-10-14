@@ -985,7 +985,9 @@ int _countListEntries(JsonPath? listPath, Object? body) {
     ).items.length,
     unit: probeResultUnitFor(candidate.capability),
   ),
-  OnlineMusicCapability.playlistCollection => (
+  OnlineMusicCapability.playlistCollection ||
+  // 推荐歌单：与"歌单列表"**同构**（都是歌单摘要数组 ✓）⇒ 探测复用同一个映射 ✓。
+  OnlineMusicCapability.recommendedPlaylists => (
     count: mapDeclarativePlaylistCollectionResponse(
       spec: binding.response,
       body: body,

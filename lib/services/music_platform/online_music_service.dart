@@ -17,6 +17,7 @@ final class OnlineMusicCapabilities {
     Iterable<MusicPlatform> chartPlatforms = const [],
     Iterable<MusicPlatform> newSongPlatforms = const [],
     Iterable<MusicPlatform> recommendedTrackPlatforms = const [],
+    Iterable<MusicPlatform> recommendedPlaylistPlatforms = const [],
     Iterable<MusicPlatform> newAlbumPlatforms = const [],
     Iterable<MusicPlatform> searchableAlbumPlatforms = const [],
     Iterable<MusicPlatform> searchableArtistPlatforms = const [],
@@ -40,6 +41,9 @@ final class OnlineMusicCapabilities {
        chartPlatforms = Set.unmodifiable(chartPlatforms),
        newSongPlatforms = Set.unmodifiable(newSongPlatforms),
     recommendedTrackPlatforms = Set.unmodifiable(recommendedTrackPlatforms),
+    recommendedPlaylistPlatforms = Set.unmodifiable(
+      recommendedPlaylistPlatforms,
+    ),
        newAlbumPlatforms = Set.unmodifiable(newAlbumPlatforms),
        searchableAlbumPlatforms = Set.unmodifiable(searchableAlbumPlatforms),
        searchableArtistPlatforms = Set.unmodifiable(searchableArtistPlatforms),
@@ -145,6 +149,9 @@ final class OnlineMusicCapabilities {
   /// 而凭据按既有机制走**安全槽位** ✓（`requiresCredential` + 请求头的 `credentialReference` ✓）。
   final Set<MusicPlatform> recommendedTrackPlatforms;
 
+  /// 能取**推荐歌单**（`recommendedPlaylists` 能力，2026-10-12 新增）的平台 ✓（同样通常要凭据 ✓）。
+  final Set<MusicPlatform> recommendedPlaylistPlatforms;
+
   /// 新歌**真的点得动**的平台：必须同时具备新歌与播放解析能力。
   ///
   /// 理由与搜索的 Stream 硬门槛（D3）一致：列表里放一批点不响的曲目，比不显示更糟。
@@ -165,6 +172,13 @@ final class OnlineMusicCapabilities {
   Set<MusicPlatform> get playableRecommendedTrackPlatforms => {
     for (final platform in recommendedTrackPlatforms)
       if (resolvablePlatforms.contains(platform)) platform,
+  };
+
+  /// 推荐歌单**打得开**的平台：既要能取推荐歌单 ✓，又要能打开歌单详情（`playlist` ✓）——
+  /// 否则用户点进去是死链 ✗（与「新专辑/搜索专辑」同一条判据 ✓）。
+  Set<MusicPlatform> get openableRecommendedPlaylistPlatforms => {
+    for (final platform in recommendedPlaylistPlatforms)
+      if (playlistPlatforms.contains(platform)) platform,
   };
 
   /// 搜索页「专辑」分区**打得开**的平台：既要能搜专辑，又要能打开专辑详情 ✓
@@ -384,6 +398,17 @@ abstract interface class OnlineMusicService {
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
   }) => throw UnsupportedError('Recommended tracks are not supported');
+
+  /// **推荐歌单**（`recommendedPlaylists`，2026-10-12 新增 ✓）：平台按**这个账号**推荐哪些歌单 ✓。
+  ///
+  /// 输出是**歌单摘要数组** ✓（与 [fetchPlaylistCollection] 同形 ✓，但语义是"推荐给这个账号"✓）。
+  /// 因此它**通常需要凭据** ✓（走安全槽位 ✓，明文配置里没有 ✗）。
+  Future<List<RemotePlaylistSummary>> fetchRecommendedPlaylists({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Recommended playlists are not supported');
 
   /// **艺人详情**（`artist`，2026-10-12 新增）：艺人标量信息 + **热门曲目**。
   ///
