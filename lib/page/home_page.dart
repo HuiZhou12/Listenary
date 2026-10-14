@@ -15,6 +15,7 @@ import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/services/music_platform/index.dart';
@@ -95,12 +96,25 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     unawaited(_loadFavorites());
   }
 
+  /// 这次打开距上次打开的间隔 ✓（null = 首次安装或不知道为什么 ✓）⇒ 交给问候头决定说不说"好久不见" ✓。
+  Duration? _returningAfter;
+
   Future<void> _load() async {
     if (_loaded) {
       await _refreshAll();
       return;
     }
     _loaded = true;
+    // **"好久不见"的口径**（2026-10-12 ✓）：先算"这次距上次打开过了多久"✓，
+    // 再记下本次时间 ✓ —— 顺序不能反 ✗（反了永远是"刚刚打开过" ✓）。
+    // 只读/写一个偏好键 ✓，**不动数据库** ✓；首次安装没有记录 ⇒ 不说"好久不见" ✓。
+    final lastOpened = AppPreference.instance.lastOpenedAt;
+    if (lastOpened != null) {
+      final absence = DateTime.now().toUtc().difference(lastOpened);
+      if (!absence.isNegative) _returningAfter = absence;
+    }
+    AppPreference.instance.lastOpenedAt = DateTime.now().toUtc();
+    AppPreference.instance.save().ignore();
     final history = context.read<OnlineHistoryController>();
     final personal = context.read<PersonalOnlinePlaylistController>();
     unawaited(history.refresh());
@@ -351,8 +365,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
           // ================= 主页重置（2026-10-12，照用户给的 YT Music 图 ✓）=================
           // 顺序与图一致 ✓；**有真实数据的接真实数据** ✓，缺的做成**诚实展位** ✓
           //（展位写明"要接什么接口"✓，不塞假内容 ✗）。
-          const HomeGreetingHeader(),
-
+          HomeGreetingHeader(returningAfter: _returningAfter),
           // ① 再听一遍（真实：本地在线历史 ✓）
           _buildHistory(history),
           // ② 老歌重温（真实：历史里**播放次数最高**的那批 ✓ —— 复用既有的 `topPlayed` ✓）

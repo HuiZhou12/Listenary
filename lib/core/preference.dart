@@ -657,6 +657,13 @@ class AppPreference {
 
   bool sidebarExpanded = true;
 
+  /// **上次打开应用的时间**（2026-10-12 新增 ✓）。
+  ///
+  /// 用途：主页问候头据此判断"**好久不见**"✓（用户给的口径：超过 3 天 ✓）；
+  /// 存成 **UTC ISO 字符串** ✓（人类可读、跨时区稳定 ✓），**不动数据库** ✓（只是偏好键 ✓）。
+  /// 为 null 表示"还没有记录过"（首次安装 ✓）⇒ 问候头按正常时段走 ✓，不说"好久不见" ✗。
+  DateTime? lastOpenedAt;
+
   var playbackPref = PlaybackPreference(
     PlayMode.forward,
     1.0,
@@ -804,6 +811,11 @@ class AppPreference {
       prefMap['sidebarExpanded'],
       defaultValue: true,
     );
+    // **上次打开时间**：存的是 UTC ISO 字符串 ✓；解析不了就当没有记录 ✓（不猜 ✗）。
+    final rawLastOpened = prefMap['lastOpenedAt'];
+    if (rawLastOpened is String) {
+      lastOpenedAt = DateTime.tryParse(rawLastOpened)?.toUtc();
+    }
     playbackPref = PlaybackPreference.fromMap(prefMap['playbackPref']);
     nowPlayingPagePref = NowPlayingPagePreference.fromMap(
       prefMap['nowPlayingPagePref'],
@@ -873,6 +885,7 @@ class AppPreference {
       'personalPlaylistDetailPagePref': personalPlaylistDetailPagePref.toMap(),
       'startPage': startPage,
       'sidebarExpanded': sidebarExpanded,
+      'lastOpenedAt': lastOpenedAt?.toUtc().toIso8601String(),
       'playbackPref': playbackPref.toMap(),
       'nowPlayingPagePref': nowPlayingPagePref.toMap(),
       'customCpFeedbackKey': customCpFeedbackKey,
