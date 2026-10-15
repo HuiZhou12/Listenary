@@ -119,6 +119,22 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('★ 两边都做不到的展位已删除，且"你的回顾"是真数字', (tester) async {
+    await pumpHome(tester, service: _HomeService());
+
+    // 用户裁定（2026-10-12 ✓）：**网易云做不到、本地也做不到**的板块**删掉** ✗，不留空壳 ✗。
+    for (final gone in ['翻唱与混音', '为你推荐的音乐视频', '来自社区']) {
+      expect(find.text(gone), findsNothing, reason: '$gone 应当已删除 ✓');
+    }
+
+    // 「你的回顾」= **本地真数据** ✓（官方 Recap 端点实测 404 ⇒ 改用本机历史 ✓），
+    // 而且**口径写在副标题里** ✓ —— 数字不编 ✓。
+    expect(find.text('你的回顾'), findsOneWidget);
+    expect(find.textContaining('按本机播放历史算的'), findsOneWidget);
+    expect(find.text('历史总播放次数'), findsOneWidget);
+    expect(find.text('最近 30 天在听的曲目'), findsOneWidget);
+  });
+
   testWidgets('保证 1：空数据时给出可读的空状态，且配置说明可用', (tester) async {
     await pumpHome(tester, service: _HomeService());
 

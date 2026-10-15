@@ -861,20 +861,12 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
           _buildHistory(history),
           // ② 老歌重温（真实：历史里**播放次数最高**的那批 ✓ —— 复用既有的 `topPlayed` ✓）
           _buildTopPlayed(history),
-          // ③ 翻唱与混音（缺：我们没有这类版权内容 ✓）
-          const HomePlaceholderShelf(
-            title: '翻唱与混音',
-            subtitle: '同一首歌的不同版本，总有一版对味',
-            source: '第三方内容源（本应用没有这类版权内容）',
-            icon: Symbols.mic,
-          ),
-          // ④ 为你推荐的音乐视频（缺：我们只能播音频 ✓）
-          const HomePlaceholderShelf(
-            title: '为你推荐的音乐视频',
-            subtitle: '用视频的形式给你推荐歌',
-            source: '官方视频推荐接口（本应用目前只能播音频）',
-            icon: Symbols.movie,
-          ),
+          // ③ 「翻唱与混音」**已删除** ✗（2026-10-12 ✓）：
+          // 网易云没有"翻唱/混音"这种**策展货架** ✗（只有关键词搜索 ✓，那不算推荐源 ✓），
+          // 本地也没有这类内容 ✗ ⇒ 两边都做不到 ⇒ 按用户指令撤掉 ✓（不留空壳 ✗）。
+          // ④ 「为你推荐的音乐视频」**已删除** ✗（2026-10-12 ✓）：
+          // 网易云有 `/personalized/mv`（实测可用 ✓）但**是视频** ✗ —— 本应用只能播音频 ✓，
+          // 本地也没有任何视频内容 ✗ ⇒ **两边都做不到** ⇒ 撤掉 ✓（不留空壳 ✗）。
           // ⑤ 猜你喜欢（**有推荐能力就是真货架** ✓；没有就保留诚实展位 ✓）
           _buildRecommended(),
           // ⑥ 来自你的媒体库（真实：收藏 ✓ + 自建歌单 ✓ —— 图上是一块，我们拆成两块更清楚 ✓）
@@ -882,24 +874,17 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
           _buildPersonalPlaylists(personal),
           // ⑦ 关注的艺人（**有该能力就是真货架** ✓；没有就保留诚实展位 ✓）
           _buildFollowedArtists(),
-          // ⑧ 来自社区（缺 ✓）
-          const HomePlaceholderShelf(
-            title: '来自社区',
-            subtitle: '其他听众在做、在听的歌单',
-            source: '官方社区接口（需要登录 Cookie）',
-            icon: Symbols.groups,
-          ),
+          // ⑧ 「来自社区」**已删除** ✗（2026-10-12 ✓）：
+          // 网易云只有 `/topic/sublist`（那是"**你自己订阅的专栏**" ✗，不是别人的社区内容 ✓），
+          // 本地更没有社区 ✗ ⇒ 两边都做不到 ⇒ 撤掉 ✓。
           // ⑨ 为你推荐的**歌单**（名字如实 ✓：平台给的是歌单 ✓；有该能力就是真货架 ✓）
           _buildRecommendedPlaylists(),
           // ⑩ 新曲上线（真实：各平台新歌 ✓）
           _buildNewSongs(),
-          // ⑪⑫⑬ 官方三件套（都缺 ✓）
-          const HomePlaceholderShelf(
-            title: 'Recap',
-            subtitle: '这一段时间你的听歌小结',
-            source: '官方 Recap 接口（需要登录 Cookie）',
-            icon: Symbols.insights,
-          ),
+          // ⑪ Recap：**用本机历史真做** ✓（2026-10-12 ✓）——
+          // 官方 Recap 在这个服务上**实测 404** ✗（`/summary/annual` ✓），但**本地完全可做** ✓
+          // ⇒ 按用户指令"能本地实现的就实现" ✓，并且**如实说明**这是本机数字 ✓（不冒充官方 Recap ✗）。
+          _buildLocalRecap(history),
           // ⑫ **每日发现：与「猜你喜欢」同源**（网易云实测两处都指向同一个每日推荐接口 ✓）
           // ⇒ **不摆两块重复内容** ✗ —— 这里不再单独放展位 ✓（已在「猜你喜欢」呈现 ✓）。
           const HomePlaceholderShelf(
@@ -1002,6 +987,91 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   }
 
   // ------------------------------------------------------------- 好久没听
+
+  /// 「**你的回顾**」（Recap 的**本地版** ✓，2026-10-12 ✓）。
+  ///
+  /// 为什么是本地的：官方 Recap 端点在这个服务上**实测 404** ✗，
+  /// 而"听过多少、最近在听什么、最常听谁"这些**我们本地就有真数据** ✓ ⇒ 自己做 ✓。
+  ///
+  /// ⚠️ **口径必须说清** ✓（否则就是拿总次数冒充"本月"✗）：
+  /// - 「最近 30 天在听的曲目」= `lastPlayedAt` 落在窗口内的**曲目条数** ✓（能算准 ✓）；
+  /// - 「历史总播放」= `totalPlayCount` ✓（**全时段** ✓，不是本月 ✗）；
+  /// - 「最常听的艺人」= 按**累计次数**聚合 ✓（同样是全时段 ✓）。
+  /// 我们把窗口与全时段**分开写清** ✓ —— 数字不编 ✓。
+  Widget _buildLocalRecap(OnlineHistoryViewSnapshot history) {
+    final now = DateTime.now();
+    final windowStart = now.subtract(const Duration(days: 30));
+    final recentTracks = history.recent
+        .where((entry) => entry.lastPlayedAt.isAfter(windowStart))
+        .length;
+
+    // 全时段最常听的艺人：把每首的累计次数加到它的每个艺人身上 ✓。
+    final byArtist = <String, int>{};
+    for (final entry in history.recent) {
+      for (final artist in entry.track.artists) {
+        final name = artist.trim();
+        if (name.isEmpty) continue;
+        byArtist[name] = (byArtist[name] ?? 0) + entry.playCount;
+      }
+    }
+    String? topArtist;
+    var topArtistPlays = 0;
+    for (final item in byArtist.entries) {
+      if (item.value > topArtistPlays ||
+          (item.value == topArtistPlays &&
+              topArtist != null &&
+              item.key.compareTo(topArtist) < 0)) {
+        topArtist = item.key;
+        topArtistPlays = item.value;
+      }
+    }
+
+    return ContentSection(
+      title: '你的回顾',
+      // **口径写在副标题里** ✓：一看就知道这些数是哪来的 ✓。
+      subtitle: '按本机播放历史算的（官方 Recap 接口在这个服务上没有，所以这是本地口径）',
+      actionLabel: '查看全部',
+      onAction: () => context.go('${app_paths.STATS_PAGE}?source=online'),
+      child: history.status == OnlineHistoryLoadStatus.failed
+          ? const InlineEmptyHint(
+              icon: Symbols.insights,
+              message: '播放历史读取失败，回顾暂时算不出来。',
+            )
+          : Row(
+              // ⚠️ **不能用 `stretch`** ✗：这里是 `Column` 的孩子 ⇒ 高度无界 ✓，
+              // `stretch` 会当场抛异常（整个主页都渲染不出来 ✗）。
+              // 用 `start` ⇒ 三格各自按内容定高 ✓（数字长短不同也无所谓 ✓）。
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _RecapTile(
+                    icon: Symbols.schedule,
+                    value: '$recentTracks',
+                    label: '最近 30 天在听的曲目',
+                  ),
+                ),
+                const SizedBox(width: Spacing.md),
+                Expanded(
+                  child: _RecapTile(
+                    icon: Symbols.play_circle,
+                    value: '${history.totalPlayCount}',
+                    label: '历史总播放次数',
+                  ),
+                ),
+                const SizedBox(width: Spacing.md),
+                Expanded(
+                  child: _RecapTile(
+                    icon: Symbols.artist,
+                    value: topArtist ?? '—',
+                    label: topArtist == null
+                        ? '最常听的艺人（还没有数据）'
+                        : '最常听的艺人（$topArtistPlays 次）',
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
 
   /// 「**好久没听**」（照用户给的 YT 图第 2 块 ✓，2026-10-12 **改名** ✓）。
   ///
@@ -1288,6 +1358,62 @@ class _PersonalPlaylistTile extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 「你的回顾」里的一格数字（**本机口径** ✓，2026-10-12 ✓）。
+///
+/// 刻意做成"数字 + 说明"两行 ✓：数字再漂亮，**口径说不清**就等于编 ✓
+/// （所以每格的 [label] 必须写明白它是全时段还是最近 30 天 ✓）。
+class _RecapTile extends StatelessWidget {
+  const _RecapTile({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(Spacing.md),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: AppRadius.smCircular,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+          const SizedBox(height: Spacing.sm),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: scheme.onSurface,
+              fontSize: AppType.subtitle,
+              fontWeight: AppType.weightSemibold,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontSize: AppType.caption,
+            ),
+          ),
+        ],
       ),
     );
   }
