@@ -122,6 +122,15 @@ OnlineMusicDeclarativeCapabilityBinding _playlist() =>
         listPath: _p('playlist.tracks'),
         fields: {
           // 歌单自身的字段（读根上的 playlist.*）
+          //
+          // ⚠️ **`playlistId` 是必填**（2026-10-15 补 ✓）：能力契约把 `playlistId` 与
+          // `playlistName` 都列为必填 ✓，此前这份配方只映射了名字 ✗ ⇒ 设置页直接报
+          // 「playlist: 缺少必填字段映射 playlistId」✗（用户实测命中 ✓，属老缺陷 ✓）。
+          OnlineMusicDomainField.playlistId: OnlineMusicFieldSpec(
+            candidates: [_p('playlist.id')],
+            transform: OnlineMusicFieldTransform.asInt,
+            required: true,
+          ),
           OnlineMusicDomainField.playlistName: OnlineMusicFieldSpec(
             candidates: [_p('playlist.name')],
             transform: OnlineMusicFieldTransform.asString,
