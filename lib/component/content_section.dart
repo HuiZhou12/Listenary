@@ -13,6 +13,7 @@ class ContentSection extends StatelessWidget {
     this.subtitle,
     this.actionLabel,
     this.onAction,
+    this.trailing,
   });
 
   final String title;
@@ -21,6 +22,13 @@ class ContentSection extends StatelessWidget {
   /// 为空时不渲染操作按钮（既有区块头就是这个行为）。
   final String? actionLabel;
   final VoidCallback? onAction;
+
+  /// **标题行右侧的附加控件**（2026-10-12 新增 ✓）。
+  ///
+  /// 用途：参考产品的每个货架，标题那一行的右侧是「**更多** + ◀ ▶」✓
+  ///（箭头在**头部**，不是浮在卡片上 ✗ —— 见 [ShelfScrollState] ✓）。
+  /// [trailing] 排在 [actionLabel] **左边** ✓（「更多」在最右 ✓，与参考一致 ✓）。
+  final Widget? trailing;
 
   final Widget child;
 
@@ -67,6 +75,8 @@ class ContentSection extends StatelessWidget {
                   ],
                 ),
               ),
+              // 空时整块不渲染 ✓（用 null-aware 元素，与全仓写法一致 ✓）。
+              ?trailing,
               if (actionLabel != null && onAction != null)
                 TextButton(onPressed: onAction, child: Text(actionLabel!)),
             ],

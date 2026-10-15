@@ -13,6 +13,9 @@ import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/platform_capability_view.dart';
 import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
+import 'package:pure_music/component/shelf_arrows.dart';
+import 'package:pure_music/component/shelf_scroll_state.dart';
+import 'package:pure_music/component/track_grid.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/preference.dart';
@@ -101,6 +104,13 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   _followedArtistState =
       RemoteLoadState<MusicPlatform, OnlineArtistSummary>();
 
+  /// **每个货架自己的滚动状态**（2026-10-12 ✓）：交给区块头部画「◀ ▶」用 ✓
+  ///（参考产品的箭头就在标题那一行 ✓）。同一页可能同时有好几条货架 ⇒ 按 key 各存一个 ✓。
+  final Map<String, ShelfScrollState> _shelfScrollStates = {};
+
+  ShelfScrollState _shelfState(String key) =>
+      _shelfScrollStates.putIfAbsent(key, ShelfScrollState.new);
+
   @override
   void initState() {
     super.initState();
@@ -114,6 +124,10 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
 
   @override
   void dispose() {
+    for (final state in _shelfScrollStates.values) {
+      state.dispose();
+    }
+    _shelfScrollStates.clear();
     _personal?.removeListener(_onPersonalChanged);
     super.dispose();
   }
@@ -337,18 +351,16 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
               message: '该平台这次没有给推荐（也可能今天就是没有）。',
             )
           else
-            Column(
-              children: [
-                for (final track in tracks)
-                  OnlineTrackEntry(
-                    track: track,
-                    onTap: () => playOnlineSearchResult(
-                      context,
-                      tracks: tracks,
-                      selectedRef: track.ref,
-                    ),
-                  ),
-              ],
+            // **三栏歌曲格**（2026-10-12 ✓，对齐参考的「猜你喜欢」✓）：
+            // 参考那一块是三栏并排的歌曲格 ✓（小方封面 + 加粗曲名 + 灰字「艺人 · 专辑」✓），
+            // **不是**横向货架、也不是单列列表 ✗；整块纵向铺开、要更多就翻页 ✓。
+            TrackGrid(
+              tracks: tracks,
+              onTap: (track) => playOnlineSearchResult(
+                context,
+                tracks: tracks,
+                selectedRef: track.ref,
+              ),
             ),
         ],
       ),
@@ -433,16 +445,30 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            musicPlatformLabel(platform),
-            style: TextStyle(
-              color: scheme.onSurfaceVariant,
-              fontSize: AppType.caption,
-              fontWeight: AppType.weightSemibold,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  musicPlatformLabel(platform),
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: AppType.caption,
+                    fontWeight: AppType.weightSemibold,
+                  ),
+                ),
+              ),
+              // **头部箭头**（2026-10-12 ✓）：参考把「◀ ▶」放在标题那一行 ✓。
+              ShelfArrows(
+                state: _shelfState('recommended-playlists-${platform.name}'),
+              ),
+            ],
           ),
           const SizedBox(height: Spacing.sm),
           HorizontalShelf(
+            // 滚动状态交给头部 ✓（本组件因此不再画覆盖层箭头 ✓）。
+            scrollState: _shelfState(
+              'recommended-playlists-${platform.name}',
+            ),
             loading:
                 _recommendedPlaylistState.isLoading(platform) && items.isEmpty,
             errorMessage: errorMessage,
@@ -569,16 +595,26 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            musicPlatformLabel(platform),
-            style: TextStyle(
-              color: scheme.onSurfaceVariant,
-              fontSize: AppType.caption,
-              fontWeight: AppType.weightSemibold,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  musicPlatformLabel(platform),
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: AppType.caption,
+                    fontWeight: AppType.weightSemibold,
+                  ),
+                ),
+              ),
+              ShelfArrows(
+                state: _shelfState('followed-artists-${platform.name}'),
+              ),
+            ],
           ),
           const SizedBox(height: Spacing.sm),
           HorizontalShelf(
+            scrollState: _shelfState('followed-artists-${platform.name}'),
             loading: _followedArtistState.isLoading(platform) &&
                 artists.isEmpty,
             errorMessage: errorMessage,
@@ -646,23 +682,30 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            musicPlatformLabel(platform),
-            style: TextStyle(
-              color: scheme.onSurfaceVariant,
-              fontSize: AppType.caption,
-              fontWeight: AppType.weightSemibold,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  musicPlatformLabel(platform),
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: AppType.caption,
+                    fontWeight: AppType.weightSemibold,
+                  ),
+                ),
+              ),
+              ShelfArrows(state: _shelfState('new-songs-${platform.name}')),
+            ],
           ),
           const SizedBox(height: Spacing.sm),
-          if (_newSongState.isLoading(platform))
+          if (_newSongState.isLoading(platform) && tracks.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: Spacing.lg),
               child: Center(child: CircularProgressIndicator()),
             )
-          else if (_newSongState.error(platform) case final message?)
+          else if (tracks.isEmpty && _newSongState.error(platform) != null)
             InlineFailureHint(
-              message: message,
+              message: _newSongState.error(platform)!,
               onRetry: () => _retryNewSongs(platform),
             )
           else if (tracks.isEmpty)
@@ -671,14 +714,30 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
               message: '该平台没有返回新歌。',
             )
           else
-            Column(
-              children: [
-                for (final track in tracks)
-                  OnlineTrackEntry(
-                    track: track,
-                    onTap: () => _playNewSong(tracks, track),
-                  ),
-              ],
+            // **改为货架卡片**（2026-10-12 ✓，对齐参考的「新曲上线」✓）：
+            // 参考那一块是**方形封面卡片**（标题 + 灰副标题 ✓），不是一行行的曲目 ✗。
+            HorizontalShelf(
+              scrollState: _shelfState('new-songs-${platform.name}'),
+              itemCount: tracks.length,
+              itemWidth: _cardWidth,
+              itemHeight: RemoteMediaCard.extentFor(
+                width: _cardWidth,
+                hasFooter: false,
+              ),
+              itemBuilder: (context, index) {
+                final track = tracks[index];
+                return RemoteMediaCard(
+                  width: _cardWidth,
+                  title: track.title,
+                  coverUri: track.coverUri,
+                  details: track.artistDisplay,
+                  sourceLabel: platformLabelForIdentityOnly(track.ref.identity),
+                  placeholderIcon: Symbols.music_note,
+                  onTap: () => _playNewSong(tracks, track),
+                  semanticLabel:
+                      '播放"${track.title} - ${track.artistDisplay}"',
+                );
+              },
             ),
         ],
       ),
@@ -1039,16 +1098,26 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            musicPlatformLabel(platform),
-            style: TextStyle(
-              color: scheme.onSurfaceVariant,
-              fontSize: AppType.caption,
-              fontWeight: AppType.weightSemibold,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  musicPlatformLabel(platform),
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: AppType.caption,
+                    fontWeight: AppType.weightSemibold,
+                  ),
+                ),
+              ),
+              ShelfArrows(
+                state: _shelfState('platform-playlists-${platform.name}'),
+              ),
+            ],
           ),
           const SizedBox(height: Spacing.sm),
           HorizontalShelf(
+            scrollState: _shelfState('platform-playlists-${platform.name}'),
             loading: remote.isLoading(platform),
             errorMessage: remote.error(platform),
             onRetry: () => _retryCollection(platform),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/motion.dart';
+import 'package:pure_music/component/shelf_scroll_state.dart';
 import 'package:pure_music/core/design_tokens.dart';
 
 /// **横向货架**：一条可横滑的内容栏，自带加载 / 空 / 失败三态。
@@ -32,6 +33,7 @@ class HorizontalShelf extends StatefulWidget {
     this.emptyMessage,
     this.emptyIcon = Symbols.inbox,
     this.placeholderCount = 5,
+    this.scrollState,
   });
 
   final int itemCount;
@@ -46,6 +48,10 @@ class HorizontalShelf extends StatefulWidget {
   final String? emptyMessage;
   final IconData emptyIcon;
   final int placeholderCount;
+
+  /// **把滚动状态交给外部**（2026-10-12 新增 ✓）：给了它 ⇒ 箭头由**区块头部**画 ✓
+  ///（[ShelfArrows] ✓），本组件**不再**画那对覆盖层箭头 ✗（否则会画两遍 ✗）。
+  final ShelfScrollState? scrollState;
 
   @override
   State<HorizontalShelf> createState() => _HorizontalShelfState();
@@ -62,11 +68,17 @@ class _HorizontalShelfState extends State<HorizontalShelf> {
   void initState() {
     super.initState();
     _controller.addListener(_syncArrows);
+    // 把翻页动作交给外部状态对象 ✓（区块头部据此画箭头 ✓）；没有就不接 ✓。
+    widget.scrollState?.attach(_page);
   }
 
   @override
   void didUpdateWidget(HorizontalShelf oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.scrollState != widget.scrollState) {
+      oldWidget.scrollState?.detach();
+      widget.scrollState?.attach(_page);
+    }
     // 条目数量变化（加载更多 / 切换分类）后重新判断箭头可用性。
     if (oldWidget.itemCount != widget.itemCount) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _syncArrows());
@@ -75,6 +87,7 @@ class _HorizontalShelfState extends State<HorizontalShelf> {
 
   @override
   void dispose() {
+    widget.scrollState?.detach();
     _controller.removeListener(_syncArrows);
     _controller.dispose();
     super.dispose();
@@ -85,6 +98,8 @@ class _HorizontalShelfState extends State<HorizontalShelf> {
     final position = _controller.position;
     final canLeft = position.pixels > position.minScrollExtent + 1;
     final canRight = position.pixels < position.maxScrollExtent - 1;
+    // **先报给外部**（头部箭头要用 ✓），再决定要不要重建自己 ✓。
+    widget.scrollState?.report(canLeft: canLeft, canRight: canRight);
     if (canLeft != _canScrollLeft || canRight != _canScrollRight) {
       setState(() {
         _canScrollLeft = canLeft;
@@ -139,14 +154,16 @@ class _HorizontalShelfState extends State<HorizontalShelf> {
             ),
           ),
           // 覆盖层箭头：只在那一侧真的还有内容时出现（见类文档）。
-          if (_canScrollLeft)
+          // **给了 `scrollState` 就不画** ✗ —— 那时箭头在**区块头部**（[ShelfArrows] ✓），
+          // 两边一起画就会冒出两对箭头 ✓。
+          if (widget.scrollState == null && _canScrollLeft)
             _ShelfArrow(
               icon: Symbols.chevron_left,
               tooltip: '上一个',
               onPressed: () => _page(false),
               alignment: Alignment.centerLeft,
             ),
-          if (_canScrollRight)
+          if (widget.scrollState == null && _canScrollRight)
             _ShelfArrow(
               icon: Symbols.chevron_right,
               tooltip: '下一个',
