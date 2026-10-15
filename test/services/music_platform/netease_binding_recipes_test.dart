@@ -375,15 +375,16 @@ OnlineMusicDeclarativeCapabilityBinding _recommendedTracks() =>
     OnlineMusicDeclarativeCapabilityBinding(
       request: const OnlineMusicRequestSpec(
         path: '/recommend/songs',
-        headers: [
-          OnlineMusicHeaderSpec(
-            name: 'Cookie',
-            // **留空** ✓：真正的值从**安全槽位**按下面的引用取 ✓。
-            value: '',
-            sensitive: true,
-            credentialReference: 'neteaseCookie',
-          ),
-        ],
+        // **认证通道 = 查询参数** ✓（2026-10-15 修正 ✓）。
+        //
+        // 为什么不是请求头：本地这个服务（`@neteasecloudmusicapienhanced/api` ✓）只在
+        // `util/option.js` 里取 `query.cookie || process.env.NETEASE_COOKIE` ✓，
+        // **完全不读 `Cookie` 请求头** ✗ —— 实测三种传法（裸请求 / `?cookie=假值` / `Cookie: 假值`）
+        // 全是 301 ✓，因为服务只是把 cookie **转发**给上游 ✓，上游不认假 cookie ✓。
+        //
+        // 值仍然来自**条目级凭据槽位** ✓（能力级 `auth` 只说"放哪儿" ✓）⇒
+        // 明文配置里**永远没有 cookie** ✓（守卫测试盯着 ✓）。
+        auth: OnlineMusicQueryAuthPlacement(parameterName: 'cookie'),
       ),
       response: OnlineMusicResponseSpec(
         success: _neteaseSuccess(),
@@ -437,14 +438,8 @@ OnlineMusicDeclarativeCapabilityBinding _recommendedPlaylists() =>
     OnlineMusicDeclarativeCapabilityBinding(
       request: const OnlineMusicRequestSpec(
         path: '/recommend/resource',
-        headers: [
-          OnlineMusicHeaderSpec(
-            name: 'Cookie',
-            value: '',
-            sensitive: true,
-            credentialReference: 'neteaseCookie',
-          ),
-        ],
+        // 认证 = 查询参数（同 `recommendedTracks` ✓：这个服务只认 `?cookie=` ✓）。
+        auth: OnlineMusicQueryAuthPlacement(parameterName: 'cookie'),
       ),
       response: OnlineMusicResponseSpec(
         success: _neteaseSuccess(),
@@ -557,14 +552,8 @@ OnlineMusicDeclarativeCapabilityBinding _followedArtists() =>
             source: OnlineMusicInputSource.limit,
           ),
         ],
-        headers: [
-          OnlineMusicHeaderSpec(
-            name: 'Cookie',
-            value: '',
-            sensitive: true,
-            credentialReference: 'neteaseCookie',
-          ),
-        ],
+        // 认证 = 查询参数（同上 ✓）。
+        auth: OnlineMusicQueryAuthPlacement(parameterName: 'cookie'),
       ),
       response: OnlineMusicResponseSpec(
         success: _neteaseSuccess(),
@@ -983,6 +972,16 @@ OnlineMusicDeclarativeCapabilityBinding _artist() =>
         },
       ),
     );
+
+/// **需要凭据的配方**（2026-10-15 ✓）：这些能力的请求必须带条目级凭据 ✓
+/// ⇒ 它们必须声明 `auth`（只把值放进槽位、不声明通道 ⇒ 值根本送不出去 ✗）。
+/// 名字写死是**故意的** ✓：新增一个"需要登录"的能力时，必须在这里点名 ✓，
+/// 否则守卫会漏掉它 ✓（漏掉的代价是"配了凭据却不生效"这种最难查的毛病 ✗）。
+const _credentialBackedCapabilities = <String>{
+  'recommendedTracks',
+  'recommendedPlaylists',
+  'followedArtists',
+};
 
 Map<OnlineMusicCapability, OnlineMusicDeclarativeCapabilityBinding>
 _recipe() => {
@@ -1775,15 +1774,13 @@ void main() {
       expect(mapped.tracks.first.albumIds, ['93113910']);
     });
 
-    test('★ 凭据守卫：敏感请求头只许放"引用"，绝不许放明文值', () {
+    test('★ 凭据守卫：敏感头只许放引用、且凭据型配方必须声明认证通道', () {
       // 为什么要有这条：推荐曲目这类**账号相关**能力要靠 cookie ✓，而 cookie 一旦写进
       // 明文配置就是**把用户账号留在磁盘上** ✗（`docs/` 还随时可能被复制/分享 ✓）。
       // 既有机制是"安全槽位 + 引用" ✓ ⇒ 这里把它**钉成断言**，防止以后有人图省事直接填值 ✗。
-      var sensitiveHeaders = 0;
       for (final entry in _recipe().entries) {
         for (final header in entry.value.request.headers) {
           if (!header.sensitive) continue;
-          sensitiveHeaders++;
           expect(
             header.value,
             isEmpty,
@@ -1796,12 +1793,34 @@ void main() {
           );
         }
       }
-      // 至少要有**一个**敏感头（否则这条守卫等于没测 ✗）。
-      expect(
-        sensitiveHeaders,
-        greaterThan(0),
-        reason: '至少"推荐曲目"应当带一个凭据引用型敏感头 ✓',
-      );
+      // 2026-10-15 修正 ✓：认证改走**查询参数**（`auth: query/cookie` ✓）之后，
+      // 本仓库里**已经没有**敏感头了 ✗ ⇒ 不再要求"至少一个敏感头" ✗，
+      // 改为钉住真正的那条线：**凭据型配方必须声明认证通道** ✓（否则值根本送不出去 ✗）。
+      for (final entry in _recipe().entries) {
+        if (!_credentialBackedCapabilities.contains(entry.key.name)) continue;
+        expect(
+          entry.value.request.auth,
+          isNot(isA<OnlineMusicNoAuthPlacement>()),
+          reason: '${entry.key.name} 需要凭据 ⇒ 必须声明 `auth` ✓',
+        );
+      }
+
+      // 反向：**任何**配方都不许出现 cookie 字面量 ✗（无论放头里还是参数里 ✓）。
+      for (final entry in _recipe().entries) {
+        final json = jsonEncode(entry.value.toJson());
+        expect(
+          json.contains('MUSIC_U') || json.contains('__csrf'),
+          isFalse,
+          reason: '${entry.key.name} 的配置里出现了疑似真实 cookie 字面量 ✗',
+        );
+        for (final header in entry.value.request.headers) {
+          expect(
+            header.value,
+            isEmpty,
+            reason: '${entry.key.name} 的 ${header.name} 头不许带字面量值 ✗',
+          );
+        }
+      }
     });
 
     test('把十三项配置写成可直接复制的 JSON 文件（人工验收清单配套，并当场校验可解析）', () {
