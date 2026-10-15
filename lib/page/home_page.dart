@@ -16,6 +16,7 @@ import 'package:pure_music/component/remote_media_card.dart';
 import 'package:pure_music/component/shelf_arrows.dart';
 import 'package:pure_music/component/shelf_scroll_state.dart';
 import 'package:pure_music/component/track_grid.dart';
+import 'package:pure_music/services/online_history/rediscovery_engine.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/preference.dart';
@@ -103,6 +104,9 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   final RemoteLoadState<MusicPlatform, OnlineArtistSummary>
   _followedArtistState =
       RemoteLoadState<MusicPlatform, OnlineArtistSummary>();
+
+  /// **重温引擎**（2026-10-12 ✓）：无状态、纯函数 ✓ ⇒ 一个常量实例就够 ✓（不必每帧新建 ✓）。
+  static const RediscoveryEngine _rediscovery = RediscoveryEngine();
 
   /// **每个货架自己的滚动状态**（2026-10-12 ✓）：交给区块头部画「◀ ▶」用 ✓
   ///（参考产品的箭头就在标题那一行 ✓）。同一页可能同时有好几条货架 ⇒ 按 key 各存一个 ✓。
@@ -921,11 +925,23 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   // --------------------------------------------------------------- 继续听
 
   Widget _buildHistory(OnlineHistoryViewSnapshot history) {
-    final entries = history.recent.take(widget.previewLimit).toList();
+    // **不再直接切统计的前 N 条** ✗（2026-10-12 用户要求 ✓）：
+    // 统计的 `recent` 只有"时间倒序"这一个维度 ✓ ⇒ 连听一张专辑就会整块被它占满 ✗。
+    // 交给重温引擎 ✓：次线性熟悉度 × 近因因子 × 时长因子 + 多样性重排 ✓。
+    final picks = _rediscovery.rank(
+      entries: history.recent,
+      now: DateTime.now(),
+      intent: RediscoveryIntent.replay,
+      limit: widget.previewLimit,
+    );
+    final entries = [for (final pick in picks) pick.entry];
+    final reasons = {
+      for (final pick in picks) pick.entry.track.ref: pick.reason,
+    };
     return ContentSection(
       // 照用户给的 YT 图改名 ✓：原来是「继续听」✓，图上第一块叫「再听一遍」✓。
       title: '再听一遍',
-      subtitle: '来自在线播放历史（按曲目自己的来源标注）',
+      subtitle: '按"熟悉的程度 × 最近还在听"排的（不是简单按时间倒序）',
       actionLabel: '查看全部',
       onAction: () => context.go('${app_paths.STATS_PAGE}?source=online'),
       // **头部箭头**（2026-10-12 ✓）：参考的箭头在标题那一行 ✓。
@@ -949,6 +965,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
               ),
               itemBuilder: (context, index) => _historyCard(
                 entries[index].track,
+                reason: reasons[entries[index].track.ref],
                 onTap: () => playOnlineHistoryEntry(
                   context,
                   entries: history.recent,
@@ -959,8 +976,16 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     );
   }
 
-  /// 历史类货架的一张卡（再听一遍 / 老歌重温共用 ✓）：封面 + 曲名 + **艺人**（两行 ✓）。
-  Widget _historyCard(MusicTrack track, {required VoidCallback onTap}) {
+  /// 历史类货架的一张卡（再听一遍 / 好久没听共用 ✓）：封面 + 曲名 + **艺人 · 专辑**（两行 ✓）。
+  ///
+  /// [reason] 是引擎给的"凭什么轮到它" ✓ ⇒ 进**语义标签** ✓
+  /// （屏幕上不堆解释文字 ✓，但读屏与自动化都能拿到这个理由 ✓）。
+  Widget _historyCard(
+    MusicTrack track, {
+    required VoidCallback onTap,
+    String? reason,
+  }) {
+    final base = '播放"${track.title} - ${track.artistDisplay}"';
     return RemoteMediaCard(
       width: _cardWidth,
       title: track.title,
@@ -972,20 +997,37 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       sourceLabel: platformLabelForIdentityOnly(track.ref.identity),
       placeholderIcon: Symbols.music_note,
       onTap: onTap,
-      semanticLabel: '播放"${track.title} - ${track.artistDisplay}"',
+      semanticLabel: reason == null ? base : '$base（推荐理由：$reason）',
     );
   }
 
-  // ------------------------------------------------------------- 老歌重温
+  // ------------------------------------------------------------- 好久没听
 
-  /// 「老歌重温」（照用户给的 YT 图第 2 块 ✓）：**真实数据** ✓ ——
-  /// 直接复用历史里已有的 `topPlayed`（按**播放次数**排序 ✓）。
-  /// 文案如实 ✓：它说的是"你反复听过的那批" ✓，不假装是"年代久远的老歌" ✗（我们没有年代数据 ✓）。
+  /// 「**好久没听**」（照用户给的 YT 图第 2 块 ✓，2026-10-12 **改名** ✓）。
+  ///
+  /// ⚠️ **为什么改名**（用户指出"老歌"有歧义 ✓）：
+  /// - 读法 A「**上世纪 90 年代的歌**」✗ —— **我们做不到** ✗：库里**没有发行年份** ✗
+  ///   （`online_tracks.created_at` 是"我们第一次见到它"的时间 ✓，不是发行时间 ✗）
+  ///   ⇒ 照这个读法做就是**编数据** ✓（要真做，得先抓专辑 `publishTime` 并加一列 ✓）。
+  /// - 读法 B「**你确实听过、但好久没听**」✓ —— 这正是我们两个信号
+  ///   （`play_count` + `last_played_at` ✓）能**如实**表达的 ✓ ⇒ 采用它 ✓，并**改名消歧** ✓。
+  ///
+  /// 排序同样交给重温引擎 ✓（**不是**按播放次数倒序 ✗）：它要求"听过 ≥14 天才算久" ✓，
+  /// 再用 `1-exp(-t/30)` 让"越久越靠前" ✓，并做同艺人/同专辑/同平台**多样性重排** ✓。
   Widget _buildTopPlayed(OnlineHistoryViewSnapshot history) {
-    final entries = history.topPlayed.take(widget.previewLimit).toList();
+    final picks = _rediscovery.rank(
+      entries: history.topPlayed,
+      now: DateTime.now(),
+      intent: RediscoveryIntent.rediscover,
+      limit: widget.previewLimit,
+    );
+    final entries = [for (final pick in picks) pick.entry];
+    final reasons = {
+      for (final pick in picks) pick.entry.track.ref: pick.reason,
+    };
     return ContentSection(
-      title: '老歌重温',
-      subtitle: '你反复听过的那几首（按播放次数排序）',
+      title: '好久没听',
+      subtitle: '你听过不少次、但已经很久没碰的（听过不到 ${RediscoveryEngine.rediscoverMinDays} 天的不算）',
       actionLabel: '查看全部',
       onAction: () => context.go('${app_paths.STATS_PAGE}?source=online'),
       trailing: ShelfArrows(state: _shelfState('top-played')),
@@ -994,7 +1036,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
               icon: Symbols.replay,
               message: history.status == OnlineHistoryLoadStatus.failed
                   ? '播放历史读取失败，可稍后重试。'
-                  : '还没有反复听过的曲目：某一首听上几遍，它会出现在这里。',
+                  : '还没有"好久没听"的曲目：某一首反复听过、又隔上两周没听，它会出现在这里。',
             )
           // 与「再听一遍」同一套卡片货架 ✓（用户裁定：这两块都用卡片 ✓）。
           : HorizontalShelf(
@@ -1007,6 +1049,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
               ),
               itemBuilder: (context, index) => _historyCard(
                 entries[index].track,
+                reason: reasons[entries[index].track.ref],
                 onTap: () => playOnlineHistoryEntry(
                   context,
                   entries: history.topPlayed,
