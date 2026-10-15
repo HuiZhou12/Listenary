@@ -197,6 +197,31 @@ final class DeclarativeMusicProvider implements OnlineMusicProvider {
     );
   }
 
+  /// **个性化合辑**（`personalizedPlaylists`，2026-10-12 新增 ✓）：与"歌单列表"**同构** ✓
+  ///（歌单摘要数组 ✓）⇒ 共用映射 ✓。**不需要凭据** ✓（配方里没有凭据头 ✓）。
+  @override
+  Future<List<RemotePlaylistSummary>> fetchPersonalizedPlaylists({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async {
+    final binding = _requireBinding(
+      OnlineMusicCapability.personalizedPlaylists,
+      platform,
+    );
+    return _run(
+      binding: binding,
+      cancelToken: cancelToken,
+      inputs: DeclarativeInputs(limit: limit, offset: offset, page: 1),
+      map: (body) => mapDeclarativePlaylistCollectionResponse(
+        spec: binding.response,
+        body: body,
+        platform: platform,
+      ),
+    );
+  }
+
   @override
   Future<List<RemotePlaylistSummary>> fetchPlaylistCollection({
     required MusicPlatform platform,

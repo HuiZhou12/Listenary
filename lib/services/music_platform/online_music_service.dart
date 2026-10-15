@@ -18,6 +18,7 @@ final class OnlineMusicCapabilities {
     Iterable<MusicPlatform> newSongPlatforms = const [],
     Iterable<MusicPlatform> recommendedTrackPlatforms = const [],
     Iterable<MusicPlatform> recommendedPlaylistPlatforms = const [],
+    Iterable<MusicPlatform> personalizedPlaylistPlatforms = const [],
     Iterable<MusicPlatform> followedArtistPlatforms = const [],
     Iterable<MusicPlatform> newAlbumPlatforms = const [],
     Iterable<MusicPlatform> searchableAlbumPlatforms = const [],
@@ -42,6 +43,9 @@ final class OnlineMusicCapabilities {
        chartPlatforms = Set.unmodifiable(chartPlatforms),
        newSongPlatforms = Set.unmodifiable(newSongPlatforms),
     recommendedTrackPlatforms = Set.unmodifiable(recommendedTrackPlatforms),
+    personalizedPlaylistPlatforms = Set.unmodifiable(
+      personalizedPlaylistPlatforms,
+    ),
     recommendedPlaylistPlatforms = Set.unmodifiable(
       recommendedPlaylistPlatforms,
     ),
@@ -154,6 +158,10 @@ final class OnlineMusicCapabilities {
   /// 能取**推荐歌单**（`recommendedPlaylists` 能力，2026-10-12 新增）的平台 ✓（同样通常要凭据 ✓）。
   final Set<MusicPlatform> recommendedPlaylistPlatforms;
 
+  /// 能取**个性化合辑**（`personalizedPlaylists` 能力，2026-10-12 新增）的平台 ✓
+  ///（⚠️ 与 [recommendedPlaylistPlatforms] 不同：这条**不要求凭据** ✓）。
+  final Set<MusicPlatform> personalizedPlaylistPlatforms;
+
   /// 能取**关注的艺人**（`followedArtists` 能力，2026-10-12 新增）的平台 ✓（同样通常要凭据 ✓）。
   final Set<MusicPlatform> followedArtistPlatforms;
 
@@ -183,6 +191,12 @@ final class OnlineMusicCapabilities {
   /// 否则用户点进去是死链 ✗（与「新专辑/搜索专辑」同一条判据 ✓）。
   Set<MusicPlatform> get openableRecommendedPlaylistPlatforms => {
     for (final platform in recommendedPlaylistPlatforms)
+      if (playlistPlatforms.contains(platform)) platform,
+  };
+
+  /// 个性化合辑**打得开**的平台：同样要能打开歌单详情 ✓（否则点进去是死链 ✗）。
+  Set<MusicPlatform> get openablePersonalizedPlaylistPlatforms => {
+    for (final platform in personalizedPlaylistPlatforms)
       if (playlistPlatforms.contains(platform)) platform,
   };
 
@@ -432,6 +446,20 @@ abstract interface class OnlineMusicService {
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
   }) => throw UnsupportedError('Followed artists are not supported');
+
+  /// **个性化合辑**（`personalizedPlaylists`，2026-10-12 新增 ✓）：
+  /// 平台按"可能喜欢的口味"挑出来的**歌单合集** ✓。
+  ///
+  /// 与 [fetchRecommendedPlaylists] 的区别（**这个区别要写清楚** ✓）：
+  /// - [fetchRecommendedPlaylists] = "**你这个账号**的推荐" ✓ ⇒ 通常要凭据 ✓；
+  /// - 本方法 = "平台按口味给的内容" ✓ ⇒ **免登录也有** ✓（登录后更贴合 ✓）。
+  ///   ⚠️ 所以文案不能说成"为你量身定做" ✗（那是过度承诺 ✓）。
+  Future<List<RemotePlaylistSummary>> fetchPersonalizedPlaylists({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Personalized playlists are not supported');
 
   /// **艺人详情**（`artist`，2026-10-12 新增）：艺人标量信息 + **热门曲目**。
   ///

@@ -300,6 +300,10 @@ class _OnlineMusicCapabilityEditorDialogState
             ),
             // 关注艺人：网易云 `/artist/sublist` 把艺人放在 `data`（实测）✓。
             OnlineMusicCapability.followedArtists => JsonPath.tryParse('data'),
+            // 个性化合辑：网易云 `/personalized` 把歌单放在 `result`（实测）✓。
+            OnlineMusicCapability.personalizedPlaylists => JsonPath.tryParse(
+              'result',
+            ),
           },
           fieldsRootPath: switch (widget.capability) {
             OnlineMusicCapability.playlist ||
@@ -329,7 +333,9 @@ class _OnlineMusicCapabilityEditorDialogState
             // 推荐歌单同理：数组元素自带元数据 ✓。
             OnlineMusicCapability.recommendedPlaylists ||
             // 关注艺人：同样是数组元素自带元数据 ✓。
-            OnlineMusicCapability.followedArtists => null,
+            OnlineMusicCapability.followedArtists ||
+            // 个性化合辑：同上（歌单摘要数组 ✓）。
+            OnlineMusicCapability.personalizedPlaylists => null,
           },
         ),
       );
@@ -1990,6 +1996,11 @@ String domainFieldLabel(OnlineMusicDomainField field, {bool required = false}) {
     listPath: true,
     fieldsRootPath: false,
   ),
+  // 个性化合辑：与"歌单列表"同构 —— 一个歌单摘要数组 ✓。
+  OnlineMusicCapability.personalizedPlaylists => (
+    listPath: true,
+    fieldsRootPath: false,
+  ),
   OnlineMusicCapability.playlistCollection ||
   OnlineMusicCapability.playlistCategories ||
   OnlineMusicCapability.chartList ||
@@ -2039,7 +2050,9 @@ OnlineMusicInputSource defaultInputSourceFor(
   // 推荐歌单同理（按账号 ✓）。
   OnlineMusicCapability.recommendedPlaylists ||
   // 关注艺人也由服务端决定（我们是查"这个账号关注了谁" ✓），最可能要填数量 ✓。
-  OnlineMusicCapability.followedArtists => OnlineMusicInputSource.limit,
+  OnlineMusicCapability.followedArtists ||
+  // 个性化合辑同理（服务端按口味给 ✓）。
+  OnlineMusicCapability.personalizedPlaylists => OnlineMusicInputSource.limit,
 };
 
 /// 试跑要用的**真实输入**（P-49）：由编辑器按能力决定填哪些，控制器只看值。
@@ -2080,7 +2093,9 @@ typedef DeclarativeTestInputs = ({
   // 推荐歌单同上一组 ✓。
   OnlineMusicCapability.recommendedPlaylists ||
   // 关注艺人同上一组 ✓。
-  OnlineMusicCapability.followedArtists => (
+  OnlineMusicCapability.followedArtists ||
+  // 个性化合辑同上一组 ✓。
+  OnlineMusicCapability.personalizedPlaylists => (
     keyword: false,
     limit: true,
     id: false,

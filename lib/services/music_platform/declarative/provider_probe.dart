@@ -989,7 +989,9 @@ int _countListEntries(JsonPath? listPath, Object? body) {
   ),
   OnlineMusicCapability.playlistCollection ||
   // 推荐歌单：与"歌单列表"**同构**（都是歌单摘要数组 ✓）⇒ 探测复用同一个映射 ✓。
-  OnlineMusicCapability.recommendedPlaylists => (
+  OnlineMusicCapability.recommendedPlaylists ||
+  // 个性化合辑：同上 ✓（也是歌单摘要数组 ✓）。
+  OnlineMusicCapability.personalizedPlaylists => (
     count: mapDeclarativePlaylistCollectionResponse(
       spec: binding.response,
       body: body,

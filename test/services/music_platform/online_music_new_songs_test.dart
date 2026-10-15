@@ -376,6 +376,14 @@ void main() {
 /// 只实现"新歌"（可选再加"播放解析"）的 Provider 替身。
 final class _NewSongProvider extends UnsupportedOnlineMusicProvider {
   @override
+  Future<List<RemotePlaylistSummary>> fetchPersonalizedPlaylists({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Personalized playlists are not implemented here');
+
+  @override
   Future<List<OnlineArtistSummary>> fetchFollowedArtists({
     required MusicPlatform platform,
     int limit = 30,

@@ -96,6 +96,15 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   _recommendedPlaylistState =
       RemoteLoadState<MusicPlatform, RemotePlaylistSummary>();
 
+  /// **「个性化合辑」货架**（`personalizedPlaylists` 能力，2026-10-12 新增 ✓）。
+  ///
+  /// 与「为你推荐的歌单」**形状相同** ✓（都是歌单摘要 ✓），但**语义不同** ✓：
+  /// 这条**免登录就有内容** ✓（实测 `/personalized` ✓）⇒ 失败时**不给**凭据指引 ✓。
+  List<MusicPlatform> _personalizedPlaylistPlatforms = const [];
+  final RemoteLoadState<MusicPlatform, RemotePlaylistSummary>
+  _personalizedPlaylistState =
+      RemoteLoadState<MusicPlatform, RemotePlaylistSummary>();
+
   /// **「关注的艺人」货架**（`followedArtists` 能力，2026-10-12 新增 ✓）。
   ///
   /// 判据：**既列得出、艺人页又打得开** ✓（`openableFollowedArtistPlatforms` ✓）。
@@ -171,6 +180,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     unawaited(_loadRecommended());
     unawaited(_loadRecommendedPlaylists());
     unawaited(_loadFollowedArtists());
+    unawaited(_loadPersonalizedPlaylists());
   }
 
   Future<void> _refreshAll() async {
@@ -185,6 +195,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       _loadRecommended(),
       _loadRecommendedPlaylists(),
       _loadFollowedArtists(),
+      _loadPersonalizedPlaylists(),
     ]);
   }
 
@@ -429,20 +440,70 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       child: Column(
         children: [
           for (final platform in _recommendedPlaylistPlatforms)
-            _buildRecommendedPlaylistSection(platform),
+            _playlistShelfSection(
+              platform,
+              key: 'recommended-playlists-${platform.name}',
+              state: _recommendedPlaylistState,
+              emptyMessage: '该平台这次没有给推荐（也可能今天就是没有）。',
+              // **凭据型货架** ✓ ⇒ 失败时补上"可能是凭据失效"的指引 ✓。
+              decorateError: _credentialFailureHint,
+              onRetry: () => _retryRecommendedPlaylists(platform),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildRecommendedPlaylistSection(MusicPlatform platform) {
+  /// 「**个性化合辑**」（`personalizedPlaylists` ✓，2026-10-12 ✓）：实测 `/personalized`
+  /// **免登录**就有内容 ✓ ⇒ 与"为你推荐的歌单"形状相同 ✓，但**不补凭据指引** ✗
+  ///（它不需要凭据；加了就是误导 ✓）。
+  Widget _buildPersonalizedPlaylists() {
+    if (_personalizedPlaylistPlatforms.isEmpty) {
+      return const HomePlaceholderShelf(
+        title: '个性化合辑',
+        subtitle: '按心情与场景混出来的合辑',
+        source: '官方个性化接口（网易云 /personalized）',
+        icon: Symbols.auto_awesome,
+      );
+    }
+    return ContentSection(
+      title: '个性化合辑',
+      // 文案**不过度承诺** ✓：登录后更贴合而已 ✓，不是"为你量身定做" ✗。
+      subtitle: '平台按口味挑的歌单合集（登录后会更贴合你）；点一张预览，不会自动订阅',
+      child: Column(
+        children: [
+          for (final platform in _personalizedPlaylistPlatforms)
+            _playlistShelfSection(
+              platform,
+              key: 'personalized-playlists-${platform.name}',
+              state: _personalizedPlaylistState,
+              emptyMessage: '该平台这次没有给合辑（也可能今天就是没有）。',
+              onRetry: () => _retryPersonalizedPlaylists(platform),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 一条**歌单货架**（"为你推荐的歌单" 与 "个性化合辑" 共用 ✓，2026-10-12 ✓）。
+  ///
+  /// 两者形状完全一样 ✓（都是歌单摘要 ✓），差别只有：标题 ✓、数据状态 ✓、空态文案 ✓，
+  /// 以及 **`decorateError`** —— 只有**凭据型**的那条才补"可能是凭据失效"的指引 ✓
+  ///（"个性化合辑"免登录就有内容 ✓，给它加凭据指引就是误导 ✗）。
+  Widget _playlistShelfSection(
+    MusicPlatform platform, {
+    required String key,
+    required RemoteLoadState<MusicPlatform, RemotePlaylistSummary> state,
+    required String emptyMessage,
+    required Future<void> Function() onRetry,
+    String Function(String message)? decorateError,
+  }) {
     final scheme = Theme.of(context).colorScheme;
-    final items = _recommendedPlaylistState.items(platform);
+    final items = state.items(platform);
     final width = _cardWidth;
-    // 有内容时把失败留给"加载更多/底部"处理 ✓；这里只负责首屏的失败 ✓（并补上凭据指引 ✓）。
-    final loadError = _recommendedPlaylistState.error(platform);
+    final loadError = state.error(platform);
     final errorMessage = items.isEmpty && loadError != null
-        ? _credentialFailureHint(loadError)
+        ? (decorateError?.call(loadError) ?? loadError)
         : null;
     return Padding(
       padding: const EdgeInsets.only(bottom: Spacing.lg),
@@ -462,22 +523,17 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
                 ),
               ),
               // **头部箭头**（2026-10-12 ✓）：参考把「◀ ▶」放在标题那一行 ✓。
-              ShelfArrows(
-                state: _shelfState('recommended-playlists-${platform.name}'),
-              ),
+              ShelfArrows(state: _shelfState(key)),
             ],
           ),
           const SizedBox(height: Spacing.sm),
           HorizontalShelf(
             // 滚动状态交给头部 ✓（本组件因此不再画覆盖层箭头 ✓）。
-            scrollState: _shelfState(
-              'recommended-playlists-${platform.name}',
-            ),
-            loading:
-                _recommendedPlaylistState.isLoading(platform) && items.isEmpty,
+            scrollState: _shelfState(key),
+            loading: state.isLoading(platform) && items.isEmpty,
             errorMessage: errorMessage,
-            onRetry: () => _retryRecommendedPlaylists(platform),
-            emptyMessage: '该平台这次没有给推荐（也可能今天就是没有）。',
+            onRetry: onRetry,
+            emptyMessage: emptyMessage,
             emptyIcon: Symbols.queue_music,
             itemCount: items.length,
             itemWidth: width,
@@ -526,6 +582,49 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     final service = context.read<OnlineMusicService?>();
     if (service == null) return;
     await _loadRecommendedPlaylistsFor(service, platform);
+  }
+
+  /// **个性化合辑**（`personalizedPlaylists` ✓）：与"推荐歌单"同一套做法 ✓（判据相同 ✓）。
+  Future<void> _loadPersonalizedPlaylists() async {
+    final service = context.read<OnlineMusicService?>();
+    final platforms = service == null
+        ? const <MusicPlatform>[]
+        : [
+            for (final platform in builtinMusicPlatforms)
+              if (service
+                  .capabilities
+                  .openablePersonalizedPlaylistPlatforms
+                  .contains(platform))
+                platform,
+          ];
+    if (!mounted) return;
+    setState(() => _personalizedPlaylistPlatforms = platforms);
+    if (service == null) return;
+    await Future.wait([
+      for (final platform in platforms)
+        _loadPersonalizedPlaylistsFor(service, platform),
+    ]);
+  }
+
+  Future<void> _loadPersonalizedPlaylistsFor(
+    OnlineMusicService service,
+    MusicPlatform platform,
+  ) => loadRemoteList(
+    _personalizedPlaylistState,
+    platform,
+    () => service.fetchPersonalizedPlaylists(
+      platform: platform,
+      limit: widget.collectionLimit,
+      offset: 0,
+      cancelToken: newCancelToken(),
+    ),
+    fallback: '读取该平台个性化合辑失败',
+  );
+
+  Future<void> _retryPersonalizedPlaylists(MusicPlatform platform) async {
+    final service = context.read<OnlineMusicService?>();
+    if (service == null) return;
+    await _loadPersonalizedPlaylistsFor(service, platform);
   }
 
   /// **关注的艺人**（`followedArtists` ✓）：与"推荐歌单"同一套做法 ✓。
@@ -887,12 +986,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
           _buildLocalRecap(history),
           // ⑫ **每日发现：与「猜你喜欢」同源**（网易云实测两处都指向同一个每日推荐接口 ✓）
           // ⇒ **不摆两块重复内容** ✗ —— 这里不再单独放展位 ✓（已在「猜你喜欢」呈现 ✓）。
-          const HomePlaceholderShelf(
-            title: '个性化合辑',
-            subtitle: '按心情与场景混出来的合辑',
-            source: '官方个性化合辑接口（需要登录 Cookie）',
-            icon: Symbols.auto_awesome,
-          ),
+          // ⑬ 个性化合辑（**有该能力就是真货架** ✓；没有就保留诚实展位 ✓）
+          _buildPersonalizedPlaylists(),
 
           // ================= 图里没有、但我们本来就有的价值（保留 ✓）=================
           // 用户这轮的指令是"元素全部推翻、采用 YT 设计" ✓ —— 但这两块是我们**已有的真实能力** ✓

@@ -71,6 +71,18 @@ abstract interface class OnlineMusicProvider {
     required OnlineMusicCancelToken cancelToken,
   });
 
+  /// **个性化合辑**（`personalizedPlaylists`，2026-10-12 新增 ✓）：平台按口味挑的歌单合集 ✓
+  ///（与 [fetchRecommendedPlaylists] 同形 ✓，但**不要求凭据** ✓ —— 登录后更贴合而已 ✓）。
+  Future<List<RemotePlaylistSummary>> fetchPersonalizedPlaylists({
+    required MusicPlatform platform,
+    int limit,
+    int offset,
+    required OnlineMusicCancelToken cancelToken,
+  });
+
+  /// **推荐的歌单**（`recommendedPlaylists`）与 [fetchPersonalizedPlaylists] 的区别：
+  /// 前者是"**你这个账号**的推荐" ✓（要凭据 ✓），后者是"平台按口味给的内容" ✓（免登录 ✓）。
+  ///
   /// **推荐曲目**（`recommendedTracks`，2026-10-12 新增 ✓）：平台按**这个账号**推荐什么歌 ✓
   ///（形状与 [fetchNewSongs] 同构 ✓，语义不同 ✓ ⇒ 配置通常要带凭据 ✓）。
   Future<List<MusicTrack>> fetchRecommendedTracks({

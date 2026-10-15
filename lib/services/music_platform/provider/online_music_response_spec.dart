@@ -553,6 +553,11 @@ final class OnlineMusicResponseSpec {
         if (listPath == null) {
           issues.add('推荐歌单能力必须配置列表路径');
         }
+      case OnlineMusicCapability.personalizedPlaylists:
+        // 个性化合辑：同样是歌单摘要数组 ✓。
+        if (listPath == null) {
+          issues.add('个性化合辑能力必须配置列表路径');
+        }
       case OnlineMusicCapability.chartList:
         // 榜单索引与歌单列表同构：一个数组，每个元素是一个名次集合的元数据。
         if (listPath == null) {
@@ -712,6 +717,16 @@ Set<OnlineMusicDomainField> domainFieldsFor(OnlineMusicCapability capability) {
       };
     case OnlineMusicCapability.recommendedPlaylists:
       // 推荐歌单与歌单集合**同一组字段** ✓（不新增领域字段 ✓）。
+      return const {
+        OnlineMusicDomainField.playlistId,
+        OnlineMusicDomainField.playlistName,
+        OnlineMusicDomainField.playlistCoverUri,
+        OnlineMusicDomainField.playlistCreator,
+        OnlineMusicDomainField.playlistTrackCount,
+        OnlineMusicDomainField.playlistUpdateFrequency,
+      };
+    case OnlineMusicCapability.personalizedPlaylists:
+      // 个性化合辑：同上 ✓。
       return const {
         OnlineMusicDomainField.playlistId,
         OnlineMusicDomainField.playlistName,
@@ -893,6 +908,12 @@ Set<OnlineMusicDomainField> requiredFieldsFor(
       };
     case OnlineMusicCapability.recommendedPlaylists:
       // 同理：至少 id + 名字 ✓。
+      return const {
+        OnlineMusicDomainField.playlistId,
+        OnlineMusicDomainField.playlistName,
+      };
+    case OnlineMusicCapability.personalizedPlaylists:
+      // 同上 ✓。
       return const {
         OnlineMusicDomainField.playlistId,
         OnlineMusicDomainField.playlistName,

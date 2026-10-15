@@ -69,6 +69,10 @@ final class CompositeOnlineMusicService
       recommendedPlaylistPlatforms: registry.platformsFor(
         OnlineMusicCapability.recommendedPlaylists,
       ),
+      // 个性化合辑（2026-10-12）✓：按候选给（界面另加"打得开"门槛 ✓）。
+      personalizedPlaylistPlatforms: registry.platformsFor(
+        OnlineMusicCapability.personalizedPlaylists,
+      ),
       // 关注艺人（2026-10-12）✓：按候选给（界面另加"艺人页打得开"门槛 ✓）。
       followedArtistPlatforms: registry.platformsFor(
         OnlineMusicCapability.followedArtists,
@@ -199,6 +203,25 @@ final class CompositeOnlineMusicService
     platform,
     OnlineMusicCapability.recommendedPlaylists,
     (provider) => provider.fetchRecommendedPlaylists(
+      platform: platform,
+      limit: limit,
+      offset: offset,
+      cancelToken: cancelToken,
+    ),
+  );
+
+  /// 个性化合辑（`personalizedPlaylists`，2026-10-12 新增 ✓）：形状与"歌单列表"同构 ✓，
+  /// 语义是"平台按口味挑的歌单合集" ✓（**免登录也有** ✓ —— 与 `recommendedPlaylists` 不同 ✓）。
+  @override
+  Future<List<RemotePlaylistSummary>> fetchPersonalizedPlaylists({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => _dispatch(
+    platform,
+    OnlineMusicCapability.personalizedPlaylists,
+    (provider) => provider.fetchPersonalizedPlaylists(
       platform: platform,
       limit: limit,
       offset: offset,

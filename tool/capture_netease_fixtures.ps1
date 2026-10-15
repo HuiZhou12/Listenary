@@ -28,7 +28,8 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 
 # Upstream risk control sometimes answers 502 / "read ECONNRESET" for a burst of requests;
 # retrying a few times with a growing pause is the known workaround (observed 2026-10-12).
-# Nothing is invented: a failure that survives every retry still aborts the capture.
+# Nothing is invented: an endpoint that fails every retry returns $null, and the merge step
+# below **keeps the previously captured real response** for it (and prints that it did).
 function Get-Json([string]$uri) {
   $attempts = 6
   for ($i = 1; $i -lt $attempts; $i++) {
@@ -40,7 +41,13 @@ function Get-Json([string]$uri) {
       Start-Sleep -Seconds $wait
     }
   }
-  return Invoke-RestMethod -Uri $uri -TimeoutSec 25
+  try {
+    return Invoke-RestMethod -Uri $uri -TimeoutSec 25
+  } catch {
+    # 抓不到就**如实返回 $null**（2026-10-12 ✓）——不编数据 ✓。
+    Write-Host ("    FAILED (kept previous capture): {0}" -f $uri)
+    return $null
+  }
 }
 
 function Take($list, [int]$n) {
@@ -81,6 +88,8 @@ $recommended = Get-Json "$BaseUrl/recommend/songs"
 # recommendedPlaylists（2026-10-12 新增）：按账号推荐的歌单（形状 = 顶层 recommend 数组 ✓）。
 $recommendedPlaylists = Get-Json "$BaseUrl/recommend/resource"
 # followedArtists（2026-10-12 新增）：账号关注的艺人（形状 = data 数组 ✓；0 关注时就是空数组 ✓）。
+# personalizedPlaylists（2026-10-12 新增）：个性化合辑（形状 = 顶层 result 数组 ✓；**免登录也有** ✓）。
+$personalized = Get-Json "$BaseUrl/personalized?limit=$Trim"
 $followedArtists = Get-Json "$BaseUrl/artist/sublist?limit=$Trim"
 
 $blocks = [ordered]@{
@@ -202,6 +211,36 @@ $blocks = [ordered]@{
       count = $followedArtists.count
       data  = Take $followedArtists.data $Trim
     } | ConvertTo-Json -Depth 30 -Compress)
+
+  # personalizedPlaylists（2026-10-12）：个性化合辑在顶层 result 里（裁到 $Trim 条 ✓）。
+  rawPersonalizedPlaylists = ([ordered]@{
+      code        = $personalized.code
+      hasTaste    = $personalized.hasTaste
+      category    = $personalized.category
+      result      = Take $personalized.result $Trim
+    } | ConvertTo-Json -Depth 30 -Compress)
+}
+
+# --- 合并（2026-10-12 ✓）：抓取失败的条目，沿用**上一次抓到的真实响应** ✓ -------------
+#
+# 为什么需要它：本地服务的登录态会过期（实测：`/recommend/resource` 与 `/artist/sublist`
+# 会 301 到登录页 ✓）。那时**不能**编数据 ✗，但也不该让整份固件写不出来 ✗
+# ⇒ 保留旧的真实响应 ✓，并**打印**保留下来的条目（透明 ✓）。
+$previous = if (Test-Path -LiteralPath $OutFile) { [System.IO.File]::ReadAllText($OutFile) } else { '' }
+$kept = @()
+foreach ($name in @($blocks.Keys)) {
+  if ($blocks[$name] -match '"code":\s*null') {
+    $match = [regex]::Match($previous, "const _$($name)Raw = r'''(?s)(.*?)''';")
+    if ($match.Success) {
+      $blocks[$name] = $match.Groups[1].Value.Trim()
+      $kept += $name
+    } else {
+      throw "capture failed for $name and no previous capture exists (refusing to invent data)"
+    }
+  }
+}
+if ($kept.Count -gt 0) {
+  Write-Host ("  kept previous capture for: {0}" -f ($kept -join ', '))
 }
 
 $sb = New-Object System.Text.StringBuilder

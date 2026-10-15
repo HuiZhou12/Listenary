@@ -97,6 +97,9 @@ void main() {
           runtime.recommendedPlaylistPlatforms,
       // 关注艺人（2026-10-12）✓：同上 ✓。
       OnlineMusicCapability.followedArtists: runtime.followedArtistPlatforms,
+      // 个性化合辑（2026-10-12）✓：同上 ✓。
+      OnlineMusicCapability.personalizedPlaylists:
+          runtime.personalizedPlaylistPlatforms,
       OnlineMusicCapability.lyric: runtime.lyricPlatforms,
       OnlineMusicCapability.stream: runtime.resolvablePlatforms,
     };
@@ -193,6 +196,14 @@ void main() {
 }
 
 final class _AllCapabilityProvider extends UnsupportedOnlineMusicProvider {
+  @override
+  Future<List<RemotePlaylistSummary>> fetchPersonalizedPlaylists({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Personalized playlists are not implemented here');
+
   @override
   Future<List<OnlineArtistSummary>> fetchFollowedArtists({
     required MusicPlatform platform,

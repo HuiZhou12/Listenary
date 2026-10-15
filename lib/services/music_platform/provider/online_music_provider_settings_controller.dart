@@ -1173,7 +1173,9 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
 
       case OnlineMusicCapability.playlistCollection ||
           // 推荐歌单与"歌单列表"**同构**（歌单摘要数组 ✓）⇒ 试跑复用同一个映射 ✓。
-          OnlineMusicCapability.recommendedPlaylists:
+          OnlineMusicCapability.recommendedPlaylists ||
+          // 个性化合辑：同样是一个歌单摘要数组 ✓ ⇒ 同一个映射 ✓。
+          OnlineMusicCapability.personalizedPlaylists:
         {
           final playlists = mapDeclarativePlaylistCollectionResponse(
             spec: binding.response,

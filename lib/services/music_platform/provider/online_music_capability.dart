@@ -128,6 +128,17 @@ enum OnlineMusicCapability {
   ///
   /// **需要凭据** ✓（走安全槽位 ✓，明文配置里没有 ✗）；**可探测** ✓（不需要实体 ID ✓）。
   followedArtists,
+  /// **个性化合辑**（`personalizedPlaylists`，2026-10-12 新增 ✓）：
+  /// 平台按"你可能喜欢的口味"挑出来的**歌单合集** ✓。
+  ///
+  /// 真实服务：网易云 `/personalized?limit=` ✓（实测 **200 + 6 个推荐歌单** ✓），
+  /// 而且**不需要 cookie** ✓ —— 登录后会更贴合你 ✓，但不登录也有内容 ✓。
+  /// ⚠️ 所以它**不像** [recommendedPlaylists] 那样必须带凭据 ✓：
+  /// 配方里**不加**凭据头 ✓（用不着就不加 ✓ —— 加了会误导成"必须登录" ✗）。
+  ///
+  /// 输出是**歌单摘要数组** ✓（与 [playlistCollection] 同形 ✓ ⇒ 复用映射 ✓、不加领域字段 ✓）；
+  /// **可探测** ✓（给 `limit` 即可 ✓）。
+  personalizedPlaylists,
   lyric,
   stream,
 }
@@ -152,6 +163,7 @@ String onlineMusicCapabilityLabel(OnlineMusicCapability capability) =>
       OnlineMusicCapability.recommendedTracks => '推荐曲目',
       OnlineMusicCapability.recommendedPlaylists => '推荐歌单',
       OnlineMusicCapability.followedArtists => '关注的艺人',
+      OnlineMusicCapability.personalizedPlaylists => '个性化合辑',
       OnlineMusicCapability.lyric => '歌词',
       OnlineMusicCapability.stream => '播放解析',
     };

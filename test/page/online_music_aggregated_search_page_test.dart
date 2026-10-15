@@ -359,6 +359,14 @@ final class _SearchCall {
 /// `UnimplementedError`，用例失败时才能看到真实断言）。
 final class _FakeAggregatedService implements OnlineMusicService {
   @override
+  Future<List<RemotePlaylistSummary>> fetchPersonalizedPlaylists({
+    required MusicPlatform platform,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => throw UnsupportedError('Personalized playlists are not implemented here');
+
+  @override
   Future<List<OnlineArtistSummary>> fetchFollowedArtists({
     required MusicPlatform platform,
     int limit = 30,

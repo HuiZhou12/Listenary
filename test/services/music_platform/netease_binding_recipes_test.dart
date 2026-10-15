@@ -480,6 +480,65 @@ OnlineMusicDeclarativeCapabilityBinding _recommendedPlaylists() =>
       ),
     );
 
+/// **个性化合辑**（`personalizedPlaylists`，2026-10-12 新增 ✓）：
+/// 平台按"可能喜欢的口味"挑的**歌单合集** ✓。
+///
+/// `/personalized?limit=` → `{code, result: [...], hasTaste, category}` ✓
+///（实测 **200 + 6 个推荐歌单** ✓）。
+///
+/// ⚠️ **这份刻意不带凭据头** ✓：该端点**不需要 cookie** 就有内容 ✓
+/// （登录后会更贴合你 ✓，但"免登录也能用"是事实 ✓）。
+/// 加一个凭据头反而会让人以为"必须登录" ✗ —— 用不着就不加 ✓。
+/// 因此它也不参与"敏感头守卫"的那条断言 ✓（那条只要求**敏感头不许放明文** ✓，
+/// 而不是"每个配方都必须有敏感头" ✓）。
+///
+/// 与 [OnlineMusicCapability.recommendedPlaylists] 的差别写在能力枚举里 ✓：
+/// 那个是"**你这个账号**的推荐"（要凭据 ✓），这个是"平台按口味给的内容"（免登录 ✓）。
+OnlineMusicDeclarativeCapabilityBinding _personalizedPlaylists() =>
+    OnlineMusicDeclarativeCapabilityBinding(
+      request: const OnlineMusicRequestSpec(
+        path: '/personalized',
+        query: [
+          OnlineMusicParamBinding(
+            name: 'limit',
+            source: OnlineMusicInputSource.limit,
+          ),
+        ],
+      ),
+      response: OnlineMusicResponseSpec(
+        success: _neteaseSuccess(),
+        listPath: _p('result'),
+        fields: {
+          OnlineMusicDomainField.playlistId: OnlineMusicFieldSpec(
+            candidates: [_p('id')],
+            transform: OnlineMusicFieldTransform.asInt,
+            required: true,
+          ),
+          OnlineMusicDomainField.playlistName: OnlineMusicFieldSpec(
+            candidates: [_p('name')],
+            transform: OnlineMusicFieldTransform.asString,
+            required: true,
+          ),
+          OnlineMusicDomainField.playlistCoverUri: OnlineMusicFieldSpec(
+            candidates: [_p('picUrl')],
+            transform: OnlineMusicFieldTransform.asHttpsUri,
+          ),
+          OnlineMusicDomainField.playlistCreator: OnlineMusicFieldSpec(
+            candidates: [_p('creator.nickname')],
+            transform: OnlineMusicFieldTransform.asString,
+          ),
+          OnlineMusicDomainField.playlistTrackCount: OnlineMusicFieldSpec(
+            candidates: [_p('trackCount')],
+            transform: OnlineMusicFieldTransform.asInt,
+          ),
+          OnlineMusicDomainField.playlistUpdateFrequency: OnlineMusicFieldSpec(
+            candidates: [_p('updateFrequency')],
+            transform: OnlineMusicFieldTransform.asString,
+          ),
+        },
+      ),
+    );
+
 /// **关注的艺人**（`followedArtists`，2026-10-12 新增 ✓）：**这个账号**关注了谁 ✓。
 ///
 /// `/artist/sublist` → `{code, data: [...], count, hasMore}` ✓（实测可通 ✓；若账号没关注
@@ -953,6 +1012,8 @@ _recipe() => {
   OnlineMusicCapability.recommendedPlaylists: _recommendedPlaylists(),
   // 关注的艺人（2026-10-12）：第十六份 ✓ —— 同样带**凭据引用** ✓。
   OnlineMusicCapability.followedArtists: _followedArtists(),
+  // 个性化合辑（2026-10-12）：第十七份 ✓ —— ⚠️ 这份**不带凭据头** ✓（该端点免登录就有内容 ✓）。
+  OnlineMusicCapability.personalizedPlaylists: _personalizedPlaylists(),
 };
 
 void main() {
@@ -1313,6 +1374,8 @@ void main() {
         // 关注艺人（2026-10-12）：真实 `/artist/sublist` 的响应 ✓。
         // ⚠️ 该账号**没有关注任何艺人** ⇒ 真实固件就是**空数组** ✓（如实记录 ✓，不造数据 ✗）。
         'followedArtists': rawFollowedArtists,
+        // 个性化合辑（2026-10-12）：真实 `/personalized` 的响应 ✓（实测 6 个推荐歌单 ✓）。
+        'personalizedPlaylists': rawPersonalizedPlaylists,
       };
       _recipe().forEach((capability, binding) {
         // 每份配置都必须有**真实固件**（`album` 已于 2026-10-12 补抓 ✓）；
@@ -1760,7 +1823,7 @@ void main() {
         expect(parsed, isA<OnlineMusicDeclarativeCapabilityBinding>());
       });
 
-      expect(written, hasLength(16));
+      expect(written, hasLength(17));
       // ignore: avoid_print
       print('已写出 ${written.length} 个配置：${written.join(', ')}');
     });

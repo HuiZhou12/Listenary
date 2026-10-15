@@ -36,6 +36,7 @@ const platformCapabilityRows =
       (label: '推荐曲目', available: _recommendedTracks),
       (label: '推荐歌单', available: _recommendedPlaylists),
       (label: '关注的艺人', available: _followedArtists),
+      (label: '个性化合辑', available: _personalizedPlaylists),
       (label: '歌词', available: _lyrics),
       (label: '播放解析', available: _resolvable),
     ];
@@ -94,6 +95,10 @@ bool _recommendedPlaylists(OnlineMusicCapabilities c, MusicPlatform p) =>
 /// 关注的艺人：与「搜索艺人」同一条判据 —— **列得出、艺人也打得开** ✓。
 bool _followedArtists(OnlineMusicCapabilities c, MusicPlatform p) =>
     c.openableFollowedArtistPlatforms.contains(p);
+
+/// 个性化合辑：与「推荐歌单」同一条判据 —— **列得出、歌单也打得开** ✓。
+bool _personalizedPlaylists(OnlineMusicCapabilities c, MusicPlatform p) =>
+    c.openablePersonalizedPlaylistPlatforms.contains(p);
 
 bool _chartList(OnlineMusicCapabilities c, MusicPlatform p) =>
     c.chartPlatforms.contains(p);
