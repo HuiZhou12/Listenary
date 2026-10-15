@@ -177,26 +177,34 @@ void main() {
     expect(find.text('未配置'), findsOneWidget);
   });
 
-  testWidgets('保证 3：继续听与收藏逐行标注来源（跨平台）', (tester) async {
+  testWidgets('保证 3：再听一遍/老歌重温用卡片、收藏用行，且都标注来源（跨平台）', (tester) async {
     repository.recordPlaybackStarted(_track('n1', MusicPlatform.netease));
     repository.recordPlaybackStarted(_track('q1', MusicPlatform.qq));
     repository.toggleFavorite(_track('q1', MusicPlatform.qq));
     repository.toggleFavorite(_track('n2', MusicPlatform.netease));
     await pumpHome(tester, service: _HomeService());
 
-    // 历史区两条（netease + qq）+ 收藏区一条 QQ、一条网易云；
-    // 2026-10-12 起还有「老歌重温」（`topPlayed` ✓）—— 它对同一批历史再列一次
-    // ⇒ 同样的歌会**再出现一遍** ✓（真实数据 ✓，不是重复 bug ✓）⇒ 共 6 行 ✓。
-    expect(find.byType(OnlineTrackRow), findsNWidgets(6));
+    // 2026-10-12（用户裁定 ✓）：**再听一遍 / 老歌重温改成卡片货架** ✓（与参考一致 ✓）
+    // ⇒ 曲目**行**只剩收藏区的两条 ✓。
+    expect(find.byType(OnlineTrackRow), findsNWidgets(2));
     final labels = tester
         .widgetList<OnlineTrackRow>(find.byType(OnlineTrackRow))
         .map((row) => row.sourceLabel)
         .toList(growable: false);
     expect(labels, contains('网易云'));
     expect(labels, contains('QQ音乐'));
-    // q1 这首 QQ 曲目现在会出现**三次** ✓：再听一遍 ✓ + 老歌重温 ✓ + 收藏 ✓
-    //（三块都是真实数据 ✓，各自独立 ✓ —— 不是重复渲染 ✗）。
-    expect(labels.where((label) => label == 'QQ音乐'), hasLength(3));
+
+    // 历史那两块现在是**卡片** ✓：来源标记也必须**照样**出现在卡片上 ✓
+    //（"来源始终可见"这条纪律不因换形状而失效 ✓）。
+    final cards = tester
+        .widgetList<RemoteMediaCard>(find.byType(RemoteMediaCard))
+        .toList(growable: false);
+    expect(cards, isNotEmpty, reason: '历史两块应当是卡片 ✓');
+    expect(
+      cards.map((card) => card.sourceLabel).toSet(),
+      contains('QQ音乐'),
+      reason: '卡片上同样要标注来源 ✓',
+    );
   });
 
   testWidgets('保证 4：平台歌单按平台分组，单平台失败不影响其它平台', (tester) async {

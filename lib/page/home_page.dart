@@ -928,6 +928,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       subtitle: '来自在线播放历史（按曲目自己的来源标注）',
       actionLabel: '查看全部',
       onAction: () => context.go('${app_paths.STATS_PAGE}?source=online'),
+      // **头部箭头**（2026-10-12 ✓）：参考的箭头在标题那一行 ✓。
+      trailing: ShelfArrows(state: _shelfState('recent-history')),
       child: entries.isEmpty
           ? InlineEmptyHint(
               icon: Symbols.history,
@@ -935,19 +937,42 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
                   ? '播放历史读取失败，可稍后重试。'
                   : '还没有在线播放记录：从探索或搜索进入任一平台曲目即可开始。',
             )
-          : Column(
-              children: [
-                for (final entry in entries)
-                  _buildTrackRow(
-                    entry.track,
-                    onTap: () => playOnlineHistoryEntry(
-                      context,
-                      entries: history.recent,
-                      selectedRef: entry.track.ref,
-                    ),
-                  ),
-              ],
+          // **卡片货架**（2026-10-12 ✓，用户裁定 ✓）：参考的第一块就是卡片货架 ✓，
+          // 不是一行行的曲目 ✗。数据仍是**真实的**本地历史 ✓。
+          : HorizontalShelf(
+              scrollState: _shelfState('recent-history'),
+              itemCount: entries.length,
+              itemWidth: _cardWidth,
+              itemHeight: RemoteMediaCard.extentFor(
+                width: _cardWidth,
+                hasFooter: false,
+              ),
+              itemBuilder: (context, index) => _historyCard(
+                entries[index].track,
+                onTap: () => playOnlineHistoryEntry(
+                  context,
+                  entries: history.recent,
+                  selectedRef: entries[index].track.ref,
+                ),
+              ),
             ),
+    );
+  }
+
+  /// 历史类货架的一张卡（再听一遍 / 老歌重温共用 ✓）：封面 + 曲名 + **艺人**（两行 ✓）。
+  Widget _historyCard(MusicTrack track, {required VoidCallback onTap}) {
+    return RemoteMediaCard(
+      width: _cardWidth,
+      title: track.title,
+      coverUri: track.coverUri,
+      details: [
+        track.artistDisplay,
+        if (track.album.isNotEmpty) track.album,
+      ].join(' · '),
+      sourceLabel: platformLabelForIdentityOnly(track.ref.identity),
+      placeholderIcon: Symbols.music_note,
+      onTap: onTap,
+      semanticLabel: '播放"${track.title} - ${track.artistDisplay}"',
     );
   }
 
@@ -963,6 +988,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       subtitle: '你反复听过的那几首（按播放次数排序）',
       actionLabel: '查看全部',
       onAction: () => context.go('${app_paths.STATS_PAGE}?source=online'),
+      trailing: ShelfArrows(state: _shelfState('top-played')),
       child: entries.isEmpty
           ? InlineEmptyHint(
               icon: Symbols.replay,
@@ -970,18 +996,23 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
                   ? '播放历史读取失败，可稍后重试。'
                   : '还没有反复听过的曲目：某一首听上几遍，它会出现在这里。',
             )
-          : Column(
-              children: [
-                for (final entry in entries)
-                  _buildTrackRow(
-                    entry.track,
-                    onTap: () => playOnlineHistoryEntry(
-                      context,
-                      entries: history.topPlayed,
-                      selectedRef: entry.track.ref,
-                    ),
-                  ),
-              ],
+          // 与「再听一遍」同一套卡片货架 ✓（用户裁定：这两块都用卡片 ✓）。
+          : HorizontalShelf(
+              scrollState: _shelfState('top-played'),
+              itemCount: entries.length,
+              itemWidth: _cardWidth,
+              itemHeight: RemoteMediaCard.extentFor(
+                width: _cardWidth,
+                hasFooter: false,
+              ),
+              itemBuilder: (context, index) => _historyCard(
+                entries[index].track,
+                onTap: () => playOnlineHistoryEntry(
+                  context,
+                  entries: history.topPlayed,
+                  selectedRef: entries[index].track.ref,
+                ),
+              ),
             ),
     );
   }

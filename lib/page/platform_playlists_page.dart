@@ -195,13 +195,21 @@ class _PlatformPlaylistsPageState extends State<PlatformPlaylistsPage>
                     right: 20,
                   ),
                   sliver: SliverGrid.builder(
-                    gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 260,
-                          mainAxisSpacing: Spacing.md,
-                          crossAxisSpacing: Spacing.md,
-                          childAspectRatio: 0.72,
-                        ),
+                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 260,
+                      mainAxisSpacing: Spacing.md,
+                      crossAxisSpacing: Spacing.md,
+                      // **按卡片自己声明的高度**给格子 ✓（2026-10-12 改 ✓）：
+                      // 以前用 `childAspectRatio: 0.72` **猜**一个比例 ✗；
+                      // 副标题改成两行后卡片变高 ⇒ 猜的比例当场溢出（10px ✗，
+                      // 被 `explore_category_tap_test` 抓到 ✓）。
+                      // `mainAxisExtent` 是**精确高度** ⇒ 不再依赖比例 ✓；
+                      // 用最大可能宽度算 ⇒ 窄格子只是多一点留白 ✓，不会溢出 ✓。
+                      mainAxisExtent: RemoteMediaCard.extentFor(
+                        width: 260,
+                        hasFooter: true,
+                      ),
+                    ),
                     itemCount: items.length,
                     itemBuilder: (context, index) {
                       final summary = items[index];

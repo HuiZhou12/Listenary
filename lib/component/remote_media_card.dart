@@ -75,7 +75,12 @@ class RemoteMediaCard extends StatefulWidget {
   static const double _coverGap = 6;
   static const double _titleGap = 2;
   static const double _titleHeight = 18;
-  static const double _metaHeight = 16;
+  /// 元信息行的高度：**两行 caption**（2026-10-12 ✓）。
+  ///
+  /// 参考产品的卡片副标题会**换到第二行** ✓（一行就截断太可惜 ✓）。
+  /// ⚠️ 它仍是一个**常量高度**：`各行高度之和 == 声明高度` 的构造不变 ✓
+  /// ⇒ 多这一行**不会**让货架溢出 ✓（只是每张卡固定多占一行高度 ✓，短副标题时留白 ✓）。
+  static const double _metaHeight = 30;
   static const double _footerGap = 4;
   static const double _footerHeight = 36;
 
@@ -203,13 +208,16 @@ class _RemoteMediaCardState extends State<RemoteMediaCard> {
                     SizedBox(
                       height: RemoteMediaCard._metaHeight,
                       child: Row(
+                        // 两行副标题时，**来源标记贴在第一行** ✓（居中会显得浮在半空 ✗）。
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // 详情先省略，来源标记始终留在行尾（与曲目行同一套规则）。
                           if (widget.details.isNotEmpty)
                             Flexible(
                               child: Text(
                                 widget.details,
-                                maxLines: 1,
+                                // **两行**（2026-10-12 ✓，与参考一致 ✓）：超出仍然省略 ✓。
+                                maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color: metadataColor,
