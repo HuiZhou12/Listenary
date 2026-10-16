@@ -46,10 +46,12 @@ void main() {
   }
 
   test('extentFor 是卡片高度的唯一来源（数值即契约）', () {
-    // 140 封面 + 6 间距 + 18 标题 + 2 间距 + 16 元信息行
-    expect(RemoteMediaCard.extentFor(width: 140), 182);
+    // ⚠️ 2026-10-16 更新：元信息行从**一行**改成**两行**（用户裁定 ✓，`_metaHeight` 16 → 30 ✓）
+    // ⇒ 这里的契约数值必须跟着改 ✓（卡片内部仍是"每行定高"⇒ 高度仍等于声明值 ✓，只是多一行 ✓）。
+    // 140 封面 + 6 间距 + 18 标题 + 2 间距 + **30 元信息行（两行）**
+    expect(RemoteMediaCard.extentFor(width: 140), 196);
     // 再加页脚：4 + 36
-    expect(RemoteMediaCard.extentFor(width: 140, hasFooter: true), 222);
+    expect(RemoteMediaCard.extentFor(width: 140, hasFooter: true), 236);
     // 没有元信息行时只留封面 + 标题
     expect(RemoteMediaCard.extentFor(width: 140, hasMeta: false), 164);
   });
