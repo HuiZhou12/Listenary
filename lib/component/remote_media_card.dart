@@ -80,7 +80,11 @@ class RemoteMediaCard extends StatefulWidget {
   /// 参考产品的卡片副标题会**换到第二行** ✓（一行就截断太可惜 ✓）。
   /// ⚠️ 它仍是一个**常量高度**：`各行高度之和 == 声明高度` 的构造不变 ✓
   /// ⇒ 多这一行**不会**让货架溢出 ✓（只是每张卡固定多占一行高度 ✓，短副标题时留白 ✓）。
-  static const double _metaHeight = 30;
+  ///
+  /// ⚠️ 2026-10-16 修 ✓：**30 → 32** ✗。两行 12px 的中文在默认行高下要 ~34px ✓，
+  /// 30 装不下 ⇒ 第二行被裁 ✓。现在文字钉了 `height: 1.2` ✓（两行 28.8 ✓），
+  /// 这 32 是**留 3px 余量** ✓，防止字体度量差异再咬人 ✓。
+  static const double _metaHeight = 32;
   static const double _footerGap = 4;
   static const double _footerHeight = 36;
 
@@ -199,6 +203,12 @@ class _RemoteMediaCardState extends State<RemoteMediaCard> {
                           color: titleColor,
                           fontSize: AppType.body,
                           fontWeight: AppType.weightMedium,
+                          // ⚠️ 2026-10-16 修 ✓：**必须钉住行高** ✗。
+                          // 中文字体的默认行高（≈1.4 ✗）比拉丁字体大 ⇒ 14px 的字实际要 ~20px ✓，
+                          // 而这一格是 `_titleHeight`(18) 的**定高盒子** ✗ ⇒ 字被裁掉 ✓
+                          //（用户报的"字一多就被盖住"就是这个 ✓）。钉成 1.2 之后 ✓：
+                          // 盒子高度真的等于行高之和 ✓，不再随字体度量漂移 ✓。
+                          height: 1.2,
                         ),
                       ),
                     ),
@@ -222,6 +232,8 @@ class _RemoteMediaCardState extends State<RemoteMediaCard> {
                                 style: TextStyle(
                                   color: metadataColor,
                                   fontSize: AppType.caption,
+                                  // 同上 ✓：钉住行高（两行 12px × 1.2 = 28.8 ≤ `_metaHeight`(32) ✓）。
+                                  height: 1.2,
                                 ),
                               ),
                             ),

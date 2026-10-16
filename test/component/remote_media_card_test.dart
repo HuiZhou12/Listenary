@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:pure_music/component/online_source_label.dart';
 import 'package:pure_music/component/remote_media_card.dart';
+import 'package:pure_music/core/design_tokens.dart';
 
 /// 远端内容卡片：来源标记与曲目行用**同一种形态**（行尾小圆点 + 低对比小字），
 /// 且卡片的实际高度必须精确等于它对外声明的高度 —— 货架照抄这个高度，
@@ -46,14 +47,60 @@ void main() {
   }
 
   test('extentFor 是卡片高度的唯一来源（数值即契约）', () {
-    // ⚠️ 2026-10-16 更新：元信息行从**一行**改成**两行**（用户裁定 ✓，`_metaHeight` 16 → 30 ✓）
-    // ⇒ 这里的契约数值必须跟着改 ✓（卡片内部仍是"每行定高"⇒ 高度仍等于声明值 ✓，只是多一行 ✓）。
-    // 140 封面 + 6 间距 + 18 标题 + 2 间距 + **30 元信息行（两行）**
-    expect(RemoteMediaCard.extentFor(width: 140), 196);
+    // ⚠️ 2026-10-16 更新两次 ✓：①元信息行由一行改成两行（用户裁定 ✓）；
+    // ②两行在中文默认行高下装不下（30 ✗）⇒ 文字钉了 `height: 1.2` ✓ 且该格加到 **32** ✓。
+    // 140 封面 + 6 间距 + 18 标题 + 2 间距 + **32 元信息行（两行）**
+    expect(RemoteMediaCard.extentFor(width: 140), 198);
     // 再加页脚：4 + 36
-    expect(RemoteMediaCard.extentFor(width: 140, hasFooter: true), 236);
+    expect(RemoteMediaCard.extentFor(width: 140, hasFooter: true), 238);
     // 没有元信息行时只留封面 + 标题
     expect(RemoteMediaCard.extentFor(width: 140, hasMeta: false), 164);
+  });
+
+  test('★ 两行文字必须真的装得进它们的定高盒子（防"被盖住"）', () {
+    // 为什么要有这条：卡片内部是**定高盒子** ✓（`各行高度之和 == 声明高度` 的构造 ✓），
+    // 但中文字体的默认行高（≈1.4 ✗）比拉丁字体大 ⇒ 盒子按"一行"算就会**裁掉**文字 ✓
+    //（用户实测报过"字一多就被盖住" ✗）。
+    // ⇒ 这里用**真实的 TextPainter** 量一次：文字实际高度不得大于盒子高度 ✓。
+    double measure({
+      required String text,
+      required double fontSize,
+      required double? height,
+      required double maxWidth,
+      int maxLines = 1,
+    }) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(fontSize: fontSize, height: height),
+        ),
+        textDirection: TextDirection.ltr,
+        maxLines: maxLines,
+      )..layout(maxWidth: maxWidth);
+      return painter.height;
+    }
+
+    // 标题：14px × 1.2 = 16.8 ✓ 必须 ≤ 18（一次性中文长标题也要成立 ✓）。
+    expect(
+      measure(
+        text: '2026年超火超爆超热门30首',
+        fontSize: AppType.body,
+        height: 1.2,
+        maxWidth: 160,
+      ),
+      lessThanOrEqualTo(18),
+    );
+    // 元信息：两行 12px × 1.2 = 28.8 ✓ 必须 ≤ 32 ✓（放长一点的"歌单 · 作者 · 平台" ✓）。
+    expect(
+      measure(
+        text: '歌单 · 云音乐私人雷达 · 网易云',
+        fontSize: AppType.caption,
+        height: 1.2,
+        maxWidth: 160,
+        maxLines: 2,
+      ),
+      lessThanOrEqualTo(32),
+    );
   });
 
   group('widthFor：三档宽度与 ResponsiveBuilder 同一套阈值', () {
