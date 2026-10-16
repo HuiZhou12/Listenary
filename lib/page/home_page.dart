@@ -817,8 +817,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       subtitle: '按"熟悉的程度 × 最近还在听"排的（不是简单按时间倒序）',
       actionLabel: '查看全部',
       onAction: () => context.go('${app_paths.STATS_PAGE}?source=online'),
-      // **头部箭头**（2026-10-12 ✓）：参考的箭头在标题那一行 ✓。
-      trailing: ShelfArrows(state: _shelfState('recent-history')),
+      // 2026-10-16 用户指令 ✓：与探索页那两块统一 ✓ —— 标题行右侧只留「查看全部」✓，
+      // **不放头部箭头** ✗；箭头交给货架自己画在左右两侧 ✓（还能往那一侧滑时才出现 ✓）。
       child: entries.isEmpty
           ? InlineEmptyHint(
               icon: Symbols.history,
@@ -829,7 +829,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
           // **卡片货架**（2026-10-12 ✓，用户裁定 ✓）：参考的第一块就是卡片货架 ✓，
           // 不是一行行的曲目 ✗。数据仍是**真实的**本地历史 ✓。
           : HorizontalShelf(
-              scrollState: _shelfState('recent-history'),
+          // 同上 ✓：不再把滚动状态接到头部（那会抢走货架自己的左右箭头 ✓）。
+      // **不传 `scrollState`** ✓ ⇒ `HorizontalShelf` 自己画覆盖层箭头 ✓（与探索页一致 ✓）。
               itemCount: entries.length,
               itemWidth: _cardWidth,
               itemHeight: RemoteMediaCard.extentFor(
@@ -988,7 +989,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       subtitle: '你听过不少次、但已经很久没碰的（听过不到 ${RediscoveryEngine.rediscoverMinDays} 天的不算）',
       actionLabel: '查看全部',
       onAction: () => context.go('${app_paths.STATS_PAGE}?source=online'),
-      trailing: ShelfArrows(state: _shelfState('top-played')),
+      // 同「再听一遍」✓：标题行只留「查看全部」✓，箭头由货架自己画 ✓。
       child: entries.isEmpty
           ? InlineEmptyHint(
               icon: Symbols.replay,
@@ -998,7 +999,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
             )
           // 与「再听一遍」同一套卡片货架 ✓（用户裁定：这两块都用卡片 ✓）。
           : HorizontalShelf(
-              scrollState: _shelfState('top-played'),
+              // 不传 `scrollState` ✓ ⇒ 货架自己画左右箭头 ✓（与「再听一遍」和探索页一致 ✓）。
               itemCount: entries.length,
               itemWidth: _cardWidth,
               itemHeight: RemoteMediaCard.extentFor(
