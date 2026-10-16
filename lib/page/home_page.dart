@@ -381,12 +381,15 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     return ContentSection(
       title: '为你推荐的歌单',
       subtitle: '各平台按你的账号推荐；点一张**预览**（不会自动订阅 ✓）',
+      // **与探索页「新专辑 / 歌单」同一套区块头** ✓（2026-10-16 用户指令 ✓）：
+      // 标题行右侧是「**查看全部**」✓ —— 不是那对 ◀ ▶ ✗（箭头由货架自己在左右两侧画 ✓）。
+      actionLabel: '查看全部',
+      onAction: () => context.go(app_paths.EXPLORE_PAGE),
       child: Column(
         children: [
           for (final platform in _recommendedPlaylistPlatforms)
             _playlistShelfSection(
               platform,
-              key: 'recommended-playlists-${platform.name}',
               state: _recommendedPlaylistState,
               emptyMessage: '该平台这次没有给推荐（也可能今天就是没有）。',
               // **凭据型货架** ✓ ⇒ 失败时补上"可能是凭据失效"的指引 ✓。
@@ -414,12 +417,14 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       title: '个性化合辑',
       // 文案**不过度承诺** ✓：登录后更贴合而已 ✓，不是"为你量身定做" ✗。
       subtitle: '平台按口味挑的歌单合集（登录后会更贴合你）；点一张预览，不会自动订阅',
+      // 同「为你推荐的歌单」✓：区块头右侧是「查看全部」✓，箭头由货架自己画 ✓。
+      actionLabel: '查看全部',
+      onAction: () => context.go(app_paths.EXPLORE_PAGE),
       child: Column(
         children: [
           for (final platform in _personalizedPlaylistPlatforms)
             _playlistShelfSection(
               platform,
-              key: 'personalized-playlists-${platform.name}',
               state: _personalizedPlaylistState,
               emptyMessage: '该平台这次没有给合辑（也可能今天就是没有）。',
               onRetry: () => _retryPersonalizedPlaylists(platform),
@@ -436,7 +441,6 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   ///（"个性化合辑"免登录就有内容 ✓，给它加凭据指引就是误导 ✗）。
   Widget _playlistShelfSection(
     MusicPlatform platform, {
-    required String key,
     required RemoteLoadState<MusicPlatform, RemotePlaylistSummary> state,
     required String emptyMessage,
     required Future<void> Function() onRetry,
@@ -469,14 +473,14 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
                   ),
                 ),
               ),
-              // **头部箭头**（2026-10-12 ✓）：参考把「◀ ▶」放在标题那一行 ✓。
-              ShelfArrows(state: _shelfState(key)),
             ],
           ),
           const SizedBox(height: Spacing.sm),
           HorizontalShelf(
-            // 滚动状态交给头部 ✓（本组件因此不再画覆盖层箭头 ✓）。
-            scrollState: _shelfState(key),
+            // ⚠️ 2026-10-16 修正 ✓：**不再接头部箭头** ✗ ——
+            // 用户指出这两块要照探索页的「新专辑 / 歌单」样式 ✓，而那两处的箭头是
+            // `HorizontalShelf` **自带的覆盖层箭头**（只在还能横滑时才出现 ✓），
+            // 标题行右侧放的是「**查看全部**」✓，不是我加的那对 ◀ ▶ ✗。
             loading: state.isLoading(platform) && items.isEmpty,
             errorMessage: errorMessage,
             onRetry: onRetry,
