@@ -11,7 +11,6 @@ import 'package:pure_music/page/settings_page/online_music_capability_editor.dar
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_binding.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
-import 'package:pure_music/services/music_platform/provider/online_music_header_migration.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_settings_controller.dart';
 
@@ -33,7 +32,6 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   bool _loading = false;
 
   /// 迁移正在进行（防止按钮重入）。
-  bool _migrating = false;
   String? _error;
 
   /// 当前**运行中**的能力集合（D3b:a）：平台卡据此解释"为什么这个平台不能搜"。
@@ -268,58 +266,6 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   ///
   /// **先只报告识别结果**，用户明确放行后才执行 —— 也就是说，
   /// "改动用户配置"这件事永远发生在一次明确的点击之后（Spec §4.1/§4.2）。
-  Future<void> _migrateSensitiveHeaders() async {
-    // 迁移过程中不让按钮可重入：并发触发会产生两份报告与两个对话框
-    //（写入本身是幂等的，但用户看到的是自相矛盾的两份"结果"）。
-    if (_migrating) return;
-    setState(() => _migrating = true);
-    try {
-      await _runSensitiveHeaderMigration();
-    } finally {
-      if (mounted) setState(() => _migrating = false);
-    }
-  }
-
-  Future<void> _runSensitiveHeaderMigration() async {
-    final findings = _controller.identifySensitiveHeaders();
-    final sensitive = [
-      for (final finding in findings)
-        if (finding.disposition == OnlineMusicHeaderDisposition.sensitive)
-          finding,
-    ];
-    final needsUser = [
-      for (final finding in findings)
-        if (finding.disposition == OnlineMusicHeaderDisposition.needsUser)
-          finding,
-    ];
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => _MigrationPreviewDialog(
-        sensitive: sensitive,
-        needsUser: needsUser,
-        portable: _controller.isPortableBuild,
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    final report = await _controller.migrateSensitiveHeaders();
-    if (!mounted) return;
-    if (report == null) {
-      // 前置条件不成立（没有凭据读取口 ⇒ 无法回读校验）：**宁可不迁移**。
-      showTextOnSnackBar(
-        '无法回读校验凭据写入，已取消迁移（未改动任何配置）',
-        variant: ToastVariant.error,
-      );
-      return;
-    }
-
-    await showDialog<void>(
-      context: context,
-      builder: (context) => _MigrationOutcomeDialog(report: report),
-    );
-    if (mounted) setState(() {});
-  }
 
   Future<void> _openCredentialDialog(
     OnlineMusicProviderDefinition provider,
@@ -516,18 +462,6 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
         // 它们不在单个条目上，因此单独列在这里 —— 以前它们在界面上完全看不到。
         for (final issue in settings.legacyKnobIssues()) _SettingsHint(issue),
         if (settings.legacyKnobIssues().isNotEmpty) const SizedBox(height: 12),
-        const _SettingsSectionTitle('凭据安全'),
-        SettingsTile(
-          description: '检查并迁移敏感请求头',
-          subtitle:
-              '把配置里以明文保存的敏感请求头（Cookie / Authorization 等）'
-              '搬进系统凭据管理器，配置里只留引用；先给你看识别结果，确认后才动手',
-          action: FilledButton.icon(
-            onPressed: _migrating ? null : _migrateSensitiveHeaders,
-            icon: const Icon(Symbols.security),
-            label: Text(_migrating ? '迁移中' : '检查'),
-          ),
-        ),
         const SizedBox(height: 24),
         const _SettingsSectionTitle('平台'),
         if (_controller.hasPendingRestart)
@@ -570,54 +504,11 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
         const SizedBox(height: 24),
         const _SettingsSectionTitle('播放音质'),
         const _DefaultQualityTile(),
-        const SizedBox(height: 24),
-        _buildRouteDiagnosticsSection(),
-      ],
-    );
-  }
-
-  /// P-29：**诊断出口**（Spec §6.4：回退静默但必须可观测）。
-  ///
-  /// 内容全部由服务层拼成"人类可读且已脱敏"的行（平台名 / 能力名 / 试过谁 / 为什么换 /
-  /// 最后谁成功），界面只做渲染 —— 应用层不得引用 Provider 层的配置与能力枚举符号。
-  /// 拿不到诊断源（例如测试替身）或还没有记录时，整段不渲染。
-  Widget _buildRouteDiagnosticsSection() {
-    final service = context.read<OnlineMusicService?>();
-    // 用模式匹配取（而不是 `is` + 三元）：窄接口与 `OnlineMusicService` 无继承关系，
-    // 这里只关心"这个 service 顺带实现了诊断接口吗"。
-    final entries = switch (service) {
-      OnlineMusicDiagnosticsSource(:final routeDiagnostics) => routeDiagnostics,
-      _ => const <OnlineMusicDiagnosticsEntry>[],
-    };
-    if (entries.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _SettingsSectionTitle('路由诊断'),
-        const _SettingsHint(
-          '回退是静默的，但必须可查：下面是最近几次「平台 / 能力」分发，'
-          '按"试过谁（失败原因）→ 最后谁成功"排列。只读，不含任何凭据。',
-        ),
-        const SizedBox(height: 8),
-        for (final entry in entries.take(_diagnosticsDisplayLimit))
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text(
-              entry.summary,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-        if (entries.length > _diagnosticsDisplayLimit)
-          _SettingsHint(
-            '仅显示最近 $_diagnosticsDisplayLimit 条（共 ${entries.length} 条）。',
-          ),
       ],
     );
   }
 }
 
-/// 诊断区块最多显示多少条（内存里保留 32 条，界面不必全铺开）。
-const _diagnosticsDisplayLimit = 8;
 
 int _enabledPlatformCount(OnlineMusicSettings settings) =>
     builtinMusicPlatforms.where(settings.isPlatformEnabled).length;
@@ -1158,151 +1049,6 @@ class _ProviderDialogState extends State<_ProviderDialog> {
   }
 }
 
-/// 迁移前的**识别结果**（只列名称/槽位/判定，绝不显示值）。
-///
-/// 用户在这里放行之前，一个字节都不会被写。
-class _MigrationPreviewDialog extends StatelessWidget {
-  const _MigrationPreviewDialog({
-    required this.sensitive,
-    required this.needsUser,
-    required this.portable,
-  });
-
-  final List<OnlineMusicHeaderFinding> sensitive;
-  final List<OnlineMusicHeaderFinding> needsUser;
-
-  /// 便携版：无法持久保存秘密 ⇒ 不给"迁移"这个按钮，并说明明文仍在。
-  final bool portable;
-
-  @override
-  Widget build(BuildContext context) {
-    // 只有 `actionable` 的项**这次真的会被搬**（已带引用/空值的会被跳过）——
-    // 与迁移计划共用同一个判据，避免"先说将迁移 N 项、结果报无需迁移"。
-    final toMigrate = [
-      for (final finding in sensitive)
-        if (finding.actionable) finding,
-    ];
-    final alreadyReferenced = [
-      for (final finding in sensitive)
-        if (!finding.actionable) finding,
-    ];
-    return AlertDialog(
-      title: const Text('敏感请求头：识别结果'),
-      content: SizedBox(
-        width: 560,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('将迁移（${toMigrate.length} 项）：'),
-              const SizedBox(height: 4),
-              if (toMigrate.isEmpty)
-                const Text('（没有需要迁移的明文敏感请求头）')
-              else
-                for (final finding in toMigrate) Text('· ${finding.summary}'),
-              if (alreadyReferenced.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text('已用安全凭据引用（${alreadyReferenced.length} 项，本次不动）：'),
-                const SizedBox(height: 4),
-                for (final finding in alreadyReferenced)
-                  Text('· ${finding.summary}'),
-              ],
-              if (needsUser.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text('待你裁定（${needsUser.length} 项，本次不会迁移）：'),
-                const SizedBox(height: 4),
-                for (final finding in needsUser) Text('· ${finding.summary}'),
-                const Text(
-                  '这些请求头的名字不在已知敏感名单里，只是"值看起来像秘密"。'
-                  '要迁移它们，请在对应能力编辑器里手动勾选「敏感」。',
-                ),
-              ],
-              const SizedBox(height: 12),
-              if (portable)
-                const Text(
-                  '便携版无法安全持久保存秘密：本次不做迁移，'
-                  '配置里的明文会原样保留。请改用安装版后再迁移。',
-                )
-              else
-                const Text(
-                  '确认后：先写入系统凭据管理器 → 立即回读逐字节校验 → '
-                  '全部成功才改写配置并移除明文。任何一步失败都会整条回滚；'
-                  '回滚失败会停止整个迁移并报告。',
-                ),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: Text(portable ? '知道了' : '取消'),
-        ),
-        if (!portable)
-          FilledButton(
-            onPressed: toMigrate.isEmpty
-                ? null
-                : () => Navigator.of(context).pop(true),
-            child: const Text('开始迁移'),
-          ),
-      ],
-    );
-  }
-}
-
-/// 迁移结果：逐条目状态 + 停止原因（都只含名称与判定）。
-class _MigrationOutcomeDialog extends StatelessWidget {
-  const _MigrationOutcomeDialog({required this.report});
-
-  final OnlineMusicHeaderMigrationReport report;
-
-  @override
-  Widget build(BuildContext context) {
-    final lines = <String>[
-      for (final outcome in report.entries)
-        '· ${outcome.providerId}：${onlineMusicMigrationEntryLabel(outcome.status)}'
-            '${outcome.migratedHeaderNames.isEmpty ? '' : '（${outcome.migratedHeaderNames.join('、')}）'}'
-            '${outcome.reason == null ? '' : '\n    ${outcome.reason}'}',
-    ];
-    return AlertDialog(
-      title: Text(
-        // **失败优先**：全条目都写失败（回滚成功后 stopped 为 false、migratedCount 为 0）时
-        // 不能说"没有需要迁移的内容" —— 那是假阳性成功（反模式 3）。
-        report.anyFailure
-            ? '迁移未完成'
-            : report.stopped
-            ? '迁移已停止'
-            : (report.migratedCount > 0 ? '迁移完成' : '没有需要迁移的内容'),
-      ),
-      content: SizedBox(
-        width: 560,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (report.stopReason != null) ...[
-                Text('停止原因：${report.stopReason}'),
-                const SizedBox(height: 8),
-              ],
-              if (report.portable) const Text('便携版：本次未做任何迁移，明文仍在配置里。'),
-              for (final line in lines) Text(line),
-              const SizedBox(height: 8),
-              const Text('改动会在下次启动时生效。'),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('关闭'),
-        ),
-      ],
-    );
-  }
-}
 
 class _ProviderApiKeyDialog extends StatefulWidget {
   const _ProviderApiKeyDialog({

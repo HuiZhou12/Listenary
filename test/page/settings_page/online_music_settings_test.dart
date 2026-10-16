@@ -13,7 +13,6 @@ import 'package:pure_music/services/music_platform/declarative/declarative_http_
 import 'package:pure_music/services/music_platform/declarative/declarative_request_builder.dart';
 import 'package:pure_music/services/music_platform/online_music_composition.dart';
 // P-29：诊断出口（窄接口 + 已本地化/已脱敏的 DTO）。
-import 'package:pure_music/services/music_platform/online_music_diagnostics.dart';
 
 const _apiKey = 'chksz_SETTINGS_TEST_ONLY';
 
@@ -1100,185 +1099,9 @@ void main() {
 
   // ------------------------------------------------------------------ F0-5
 
-  /// 带明文敏感头 + 一个"值可疑但名字未命中"的条目。
-  OnlineMusicSettings migrationSettings() => OnlineMusicSettings.fromJson({
-    'providers': [
-      {
-        'id': 'selfData',
-        'baseUrl': 'https://self.invalid',
-        'auth': {'kind': 'none'},
-        'capabilities': {
-          'search': Map<String, Object?>.from(f04SearchBindingJson())
-            ..['request'] = {
-              ...(f04SearchBindingJson()['request']! as Map<String, Object?>),
-              'headers': const [
-                {
-                  'name': 'Cookie',
-                  'value': 'session=FAKE_COOKIE_UI_MIGRATION_TEST_ONLY',
-                },
-                {'name': 'X-Weird', 'value': 'Ab3Kd9Zx7Qm2Pl5R'},
-              ],
-            },
-        },
-      },
-    ],
-  });
 
-  testWidgets('F0-5 迁移入口：先只给识别结果，确认后才动手（可疑项不迁移）', (tester) async {
-    const cookiePlaintext = 'session=FAKE_COOKIE_UI_MIGRATION_TEST_ONLY';
-    final settings = migrationSettings();
-    final credentials = _FakeCredentialAccess();
-    final store = _MemorySettingsStore(settings);
-    final controller = OnlineMusicProviderSettingsController(
-      activeSettings: settings,
-      store: store,
-      fallbackCredentials: credentials,
-      credentialReader: credentials,
-      // ⚠️ `portableBuild` 的编译期默认值是 **true**（便携版是默认产物形态），
-      // 所以想覆盖"真的迁移"这条路径必须显式声明这是安装版构建。
-      isPortableBuild: false,
-    );
-    addTearDown(controller.dispose);
-    await pumpPanel(tester, controller);
 
-    await tester.tap(find.text('检查'));
-    await tester.pumpAndSettle();
 
-    // 第一步：**只识别**。名字命中的列出槽位，形态可疑的列成"待你裁定"。
-    expect(find.text('敏感请求头：识别结果'), findsOneWidget);
-    expect(find.textContaining('Cookie'), findsWidgets);
-    expect(find.textContaining('待你裁定'), findsWidgets);
-    expect(find.textContaining('X-Weird'), findsWidgets);
-    // 界面里不得出现任何值。
-    expect(find.textContaining(cookiePlaintext), findsNothing);
-    // 还没动手：没有写凭据、没有改配置。
-    expect(credentials.saved, isEmpty);
-    expect(store.writes, 0);
-
-    await tester.tap(find.text('开始迁移'));
-    await tester.pumpAndSettle();
-
-    // 第二步：执行并报告结果。
-    expect(find.text('迁移完成'), findsOneWidget);
-    expect(credentials.saved.keys.single, contains('cookie'));
-    expect(credentials.saved.values.single, cookiePlaintext);
-    final serialized = jsonEncode(store.value.toJson());
-    expect(serialized, isNot(contains(cookiePlaintext)));
-    // 可疑项**没有被迁移**：原样保留（等用户自己裁定）。
-    expect(serialized, contains('Ab3Kd9Zx7Qm2Pl5R'));
-  });
-
-  testWidgets('F0-5 便携版：只提示不可迁移，不给"开始迁移"按钮', (tester) async {
-    final settings = migrationSettings();
-    final credentials = _FakeCredentialAccess();
-    final store = _MemorySettingsStore(settings);
-    final controller = OnlineMusicProviderSettingsController(
-      activeSettings: settings,
-      store: store,
-      fallbackCredentials: credentials,
-      credentialReader: credentials,
-      isPortableBuild: true,
-    );
-    addTearDown(controller.dispose);
-    await pumpPanel(tester, controller);
-
-    await tester.tap(find.text('检查'));
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining('便携版无法安全持久保存秘密'), findsOneWidget);
-    expect(find.textContaining('明文会原样保留'), findsOneWidget);
-    expect(find.text('开始迁移'), findsNothing);
-    expect(find.text('知道了'), findsOneWidget);
-
-    await tester.tap(find.text('知道了'));
-    await tester.pumpAndSettle();
-
-    expect(credentials.saved, isEmpty);
-    expect(store.writes, 0);
-  });
-
-  testWidgets('F0-6 迁移失败时标题不得说"没有需要迁移的内容"', (tester) async {
-    final settings = migrationSettings();
-    final credentials = _FakeCredentialAccess()..failWrites = true;
-    final store = _MemorySettingsStore(settings);
-    final controller = OnlineMusicProviderSettingsController(
-      activeSettings: settings,
-      store: store,
-      fallbackCredentials: credentials,
-      credentialReader: credentials,
-      isPortableBuild: false,
-    );
-    addTearDown(controller.dispose);
-    await pumpPanel(tester, controller);
-
-    await tester.tap(find.text('检查'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('开始迁移'));
-    await tester.pumpAndSettle();
-
-    // 全部条目写失败、回滚成功后 stopped 仍是 false ⇒ 标题**必须**看失败，
-    // 否则会出现"标题说没东西要迁移、下面每行都写着失败"的自相矛盾（假阳性成功）。
-    expect(find.text('迁移未完成'), findsOneWidget);
-    expect(find.text('没有需要迁移的内容'), findsNothing);
-    expect(find.textContaining('失败：凭据写入失败'), findsOneWidget);
-    expect(store.writes, 0);
-    expect(credentials.saved, isEmpty);
-  });
-
-  testWidgets('F0-6 预览的"将迁移 N 项"只数真的会被搬的项', (tester) async {
-    // 一项是真的明文（会被搬），一项已经带引用（本次不动）。
-    final settings = OnlineMusicSettings.fromJson({
-      'providers': [
-        {
-          'id': 'selfData',
-          'baseUrl': 'https://self.invalid',
-          'auth': {'kind': 'none'},
-          'capabilities': {
-            'search': Map<String, Object?>.from(f04SearchBindingJson())
-              ..['request'] = {
-                ...(f04SearchBindingJson()['request']! as Map<String, Object?>),
-                'headers': const [
-                  {
-                    'name': 'Cookie',
-                    'value': 'session=FAKE_COOKIE_UI_MIGRATION_TEST_ONLY',
-                  },
-                  {
-                    'name': 'Authorization',
-                    'value': '',
-                    'sensitive': true,
-                    'reference': 'selfData/search/authorization',
-                  },
-                ],
-              },
-          },
-        },
-      ],
-    });
-    final credentials = _FakeCredentialAccess();
-    final store = _MemorySettingsStore(settings);
-    final controller = OnlineMusicProviderSettingsController(
-      activeSettings: settings,
-      store: store,
-      fallbackCredentials: credentials,
-      credentialReader: credentials,
-      isPortableBuild: false,
-    );
-    addTearDown(controller.dispose);
-    await pumpPanel(tester, controller);
-
-    await tester.tap(find.text('检查'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('将迁移（1 项）：'), findsOneWidget);
-    expect(find.textContaining('已用安全凭据引用（1 项，本次不动）'), findsOneWidget);
-
-    await tester.tap(find.text('开始迁移'));
-    await tester.pumpAndSettle();
-
-    // 说的 1 项就是真的搬了 1 项：不会先说 N 项、结果报"无需迁移"。
-    expect(find.text('迁移完成'), findsOneWidget);
-    expect(credentials.saved.keys.single, contains('cookie'));
-  });
 
   // ------------------------------------------------------------------ F1-e（P-23）
 
@@ -2330,25 +2153,6 @@ void main() {
 
   // ------------------------------------------------------------------ F2（P-29）
 
-  testWidgets('★ F2 P-29 设置页显示路由诊断（只读、纯文本、不含凭据）', (tester) async {
-    final controller = _controller();
-    addTearDown(controller.dispose);
-    await pumpPanel(tester, controller, service: _DiagnosticsOnlyService());
-
-    // 能力清单变长（2026-10-12 起 13 项）⇒ 诊断区块可能落在惰性列表下方 ✗
-    // ⇒ 用**普通滚动查找**（不能用 `scrollCapabilityFormTo`：那是"能力编辑器表单"专用 ✓）。
-    await tester.scrollUntilVisible(
-      find.text('路由诊断'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-
-    expect(find.text('路由诊断'), findsOneWidget);
-    expect(find.textContaining('网易云/搜索'), findsOneWidget);
-    expect(find.textContaining('neteaseA'), findsOneWidget);
-    expect(find.textContaining('neteaseB（成功）'), findsOneWidget);
-    expect(find.textContaining('SECRET'), findsNothing);
-  });
 
   // ------------------------------------------------------------------ F2（P-36）
 
@@ -2735,34 +2539,6 @@ String _jsonViewText(WidgetTester tester) => tester
 
 /// 只提供诊断的最小替身：其余成员用 `noSuchMethod` 兜住
 /// （这正是"诊断是**可选**出口"的体现 —— 不实现它就等于这一版没有诊断）。
-final class _DiagnosticsOnlyService
-    implements OnlineMusicService, OnlineMusicDiagnosticsSource {
-  @override
-  OnlineMusicCapabilities get capabilities => OnlineMusicCapabilities(
-    searchablePlatforms: const [],
-    resolvablePlatforms: const [],
-  );
-
-  @override
-  List<OnlineMusicDiagnosticsEntry> get routeDiagnostics => const [
-    OnlineMusicDiagnosticsEntry(
-      platformLabel: '网易云',
-      capabilityLabel: '搜索',
-      attempts: ['neteaseA（网络）'],
-      winnerProviderId: 'neteaseB',
-    ),
-  ];
-
-  @override
-  void dispose() {}
-
-  /// 面板的"播放音质"区块会问档位；这个替身没有声明 ⇒ 空表（UI 走内部档位回落）。
-  @override
-  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) => const [];
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
 
 /// 各能力的**校验通过**夹具：路径与字段名都取自真实配方（`docs/dev/netease-bindings/`）。
 OnlineMusicDeclarativeCapabilityBinding validBindingFor(
