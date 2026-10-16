@@ -211,13 +211,25 @@ OnlineMusicComposition createOnlineMusicComposition({
 
 /// 一个条目对外就是一个 Provider：内部按能力把调用分派给内置实现或声明式引擎。
 final class _ConfiguredMusicProvider implements OnlineMusicProvider {
+  // ⚠️ 2026-10-16：这四个方法曾被**自动补桩**写成 `throw UnsupportedError(...)` ✗
+  // ⇒ 后果：官方的推荐/关注能力**在运行期永远调不到真正的实现** ✗
+  //（试跑走另一条链路 ⇒ 试跑正常、主页一直失败 ✗）。它们必须和其它能力一样**按能力转发** ✓。
   @override
   Future<List<RemotePlaylistSummary>> fetchPersonalizedPlaylists({
     required MusicPlatform platform,
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Personalized playlists are not implemented here');
+  }) {
+    final delegate = _delegate(OnlineMusicCapability.personalizedPlaylists);
+    if (delegate == null) return Future.error(unsupportedCapability());
+    return delegate.fetchPersonalizedPlaylists(
+      platform: platform,
+      limit: limit,
+      offset: offset,
+      cancelToken: cancelToken,
+    );
+  }
 
   @override
   Future<List<OnlineArtistSummary>> fetchFollowedArtists({
@@ -225,7 +237,16 @@ final class _ConfiguredMusicProvider implements OnlineMusicProvider {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Followed artists are not implemented here');
+  }) {
+    final delegate = _delegate(OnlineMusicCapability.followedArtists);
+    if (delegate == null) return Future.error(unsupportedCapability());
+    return delegate.fetchFollowedArtists(
+      platform: platform,
+      limit: limit,
+      offset: offset,
+      cancelToken: cancelToken,
+    );
+  }
 
   @override
   Future<List<RemotePlaylistSummary>> fetchRecommendedPlaylists({
@@ -233,7 +254,16 @@ final class _ConfiguredMusicProvider implements OnlineMusicProvider {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Recommended playlists are not implemented here');
+  }) {
+    final delegate = _delegate(OnlineMusicCapability.recommendedPlaylists);
+    if (delegate == null) return Future.error(unsupportedCapability());
+    return delegate.fetchRecommendedPlaylists(
+      platform: platform,
+      limit: limit,
+      offset: offset,
+      cancelToken: cancelToken,
+    );
+  }
 
   @override
   Future<List<MusicTrack>> fetchRecommendedTracks({
@@ -241,7 +271,16 @@ final class _ConfiguredMusicProvider implements OnlineMusicProvider {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Recommended tracks are not implemented here');
+  }) {
+    final delegate = _delegate(OnlineMusicCapability.recommendedTracks);
+    if (delegate == null) return Future.error(unsupportedCapability());
+    return delegate.fetchRecommendedTracks(
+      platform: platform,
+      limit: limit,
+      offset: offset,
+      cancelToken: cancelToken,
+    );
+  }
 
   _ConfiguredMusicProvider({
     required this.providerId,
@@ -545,13 +584,15 @@ final class _ConfiguredMusicProvider implements OnlineMusicProvider {
 /// 但它在**能力声明上与真实实现一致** —— 否则平台卡与路由会把它当"没有这个条目"，
 /// 用户看到的是"没有可用来源"而不是"你的服务地址填错了"。
 final class _UnusableBaseUrlProvider implements OnlineMusicProvider {
+  // ⚠️ 2026-10-16：同样是被**自动补桩**顶掉的四个方法 ✗ ⇒ 这里本该报"服务地址无效"
+  // 这个**可读的配置错误** ✓，而不是"未实现" ✗（两者对用户的意思完全不同 ✓）。
   @override
   Future<List<RemotePlaylistSummary>> fetchPersonalizedPlaylists({
     required MusicPlatform platform,
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Personalized playlists are not implemented here');
+  }) => Future.error(_error());
 
   @override
   Future<List<OnlineArtistSummary>> fetchFollowedArtists({
@@ -559,7 +600,7 @@ final class _UnusableBaseUrlProvider implements OnlineMusicProvider {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Followed artists are not implemented here');
+  }) => Future.error(_error());
 
   @override
   Future<List<RemotePlaylistSummary>> fetchRecommendedPlaylists({
@@ -567,7 +608,7 @@ final class _UnusableBaseUrlProvider implements OnlineMusicProvider {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Recommended playlists are not implemented here');
+  }) => Future.error(_error());
 
   @override
   Future<List<MusicTrack>> fetchRecommendedTracks({
@@ -575,7 +616,7 @@ final class _UnusableBaseUrlProvider implements OnlineMusicProvider {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Recommended tracks are not implemented here');
+  }) => Future.error(_error());
 
   _UnusableBaseUrlProvider({
     required this.providerId,
