@@ -444,7 +444,10 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   }) {
     final scheme = Theme.of(context).colorScheme;
     final items = state.items(platform);
-    final width = _cardWidth;
+    // **与探索页的「歌单 / 新专辑」卡片同一套封面格式** ✓（2026-10-16 用户指令 ✓）：
+    // 探索页三处卡片都是 `_cardWidth * 1.15`（封面整体放大 15% ✓，R100 起的既定尺寸 ✓）；
+    // 主页这两块歌单卡此前用的是 `_cardWidth` ✗ ⇒ 看起来"小一号" ✓ ⇒ 对齐 ✓。
+    final width = _cardWidth * 1.15;
     final loadError = state.error(platform);
     final errorMessage = items.isEmpty && loadError != null
         ? (decorateError?.call(loadError) ?? loadError)
