@@ -138,8 +138,8 @@ void main() {
   testWidgets('保证 1：空数据时给出可读的空状态，且配置说明可用', (tester) async {
     await pumpHome(tester, service: _HomeService());
 
-    // 2026-10-12 主页按用户给的 YT 图重置 ✓ ⇒ 区块与顺序都变了 ✓（这里只钉**关键几个** ✓，
-    // 顺序：问候头之后 再听一遍 → 好久没听 → … 收藏/歌单 … → 来自平台的歌单 → 平台能力 ✓）。
+    // 2026-10-12 主页按用户给的 YT 图重置 ✓ ⇒ 区块与顺序都变了 ✓（这里只钉**关键几个** ✓）。
+    // 2026-10-16：**「来自平台的歌单」与「新歌上线」已按用户指令删除** ✗ ⇒ 从这份清单里去掉 ✓。
     // ⚠️ 第二块**已改名**：原「老歌重温」→「**好久没听**」✓ —— 用户指出"老歌"有歧义 ✓，
     // 而我们**没有发行年份** ✗（说"90 年代"就是编数据 ✗）⇒ 采用"确实听过、但好久没听"这个读法 ✓。
     final titles = [
@@ -147,7 +147,6 @@ void main() {
       '好久没听',
       '我的收藏',
       '我的在线歌单',
-      '来自平台的歌单',
       '平台能力',
     ];
     for (final title in titles) {
@@ -156,12 +155,6 @@ void main() {
     expect(find.textContaining('还没有在线播放记录'), findsOneWidget);
     expect(find.textContaining('还没有收藏'), findsOneWidget);
     expect(find.textContaining('还没有自建歌单'), findsOneWidget);
-    // 没有任何平台具备歌单列表能力 ⇒ 明确说明"怎么才会有"，而不是假装有内容。
-    expect(find.textContaining('当前没有可用的「歌单列表」服务'), findsOneWidget);
-    // F1 P-02：指引必须指向**真正能配置能力的地方**（服务提供商 → 能力配置）。
-    // 旧文案写"在设置的平台卡里配置「歌单列表」能力"——平台卡只能选来源，配不了能力。
-    expect(find.textContaining('服务提供商'), findsOneWidget);
-    expect(find.textContaining('在设置的平台卡里'), findsNothing);
 
     // 「平台能力」是诊断信息：默认收起，展开后三个平台都在且都显示未配置。
     expect(find.text('未配置'), findsNothing, reason: '收起时不应渲染平台行');
@@ -226,78 +219,7 @@ void main() {
     );
   });
 
-  testWidgets('保证 4：平台歌单按平台分组，单平台失败不影响其它平台', (tester) async {
-    await pumpHome(
-      tester,
-      service: _HomeService(
-        capabilities: OnlineMusicCapabilities(
-          searchablePlatforms: const [],
-          resolvablePlatforms: const [],
-          playlistCollectionPlatforms: const [
-            MusicPlatform.netease,
-            MusicPlatform.qq,
-          ],
-        ),
-        collections: const {
-          MusicPlatform.netease: [
-            RemotePlaylistSummary(
-              platform: MusicPlatform.netease,
-              id: '1',
-              name: '网易云歌单',
-              creator: '甲',
-            ),
-          ],
-        },
-        // QQ 那次会抛错：验证单平台失败隔离。
-        failingCollections: const {MusicPlatform.qq},
-      ),
-    );
 
-    expect(find.text('网易云歌单'), findsOneWidget);
-    // 来源与详情都在卡片上（详情行 + 轻量来源标记），且来源取自曲目/歌单自己的 platform。
-    final card = tester.widget<RemoteMediaCard>(find.byType(RemoteMediaCard));
-    expect(card.details, '歌单 · 甲');
-    expect(card.sourceLabel, '网易云');
-    // QQ 分组显示自己的错误（失败文案），不影响网易云的结果。
-    expect(find.textContaining('平台歌单读取失败'), findsOneWidget);
-    expect(find.text('订阅'), findsOneWidget);
-  });
-
-  testWidgets('保证 5：订阅平台歌单会把 (平台, ID) 交出去', (tester) async {
-    final service = _HomeService(
-      capabilities: OnlineMusicCapabilities(
-        searchablePlatforms: const [],
-        resolvablePlatforms: const [],
-        playlistCollectionPlatforms: const [MusicPlatform.qq],
-      ),
-      collections: const {
-        MusicPlatform.qq: [
-          RemotePlaylistSummary(
-            platform: MusicPlatform.qq,
-            id: '7729596131',
-            name: 'QQ 歌单',
-          ),
-        ],
-      },
-    );
-    final playlistService = _PlaylistRecordingService();
-    subscriptions.dispose();
-    subscriptions = OnlinePlaylistController(
-      repository: SynchronousFuture(repository),
-      service: playlistService,
-    );
-
-    await pumpHome(tester, service: service);
-    await tester.tap(find.text('订阅'));
-    await tester.pumpAndSettle();
-
-    expect(playlistService.requestedPlaylists, hasLength(1));
-    expect(
-      playlistService.requestedPlaylists.single.platform,
-      MusicPlatform.qq,
-    );
-    expect(playlistService.requestedPlaylists.single.id, '7729596131');
-  });
 
   testWidgets('保证 6：窄窗口下不溢出：平台能力与横滑歌单卡片都能收进宽度', (tester) async {
     tester.view.physicalSize = const Size(420, 720);
@@ -354,27 +276,29 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('再听一遍'), findsOneWidget);
 
-    // 滚到「来自平台的歌单」区：横滑卡片同样不能在窄窗口里溢出。
-    // 2026-10-12 主页重置后有十几个货架 ✓ ⇒ 一次拖 700 已经够不到了 ✗ ⇒
-    // 用 `scrollUntilVisible` 一直滚到它出现为止 ✓（比"猜一个像素数"稳 ✓）。
+    // 2026-10-16：平台歌单与「新歌上线」两块已按用户指令删除 ✗ ⇒ 这里改看**再听一遍**那张
+    // 横滑卡片货架 ✓（它是页面里第一条货架 ✓）。断言意图不变 ✓：
+    // 窄窗口下横滑卡片也必须能收进宽度 ✓，不能溢出 ✗。
     await tester.scrollUntilVisible(
-      find.text('来自平台的歌单'),
+      find.text('再听一遍'),
       400,
       scrollable: find.byType(Scrollable).first,
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('来自平台的歌单'), findsOneWidget);
-    expect(find.textContaining('一个名字很长的平台歌单标题'), findsOneWidget);
+    expect(find.text('再听一遍'), findsOneWidget);
+    // 这一条是刚播过的那首 ✓（来源标记也必须照样在卡片上 ✓）。
+    // 注意标题是 `_track` 造的 `Track q1` ✓，不是 id 本身 ✓。
+    expect(find.text('Track q1'), findsWidgets);
 
     // 货架高度必须等于卡片自己声明的高度（防止两处各算一次后漂移并溢出）。
     final shelf = tester.widget<HorizontalShelf>(
       find.byType(HorizontalShelf).first,
     );
-    expect(shelf.itemCount, 1);
+    expect(shelf.itemCount, greaterThan(0));
     expect(
       shelf.itemHeight,
-      RemoteMediaCard.extentFor(width: shelf.itemWidth, hasFooter: true),
+      RemoteMediaCard.extentFor(width: shelf.itemWidth, hasFooter: false),
     );
   });
 
@@ -409,46 +333,7 @@ void main() {
     expect(find.text('stub:${app_paths.FAVORITES_PAGE}|'), findsOneWidget);
   });
 
-  testWidgets('★ 来自平台的歌单「查看全部」→ 探索页（那里可以一直翻到底）', (tester) async {
-    await pumpHome(
-      tester,
-      service: _HomeService(
-        capabilities: OnlineMusicCapabilities(
-          searchablePlatforms: const [],
-          resolvablePlatforms: const [],
-          playlistCollectionPlatforms: const [MusicPlatform.netease],
-        ),
-      ),
-    );
 
-    await tester.tap(seeAllOf('来自平台的歌单'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('stub:${app_paths.EXPLORE_PAGE}|'), findsOneWidget);
-  });
-
-  testWidgets('★ 没有平台具备「歌单列表」能力时：给「去配置」而不是一个点开是空的「查看全部」', (
-    tester,
-  ) async {
-    await pumpHome(tester, service: _HomeService());
-
-    // 「查看全部」只有在**真有内容可看**时才该出现。
-    expect(seeAllOf('来自平台的歌单'), findsNothing);
-    expect(find.text('去配置'), findsWidgets);
-
-    final section = find.byType(ContentSection).at(
-      tester
-              .widgetList<ContentSection>(find.byType(ContentSection))
-              .toList()
-              .indexWhere((item) => item.title == '来自平台的歌单'),
-    );
-    await tester.tap(
-      find.descendant(of: section, matching: find.text('去配置')),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('stub:${app_paths.SETTINGS_PAGE}|'), findsOneWidget);
-  });
 
   testWidgets('★ 我的在线歌单「管理歌单」→ 歌单页', (tester) async {
     await pumpHome(tester, service: _HomeService());
@@ -496,55 +381,27 @@ void main() {
     );
   });
 
-  testWidgets('★ Home 有「新歌上线」货架（对齐参考 Home 的「新曲上线」，只对能播放的平台出现）', (
-    tester,
-  ) async {
-    await pumpHome(
-      tester,
-      service: _HomeService(
-        capabilities: OnlineMusicCapabilities(
-          searchablePlatforms: const [MusicPlatform.netease],
-          // 新歌 + 播放解析都有 ⇒ 该平台**可播放** ⇒ 新歌货架出现 ✓。
-          resolvablePlatforms: const [MusicPlatform.netease],
-          newSongPlatforms: const [MusicPlatform.netease],
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('新歌上线'), findsOneWidget);
-    // 平台没返回曲目 ⇒ **中性空态**（不是失败 ✓）。
-    expect(find.text('该平台没有返回新歌。'), findsOneWidget);
-    // 与参考一致：这一块只在**能播放**的平台出现 ✓（下面那条反向断言覆盖 ✓）。
-    expect(find.text('网易云'), findsWidgets);
-  });
 
   testWidgets('★ 刷新主页：真的重新拉取（不是只重画一遍）', (tester) async {
+    // 2026-10-16：「平台歌单」与「新歌上线」两只货架已按用户指令删除 ✗ ⇒
+    // 这里改盯**个性化合辑** ✓（它仍在 ✓）。判据不变 ✓：刷新必须真的**再请求一次** ✓。
     final service = _HomeService(
       capabilities: OnlineMusicCapabilities(
         searchablePlatforms: const [],
         resolvablePlatforms: const [],
-        playlistCollectionPlatforms: const [MusicPlatform.netease],
+        // 既要有该能力、又要打得开歌单详情 ⇒ 两条都要给 ✓（与主页的门槛一致 ✓）。
+        playlistPlatforms: const [MusicPlatform.netease],
+        personalizedPlaylistPlatforms: const [MusicPlatform.netease],
       ),
-      collections: const {
-        MusicPlatform.netease: [
-          RemotePlaylistSummary(
-            platform: MusicPlatform.netease,
-            id: '1',
-            name: '网易云歌单',
-          ),
-        ],
-      },
     );
     await pumpHome(tester, service: service);
-    expect(service.collectionCalls, 1, reason: '首次加载拉一次');
+    expect(service.personalizedCalls, 1, reason: '首次加载拉一次');
 
     await tester.tap(find.byTooltip('刷新主页'));
     await tester.pumpAndSettle();
 
     // 只断言"按钮存在"是不够的：接了空回调的按钮看起来一模一样。
-    expect(service.collectionCalls, 2, reason: '刷新必须真的再请求一次');
-    expect(find.text('网易云歌单'), findsOneWidget);
+    expect(service.personalizedCalls, 2, reason: '刷新必须真的再请求一次');
   });
 }
 
@@ -562,7 +419,10 @@ final class _HomeService implements OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Personalized playlists are not implemented here');
+  }) async {
+    personalizedCalls++;
+    throw UnsupportedError('Personalized playlists are not implemented here');
+  }
 
   @override
   Future<List<OnlineArtistSummary>> fetchFollowedArtists({
@@ -642,7 +502,6 @@ final class _HomeService implements OnlineMusicService {
   _HomeService({
     OnlineMusicCapabilities? capabilities,
     this.collections = const {},
-    this.failingCollections = const {},
   }) : capabilities =
            capabilities ??
            OnlineMusicCapabilities(
@@ -658,8 +517,9 @@ final class _HomeService implements OnlineMusicService {
   /// 「平台歌单」被请求了几次。用来验证**刷新真的重新拉取**，而不是只重画一遍。
   int collectionCalls = 0;
 
-  /// 这些平台的歌单列表会抛错（用来验证单平台失败隔离）。
-  final Set<MusicPlatform> failingCollections;
+  /// **个性化合辑**被请求了几次（2026-10-16 ✓）：删掉「平台歌单」之后，
+  /// 「刷新必须真的再请求一次」这条守卫改盯它 ✓。
+  int personalizedCalls = 0;
 
   @override
   Future<AggregatedSearchResult> searchAggregated({
@@ -679,12 +539,6 @@ final class _HomeService implements OnlineMusicService {
     required OnlineMusicCancelToken cancelToken,
   }) async {
     collectionCalls++;
-    if (failingCollections.contains(platform)) {
-      throw OnlineMusicException(
-        kind: OnlineMusicErrorKind.unavailable,
-        safeMessage: '${musicPlatformLabel(platform)} 平台歌单读取失败',
-      );
-    }
     return collections[platform] ?? const [];
   }
 
@@ -710,200 +564,6 @@ final class _HomeService implements OnlineMusicService {
     required String playlistId,
     required OnlineMusicCancelToken cancelToken,
   }) => throw UnsupportedError('playlist');
-
-  @override
-  Future<List<RemotePlaylistCategory>> fetchPlaylistCategories({
-    required MusicPlatform platform,
-    int limit = 30,
-    int offset = 0,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('categories');
-
-  @override
-  Future<List<RemotePlaylistSummary>> fetchChartList({
-    required MusicPlatform platform,
-    int limit = 30,
-    int offset = 0,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('charts');
-
-  @override
-  Future<List<MusicTrack>> fetchNewSongs({
-    required MusicPlatform platform,
-    int limit = 30,
-    int offset = 0,
-    required OnlineMusicCancelToken cancelToken,
-  }) async => const <MusicTrack>[];
-
-  @override
-  Future<MusicLyrics> fetchLyrics(
-    PlatformTrackRef ref, {
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('lyrics');
-
-  @override
-  String defaultQualityFor(MusicPlatform platform) => 'lossless';
-
-  @override
-  List<PlatformQualityTier> qualityTiersFor(MusicPlatform platform) => const [];
-
-  @override
-  PlatformQualitySelection selectQualityFor(
-    MusicPlatform platform, {
-    required String preference,
-  }) => PlatformQualitySelection(
-    requestValue: preference,
-    displayLabel: preference,
-    internalLevel: preference,
-  );
-
-  @override
-  void dispose() {}
-}
-
-/// 只记录订阅请求的服务替身（证明主页把 `(platform, id)` 传对了）。
-final class _PlaylistRecordingService implements OnlineMusicService {
-  @override
-  Future<List<RemotePlaylistSummary>> fetchPersonalizedPlaylists({
-    required MusicPlatform platform,
-    int limit = 30,
-    int offset = 0,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Personalized playlists are not implemented here');
-
-  @override
-  Future<List<OnlineArtistSummary>> fetchFollowedArtists({
-    required MusicPlatform platform,
-    int limit = 30,
-    int offset = 0,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Followed artists are not implemented here');
-
-  @override
-  Future<List<RemotePlaylistSummary>> fetchRecommendedPlaylists({
-    required MusicPlatform platform,
-    int limit = 30,
-    int offset = 0,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Recommended playlists are not implemented here');
-
-  @override
-  Future<List<MusicTrack>> fetchRecommendedTracks({
-    required MusicPlatform platform,
-    int limit = 30,
-    int offset = 0,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Recommended tracks are not implemented here');
-
-  @override
-  Future<List<OnlineArtistSummary>> searchArtists({
-    required MusicPlatform platform,
-    required String keyword,
-    int limit = 30,
-    int offset = 0,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Artist search is not implemented here');
-  @override
-  Future<List<OnlineAlbumSummary>> searchAlbums({
-    required MusicPlatform platform,
-    required String keyword,
-    int limit = 30,
-    int offset = 0,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Album search is not implemented here');
-  @override
-  Future<List<OnlineAlbumSummary>> fetchNewAlbums({
-    required MusicPlatform platform,
-    int limit = 30,
-    int offset = 0,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('New albums are not implemented here');
-  @override
-  Future<List<MusicTrack>> fetchArtistSongs({
-    required MusicPlatform platform,
-    required String artistId,
-    int limit = 30,
-    int offset = 0,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Artist songs are not implemented here');
-  @override
-  Future<List<OnlineAlbumSummary>> fetchArtistAlbums({
-    required MusicPlatform platform,
-    required String artistId,
-    int limit = 30,
-    int offset = 0,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Artist albums are not implemented here');
-  @override
-  Future<OnlineAlbum> fetchAlbum({
-    required MusicPlatform platform,
-    required String albumId,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Album detail is not implemented here');
-  @override
-  Future<OnlineArtist> fetchArtist({
-    required MusicPlatform platform,
-    required String artistId,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Artist detail is not implemented here');
-  final requestedPlaylists = <({MusicPlatform platform, String id})>[];
-
-  @override
-  final capabilities = OnlineMusicCapabilities(
-    searchablePlatforms: const [],
-    resolvablePlatforms: const [],
-    playlistPlatforms: const [MusicPlatform.qq],
-  );
-
-  @override
-  Future<AggregatedSearchResult> searchAggregated({
-    required Iterable<MusicPlatform> platforms,
-    required String keyword,
-    int limit = 30,
-    int offset = 0,
-    required OnlineMusicCancelToken cancelToken,
-  }) async => AggregatedSearchResult(perPlatform: const {}, failures: const {});
-
-  @override
-  Future<RemotePlaylist> fetchPlaylist({
-    required MusicPlatform platform,
-    required String playlistId,
-    required OnlineMusicCancelToken cancelToken,
-  }) async {
-    requestedPlaylists.add((platform: platform, id: playlistId));
-    return RemotePlaylist(
-      platform: platform,
-      id: playlistId,
-      name: 'QQ 歌单',
-      trackCount: 1,
-      tracks: [_track('q1', platform)],
-    );
-  }
-
-  @override
-  Future<List<RemotePlaylistSummary>> fetchPlaylistCollection({
-    required MusicPlatform platform,
-    int limit = 30,
-    int offset = 0,
-    String? categoryId,
-    required OnlineMusicCancelToken cancelToken,
-  }) async => const [];
-
-  @override
-  Future<MusicSearchPage> search({
-    required MusicPlatform platform,
-    required String keyword,
-    int limit = 30,
-    int offset = 0,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('search');
-
-  @override
-  Future<ResolvedStream> resolve(
-    PlatformTrackRef ref, {
-    required String requestedQuality,
-    required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('resolve');
 
   @override
   Future<List<RemotePlaylistCategory>> fetchPlaylistCategories({

@@ -8,6 +8,7 @@ import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/home_greeting_header.dart';
 import 'package:pure_music/component/home_placeholder_shelf.dart';
 import 'package:pure_music/component/horizontal_shelf.dart';
+import 'package:pure_music/component/new_song_shelf.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/platform_capability_view.dart';
@@ -15,17 +16,14 @@ import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
 import 'package:pure_music/component/shelf_arrows.dart';
 import 'package:pure_music/component/shelf_scroll_state.dart';
-import 'package:pure_music/component/track_grid.dart';
 import 'package:pure_music/services/online_history/rediscovery_engine.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/preference.dart';
-import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/online_history_controller.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
-import 'package:pure_music/services/music_platform/online_library/online_playlist_controller.dart';
 import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
 
 /// **聚合主页**：先把**你自己的东西**放前面，再是平台内容，最后才是配置诊断。
@@ -59,23 +57,6 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   PersonalOnlinePlaylistSnapshot? _favorites;
   bool _favoritesLoading = false;
   bool _favoritesFailed = false;
-
-  /// 有「歌单列表」能力的平台（服务层推导，未配置的平台不会出现在这里）。
-  List<MusicPlatform> _collectionPlatforms = const [];
-  final Set<MusicPlatform> _subscribing = {};
-
-  /// 平台歌单按平台各自加载（单平台失败不影响其它平台）。
-  final RemoteLoadState<MusicPlatform, RemotePlaylistSummary> remote =
-      RemoteLoadState<MusicPlatform, RemotePlaylistSummary>();
-
-  /// **「新歌上线」货架**（2026-10-12 ✓）：对齐参考 Home 里的 `新曲上线` ✓
-  ///（参考 Home 有 13 个货架，这是**能借**的那一类 ✓；推荐/视频类不借 ✓）。
-  ///
-  /// 只对**能播放**的平台出现 ✓（`playableNewSongPlatforms` ✓）——
-  /// 摆一堆点不响的曲目比不显示更糟 ✗。
-  List<MusicPlatform> _newSongPlatforms = const [];
-  final RemoteLoadState<MusicPlatform, MusicTrack> _newSongState =
-      RemoteLoadState<MusicPlatform, MusicTrack>();
 
   /// **「猜你喜欢」货架**（`recommendedTracks` 能力，2026-10-12 新增 ✓）。
   ///
@@ -175,8 +156,6 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     unawaited(history.refresh());
     unawaited(personal.load());
     unawaited(_loadFavorites());
-    unawaited(_loadCollections());
-    unawaited(_loadNewSongs());
     unawaited(_loadRecommended());
     unawaited(_loadRecommendedPlaylists());
     unawaited(_loadFollowedArtists());
@@ -190,8 +169,6 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     unawaited(personal.load());
     await Future.wait([
       _loadFavorites(),
-      _loadCollections(),
-      _loadNewSongs(),
       _loadRecommended(),
       _loadRecommendedPlaylists(),
       _loadFollowedArtists(),
@@ -224,39 +201,6 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     }
   }
 
-  Future<void> _loadNewSongs() async {
-    final service = context.read<OnlineMusicService?>();
-    final platforms = service == null
-        ? const <MusicPlatform>[]
-        : [
-            for (final platform in builtinMusicPlatforms)
-              if (service.capabilities.playableNewSongPlatforms.contains(
-                platform,
-              ))
-                platform,
-          ];
-    if (!mounted) return;
-    setState(() => _newSongPlatforms = platforms);
-    if (service == null) return;
-    await Future.wait([
-      for (final platform in platforms) _loadNewSong(service, platform),
-    ]);
-  }
-
-  Future<void> _loadNewSong(
-    OnlineMusicService service,
-    MusicPlatform platform,
-  ) => loadRemoteList(
-    _newSongState,
-    platform,
-    () => service.fetchNewSongs(
-      platform: platform,
-      limit: widget.collectionLimit,
-      offset: 0,
-      cancelToken: newCancelToken(),
-    ),
-    fallback: '读取该平台新歌失败',
-  );
 
   /// **推荐曲目**（`recommendedTracks` ✓）：与「新歌」同一套做法 ✓ ——
   /// 只对**能播放**的平台加载 ✓，单平台失败不影响其它平台 ✓。
@@ -366,12 +310,12 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
               message: '该平台这次没有给推荐（也可能今天就是没有）。',
             )
           else
-            // **三栏歌曲格**（2026-10-12 ✓，对齐参考的「猜你喜欢」✓）：
-            // 参考那一块是三栏并排的歌曲格 ✓（小方封面 + 加粗曲名 + 灰字「艺人 · 专辑」✓），
-            // **不是**横向货架、也不是单列列表 ✗；整块纵向铺开、要更多就翻页 ✓。
-            TrackGrid(
+            // **与探索页「新歌」同一份实现** ✓（2026-10-16 用户裁定 ✓）：
+            // 三栏行式条目 + 横向翻页 + 每页 4 行 ✓ —— 抽成 `NewSongShelf` ✓ 两页共用 ✓
+            //（抄一份"看起来差不多"的必然会慢慢走偏 ✗）。
+            NewSongShelf(
               tracks: tracks,
-              onTap: (track) => playOnlineSearchResult(
+              onPlay: (track) => playOnlineSearchResult(
                 context,
                 tracks: tracks,
                 selectedRef: track.ref,
@@ -763,166 +707,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     await _loadFollowedArtistsFor(service, platform);
   }
 
-  Widget _buildNewSongs() {    if (_newSongPlatforms.isEmpty) return const SizedBox.shrink();
-    return ContentSection(
-      title: '新歌上线',
-      subtitle: '各平台最近发布的曲目；点一行即从该平台的新歌开始播放',
-      actionLabel: '查看全部',
-      onAction: () => context.go(app_paths.EXPLORE_PAGE),
-      child: Column(
-        children: [
-          for (final platform in _newSongPlatforms) _buildNewSongSection(platform),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildNewSongSection(MusicPlatform platform) {
-    final scheme = Theme.of(context).colorScheme;
-    final tracks = _newSongState.items(platform);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: Spacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  musicPlatformLabel(platform),
-                  style: TextStyle(
-                    color: scheme.onSurfaceVariant,
-                    fontSize: AppType.caption,
-                    fontWeight: AppType.weightSemibold,
-                  ),
-                ),
-              ),
-              ShelfArrows(state: _shelfState('new-songs-${platform.name}')),
-            ],
-          ),
-          const SizedBox(height: Spacing.sm),
-          if (_newSongState.isLoading(platform) && tracks.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: Spacing.lg),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (tracks.isEmpty && _newSongState.error(platform) != null)
-            InlineFailureHint(
-              message: _newSongState.error(platform)!,
-              onRetry: () => _retryNewSongs(platform),
-            )
-          else if (tracks.isEmpty)
-            const InlineEmptyHint(
-              icon: Symbols.music_off,
-              message: '该平台没有返回新歌。',
-            )
-          else
-            // **改为货架卡片**（2026-10-12 ✓，对齐参考的「新曲上线」✓）：
-            // 参考那一块是**方形封面卡片**（标题 + 灰副标题 ✓），不是一行行的曲目 ✗。
-            HorizontalShelf(
-              scrollState: _shelfState('new-songs-${platform.name}'),
-              itemCount: tracks.length,
-              itemWidth: _cardWidth,
-              itemHeight: RemoteMediaCard.extentFor(
-                width: _cardWidth,
-                hasFooter: false,
-              ),
-              itemBuilder: (context, index) {
-                final track = tracks[index];
-                return RemoteMediaCard(
-                  width: _cardWidth,
-                  title: track.title,
-                  coverUri: track.coverUri,
-                  details: track.artistDisplay,
-                  sourceLabel: platformLabelForIdentityOnly(track.ref.identity),
-                  placeholderIcon: Symbols.music_note,
-                  onTap: () => _playNewSong(tracks, track),
-                  semanticLabel:
-                      '播放"${track.title} - ${track.artistDisplay}"',
-                );
-              },
-            ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _retryNewSongs(MusicPlatform platform) async {
-    final service = context.read<OnlineMusicService?>();
-    if (service == null) return;
-    await _loadNewSong(service, platform);
-  }
-
-  Future<void> _playNewSong(Iterable<MusicTrack> tracks, MusicTrack track) =>
-      playOnlineTrackSelection(
-        context,
-        OnlineTrackSelection.fromResultPage(
-          tracks: tracks,
-          selectedRef: track.ref,
-        ),
-      );
-
-  Future<void> _loadCollections() async {
-    final service = context.read<OnlineMusicService?>();
-    final platforms = service == null
-        ? const <MusicPlatform>[]
-        : [
-            for (final platform in builtinMusicPlatforms)
-              if (service.capabilities.playlistCollectionPlatforms.contains(
-                platform,
-              ))
-                platform,
-          ];
-    if (!mounted) return;
-    setState(() => _collectionPlatforms = platforms);
-    if (service == null) return;
-    await Future.wait([
-      for (final platform in platforms) _loadCollection(service, platform),
-    ]);
-  }
-
-  Future<void> _loadCollection(
-    OnlineMusicService service,
-    MusicPlatform platform,
-  ) => loadRemoteList(
-    remote,
-    platform,
-    () => service.fetchPlaylistCollection(
-      platform: platform,
-      limit: widget.collectionLimit,
-      offset: 0,
-      cancelToken: newCancelToken(),
-    ),
-    fallback: '读取该平台歌单失败',
-  );
-
-  /// 把平台歌单**订阅到本机**（复用既有订阅链路），成功后打开详情。
-  Future<void> _subscribe(RemotePlaylistSummary summary) async {
-    if (_subscribing.contains(summary.platform)) return;
-    setState(() => _subscribing.add(summary.platform));
-    final controller = context.read<OnlinePlaylistController>();
-    final saved = await controller.addOrRefresh(
-      platform: summary.platform,
-      remotePlaylistId: summary.id,
-    );
-    if (!mounted) return;
-    setState(() => _subscribing.remove(summary.platform));
-    if (saved == null) {
-      showTextOnSnackBar(
-        controller.snapshot.errorMessage ?? '订阅该歌单失败',
-        variant: ToastVariant.error,
-      );
-      return;
-    }
-    showTextOnSnackBar(
-      '已订阅「${saved.playlist.name}」',
-      variant: ToastVariant.success,
-    );
-    await context.push(
-      app_paths.ONLINE_PLAYLIST_DETAIL_PAGE,
-      extra: saved.localId,
-    );
-  }
 
   /// 货架里卡片的宽度：**统一取自 `RemoteMediaCard.widthFor`**（与 ResponsiveBuilder 同阈值），
   /// 不在每个页面各写一个断点。
@@ -978,8 +763,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
           // 本地更没有社区 ✗ ⇒ 两边都做不到 ⇒ 撤掉 ✓。
           // ⑨ 为你推荐的**歌单**（名字如实 ✓：平台给的是歌单 ✓；有该能力就是真货架 ✓）
           _buildRecommendedPlaylists(),
-          // ⑩ 新曲上线（真实：各平台新歌 ✓）
-          _buildNewSongs(),
+          // ⑩ 新曲上线：**已按用户指令删除** ✗（2026-10-16 ✓）——
+          // 主页不再重复探索页已有的「新歌」块 ✓（那边信息更全 ✓：可翻页、带平台筛选 ✓）。
           // ⑪ Recap：**用本机历史真做** ✓（2026-10-12 ✓）——
           // 官方 Recap 在这个服务上**实测 404** ✗（`/summary/annual` ✓），但**本地完全可做** ✓
           // ⇒ 按用户指令"能本地实现的就实现" ✓，并且**如实说明**这是本机数字 ✓（不冒充官方 Recap ✗）。
@@ -992,7 +777,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
           // ================= 图里没有、但我们本来就有的价值（保留 ✓）=================
           // 用户这轮的指令是"元素全部推翻、采用 YT 设计" ✓ —— 但这两块是我们**已有的真实能力** ✓
           // （各平台歌单 ✓ 与平台能力诊断 ✓），删掉是纯损失 ✗ ⇒ 放在最后保留 ✓，你要删说一句即可 ✓。
-          _buildCollections(service),
+          // 「来自平台的歌单」**已按用户指令删除** ✗（2026-10-16 ✓）——
+          // 探索页仍有「平台歌单」那一块 ✓（信息更全：分类筛选 ✓），主页不再重复 ✗。
           PlatformCapabilityView(
             capabilities: service?.capabilities,
             onConfigure: () => context.go(app_paths.SETTINGS_PAGE),
@@ -1295,121 +1081,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
             ),
     );
   }
-
-  // --------------------------------------------------------- 平台歌单列表
-
-  Widget _buildCollections(OnlineMusicService? service) {
-    if (service == null || _collectionPlatforms.isEmpty) {
-      return ContentSection(
-        title: '来自平台的歌单',
-        subtitle: '来自各平台自己的「歌单列表」能力',
-        actionLabel: '去配置',
-        onAction: () => context.go(app_paths.SETTINGS_PAGE),
-        child: const InlineEmptyHint(
-          icon: Symbols.info,
-          message:
-              '当前没有可用的「歌单列表」服务：先在「设置 → 在线音乐 → 服务提供商」里'
-              '为某个条目配置并试跑「歌单列表」能力（保存后重启生效），'
-              '再到平台卡里选它做该能力的来源。',
-        ),
-      );
-    }
-    return ContentSection(
-      title: '来自平台的歌单',
-      subtitle: '每个平台各自加载；一个平台失败不影响其它平台',
-      actionLabel: '查看全部',
-      onAction: () => context.go(app_paths.EXPLORE_PAGE),
-      child: Column(
-        children: [
-          for (final platform in _collectionPlatforms)
-            _buildPlatformCollection(platform),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPlatformCollection(MusicPlatform platform) {
-    final scheme = Theme.of(context).colorScheme;
-    final items = remote.items(platform);
-    final width = _cardWidth;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: Spacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  musicPlatformLabel(platform),
-                  style: TextStyle(
-                    color: scheme.onSurfaceVariant,
-                    fontSize: AppType.caption,
-                    fontWeight: AppType.weightSemibold,
-                  ),
-                ),
-              ),
-              ShelfArrows(
-                state: _shelfState('platform-playlists-${platform.name}'),
-              ),
-            ],
-          ),
-          const SizedBox(height: Spacing.sm),
-          HorizontalShelf(
-            scrollState: _shelfState('platform-playlists-${platform.name}'),
-            loading: remote.isLoading(platform),
-            errorMessage: remote.error(platform),
-            onRetry: () => _retryCollection(platform),
-            emptyMessage: '该平台没有返回歌单。',
-            emptyIcon: Symbols.queue_music,
-            itemCount: items.length,
-            itemWidth: width,
-            // 高度取自卡片的同一份声明：卡片变高时货架跟着变，不会溢出。
-            itemHeight: RemoteMediaCard.extentFor(
-              width: width,
-              hasFooter: true,
-            ),
-            itemBuilder: (context, index) {
-              final summary = items[index];
-              final busy = _subscribing.contains(platform);
-              return RemoteMediaCard(
-                width: width,
-                title: summary.name,
-                coverUri: summary.coverUri,
-                details: _detailsOf(summary),
-                sourceLabel: platformLabelForIdentityOnly(summary.identity),
-                placeholderIcon: Symbols.queue_music,
-                onTap: busy ? null : () => _subscribe(summary),
-                semanticLabel:
-                    '${summary.name}，来自${platformLabelForIdentityOnly(summary.identity)}，点击订阅并打开',
-                footer: TextButton(
-                  onPressed: busy ? null : () => _subscribe(summary),
-                  child: const Text('订阅'),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 平台歌单卡片：元信息行统一为「**类型 · …**」，类型是「歌单」。
-  String _detailsOf(RemotePlaylistSummary summary) {
-    final creator = summary.creator?.trim();
-    return [
-      '歌单',
-      if (creator != null && creator.isNotEmpty) creator,
-      if (summary.trackCount != null) '${summary.trackCount} 首',
-    ].join(' · ');
-  }
-
-  Future<void> _retryCollection(MusicPlatform platform) async {
-    final service = context.read<OnlineMusicService?>();
-    if (service == null) return;
-    await _loadCollection(service, platform);
-  }
 }
+
 
 class _PersonalPlaylistTile extends StatelessWidget {
   const _PersonalPlaylistTile({required this.playlist, required this.onTap});

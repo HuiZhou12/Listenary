@@ -6,11 +6,11 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/horizontal_shelf.dart';
+import 'package:pure_music/component/new_song_shelf.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/platform_capability_view.dart';
 import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
-import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/preference.dart';
@@ -659,7 +659,7 @@ class _ExplorePageState extends State<ExplorePage>
             // 参考里歌曲是"一栏一条的**行式 item**"（封面 + 歌名 + 艺人/专辑 ✓），
             // 三栏并排、用左右箭头**横向翻页** ✓ —— 不是卡片货架 ✗（上一版做错了 ✓）。
             // 这里没有"序号"：参考那块是榜单（序号=名次 ✓），新歌没有名次 ⇒ 不编号 ✓（不编造 ✓）。
-            _NewSongShelf(
+            NewSongShelf(
               tracks: tracks,
               onPlay: (track) => playOnlineSearchResult(
                 context,
@@ -1008,197 +1008,6 @@ Color _categoryAccent(ColorScheme scheme, int index) {
   return base.withHue((base.hue + index * 47) % 360).toColor();
 }
 
-/// **新歌区块的三栏歌曲货架**（2026-10-12 按用户图片重做 ✓）。
-///
-/// 每个 item 是**一行式条目**（封面 + 歌名 + 艺人/专辑 ✓）—— 不是卡片 ✗；
-/// 三栏并排 ✓，一页放不下就**横向翻页**（可滑动 ✓ 也可以用左右箭头 ✓）。
-/// 左右箭头只在**确实还有一页**时出现 ✓（第一页没有"上一页"、最后一页没有"下一页" ✓），
-/// 与其它货架的箭头规则一致 ✓。
-class _NewSongShelf extends StatefulWidget {
-  const _NewSongShelf({required this.tracks, required this.onPlay});
-
-  final List<MusicTrack> tracks;
-  final void Function(MusicTrack track) onPlay;
-
-  @override
-  State<_NewSongShelf> createState() => _NewSongShelfState();
-}
-
-class _NewSongShelfState extends State<_NewSongShelf> {
-  /// 一行三个歌条目（用户图片就是三栏 ✓）；窄窗口退回两栏，避免挤成一团 ✗。
-  static const _rowsPerPage = 4;
-  static const _itemHeight = 64.0;
-
-  final PageController _controller = PageController();
-  int _page = 0;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth < 900 ? 2 : 3;
-        final perPage = columns * _rowsPerPage;
-        final pageCount = (widget.tracks.length / perPage).ceil();
-        final current = _page.clamp(0, pageCount - 1);
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            // 左右翻页（参考的块头就是「更多 + ◀ ▶」✓）：只在真的还有一页时出现 ✓。
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (current > 0)
-                  IconButton(
-                    tooltip: '上一页',
-                    onPressed: () => _controller.previousPage(
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeOut,
-                    ),
-                    icon: const Icon(Symbols.chevron_left),
-                  ),
-                if (current < pageCount - 1)
-                  IconButton(
-                    tooltip: '下一页',
-                    onPressed: () => _controller.nextPage(
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeOut,
-                    ),
-                    icon: const Icon(Symbols.chevron_right),
-                  ),
-              ],
-            ),
-            SizedBox(
-              height: _rowsPerPage * _itemHeight,
-              child: PageView.builder(
-                controller: _controller,
-                onPageChanged: (value) => setState(() => _page = value),
-                itemCount: pageCount,
-                itemBuilder: (context, page) => Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (var column = 0; column < columns; column++) ...[
-                      if (column > 0) const SizedBox(width: Spacing.md),
-                      Expanded(
-                        child: Column(
-                          children: [
-                            for (var row = 0; row < _rowsPerPage; row++)
-                              SizedBox(
-                                height: _itemHeight,
-                                child:
-                                    page * perPage + column * _rowsPerPage + row <
-                                        widget.tracks.length
-                                    ? _NewSongItem(
-                                        track: widget.tracks[page * perPage +
-                                            column * _rowsPerPage +
-                                            row],
-                                        onTap: () => widget.onPlay(
-                                          widget.tracks[page * perPage +
-                                              column * _rowsPerPage +
-                                              row],
-                                        ),
-                                      )
-                                    : const SizedBox.shrink(),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-/// 一条歌曲 item（照用户图片的排布 ✓）：**封面 + 歌名 + 艺人/专辑**，整行可点即播 ✓。
-/// 参考在标题左边还有序号 —— 那是榜单的名次 ✓；新歌没有名次 ⇒ **不编号** ✓（不编造 ✓）。
-class _NewSongItem extends StatelessWidget {
-  const _NewSongItem({required this.track, required this.onTap});
-
-  final MusicTrack track;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final details = [
-      track.artistDisplay,
-      if (track.album.isNotEmpty) track.album,
-    ].join(' · ');
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Material(
-        type: MaterialType.transparency,
-        borderRadius: AppRadius.smCircular,
-        child: InkWell(
-          borderRadius: AppRadius.smCircular,
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
-            child: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: AppRadius.xsCircular,
-                  child: SizedBox.square(
-                    dimension: 48,
-                    child: RemoteMediaCover(
-                      coverUri: track.coverUri,
-                      placeholder: ColoredBox(
-                        color: scheme.surfaceContainerHighest,
-                        child: Icon(
-                          Symbols.music_note,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                      cacheWidth: 96,
-                      cacheHeight: 96,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: Spacing.md),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        track.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: scheme.onSurface,
-                          fontSize: AppType.caption,
-                          fontWeight: AppType.weightMedium,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        details,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: scheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// **分类 tag**（2026-10-12 按用户图片重做 ✓）：**撑满格子**的一行格子 ✓ ——
 /// 左侧一条彩条（贴住左边、与格子等高 ✓）+ 名字 + 淡色数量（平台给了才显示 ✓）。
