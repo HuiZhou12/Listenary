@@ -44,7 +44,7 @@ void main() {
     expect(capabilities.searchablePlatforms, isEmpty);
     expect(
       capabilities.unavailableSearchReasonFor(netease),
-      contains('缺少播放解析能力'),
+      contains('该平台暂不能播放'),
     );
     // 它仍然有搜索候选，只是被门槛挡下；resolvable 集合不受影响。
     expect(capabilities.resolvablePlatforms, isEmpty);
@@ -60,7 +60,7 @@ void main() {
     expect(capabilities.searchablePlatforms, isEmpty);
     expect(
       capabilities.unavailableSearchReasonFor(netease),
-      contains('缺少搜索能力'),
+      contains('该平台暂不支持搜索'),
     );
     expect(capabilities.resolvablePlatforms, {netease});
   });
@@ -96,7 +96,7 @@ void main() {
     expect(capabilities.searchablePlatforms, {netease});
     expect(capabilities.playlistPlatforms, {netease});
     expect(capabilities.lyricPlatforms, {netease});
-    expect(capabilities.unavailableSearchReasonFor(qq), contains('缺少播放解析能力'));
+    expect(capabilities.unavailableSearchReasonFor(qq), contains('该平台暂不能播放'));
     // 完全没有 Provider 的平台既不"可用"也不在"原因"表里：那是"未配置服务"，
     // 由设置页的平台卡负责说明（S8），不是能力门槛的结论。
     expect(

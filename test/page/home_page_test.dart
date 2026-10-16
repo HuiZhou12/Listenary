@@ -115,7 +115,7 @@ void main() {
 
   /// 「平台能力」默认收起（它是诊断信息，不该占据首屏）——断言其内容前要先展开。
   Future<void> expandCapabilities(WidgetTester tester) async {
-    await tester.tap(find.text('平台能力'));
+    await tester.tap(find.text('各平台支持什么'));
     await tester.pumpAndSettle();
   }
 
@@ -149,7 +149,7 @@ void main() {
       '好久没听',
       '我的收藏',
       '我的在线歌单',
-      '平台能力',
+      '各平台支持什么',
     ];
     for (final title in titles) {
       expect(find.text(title), findsOneWidget, reason: '$title 区块必须存在');
@@ -176,14 +176,14 @@ void main() {
           resolvablePlatforms: const [MusicPlatform.netease],
           lyricPlatforms: const [MusicPlatform.netease],
           unavailableSearchReasons: const {
-            MusicPlatform.qq: '缺少播放解析能力，因此不会参与搜索',
+            MusicPlatform.qq: '该平台暂不能播放',
           },
         ),
       ),
     );
     await expandCapabilities(tester);
 
-    expect(find.text('缺少播放解析能力，因此不会参与搜索'), findsOneWidget);
+    expect(find.text('该平台暂不能播放'), findsOneWidget);
     // 网易云可用：它的能力标签都在。
     expect(find.text('搜索'), findsWidgets);
     // 酷狗完全没有配置 ⇒ 只有它显示"未配置"；QQ 有服务但被门槛挡下，
@@ -356,7 +356,7 @@ void main() {
 
     await expandCapabilities(tester);
     // 与"配了服务但没有能力"时的"未配置"**不是同一句话** —— 这里连服务都没有。
-    expect(find.text('在线音乐服务尚未就绪，平台能力暂时不可用。'), findsOneWidget);
+    expect(find.text('在线音乐服务还没配好，这些信息暂时看不了。'), findsOneWidget);
     expect(find.text('去配置'), findsWidgets);
   });
 

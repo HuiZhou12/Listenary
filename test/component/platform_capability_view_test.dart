@@ -31,7 +31,7 @@ void main() {
     resolvablePlatforms: const [MusicPlatform.netease],
     lyricPlatforms: const [MusicPlatform.netease],
     unavailableSearchReasons: const {
-      MusicPlatform.qq: '缺少播放解析能力，因此不会参与搜索',
+      MusicPlatform.qq: '该平台暂不能播放',
     },
   );
 
@@ -61,9 +61,9 @@ void main() {
   testWidgets('默认收起：不渲染平台行', (tester) async {
     await pumpView(tester, capabilities: fullCapabilities);
 
-    expect(find.text('平台能力'), findsOneWidget);
+    expect(find.text('各平台支持什么'), findsOneWidget);
     expect(find.text('未配置'), findsNothing);
-    expect(find.text('缺少播放解析能力，因此不会参与搜索'), findsNothing);
+    expect(find.text('该平台暂不能播放'), findsNothing);
   });
 
   testWidgets('展开后列出每个平台的能力与不可用原因', (tester) async {
@@ -81,7 +81,7 @@ void main() {
       expect(find.text(row.label), findsWidgets, reason: '${row.label} 能力标签');
     }
     // QQ 被门槛挡下 ⇒ 显示原因而不是"未配置"；酷狗完全没配置 ⇒ 显示"未配置"。
-    expect(find.text('缺少播放解析能力，因此不会参与搜索'), findsOneWidget);
+    expect(find.text('该平台暂不能播放'), findsOneWidget);
     expect(find.text('未配置'), findsOneWidget);
   });
 
@@ -94,7 +94,7 @@ void main() {
       onConfigure: () => configured++,
     );
 
-    expect(find.textContaining('在线音乐服务尚未就绪'), findsOneWidget);
+    expect(find.textContaining('在线音乐服务还没配好'), findsOneWidget);
     // 能力未知 ⇒ 三个平台都显示"未配置"，不假装可用。
     expect(find.text('未配置'), findsNWidgets(builtinMusicPlatforms.length));
 
@@ -106,7 +106,7 @@ void main() {
     await pumpView(tester, capabilities: fullCapabilities);
     expect(find.text('未配置'), findsNothing);
 
-    await tester.tap(find.text('平台能力'));
+    await tester.tap(find.text('各平台支持什么'));
     await tester.pumpAndSettle();
     expect(find.text('未配置'), findsOneWidget);
   });

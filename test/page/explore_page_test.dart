@@ -101,10 +101,10 @@ void main() {
     expect(find.textContaining('服务提供商'), findsOneWidget);
     expect(find.textContaining('在设置的平台卡里'), findsNothing);
     // 平台能力是诊断信息：默认收起。
-    expect(find.text('平台能力'), findsOneWidget);
+    expect(find.text('各平台支持什么'), findsOneWidget);
     expect(find.text('未配置'), findsNothing);
 
-    await tester.tap(find.text('平台能力'));
+    await tester.tap(find.text('各平台支持什么'));
     await tester.pumpAndSettle();
     expect(find.text('未配置'), findsNWidgets(builtinMusicPlatforms.length));
   });
@@ -139,7 +139,7 @@ void main() {
     // 元信息行统一为「类型 · …」：类型在前（参考产品的做法）。
     expect(card.details, '歌单 · 甲 · 20 首');
     // QQ 与酷狗没有该能力 ⇒ 既不出现分区，也不出现"空"文案。
-    expect(find.text('该平台没有返回歌单。'), findsNothing);
+    expect(find.text('该平台今天没有歌单'), findsNothing);
     expect(find.text('QQ音乐'), findsNothing);
   });
 
@@ -172,7 +172,7 @@ void main() {
     expect(find.text('网易云歌单'), findsOneWidget);
     // QQ 显示的是**失败**文案，而不是"该平台没有返回歌单"。
     expect(find.textContaining('平台歌单读取失败'), findsOneWidget);
-    expect(find.text('该平台没有返回歌单。'), findsNothing);
+    expect(find.text('该平台今天没有歌单'), findsNothing);
     // 失败分区有重试入口。
     expect(find.text('重试'), findsOneWidget);
   });
@@ -343,7 +343,7 @@ void main() {
     expect(find.text('飙升榜'), findsOneWidget);
     expect(find.textContaining('QQ音乐 榜单读取失败'), findsOneWidget);
     // 失败 ≠ 空：不允许同时显示"没有返回榜单"。
-    expect(find.text('该平台没有返回榜单。'), findsNothing);
+    expect(find.text('该平台今天没有榜单'), findsNothing);
   });
 
   testWidgets('榜单货架超出预览条数时注明总数，且「查看全部」可跳转', (tester) async {
@@ -474,7 +474,7 @@ void main() {
 
     // 分类失败显示为**失败**（不是"没有分类"），且平台歌单照常显示。
     expect(find.textContaining('网易云 分类读取失败'), findsOneWidget);
-    expect(find.text('该平台没有返回歌单分类。'), findsNothing);
+    expect(find.text('该平台没有提供分类'), findsNothing);
     expect(find.text('全部歌单'), findsOneWidget);
   });
 
@@ -629,7 +629,7 @@ void main() {
     expect(find.text('网易云新歌'), findsOneWidget);
     expect(find.textContaining('QQ音乐 新歌读取失败'), findsOneWidget);
     // 失败 ≠ 空：不允许同时显示"没有返回新歌"。
-    expect(find.text('该平台没有返回新歌。'), findsNothing);
+    expect(find.text('该平台今天没有新歌'), findsNothing);
     // 失败有重试入口。
     expect(find.text('重试'), findsWidgets);
   });
@@ -708,7 +708,7 @@ void main() {
     for (final title in ['榜单', '新歌', '歌单分类', '平台歌单']) {
       expect(find.text(title), findsOneWidget, reason: '$title 区块必须出现');
     }
-    expect(find.text('平台能力'), findsOneWidget);
+    expect(find.text('各平台支持什么'), findsOneWidget);
   });
 
   testWidgets('★ 全能力 + 窄窗口：四个区块都不溢出（含超长分类名与超长标题）', (tester) async {
@@ -783,9 +783,9 @@ void main() {
     expect(find.byType(RemoteMediaCard), findsNothing);
 
     // 平台能力是诊断信息：展开后要明确说"服务尚未就绪"，而不是显示一片空白。
-    await tester.tap(find.text('平台能力'));
+    await tester.tap(find.text('各平台支持什么'));
     await tester.pumpAndSettle();
-    expect(find.text('在线音乐服务尚未就绪，平台能力暂时不可用。'), findsOneWidget);
+    expect(find.text('在线音乐服务还没配好，这些信息暂时看不了。'), findsOneWidget);
   });
 
   // ------------------------------------------------------------------ 订阅失败

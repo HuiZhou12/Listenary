@@ -56,7 +56,7 @@ class HomePlaceholderShelf extends StatelessWidget {
             Expanded(
               child: Text(
                 // 明确说"还没接" ✓ + 接什么 ✓（不假装是空数据 ✓）。
-                '这块还没接：$source',
+                '还没接通：$source',
                 style: TextStyle(
                   color: scheme.onSurfaceVariant,
                   fontSize: AppType.body,

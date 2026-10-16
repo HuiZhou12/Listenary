@@ -350,7 +350,7 @@ void main() {
         );
       }
       expect(find.text('歌单详情'), findsWidgets);
-      expect(find.text('歌单列表'), findsWidgets);
+      expect(find.text('平台歌单'), findsWidgets);
       // S7b-3：不再有"第二阶段" —— 全部能力都可以进配置。
       expect(find.text('第二阶段'), findsNothing);
       expect(find.text('配置'), findsWidgets);
@@ -865,7 +865,7 @@ void main() {
     expect(
       // P-37：运行中的事实**带来源前缀** —— 卡上同时有"运行中"与"配置态"两种状态，
       // 各自标注来源，不再用展示优先级把其中一个吃掉。
-      find.text('运行中：缺少播放解析能力，因此不会参与搜索'),
+      find.text('运行中：该平台暂不能播放'),
       findsOneWidget,
     );
     controller.dispose();
@@ -1667,7 +1667,7 @@ void main() {
 
     // 确认文案必须逐项说清：哪几项会被覆盖 / 哪几项保持不变。
     expect(find.textContaining('当前的配置会被覆盖'), findsOneWidget);
-    expect(find.textContaining('其它已配置的能力（歌单列表）保持不变'), findsOneWidget);
+    expect(find.textContaining('其它已配置的能力（平台歌单）保持不变'), findsOneWidget);
 
     await tester.tap(find.text('填充'));
     await tester.pumpAndSettle();
@@ -2156,11 +2156,11 @@ void main() {
     // 断言要**限定在编辑器对话框内**：背后的平台卡每个平台都有一行「播放解析」。
     final editor = find.byType(Dialog);
     expect(
-      find.descendant(of: editor, matching: find.textContaining('声明式歌单列表')),
+      find.descendant(of: editor, matching: find.textContaining('声明式平台歌单')),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: editor, matching: find.textContaining('播放解析')),
+      find.descendant(of: editor, matching: find.textContaining('能播放')),
       findsNothing,
       reason: '以前所有非搜索能力的副标题都写"声明式播放解析"',
     );

@@ -132,7 +132,7 @@ class _NewReleasesPageState extends State<NewReleasesPage>
         : _albumPlatforms.map(musicPlatformLabel).join(' / ');
     return PageScaffold(
       title: '专辑和单曲',
-      subtitle: '新发行 · 来源：$platformName · 每个平台各自加载，首批各 ${widget.limit} 项',
+      subtitle: '来源：$platformName · 每个平台分开显示，各 ${widget.limit} 项',
       actions: [
         IconButton(
           tooltip: '刷新',
@@ -172,7 +172,7 @@ class _NewReleasesPageState extends State<NewReleasesPage>
       isLoading: _albumState.isLoading(platform),
       error: _albumState.error(platform),
       onRetry: () => unawaited(_reloadAlbums(platform)),
-      emptyMessage: '该平台没有返回新专辑。',
+      emptyMessage: '该平台今天没有新专辑',
       isEmpty: albums.isEmpty,
       children: [for (final album in albums) OnlineAlbumRow(album: album)],
     );
@@ -200,7 +200,7 @@ class _NewReleasesPageState extends State<NewReleasesPage>
       isLoading: _songState.isLoading(platform),
       error: _songState.error(platform),
       onRetry: () => unawaited(_reloadSongs(platform)),
-      emptyMessage: '该平台没有返回新歌。',
+      emptyMessage: '该平台今天没有新歌',
       isEmpty: tracks.isEmpty,
       children: [
         for (final track in tracks)

@@ -375,7 +375,7 @@ class _ExplorePageState extends State<ExplorePage>
     if (_chartPlatforms.isEmpty) return const SizedBox.shrink();
     return ContentSection(
       title: '榜单',
-      subtitle: '各平台的名次集合；打开后走歌单详情，曲目可播放',
+      subtitle: '各平台榜单；打开后是完整的榜单歌单，曲目可直接播放',
       actionLabel: '查看全部',
       onAction: () => context.push(app_paths.EXPLORE_CHART_LIST_PAGE),
       child: Column(
@@ -414,7 +414,7 @@ class _ExplorePageState extends State<ExplorePage>
             loading: _chartState.isLoading(platform),
             errorMessage: _chartState.error(platform),
             onRetry: () => _retryCharts(platform),
-            emptyMessage: '该平台没有返回榜单。',
+            emptyMessage: '该平台今天没有榜单',
             emptyIcon: Symbols.leaderboard,
             itemCount: preview.length,
             itemWidth: width,
@@ -547,7 +547,7 @@ class _ExplorePageState extends State<ExplorePage>
             loading: _newAlbumState.isLoading(platform),
             errorMessage: _newAlbumState.error(platform),
             onRetry: () => _retryNewAlbums(platform),
-            emptyMessage: '该平台没有返回新专辑。',
+            emptyMessage: '该平台今天没有新专辑',
             emptyIcon: Symbols.album,
             itemCount: albums.length,
             itemWidth: width,
@@ -652,7 +652,7 @@ class _ExplorePageState extends State<ExplorePage>
           else if (tracks.isEmpty)
             const InlineEmptyHint(
               icon: Symbols.new_releases,
-              message: '该平台没有返回新歌。',
+              message: '该平台今天没有新歌',
             )
           else
             // **三栏歌曲 item + 横向翻页**（2026-10-12 按用户图片重做 ✓）：
@@ -688,7 +688,7 @@ class _ExplorePageState extends State<ExplorePage>
     if (_categoryPlatforms.isEmpty) return const SizedBox.shrink();
     return ContentSection(
       title: '歌单分类',
-      subtitle: '点分类筛选下面的平台歌单；再点一次取消',
+      subtitle: '点一个分类筛选下面的歌单；再点一次取消',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -735,7 +735,7 @@ class _ExplorePageState extends State<ExplorePage>
           else if (categories.isEmpty)
             const InlineEmptyHint(
               icon: Symbols.category,
-              message: '该平台没有返回歌单分类。',
+              message: '该平台没有提供分类',
             )
           else
             // **分类 tag 墙**（2026-10-12 第三次按用户要求改 ✓）：
@@ -840,7 +840,7 @@ class _ExplorePageState extends State<ExplorePage>
     if (_platforms.isEmpty) {
       return ContentSection(
         title: '平台歌单',
-        subtitle: '来自各平台自己的「歌单列表」能力',
+        subtitle: '各平台自己的歌单',
         actionLabel: '去配置',
         onAction: () => context.go(app_paths.SETTINGS_PAGE),
         child: Row(
@@ -862,7 +862,7 @@ class _ExplorePageState extends State<ExplorePage>
     }
     return ContentSection(
       title: '平台歌单',
-      subtitle: '每个平台各自加载；一个平台失败不影响其它平台',
+      subtitle: '每个平台分开显示',
       child: Column(
         children: [
           for (final platform in _platforms) _buildPlatformSection(platform),
@@ -927,7 +927,7 @@ class _ExplorePageState extends State<ExplorePage>
             errorMessage: items.isEmpty ? _collectionState.error(key) : null,
             onRetry: () => _retry(platform, categoryId),
             emptyMessage: categoryId == null
-                ? '该平台没有返回歌单。'
+                ? '该平台今天没有歌单'
                 : '该分类下没有歌单。',
             emptyIcon: Symbols.queue_music,
             itemCount: items.length,

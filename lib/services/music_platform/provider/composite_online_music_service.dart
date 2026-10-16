@@ -44,8 +44,8 @@ final class CompositeOnlineMusicService
     for (final platform in {...search, ...stream}) {
       if (searchable.contains(platform)) continue;
       reasons[platform] = stream.contains(platform)
-          ? '缺少搜索能力，因此不会参与搜索'
-          : '缺少播放解析能力，因此不会参与搜索';
+          ? '该平台暂不支持搜索'
+          : '该平台暂不能播放';
     }
     return OnlineMusicCapabilities(
       searchablePlatforms: searchable,

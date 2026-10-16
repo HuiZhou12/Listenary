@@ -22,14 +22,14 @@ const platformCapabilityRows =
     <({String label, CapabilityProbe available})>[
       (label: '搜索', available: _searchable),
       (label: '歌单详情', available: _playlistDetail),
-      (label: '歌单列表', available: _playlistCollection),
+      (label: '平台歌单', available: _playlistCollection),
       (label: '歌单分类', available: _playlistCategories),
       (label: '榜单', available: _chartList),
       (label: '新歌', available: _newSongs),
       (label: '艺人详情', available: _artist),
       (label: '专辑详情', available: _album),
-      (label: '艺人专辑列表', available: _artistAlbums),
-      (label: '艺人单曲列表', available: _artistSongs),
+      (label: '艺人的专辑', available: _artistAlbums),
+      (label: '艺人的单曲', available: _artistSongs),
       (label: '新专辑', available: _newAlbums),
       (label: '搜索专辑', available: _searchAlbums),
       (label: '搜索艺人', available: _searchArtists),
@@ -38,7 +38,7 @@ const platformCapabilityRows =
       (label: '关注的艺人', available: _followedArtists),
       (label: '个性化合辑', available: _personalizedPlaylists),
       (label: '歌词', available: _lyrics),
-      (label: '播放解析', available: _resolvable),
+      (label: '能播放', available: _resolvable),
     ];
 
 bool _searchable(OnlineMusicCapabilities c, MusicPlatform p) =>
@@ -154,9 +154,9 @@ class PlatformCapabilityView extends StatelessWidget {
             Spacing.md,
           ),
           leading: Icon(Symbols.tune, color: scheme.onSurfaceVariant),
-          title: const Text('平台能力'),
+          title: const Text('各平台支持什么'),
           subtitle: Text(
-            '每个平台能做什么；未配置的能力不会假装可用',
+            '每个平台能做什么；灰色的表示还没配置',
             style: TextStyle(
               color: scheme.onSurfaceVariant,
               fontSize: AppType.caption,
@@ -183,7 +183,7 @@ class PlatformCapabilityView extends StatelessWidget {
                   const SizedBox(width: Spacing.sm),
                   Expanded(
                     child: Text(
-                      '在线音乐服务尚未就绪，平台能力暂时不可用。',
+                      '在线音乐服务还没配好，这些信息暂时看不了。',
                       style: TextStyle(color: scheme.onSurfaceVariant),
                     ),
                   ),

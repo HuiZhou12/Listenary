@@ -1124,6 +1124,78 @@ OnlineMusicSettings _allCapabilitiesSettings() => OnlineMusicSettings.fromJson({
             },
           ),
         ).toJson(),
+        // 推荐曲目 / 推荐歌单 / 关注的艺人 / 个性化合辑（2026-10-16 补 ✓）：
+        // 这四条是**后来新增**的能力 ✓，当时漏在这个"全能力"固件里 ✗
+        // ⇒ 遍历 `OnlineMusicCapability.values` 的测试因此变红 ✓。
+        // 形状都复用既有的 `data` 数组 ✓ ⇒ 假响应不用改 ✓。
+        'recommendedTracks': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(path: '/recommend/songs'),
+          response: OnlineMusicResponseSpec(
+            success: _codeSuccess,
+            listPath: JsonPathForTest.data,
+            fields: {
+              OnlineMusicDomainField.trackId: _intField(
+                JsonPathForTest.id,
+                required: true,
+              ),
+              OnlineMusicDomainField.title: _stringField(
+                JsonPathForTest.name,
+                required: true,
+              ),
+            },
+          ),
+        ).toJson(),
+        'recommendedPlaylists': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(path: '/recommend/resource'),
+          response: OnlineMusicResponseSpec(
+            success: _codeSuccess,
+            listPath: JsonPathForTest.data,
+            fields: {
+              OnlineMusicDomainField.playlistId: _intField(
+                JsonPathForTest.id,
+                required: true,
+              ),
+              OnlineMusicDomainField.playlistName: _stringField(
+                JsonPathForTest.name,
+                required: true,
+              ),
+            },
+          ),
+        ).toJson(),
+        'personalizedPlaylists': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(path: '/personalized'),
+          response: OnlineMusicResponseSpec(
+            success: _codeSuccess,
+            listPath: JsonPathForTest.data,
+            fields: {
+              OnlineMusicDomainField.playlistId: _intField(
+                JsonPathForTest.id,
+                required: true,
+              ),
+              OnlineMusicDomainField.playlistName: _stringField(
+                JsonPathForTest.name,
+                required: true,
+              ),
+            },
+          ),
+        ).toJson(),
+        'followedArtists': OnlineMusicDeclarativeCapabilityBinding(
+          request: const OnlineMusicRequestSpec(path: '/artist/sublist'),
+          response: OnlineMusicResponseSpec(
+            success: _codeSuccess,
+            listPath: JsonPathForTest.data,
+            fields: {
+              OnlineMusicDomainField.artistId: _intField(
+                JsonPathForTest.id,
+                required: true,
+              ),
+              OnlineMusicDomainField.artistName: _stringField(
+                JsonPathForTest.name,
+                required: true,
+              ),
+            },
+          ),
+        ).toJson(),
         // 搜索专辑（2026-10-12）：专辑在 `result.albums` 下（复用既有 `data` 形状 ✓）。
         'searchAlbums': OnlineMusicDeclarativeCapabilityBinding(
           request: const OnlineMusicRequestSpec(path: '/cloudsearch'),

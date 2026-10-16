@@ -246,7 +246,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       return const HomePlaceholderShelf(
         title: '猜你喜欢',
         subtitle: '按你的口味挑的歌',
-        source: '需要先在设置里配置该平台的推荐能力',
+        source: '在「设置 → 在线音乐」里启用该平台的推荐',
         icon: Symbols.favorite,
       );
     }
@@ -374,7 +374,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       return const HomePlaceholderShelf(
         title: '为你推荐的歌单',
         subtitle: '按你的账号推荐',
-        source: '需要先在设置里配置该平台的推荐能力',
+        source: '在「设置 → 在线音乐」里启用该平台的推荐',
         icon: Symbols.queue_music,
       );
     }
@@ -409,7 +409,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       return const HomePlaceholderShelf(
         title: '个性化合辑',
         subtitle: '平台按口味挑的歌单合集',
-        source: '需要先在设置里配置该平台的个性化合辑能力',
+        source: '在「设置 → 在线音乐」里启用该平台的个性化合辑',
         icon: Symbols.auto_awesome,
       );
     }
@@ -619,7 +619,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       return const HomePlaceholderShelf(
         title: '关注的艺人',
         subtitle: '你关注的艺人',
-        source: '需要先在设置里配置「关注的艺人」能力',
+        source: '在「设置 → 在线音乐」里启用「关注的艺人」',
         icon: Symbols.artist,
       );
     }

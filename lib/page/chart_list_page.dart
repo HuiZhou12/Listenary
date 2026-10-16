@@ -131,7 +131,7 @@ class _ChartListPageState extends State<ChartListPage>
   Widget build(BuildContext context) {
     return PageScaffold(
       title: '榜单',
-      subtitle: '各平台的名次集合；每个平台各自加载',
+      subtitle: '各平台榜单；每个平台分开显示',
       actions: [
         IconButton.filledTonal(
           tooltip: '刷新',
@@ -181,7 +181,7 @@ class _ChartListPageState extends State<ChartListPage>
         ),
         _ when items.isEmpty => const InlineEmptyHint(
           icon: Symbols.leaderboard,
-          message: '该平台没有返回榜单。',
+          message: '该平台今天没有榜单',
         ),
         _ => RemoteMediaGrid(
           itemCount: items.length,
