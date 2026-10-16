@@ -770,7 +770,7 @@ class _OnlineMusicCapabilityEditorDialogState
         if (outcome.credentialMissingForAuth) {
           detail.writeln(
             '    ⚠️ 待补配置：该条目的 Key（配置后重新探测；'
-            '本次探测**没有**携带凭据，因此结论只是"未确认"）',
+            '本次探测没有携带凭据，因此结论只是"未确认"）',
           );
         }
         // P-07：摘要与片段（都已脱敏）—— 失败时它们才是唯一的排查依据。
@@ -834,7 +834,7 @@ class _OnlineMusicCapabilityEditorDialogState
                 const SizedBox(height: 12),
                 Text(
                   diff.isEmpty
-                      ? '与当前编辑内容**没有差异**（应用与否都一样）。'
+                      ? '与当前编辑内容没有差异（应用与否都一样）。'
                       : '与当前编辑内容有 ${diff.length} 处差异：\n'
                             '${diff.map((line) => '· $line').join('\n')}',
                 ),

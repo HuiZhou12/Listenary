@@ -1635,7 +1635,7 @@ _parsePlatformFields(Object? rawContentPlatform, Object? rawPlatformId) {
     issue:
         '内容来源「$name」不是内置平台'
         '（${builtinMusicPlatforms.map((platform) => platform.name).join(' / ')}）：'
-        '已按**自定义平台**原样保留其标识（身份 = custom + ${declaredId ?? name}），'
+        '已按自定义平台原样保留其标识（身份 = custom + ${declaredId ?? name}），'
         '不会回落网易云。若这不是你想要的平台，请改正 contentPlatform 或 platformId'
         '（在成功配置前，该条目不参与路由，也不会发出任何请求）',
   );

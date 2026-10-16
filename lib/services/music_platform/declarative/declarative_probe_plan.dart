@@ -79,7 +79,7 @@ final class ProviderProbePlan {
       if (resolved == null) {
         final missing =
             missingRequiredProbeInputName(candidate.capability, inputs) ?? '输入';
-        lines.add('${candidate.provenanceLabel}：**缺少必需的$missing**（本次不会发送请求）');
+        lines.add('${candidate.provenanceLabel}：缺少必需的$missing（本次不会发送请求）');
         continue;
       }
       final used = <String>['关键词「${resolved.keyword}」'];
@@ -123,7 +123,7 @@ final class ProviderProbePlan {
       requiresCredential
           ? (hasCredential
                 ? '凭据：使用该条目已配置的 Key'
-                : '凭据：该条目声明需要 Key，但**尚未配置** ⇒ 探测仍会进行，'
+                : '凭据：该条目声明需要 Key，但尚未配置 ⇒ 探测仍会进行，'
                       '结论最多是"未能确认"（不会伪造成功）')
           : '凭据：该条目不需要 Key',
     );

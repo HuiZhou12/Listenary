@@ -845,7 +845,7 @@ Future<ProviderProbeOutcome> _send({
         needsAuthentication: authWithoutCredential,
         credentialMissingForAuth: authWithoutCredential,
         failureReason: authWithoutCredential
-            ? '响应成功但没有解析出任何${judged.unit}；且认证条件**未满足**（该能力声明了认证，'
+            ? '响应成功但没有解析出任何${judged.unit}；且认证条件未满足（该能力声明了认证，'
                   '这次探测没有凭据）：请先配置该条目的 Key 再探测'
             : '响应成功但没有解析出任何${judged.unit}',
         requestSummary: execution.requestSummary,
@@ -867,7 +867,7 @@ Future<ProviderProbeOutcome> _send({
         credentialMissingForAuth: true,
         failureReason:
             '服务可能可达（HTTP ${execution.statusCode}，解析出 ${judged.count} ${judged.unit}），'
-            '但认证条件**未满足**：该能力声明了认证，请先配置该条目的 Key 再探测',
+            '但认证条件未满足：该能力声明了认证，请先配置该条目的 Key 再探测',
         requestSummary: execution.requestSummary,
         responsePreview: execution.responsePreview,
       );

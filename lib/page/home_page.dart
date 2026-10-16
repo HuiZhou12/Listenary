@@ -245,14 +245,14 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     if (_recommendedPlatforms.isEmpty) {
       return const HomePlaceholderShelf(
         title: '猜你喜欢',
-        subtitle: '根据你的口味挑出来的歌',
-        source: '官方推荐接口（需要登录 Cookie）',
+        subtitle: '按你的口味挑的歌',
+        source: '需要先在设置里配置该平台的推荐能力',
         icon: Symbols.favorite,
       );
     }
     return ContentSection(
       title: '猜你喜欢',
-      subtitle: '各平台按你的账号推荐的曲目；点一行即从该平台的推荐开始播放',
+      subtitle: '各平台按你的账号推荐；点一行即可播放',
       child: Column(
         children: [
           for (final platform in _recommendedPlatforms)
@@ -307,7 +307,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
             // 凭据失效会走上面的失败分支 ✓ —— 两者不混 ✓。
             const InlineEmptyHint(
               icon: Symbols.favorite,
-              message: '该平台这次没有给推荐（也可能今天就是没有）。',
+              message: '该平台今天没有推荐',
             )
           else
             // **与探索页「新歌」同一份实现** ✓（2026-10-16 用户裁定 ✓）：
@@ -373,14 +373,14 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     if (_recommendedPlaylistPlatforms.isEmpty) {
       return const HomePlaceholderShelf(
         title: '为你推荐的歌单',
-        subtitle: '平台按你的账号挑的歌单',
-        source: '官方推荐接口（需要登录 Cookie）',
+        subtitle: '按你的账号推荐',
+        source: '需要先在设置里配置该平台的推荐能力',
         icon: Symbols.queue_music,
       );
     }
     return ContentSection(
       title: '为你推荐的歌单',
-      subtitle: '各平台按你的账号推荐；点一张**预览**（不会自动订阅 ✓）',
+      subtitle: '各平台按你的账号推荐；点封面可先预览，不会自动订阅',
       // **与探索页「新专辑 / 歌单」同一套区块头** ✓（2026-10-16 用户指令 ✓）：
       // 标题行右侧是「**查看全部**」✓ —— 不是那对 ◀ ▶ ✗（箭头由货架自己在左右两侧画 ✓）。
       actionLabel: '查看全部',
@@ -391,7 +391,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
             _playlistShelfSection(
               platform,
               state: _recommendedPlaylistState,
-              emptyMessage: '该平台这次没有给推荐（也可能今天就是没有）。',
+              emptyMessage: '该平台今天没有推荐',
               // **凭据型货架** ✓ ⇒ 失败时补上"可能是凭据失效"的指引 ✓。
               decorateError: _credentialFailureHint,
               onRetry: () => _retryRecommendedPlaylists(platform),
@@ -408,15 +408,15 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     if (_personalizedPlaylistPlatforms.isEmpty) {
       return const HomePlaceholderShelf(
         title: '个性化合辑',
-        subtitle: '按心情与场景混出来的合辑',
-        source: '官方个性化接口（网易云 /personalized）',
+        subtitle: '平台按口味挑的歌单合集',
+        source: '需要先在设置里配置该平台的个性化合辑能力',
         icon: Symbols.auto_awesome,
       );
     }
     return ContentSection(
       title: '个性化合辑',
       // 文案**不过度承诺** ✓：登录后更贴合而已 ✓，不是"为你量身定做" ✗。
-      subtitle: '平台按口味挑的歌单合集（登录后会更贴合你）；点一张预览，不会自动订阅',
+      subtitle: '登录后会更贴合你；点封面可先预览，不会自动订阅',
       // 同「为你推荐的歌单」✓：区块头右侧是「查看全部」✓，箭头由货架自己画 ✓。
       actionLabel: '查看全部',
       onAction: () => context.go(app_paths.EXPLORE_PAGE),
@@ -426,7 +426,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
             _playlistShelfSection(
               platform,
               state: _personalizedPlaylistState,
-              emptyMessage: '该平台这次没有给合辑（也可能今天就是没有）。',
+              emptyMessage: '该平台今天没有合辑',
               onRetry: () => _retryPersonalizedPlaylists(platform),
             ),
         ],
@@ -618,14 +618,14 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     if (_followedArtistPlatforms.isEmpty) {
       return const HomePlaceholderShelf(
         title: '关注的艺人',
-        subtitle: '你关注的艺人的最新动态',
-        source: '官方「关注的艺人」接口（需要登录 Cookie）',
+        subtitle: '你关注的艺人',
+        source: '需要先在设置里配置「关注的艺人」能力',
         icon: Symbols.artist,
       );
     }
     return ContentSection(
       title: '关注的艺人',
-      subtitle: '各平台按你的账号关注的人；点一位打开艺人页',
+      subtitle: '各平台按你的账号关注的人；点一位可进入艺人页',
       child: Column(
         children: [
           for (final platform in _followedArtistPlatforms)
@@ -674,7 +674,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
             errorMessage: errorMessage,
             onRetry: () => _retryFollowedArtists(platform),
             // **空 ≠ 失败**：这个账号可能真的没关注任何人 ✓（如实说 ✓）。
-            emptyMessage: '这个账号在${musicPlatformLabel(platform)}没有关注任何艺人。',
+            emptyMessage: '这个账号在${musicPlatformLabel(platform)}还没有关注任何艺人',
             emptyIcon: Symbols.artist,
             itemCount: artists.length,
             itemWidth: width,
@@ -728,7 +728,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     final personal = context.watch<PersonalOnlinePlaylistController>().snapshot;
     return PageScaffold(
       title: '主页',
-      subtitle: '接着听、你的收藏与各平台内容，来源始终可见',
+      subtitle: '接着听、你的收藏，和各平台的推荐',
       actions: [
         IconButton.filledTonal(
           tooltip: '搜索在线音乐',
@@ -814,7 +814,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     return ContentSection(
       // 照用户给的 YT 图改名 ✓：原来是「继续听」✓，图上第一块叫「再听一遍」✓。
       title: '再听一遍',
-      subtitle: '按"熟悉的程度 × 最近还在听"排的（不是简单按时间倒序）',
+      subtitle: '你最近常听的，接着听',
       actionLabel: '查看全部',
       onAction: () => context.go('${app_paths.STATS_PAGE}?source=online'),
       // 2026-10-16 用户指令 ✓：与探索页那两块统一 ✓ —— 标题行右侧只留「查看全部」✓，
@@ -918,13 +918,13 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     return ContentSection(
       title: '你的回顾',
       // **口径写在副标题里** ✓：一看就知道这些数是哪来的 ✓。
-      subtitle: '按本机播放历史算的（官方 Recap 接口在这个服务上没有，所以这是本地口径）',
+      subtitle: '根据这台电脑上的播放记录整理',
       actionLabel: '查看全部',
       onAction: () => context.go('${app_paths.STATS_PAGE}?source=online'),
       child: history.status == OnlineHistoryLoadStatus.failed
           ? const InlineEmptyHint(
               icon: Symbols.insights,
-              message: '播放历史读取失败，回顾暂时算不出来。',
+              message: '播放记录读不到，回顾暂时出不来',
             )
           : Row(
               // ⚠️ **不能用 `stretch`** ✗：这里是 `Column` 的孩子 ⇒ 高度无界 ✓，
@@ -986,7 +986,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     };
     return ContentSection(
       title: '好久没听',
-      subtitle: '你听过不少次、但已经很久没碰的（听过不到 ${RediscoveryEngine.rediscoverMinDays} 天的不算）',
+      subtitle: '你很喜欢、但有一阵没听了',
       actionLabel: '查看全部',
       onAction: () => context.go('${app_paths.STATS_PAGE}?source=online'),
       // 同「再听一遍」✓：标题行只留「查看全部」✓，箭头由货架自己画 ✓。
@@ -1026,18 +1026,18 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     final preview = tracks.take(widget.previewLimit).toList();
     return ContentSection(
       title: '我的收藏',
-      subtitle: '收藏是跨平台的，每行都标明来源',
+      subtitle: '各平台的收藏都在这里，每行标明来源',
       actionLabel: '查看全部',
       onAction: () => context.go(app_paths.FAVORITES_PAGE),
       child: switch (preview) {
         // 读取失败 ≠ 没有收藏：两者文案必须不同，否则一次网络抖动会被读成"收藏丢了"。
         _ when _favoritesFailed => InlineFailureHint(
-          message: '收藏读取失败，可稍后重试。',
+          message: '收藏读不到，稍后可重试',
           onRetry: _loadFavorites,
         ),
         [] => const InlineEmptyHint(
           icon: Symbols.favorite,
-          message: '还没有收藏：在在线曲目上点心形图标即可收藏。',
+          message: '还没有收藏：在曲目上点心形图标就能收藏',
         ),
         _ => Column(
           children: [
@@ -1067,13 +1067,13 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     final playlists = snapshot.playlists.take(widget.previewLimit).toList();
     return ContentSection(
       title: '我的在线歌单',
-      subtitle: '应用自建的歌单，可以混放不同平台的曲目',
+      subtitle: '你自己建的歌单，可以混放各平台的曲目',
       actionLabel: '管理歌单',
       onAction: () => context.go(app_paths.PLAYLISTS_PAGE),
       child: playlists.isEmpty
           ? const InlineEmptyHint(
               icon: Symbols.playlist_add,
-              message: '还没有自建歌单：在歌单页新建一个，就能把不同平台的曲目放在一起。',
+              message: '还没有自建歌单：在歌单页新建一个即可',
             )
           : Column(
               children: [

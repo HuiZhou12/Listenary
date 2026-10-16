@@ -130,7 +130,9 @@ void main() {
     // 「你的回顾」= **本地真数据** ✓（官方 Recap 端点实测 404 ⇒ 改用本机历史 ✓），
     // 而且**口径写在副标题里** ✓ —— 数字不编 ✓。
     expect(find.text('你的回顾'), findsOneWidget);
-    expect(find.textContaining('按本机播放历史算的'), findsOneWidget);
+    // 2026-10-16：副标题改成**面向用户**的说法 ✓（原来那句写的是"本机口径/官方接口没有" ✗，
+    // 那是给开发者看的 ✓，不该出现在界面上 ✓）。
+    expect(find.textContaining('根据这台电脑上的播放记录整理'), findsOneWidget);
     expect(find.text('历史总播放次数'), findsOneWidget);
     expect(find.text('最近 30 天在听的曲目'), findsOneWidget);
   });

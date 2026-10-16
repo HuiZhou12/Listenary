@@ -64,7 +64,7 @@ bool _hasAnyDeclarativeBinding(OnlineMusicProviderDefinition definition) => [
 /// 说成"该条目没有绑定"，也不要说成"候选都没通过"）。
 String noProbeCandidateReason(OnlineMusicProviderDefinition definition) =>
     _hasAnyDeclarativeBinding(definition)
-    ? '该条目已配置的绑定都不适合服务级探测（探测只验**不需要实体 ID 就能独立执行**的能力，'
+    ? '该条目已配置的绑定都不适合服务级探测（探测只验不需要实体 ID 就能独立执行的能力，'
           '如搜索 / 新歌 / 歌单列表 / 歌单分类 / 榜单）：请用「试跑」逐能力验证'
           '（需要曲目或歌单 ID 的能力只能试跑，探测不会伪造 ID）'
     : '没有可执行的探测候选（该条目没有声明式绑定，也没有可用的兼容模板）';
