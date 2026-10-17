@@ -13,7 +13,7 @@ import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/page/uni_detail_page.dart';
 import 'package:pure_music/page/uni_page.dart';
-import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:pure_music/services/music_platform/online_library/online_playlist_controller.dart';
 import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
@@ -211,14 +211,20 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
                     t.album.toLowerCase().contains(query),
               )
               .toList(growable: false);
-    final playable = tracks
-        .where(
-          (track) =>
-              track.ref.hasValidIdentity &&
-        track.availability != TrackAvailability.unavailable &&
-        track.availability != TrackAvailability.paid,
-        )
-        .toList(growable: false);
+    // 可播判据走**唯一出口** ✓（2026-10-17 / F1 收口）：与行、与其它详情页同一套
+    //（解析侧身份 **且** 平台未声明 paid/unavailable，`unknown` 放行 ✓）。
+    // 此前这里自己抄了一份内联判据 ✗ —— 形状与 `canPlayTrack` 相同，但多一处副本
+    // 就多一次走偏的机会；页面级测试没注册服务 ⇒ 自动走等价回落分支 ✓。
+    final playable = [
+      for (final track in tracks)
+        if (OnlineTrackEntry.playableOf(
+          track: track,
+          providerCapabilities: context
+              .read<OnlineMusicService?>()
+              ?.capabilities,
+        ))
+          track,
+    ];
     const primaryActionStyle = AppButtonStyle.primaryAction;
     final creator = snapshot.playlist.creator?.trim();
     return UniDetailPage<OnlinePlaylistSnapshot, MusicTrack, Object>(
@@ -240,8 +246,11 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
       secondaryContentBuilder:
           (context, track, index, msc, view) => _buildTrackRow(track, tracks),
       enableShufflePlay: false,
-      enableSortMethod: hasEnoughItemsToSort(allTracks.length),
-      enableSortOrder: hasEnoughItemsToSort(allTracks.length),
+      // 2026-10-17（F7）：排序/排序方向按**当前（过滤后）**的条数决定 ✓ ——
+      // 此前用未过滤的 `allTracks.length` ✗ ⇒ 搜到只剩 1 条时这一页的排序控件还在，
+      // 而自建歌单/收藏两页会把它收起来 ✓（同一个交互在两页表现不同）。
+      enableSortMethod: hasEnoughItemsToSort(tracks.length),
+      enableSortOrder: hasEnoughItemsToSort(tracks.length),
       sortMethods: _sortMethods(),
       enableSecondaryContentViewSwitch: true,
       enableSearch: true,

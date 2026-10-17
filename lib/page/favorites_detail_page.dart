@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
+import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
@@ -15,7 +16,7 @@ import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/page/uni_detail_page.dart';
 import 'package:pure_music/page/uni_page.dart';
-import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
 
@@ -31,6 +32,9 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
   bool _loading = true;
   int _loadRequest = 0;
   String _searchQuery = '';
+
+  /// 读取失败的可读原因；为 null 表示没失败（**"空"与"失败"必须分得开** ✓）。
+  String? _error;
   Future<ImageProvider?> _primaryPicFuture = Future.value(null);
 
   /// 记住控制器实例：**`dispose` 里不能再 `context.read`**（那时 element 已 deactivated，
@@ -74,20 +78,41 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
       });
     } catch (_) {
       if (!mounted || request != _loadRequest) return;
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        // **别把失败吞成"空"**（2026-10-17 / F7）：此前这里只把 loading 置回 false ✗，
+        // 于是"读库失败"和"确实没有收藏"在界面上长得一模一样 ✓，用户拿不到原因、
+        // 也无处重试 ✓。文案沿用姊妹页的**固定可读文案**（不把异常原文抛给用户 ✓）。
+        _error = '无法读取收藏';
+      });
     }
   }
 
   Future<void> _refresh() async {
     final request = ++_loadRequest;
-    final snapshot = await context
-        .read<PersonalOnlinePlaylistController>()
-        .readFavorites();
-    if (!mounted || request != _loadRequest) return;
-    setState(() {
-      _snapshot = snapshot;
-      _primaryPicFuture = _firstCoverProvider(snapshot);
-    });
+    try {
+      final snapshot = await context
+          .read<PersonalOnlinePlaylistController>()
+          .readFavorites();
+      if (!mounted || request != _loadRequest) return;
+      setState(() {
+        _snapshot = snapshot;
+        _error = null;
+        _primaryPicFuture = _firstCoverProvider(snapshot);
+      });
+    } catch (_) {
+      if (!mounted || request != _loadRequest) return;
+      // **刷新失败不清空已有内容** ✓（2026-10-17 / D8）：有快照就只报失败、继续显示旧的；
+      // 没有快照才落到整页失败态（否则用户会看到"一片空白"而不是"上次读到的收藏" ✓）。
+      if (_snapshot != null) {
+        showTextOnSnackBar(
+          '收藏刷新失败，显示的是上次读到的内容',
+          variant: ToastVariant.error,
+        );
+        return;
+      }
+      setState(() => _error = '无法读取收藏');
+    }
   }
 
   Future<ImageProvider?> _firstCoverProvider(
@@ -130,12 +155,41 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
     // ⚠️ 2026-10-17（F6）：三个分支都不再套 `Scaffold` ✓ —— 外壳（`AppShell`）已提供，
     // 再套一层会刷不透明的页面底色，盖掉外壳那层封面取色背景 ⇒ 加载/空/失败态下
     // 与侧边栏之间会显出接缝。
+    // F7：**失败优先于空** ✓ —— 读不到时说"还没有收藏"是谎，且必须能就地重试。
+    if (_error != null) {
+      return PageScaffold(
+        title: '我的收藏',
+        actions: [
+          IconButton.filledTonal(
+            tooltip: '刷新',
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Symbols.refresh),
+          ),
+        ],
+        body: QuietEmptyState(
+          icon: Symbols.cloud_off,
+          title: '收藏读取失败',
+          message: _error!,
+          action: FilledButton.tonalIcon(
+            onPressed: _load,
+            icon: const Icon(Symbols.refresh),
+            label: const Text('重试'),
+          ),
+        ),
+      );
+    }
     if (snapshot != null && !_loading) {
       if (snapshot.tracks.isEmpty) {
-        return const PageScaffold(
+        return PageScaffold(
           title: '我的收藏',
-          actions: [],
-          body: QuietEmptyState(
+          actions: [
+            IconButton.filledTonal(
+              tooltip: '刷新',
+              onPressed: _load,
+              icon: const Icon(Symbols.refresh),
+            ),
+          ],
+          body: const QuietEmptyState(
             icon: Symbols.favorite_border,
             title: '还没有收藏',
             message: '在线歌曲上点爱心即可收藏。',
@@ -152,18 +206,18 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
   }
 
   Widget _buildStatusBody() {
-    if (_loading) {
-      return const Center(
-        child: SizedBox.square(
-          dimension: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    }
-    return const QuietEmptyState(
+    if (_loading) return const PageLoadingIndicator();
+    // 走到这里既没在加载、也没记下失败 ⇒ 只是"还没有读到快照"，给一个中性提示 +
+    // 明确的重试入口（不再渲染成"读取失败"那种带原因的报错 ✓）。
+    return QuietEmptyState(
       icon: Symbols.favorite_border,
-      title: '收藏读取失败',
-      message: '请稍后重试。',
+      title: '还没有读到收藏',
+      message: '稍等一下，或手动刷新一次。',
+      action: FilledButton.tonalIcon(
+        onPressed: _load,
+        icon: const Icon(Symbols.refresh),
+        label: const Text('刷新'),
+      ),
     );
   }
 
@@ -180,14 +234,21 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
                     t.album.toLowerCase().contains(query),
               )
               .toList(growable: false);
-    final playable = tracks
-        .where(
-          (t) =>
-              t.ref.hasValidIdentity &&
-            t.availability != TrackAvailability.unavailable &&
-              t.availability != TrackAvailability.paid,
-        )
-        .toList(growable: false);
+    // 可播判据走**唯一出口** ✓（2026-10-17 / F1 收口）：与行、与其它详情页同一套
+    //（解析侧身份 **且** 平台未声明 paid/unavailable，`unknown` 放行 ✓）。
+    // 此前这里自己抄了一份"身份 + 可用状态"的内联判据 ✗ —— 形状与 `canPlayTrack` 相同，
+    // 但多一处副本就多一次走偏的机会。页面级测试没注册服务 ⇒ 自动走等价回落分支 ✓。
+    final capabilities = context
+        .read<OnlineMusicService?>()
+        ?.capabilities;
+    final playable = [
+      for (final track in tracks)
+        if (OnlineTrackEntry.playableOf(
+          track: track,
+          providerCapabilities: capabilities,
+        ))
+          track,
+    ];
     const primaryActionStyle = AppButtonStyle.primaryAction;
     return UniDetailPage<PersonalOnlinePlaylistSnapshot, MusicTrack, Object>(
       pref: AppPreference.instance.playlistDetailPagePref,

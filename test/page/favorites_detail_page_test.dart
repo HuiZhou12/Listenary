@@ -71,6 +71,41 @@ void main() {
     expect(find.byType(OnlineTrackRow), findsNothing);
   });
 
+  testWidgets('★ 读取失败 ⇒ 说清原因并给重试（不再谎称"还没有收藏"）', (tester) async {
+    // 让底层库真的不可读：关掉库之后 `readFavorites` 会抛。
+    // ⚠️ 用**独立**的库与控制器，免得影响本文件其它用例的 setUp/tearDown 组合。
+    final brokenDatabase = sqlite3.openInMemory();
+    initializeAppDatabase(brokenDatabase);
+    final brokenRepository = OnlineLibraryRepository(brokenDatabase);
+    final brokenController = PersonalOnlinePlaylistController(
+      repository: SynchronousFuture(brokenRepository),
+    );
+    addTearDown(brokenController.dispose);
+    brokenDatabase.dispose();
+
+    tester.view.physicalSize = const Size(1200, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<PersonalOnlinePlaylistController>.value(
+        value: brokenController,
+        child: MaterialApp(
+          navigatorKey: routerKey,
+          scaffoldMessengerKey: scaffoldMessengerKey,
+          home: const FavoritesDetailPage(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 失败必须**与空态分得开**，而且必须能就地重试（F7 / 2026-10-17）。
+    expect(find.text('收藏读取失败'), findsOneWidget);
+    expect(find.text('无法读取收藏'), findsOneWidget);
+    expect(find.text('还没有收藏'), findsNothing, reason: '读不到 ≠ 没有收藏，不能这么说');
+    expect(find.text('重试'), findsOneWidget, reason: '失败态必须能就地重试');
+    expect(find.byTooltip('刷新'), findsOneWidget);
+  });
+
   testWidgets('★ 收藏是跨平台的：逐行标注各自来源', (tester) async {
     repository.toggleFavorite(track('n1', MusicPlatform.netease));
     repository.toggleFavorite(track('q1', MusicPlatform.qq));

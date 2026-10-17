@@ -15,7 +15,7 @@ import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/page/uni_detail_page.dart';
 import 'package:pure_music/page/uni_page.dart';
-import 'package:pure_music/services/music_platform/models/music_models.dart';
+import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
 
@@ -111,14 +111,17 @@ class _PersonalPlaylistDetailPageState
   }
 
   Future<void> _playRandom(Iterable<MusicTrack> tracks) async {
-    final playable = tracks
-        .where(
-          (track) =>
-              track.ref.hasValidIdentity &&
-        track.availability != TrackAvailability.unavailable &&
-        track.availability != TrackAvailability.paid,
-        )
-        .toList(growable: false);
+    // 可播判据走**唯一出口** ✓（2026-10-17 / F1 收口）。
+    final playable = [
+      for (final track in tracks)
+        if (OnlineTrackEntry.playableOf(
+          track: track,
+          providerCapabilities: context
+              .read<OnlineMusicService?>()
+              ?.capabilities,
+        ))
+          track,
+    ];
     if (playable.isEmpty) return;
     await _play(tracks, playable[math.Random().nextInt(playable.length)]);
   }
@@ -228,14 +231,17 @@ class _PersonalPlaylistDetailPageState
                     t.album.toLowerCase().contains(query),
               )
               .toList(growable: false);
-    final playable = tracks
-        .where(
-          (track) =>
-              track.ref.hasValidIdentity &&
-        track.availability != TrackAvailability.unavailable &&
-        track.availability != TrackAvailability.paid,
-        )
-        .toList(growable: false);
+    // 可播判据走**唯一出口** ✓（2026-10-17 / F1 收口）。
+    final playable = [
+      for (final track in tracks)
+        if (OnlineTrackEntry.playableOf(
+          track: track,
+          providerCapabilities: context
+              .read<OnlineMusicService?>()
+              ?.capabilities,
+        ))
+          track,
+    ];
     final scheme = Theme.of(context).colorScheme;
     // 使用本页专属偏好：与歌单详情页/收藏页共用时，别的页面会按各自的排序项数量
     // clamp 并把索引写回，「自定义」（索引 4）会被改成「添加时间」（索引 3）。
