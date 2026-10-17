@@ -140,40 +140,40 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
   @override
   Widget build(BuildContext context) {
     final snapshot = _snapshot;
+    // ⚠️ 2026-10-17（F6）：这三个分支此前各自套了一层 `Scaffold` ✗ —— 外壳
+    //（`AppShell`）已经提供了 `Scaffold`，再套一层会刷上不透明的
+    // `scaffoldBackgroundColor`，把外壳那层**封面取色背景**盖掉 ⇒ 这一页在
+    // 加载 / 空 / 失败态下与侧边栏之间会显出接缝 ✓。现在只返回内容本身。
     if (snapshot != null && _error == null) {
       if (snapshot.playlist.tracks.isEmpty) {
-        return Scaffold(
-          body: PageScaffold(
-            title: snapshot.playlist.name,
-            actions: [
-              IconButton.filledTonal(
-                tooltip: '刷新',
-                onPressed: _loading ? null : _refresh,
-                icon: const Icon(Symbols.refresh),
-              ),
-            ],
-            body: const QuietEmptyState(
-              icon: Symbols.music_off,
-              title: '歌单没有可用曲目',
-              message: '刷新后会重新读取第三方平台的完整快照。',
+        return PageScaffold(
+          title: snapshot.playlist.name,
+          actions: [
+            IconButton.filledTonal(
+              tooltip: '刷新',
+              onPressed: _loading ? null : _refresh,
+              icon: const Icon(Symbols.refresh),
             ),
+          ],
+          body: const QuietEmptyState(
+            icon: Symbols.music_off,
+            title: '歌单没有可用曲目',
+            message: '刷新后会重新读取第三方平台的完整快照。',
           ),
         );
       }
-      return Scaffold(body: _buildLoadedPage(snapshot));
+      return _buildLoadedPage(snapshot);
     }
-    return Scaffold(
-      body: PageScaffold(
-        title: snapshot?.playlist.name ?? '在线歌单',
-        actions: [
-          IconButton.filledTonal(
-            tooltip: '刷新',
-            onPressed: _loading ? null : _load,
-            icon: const Icon(Symbols.refresh),
-          ),
-        ],
-        body: _buildStatusBody(),
-      ),
+    return PageScaffold(
+      title: snapshot?.playlist.name ?? '在线歌单',
+      actions: [
+        IconButton.filledTonal(
+          tooltip: '刷新',
+          onPressed: _loading ? null : _load,
+          icon: const Icon(Symbols.refresh),
+        ),
+      ],
+      body: _buildStatusBody(),
     );
   }
 

@@ -225,9 +225,22 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
     );
     final currentTabIndex = hasTertiaryContent ? _currentTabIndex : 0;
     return ColoredBox(
-      color: scheme.surfaceContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
+      // **页面底色必须与 `PageScaffold` 同一个来源**（2026-10-17 统一 ✓）：
+      // 这里原本用 `scheme.surfaceContainer` ✗，而 `PageScaffold` 用的是
+      // `Theme.of(context).scaffoldBackgroundColor`（= `surfaceContainerLow`，见 `entry.dart`）
+      // ⇒ 同一个页面在"加载中 → 加载完成"之间**底色会跳一次** ✓，而且详情页与其它页
+      // 永远差一档 ⇒ 某些主题下与侧边栏之间会**显出接缝** ✓。
+      color: Theme.of(context).scaffoldBackgroundColor,
+      // **自己备一层透明 `Material`**（2026-10-17 ✓）：里面的搜索框是 `TextField`，
+      // 它要求祖先里有 `Material` ✓ —— 此前那层嵌套 `Scaffold` 顺手提供了它 ✗
+      //（去掉嵌套 `Scaffold` 后，`TextField` 会直接抛 `No Material widget found`）。
+      // 用**透明** `Material` 而不是再套 `Scaffold` ✓：本组件本来就是一片内容，
+      // 不需要外壳，也不该再刷一层不透明底色（那正是要去掉的东西）。
+      // 与 `OnlineAlbumRow` / `RemoteMediaCard` 里"可点区域不假设祖先有 Material"同一条做法 ✓。
+      child: Material(
+        type: MaterialType.transparency,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
             _UniDetailPageHeader(
@@ -270,6 +283,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
                       : _buildCombinedContent(multiSelectController, scheme)),
             ),
           ],
+        ),
         ),
       ),
     );

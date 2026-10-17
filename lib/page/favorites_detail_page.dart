@@ -126,28 +126,27 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
   @override
   Widget build(BuildContext context) {
     final snapshot = _snapshot;
+    // ⚠️ 2026-10-17（F6）：三个分支都不再套 `Scaffold` ✓ —— 外壳（`AppShell`）已提供，
+    // 再套一层会刷不透明的页面底色，盖掉外壳那层封面取色背景 ⇒ 加载/空/失败态下
+    // 与侧边栏之间会显出接缝。
     if (snapshot != null && !_loading) {
       if (snapshot.tracks.isEmpty) {
-        return const Scaffold(
-          body: PageScaffold(
-            title: '我的收藏',
-            actions: [],
-            body: QuietEmptyState(
-              icon: Symbols.favorite_border,
-              title: '还没有收藏',
-              message: '在线歌曲上点爱心即可收藏。',
-            ),
+        return const PageScaffold(
+          title: '我的收藏',
+          actions: [],
+          body: QuietEmptyState(
+            icon: Symbols.favorite_border,
+            title: '还没有收藏',
+            message: '在线歌曲上点爱心即可收藏。',
           ),
         );
       }
-      return Scaffold(body: _buildLoadedPage(snapshot));
+      return _buildLoadedPage(snapshot);
     }
-    return Scaffold(
-      body: PageScaffold(
-        title: '我的收藏',
-        actions: const [],
-        body: _buildStatusBody(),
-      ),
+    return PageScaffold(
+      title: '我的收藏',
+      actions: const [],
+      body: _buildStatusBody(),
     );
   }
 

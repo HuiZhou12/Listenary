@@ -171,28 +171,26 @@ class _PersonalPlaylistDetailPageState
   @override
   Widget build(BuildContext context) {
     final snapshot = _snapshot;
+    // ⚠️ 2026-10-17（F6）：与「在线歌单」详情页同一处修正 ✓ —— 分支里不再套 `Scaffold`
+    //（外壳已提供），否则会盖掉外壳的封面取色背景、与侧边栏之间显出接缝。
     if (snapshot != null && _error == null) {
       if (snapshot.tracks.isEmpty) {
-        return Scaffold(
-          body: PageScaffold(
-            title: snapshot.name,
-            actions: const [],
-            body: const QuietEmptyState(
-              icon: Symbols.music_off,
-              title: '歌单还没有曲目',
-              message: '从在线搜索、播放历史或订阅歌单中添加。',
-            ),
+        return PageScaffold(
+          title: snapshot.name,
+          actions: const [],
+          body: const QuietEmptyState(
+            icon: Symbols.music_off,
+            title: '歌单还没有曲目',
+            message: '从在线搜索、播放历史或订阅歌单中添加。',
           ),
         );
       }
-      return Scaffold(body: _buildLoadedPage(snapshot));
+      return _buildLoadedPage(snapshot);
     }
-    return Scaffold(
-      body: PageScaffold(
-        title: snapshot?.name ?? '我的在线歌单',
-        actions: const [],
-        body: _buildStatusBody(),
-      ),
+    return PageScaffold(
+      title: snapshot?.name ?? '我的在线歌单',
+      actions: const [],
+      body: _buildStatusBody(),
     );
   }
 
