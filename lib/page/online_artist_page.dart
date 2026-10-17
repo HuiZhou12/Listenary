@@ -460,7 +460,11 @@ class _ArtistHero extends StatelessWidget {
                     // 实测 `?param=1920y1920` 下发 **498 KB**（原始仅 236 KB ✓）⇒ 是真·更大画质 ✓，
                     // 不是把 ~500px 放大 ✗ —— 用户报的"像素很低"就是**放大**造成的 ✓。
                     coverUri: hiResCoverUri(artist.avatarUri),
-                    placeholder: const ColoredBox(color: Color(0xFF1B1B1B)),
+                    // 占位用**主题的封面底色** ✓ —— 此前写死 `Color(0xFF1B1B1B)` ✗，
+                    // 在浅色主题下会先闪出一块近黑矩形 ✓（与卡片/结果行的占位色分叉 ✓）。
+                    placeholder: ColoredBox(
+                      color: scheme.surfaceContainerHighest,
+                    ),
                     // 缓存尺寸与**源图比例**同族（方形 ✓）+ 按请求的 1920 解 ✓。
                     cacheWidth: 1920,
                     cacheHeight: 1920,

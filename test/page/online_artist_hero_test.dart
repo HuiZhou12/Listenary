@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/database.dart';
 import 'package:pure_music/page/online_artist_page.dart';
 import 'package:pure_music/services/music_platform/index.dart';
@@ -110,6 +111,19 @@ void main() {
       ThemeData.light().scaffoldBackgroundColor,
       reason: '渐变的底色必须就是"页面刷的那层色"（scaffoldBackgroundColor ✓）',
     );
+    // 测试里封面不会真的解码出来 ⇒ 画的就是占位 ✓（见 `RemoteMediaCover.build`）。
+    // hero 的封面是页面里**第一个** `RemoteMediaCover`（在 hero 之后才轮到热门歌曲行 ✓）。
+    final lightPlaceholder = _heroPlaceholderColor(tester, index: 0);
+    expect(
+      lightPlaceholder,
+      ThemeData.light().colorScheme.surfaceContainerHighest,
+      reason: 'hero 占位色必须取主题的封面底色 ✓',
+    );
+    expect(
+      lightPlaceholder,
+      isNot(const Color(0xFF1B1B1B)),
+      reason: '浅色主题下不能再是那块近黑占位 ✗',
+    );
 
     // **运行时切主题**（不重建页面 ✓）⇒ 渐变必须跟着变 ✓。
     theme.value = ThemeData.dark();
@@ -122,6 +136,12 @@ void main() {
       reason: '切到暗色后渐变底色也要变成暗色的页面底色 ✓',
     );
     expect(darkColor, isNot(lightColor), reason: '两种主题下不能是同一个颜色 ✗');
+    // 占位色同样跟着主题走 ✓（与渐变同一条主题约束 ✓）。
+    expect(
+      _heroPlaceholderColor(tester, index: 0),
+      ThemeData.dark().colorScheme.surfaceContainerHighest,
+      reason: '切到暗色后占位色也要跟着变 ✓',
+    );
   });
 }
 
@@ -137,6 +157,30 @@ Color _heroGradientColor(WidgetTester tester) {
     }
   }
   fail('没找到艺人页 hero 的渐变（四段那条 ✓）');
+}
+
+/// 取 hero 封面**占位块**的颜色 ✓。
+///
+/// ⚠️ 两条坑（都踩过）：
+/// 1. hero 外层有一层"页面色兜底"的 `ColoredBox`（`online_artist_page.dart`）⇒ 靠
+///    `find.ancestor` 会先拿到页面底色 ✗；
+/// 2. 页面里**不止一个** `RemoteMediaCover`（热门歌曲行的小封面也是 ✓）⇒ 必须取 hero 那个。
+///
+/// 因此直接从 `RemoteMediaCover.placeholder` 这个**组件属性**上读 ✓，不看渲染树 ✓。
+Color _heroPlaceholderColor(WidgetTester tester, {required int index}) {
+  final covers = tester
+      .widgetList<RemoteMediaCover>(
+        find.byType(RemoteMediaCover, skipOffstage: false),
+      )
+      .toList();
+  if (covers.length <= index) {
+    fail('艺人页里没有第 ${index + 1} 个 RemoteMediaCover（实际 ${covers.length} 个）✓');
+  }
+  final placeholder = covers[index].placeholder;
+  if (placeholder is! ColoredBox) {
+    fail('hero 占位不是 ColoredBox，而是 ${placeholder.runtimeType} ✗');
+  }
+  return placeholder.color;
 }
 
 MusicTrack track(String id, String title) => MusicTrack(

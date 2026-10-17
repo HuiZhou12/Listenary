@@ -16,6 +16,10 @@ import 'package:pure_music/services/music_platform/online_library/personal_onlin
 /// "同一首歌在 A 页能点、B 页点不动"。
 ///
 /// **只做行本身**：起播、加载、分页都留给调用方，因此也适用于"新歌""榜单曲目"等场景。
+///
+/// **可播判据统一在这里**（2026-10-17 ✓）：见 [OnlineTrackEntry.playableOf]。
+/// 页面自己算过的结论请**传进来**（`playable:`），别在这里用另一套判据再算一遍 ——
+/// 那正是"同一页里行灰掉、按钮却把它算进队列"的成因。
 class OnlineTrackEntry extends StatelessWidget {
   const OnlineTrackEntry({
     super.key,
@@ -24,7 +28,35 @@ class OnlineTrackEntry extends StatelessWidget {
     this.onRemove,
     this.animateEntrance = true,
     this.leadingIndex,
+    this.playable,
   });
+
+  /// **可播判据的唯一出口**（2026-10-17）：界面层不许再各写一份。
+  ///
+  /// 与 `OnlineMusicCapabilities.canPlayTrack` **逐字同义**：
+  /// 「解析侧有人能处理这条曲目身份（[PlatformIdentity]）」**且**「内容平台没有明确声明
+  /// 为 `paid` / `unavailable`」；`unknown` **不视为不可播**。
+  ///
+  /// 为什么必须共用：内容平台的 `availability` **只说明它自己放不放**，而播放解析
+  /// （`stream`）是**独立能力、可以路由到别的平台** —— 这不是"多一层校验"，而是
+  /// "别拿内容平台的标记去替解析侧下结论"。
+  /// 两边各写一遍的下场已经出现过：同一页里"行灰掉、但「播放全部」把这首歌算进去了"。
+  ///
+  /// [providerCapabilities] 为 null（页面没注册在线音乐 Provider，例如组件级测试）时，
+  /// 按**同一套语义**回落：只看身份有效性 + 可用状态，不看平台能力表。
+  static bool playableOf({
+    required MusicTrack track,
+    OnlineMusicCapabilities? providerCapabilities,
+  }) {
+    if (providerCapabilities != null) {
+      return providerCapabilities.canPlayTrack(track);
+    }
+    // 回落分支与 `canPlayTrack` 的形状保持一致（身份 + 可用状态，`unknown` 放行）。
+    return track.ref.hasValidIdentity &&
+        track.availability != TrackAvailability.unavailable &&
+        track.availability != TrackAvailability.paid;
+  }
+
   final MusicTrack track;
   /// 点这一行做什么（通常是"用当前列表起播"）。为 null 时行不可点。
   final VoidCallback? onTap;
@@ -37,15 +69,23 @@ class OnlineTrackEntry extends StatelessWidget {
   /// **行首序号**（可选）：只有"有排序语义"的列表（榜单/专辑）才传，
   /// 普通歌单传 null ⇒ 不显示序号（与参考产品的规则一致）。
   final int? leadingIndex;
+  /// **调用方算好的可播结论**（可选）：不传则用 [playableOf] 算。
+  ///
+  /// 用途只有一个：让"同一页里的行 / 「播放全部」队列 / 「播放全部」按钮"三者
+  /// **共用同一个结论**（页面已经算过一遍，就不该在这里用另一套判据再算一遍）。
+  /// 不传时行为与既有一致 ⇒ 其余调用点不受影响。
+  final bool? playable;
   @override
   Widget build(BuildContext context) {
-    // 与既有各页一致的判定：明确标为"不可用/付费"的曲目不给点。
-    // P-63：可用性判据加**平台身份**维度 —— 身份无效（自定义平台缺稳定 ID）不可播；
-    // 既有 unavailable/paid 语义保留，只呈现状态、不改数据。
+    // 判据见 [playableOf]：与页面级「播放全部」用的是同一套语义。
     final playable =
-        track.ref.hasValidIdentity &&
-        track.availability != TrackAvailability.unavailable &&
-        track.availability != TrackAvailability.paid;
+        this.playable ??
+        playableOf(
+          track: track,
+          providerCapabilities: context
+              .read<OnlineMusicService?>()
+              ?.capabilities,
+        );
     final artistText = track.artistDisplay;
     final albumText = track.album;
     final details = [

@@ -373,7 +373,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
     final paths = List<String>.from(widget.playlist.paths);
 
     return ReorderableListView.builder(
-      padding: const EdgeInsets.only(bottom: 96.0),
+      padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
       buildDefaultDragHandles: false,
       itemCount: contentList.length,
       onReorderItem: (oldIndex, newIndex) {

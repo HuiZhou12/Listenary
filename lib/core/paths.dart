@@ -28,7 +28,9 @@ const String FOLDER_DETAIL_PAGE = '/folders/detail';
 
 const String PLAYLISTS_PAGE = '/playlists';
 const String PLAYLIST_DETAIL_PAGE = '/playlists/detail';
-const String ONLINE_PLAYLISTS_PAGE = '/playlists/online';
+// `/playlists/online` 本身**不是页面**（纯分组节点）：它下面挂着两条子路由 ✓。
+// 这里曾经有一个 `ONLINE_PLAYLISTS_PAGE` 常量指向一个独立列表页，但那页与歌单页
+// 做同一件事、且全仓没有任何入口指向它 ⇒ 页面与常量一起删除 ✓。
 const String ONLINE_PLAYLIST_DETAIL_PAGE = '/playlists/online/detail';
 // **远程歌单预览**（2026-10-12）：只读、不订阅 —— 点榜单/歌单封面进这里 ✓。
 const String REMOTE_PLAYLIST_PAGE = '/playlists/online/preview';

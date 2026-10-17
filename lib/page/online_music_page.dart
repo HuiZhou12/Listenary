@@ -703,37 +703,37 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
           icon: const Icon(Symbols.history),
         ),
       ],
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Focus(
-              onFocusChange: HotkeysHelper.onFocusChanges,
-              child: TextField(
-                key: const ValueKey('online-search-field'),
-                controller: _searchController,
-                textInputAction: TextInputAction.search,
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(Symbols.search),
-                  hintText: '搜索在线音乐',
-                  suffixIcon: ListenableBuilder(
-                    listenable: _searchController,
-                    builder: (context, _) {
-                      final hasText = canShowSearchClearAction(
-                        _searchController.text,
-                      );
-                      return Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (hasText)
-                            IconButton(
-                              tooltip: '清除',
-                              onPressed: _clearSearch,
-                              icon: const Icon(Symbols.close),
-                            ),
+      // **不再自己套一层水平内边距** ✗：`PageScaffold` 已经给了 `horizontal: 16`
+      //（见 `page_scaffold.dart`）⇒ 再包一层就是左右各 32 ✓，比主页/探索页多缩进一段 ✓。
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Focus(
+            onFocusChange: HotkeysHelper.onFocusChanges,
+            child: TextField(
+              key: const ValueKey('online-search-field'),
+              controller: _searchController,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Symbols.search),
+                hintText: '搜索在线音乐',
+                suffixIcon: ListenableBuilder(
+                  listenable: _searchController,
+                  builder: (context, _) {
+                    final hasText = canShowSearchClearAction(
+                      _searchController.text,
+                    );
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (hasText)
                           IconButton(
-                            tooltip: '在线搜索',
+                            tooltip: '清除',
+                            onPressed: _clearSearch,
+                            icon: const Icon(Symbols.close),
+                          ),
+                        IconButton(
+                          tooltip: '在线搜索',
                             onPressed:
                                 hasText &&
                                     _status != _OnlineSearchStatus.loading
@@ -768,7 +768,6 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
             Expanded(child: _buildSearchBody()),
           ],
         ),
-      ),
     );
   }
 
@@ -917,7 +916,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     final entries = _buildEntries();
     return ListView.builder(
       // 底部留白：迷你播放器浮在底部（64 高 + 32 边距），否则「加载更多」会被它挡住。
-      padding: const EdgeInsets.only(bottom: 96.0),
+      padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
       itemCount: entries.length,
       itemBuilder: (context, index) => switch (entries[index]) {
         _GroupHeaderEntry(:final platform) => _buildGroupHeader(platform),

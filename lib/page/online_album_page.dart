@@ -205,15 +205,18 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
                   track.artistDisplay.toLowerCase().contains(query))
                 track,
           ];
-    // **"能不能播"要问解析侧，不是问内容平台**（2026-10-12 用户纠正 ✓）：
-    // 内容平台的 `availability` 只说明**它自己**放不放（例如要会员 ✓）；
-    // 而我们的播放解析（`stream`）是**独立能力、可以路由到别的平台** ✓
-    // ⇒ 判据用 `capabilities.canResolveIdentity(...)`（"谁握有播放权限" ✓）。
+    // **"能不能播"与行用同一套判据**（2026-10-17 统一 ✓，F1）：
+    // 此前这里只问"解析侧有没有人能处理这条身份"✗，而行（`OnlineTrackEntry`）另按
+    // 内容平台的 `availability` 判 ⇒ 同一页里**行灰掉、但「播放全部」把它算进了队列** ✗。
+    // 现在两处都用 [OnlineTrackEntry.playableOf]（= `canPlayTrack`：解析侧身份 **且**
+    // 平台未声明 paid/unavailable，`unknown` 放行 ✓）。
     final service = context.read<OnlineMusicService?>();
-    final resolvable = [
+    final playableTracks = [
       for (final track in tracks)
-        if (service?.capabilities.canResolveIdentity(track.ref.identity) ??
-            false)
+        if (OnlineTrackEntry.playableOf(
+          track: track,
+          providerCapabilities: service?.capabilities,
+        ))
           track,
     ];
 
@@ -246,13 +249,20 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
       secondaryContentBuilder: (context, track, index, msc, view) =>
           OnlineTrackEntry(
             track: track,
+            // 行与「播放全部」共用同一份结论 ✓（不再各判各的 ✓）。
+            playable: OnlineTrackEntry.playableOf(
+              track: track,
+              providerCapabilities: service?.capabilities,
+            ),
             // **专辑曲目不标序号**（2026-10-12 用户裁定 ✓）：唱片顺序已经在歌单内部体现，
             // 行首再放"1、2、3"反而像排行榜 ✗ ⇒ 去掉 ✓（序号只留给**名次集合**：榜单 ✓）。
             onTap: () => playOnlineTrackSelection(
               context,
               OnlineTrackSelection.fromResultPage(
-                tracks: tracks,
+                tracks: playableTracks,
                 selectedRef: track.ref,
+                // 队列已按**统一判据**筛过 ⇒ 不要再让旧的内容平台标记过滤一遍 ✗。
+                onlyPlayable: false,
               ),
             ),
           ),
@@ -269,18 +279,19 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
         // 按钮就按不了 —— 但我们不能让它"灰得没理由" ✗ ⇒ 用悬停说明讲清楚 ✓
         //（Disabled 按钮自己收不到 hover ✓，`Tooltip` 会自己接管这块区域 ✓）。
         Tooltip(
-          message: resolvable.isEmpty
-              ? '当前没有任何平台握有这些曲目的播放解析权限 ⇒ 所以按不了'
+          message: playableTracks.isEmpty
+              ? '这张专辑的曲目当前都不可播（平台未放行，或没有任何平台握有解析权限）⇒ 所以按不了'
               : '从这张专辑的第一首开始播放（由握有解析权限的平台解析）',
           child: FilledButton.icon(
-            onPressed: resolvable.isEmpty
+            onPressed: playableTracks.isEmpty
                 ? null
                 : () => playOnlineTrackSelection(
                     context,
                     OnlineTrackSelection.fromResultPage(
-                      tracks: resolvable,
-                      selectedRef: resolvable.first.ref,
-                      // **不要再按内容平台的标记二次过滤** ✗（用户指出的那个错 ✓）。
+                      tracks: playableTracks,
+                      selectedRef: playableTracks.first.ref,
+                      // 队列已按**统一判据**筛过 ⇒ 不要再让旧的内容平台标记过滤一遍 ✗
+                      //（那会把可播曲目又被 `paid` 标记踢掉，与行上的结论再次分叉）。
                       onlyPlayable: false,
                     ),
                   ),

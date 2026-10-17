@@ -96,8 +96,30 @@ class _ChartListPageState extends State<ChartListPage>
     fallback: '读取该平台榜单失败',
   );
 
-  /// 订阅后打开：榜单在榜单型平台上就是歌单，因此复用既有的订阅 + 歌单详情链路。
-  Future<void> _open(RemotePlaylistSummary summary) async {
+  /// **点封面 = 打开只读预览**（不订阅 ✓）。
+  ///
+  /// 与探索页、平台歌单列表页同一条规则：榜单在榜单型平台上就是歌单，因此预览直接取
+  /// 远端歌单详情、**一个字节都不写库**（见 `remote_playlist_page.dart`）。
+  /// 订阅只由卡片下方的「订阅」按钮触发 —— 此前这一页点封面会**直接入库并跳详情**，
+  /// 与探索页"点封面只预览"的做法相反，同一个动作在两个页面给出不同结论。
+  Future<void> _preview(RemotePlaylistSummary summary) => context.push(
+    app_paths.REMOTE_PLAYLIST_PAGE,
+    extra: (
+      platform: summary.platform,
+      playlistId: summary.id,
+      name: summary.name,
+      coverUri: summary.coverUri,
+      creator: summary.creator,
+      trackCount: summary.trackCount,
+      // 本页每一项都是**名次集合**（榜单）⇒ 预览页据此显示行首序号。
+      ranked: true,
+    ),
+  );
+
+  /// **订阅入库**（**不跳转** ✓）：只把这份榜单放进媒体库。
+  ///
+  /// 与探索页同一条规则：订阅后**留在原地**；想细看就点封面走预览。
+  Future<void> _subscribe(RemotePlaylistSummary summary) async {
     if (_subscribing.contains(summary.platform)) return;
     setState(() => _subscribing.add(summary.platform));
     final controller = context.read<OnlinePlaylistController>();
@@ -109,7 +131,7 @@ class _ChartListPageState extends State<ChartListPage>
     setState(() => _subscribing.remove(summary.platform));
     if (saved == null) {
       showTextOnSnackBar(
-        controller.snapshot.errorMessage ?? '打开该榜单失败',
+        controller.snapshot.errorMessage ?? '订阅该榜单失败',
         variant: ToastVariant.error,
       );
       return;
@@ -117,13 +139,12 @@ class _ChartListPageState extends State<ChartListPage>
     // 本页每一项都是**名次集合**（榜单）⇒ 记下"这是榜单订阅"，详情页据此显示行首序号。
     // 记在偏好里（新增键值，**不动 DB schema** ✓）。
     // 落盘用 `.ignore()` **火焰式**：内存里已经标记；落盘失败只影响"重启后是否还显示序号"，
-    // **不能**因为落盘失败就打断"订阅成功后进详情页"的主流程（曾因此让一条测试变红）。
+    // **不能**因为落盘失败就打断"订阅成功"这个主流程（曾因此让一条测试变红）。
     AppPreference.instance.markRankedSubscription(saved.localId);
     AppPreference.instance.save().ignore();
-    if (!mounted) return;
-    await context.push(
-      app_paths.ONLINE_PLAYLIST_DETAIL_PAGE,
-      extra: saved.localId,
+    showTextOnSnackBar(
+      '已订阅「${saved.playlist.name}」，可在媒体库查看',
+      variant: ToastVariant.success,
     );
   }
 
@@ -195,11 +216,13 @@ class _ChartListPageState extends State<ChartListPage>
               details: _detailsOf(summary),
               sourceLabel: platformLabelForIdentityOnly(summary.identity),
               placeholderIcon: Symbols.leaderboard,
-              onTap: busy ? null : () => _open(summary),
+              // **点封面 = 打开只读预览**（与探索页同一条规则 ✓）：此前是"点一下就订阅并
+              // 跳进详情" ✗ —— 同一个动作在两个页面结论不同。
+              onTap: () => _preview(summary),
               semanticLabel:
-                  '${summary.name}，来自${platformLabelForIdentityOnly(summary.identity)}，点击订阅并打开',
+                  '${summary.name}，来自${platformLabelForIdentityOnly(summary.identity)}，点击预览（不会订阅）',
               footer: TextButton(
-                onPressed: busy ? null : () => _open(summary),
+                onPressed: busy ? null : () => _subscribe(summary),
                 child: const Text('订阅'),
               ),
             );

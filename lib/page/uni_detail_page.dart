@@ -363,7 +363,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
                 },
               ),
             ContentView.list => SliverFixedExtentList.builder(
-              itemExtent: 64,
+              itemExtent: AppExtent.listRow,
               itemCount: widget.secondaryContent.length,
               itemBuilder: (context, i) => widget.secondaryContentBuilder(
                 context,
@@ -385,7 +385,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
               ),
             ),
           },
-          const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
+          const SliverPadding(padding: EdgeInsets.only(bottom: Spacing.bottomNav)),
         ],
       ),
     );
@@ -418,7 +418,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
               ContentView.list,
             ),
           ),
-          const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
+          const SliverPadding(padding: EdgeInsets.only(bottom: Spacing.bottomNav)),
         ],
       ),
     );
@@ -464,7 +464,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
                 },
               ),
             ContentView.list => SliverFixedExtentList.builder(
-              itemExtent: 64,
+              itemExtent: AppExtent.listRow,
               itemCount: widget.secondaryContent.length,
               itemBuilder: (context, i) => widget.secondaryContentBuilder(
                 context,
@@ -519,7 +519,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
               ),
             ),
           ],
-          const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
+          const SliverPadding(padding: EdgeInsets.only(bottom: Spacing.bottomNav)),
         ],
       ),
     );

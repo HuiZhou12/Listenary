@@ -26,7 +26,6 @@ import 'package:pure_music/page/platform_playlists_page.dart';
 import 'package:pure_music/page/chart_list_page.dart';
 import 'package:pure_music/page/playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
-import 'package:pure_music/page/online_playlists_page.dart';
 import 'package:pure_music/page/online_playlist_detail_page.dart';
 import 'package:pure_music/page/remote_playlist_page.dart';
 import 'package:pure_music/page/personal_playlist_detail_page.dart';
@@ -1008,9 +1007,14 @@ class _EntryState extends State<Entry>
                 path: app_paths.PLAYLISTS_PAGE,
                 builder: (context, state) => const PlaylistsPage(),
                 routes: [
+                  // `online` 是**纯分组节点**（与下面的 `personal` 同构 ✓）：
+                  // 它曾经挂着一个"在线歌单"独立列表页，但那页与歌单页做的是同一件事
+                  // （添加/刷新/编辑/删除在线订阅）且**没有任何入口**指向它
+                  // ⇒ 已删除，只保留它下面的两条子路由（详情 / 只读预览）。
+                  // go_router 要求每个 GoRoute 至少提供 builder/pageBuilder/redirect 之一。
                   GoRoute(
                     path: 'online',
-                    builder: (context, state) => const OnlinePlaylistsPage(),
+                    builder: (context, state) => const SizedBox.shrink(),
                     routes: [
                       GoRoute(
                         path: 'detail',
@@ -1040,7 +1044,7 @@ class _EntryState extends State<Entry>
                           if (extra == null) {
                             return SlideTransitionPage(
                               key: state.pageKey,
-                              child: const OnlinePlaylistsPage(),
+                              child: const PlaylistsPage(),
                             );
                           }
                           return SlideTransitionPage(

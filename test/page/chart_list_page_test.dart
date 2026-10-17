@@ -56,6 +56,12 @@ void main() {
             body: Text('stub:${app_paths.ONLINE_PLAYLIST_DETAIL_PAGE}'),
           ),
         ),
+        GoRoute(
+          path: app_paths.REMOTE_PLAYLIST_PAGE,
+          builder: (context, state) => const Scaffold(
+            body: Text('stub:${app_paths.REMOTE_PLAYLIST_PAGE}'),
+          ),
+        ),
       ],
     );
     addTearDown(router.dispose);
@@ -210,7 +216,7 @@ void main() {
     expect(find.text('重试'), findsOneWidget);
   });
 
-  testWidgets('订阅榜单会把 (平台, ID) 交出去，成功后进入歌单详情', (tester) async {
+  testWidgets('★ 订阅榜单只入库、留在原地（不再自动跳详情）', (tester) async {
     final playlistService = _RecordingPlaylistService();
     subscriptions.dispose();
     subscriptions = OnlinePlaylistController(
@@ -242,17 +248,65 @@ void main() {
     await tester.tap(find.text('订阅'));
     await tester.pumpAndSettle();
 
-    // 榜单在榜单型平台上就是歌单 ⇒ 订阅后走的是同一条歌单详情链路。
+    // 榜单在榜单型平台上就是歌单 ⇒ 订阅复用既有的订阅链路，来源身份原样交出。
     expect(playlistService.requestedPlaylists, hasLength(1));
     expect(
       playlistService.requestedPlaylists.single.platform,
       MusicPlatform.netease,
     );
     expect(playlistService.requestedPlaylists.single.id, '19723756');
+    // **订阅不再自动跳转**（2026-10-12 用户指出旧行为反直觉 ✓）：想细看要点封面走预览。
     expect(
       find.text('stub:${app_paths.ONLINE_PLAYLIST_DETAIL_PAGE}'),
+      findsNothing,
+    );
+    expect(
+      find.text('stub:${app_paths.REMOTE_PLAYLIST_PAGE}'),
+      findsNothing,
+    );
+    // 留在榜单页：网格里的卡片还在。
+    expect(find.byType(RemoteMediaCard), findsOneWidget);
+  });
+
+  testWidgets('★ 点封面 = 只读预览（不订阅、不写库）', (tester) async {
+    final playlistService = _RecordingPlaylistService();
+    subscriptions.dispose();
+    subscriptions = OnlinePlaylistController(
+      repository: SynchronousFuture(repository),
+      service: playlistService,
+    );
+
+    await pumpPage(
+      tester,
+      service: _ChartService(
+        capabilities: OnlineMusicCapabilities(
+          searchablePlatforms: const [],
+          resolvablePlatforms: const [],
+          playlistPlatforms: const [MusicPlatform.netease],
+          chartPlatforms: const [MusicPlatform.netease],
+        ),
+        charts: const {
+          MusicPlatform.netease: [
+            RemotePlaylistSummary(
+              platform: MusicPlatform.netease,
+              id: '19723756',
+              name: '飙升榜',
+            ),
+          ],
+        },
+      ),
+    );
+
+    await tester.tap(find.byType(RemoteMediaCard));
+    await tester.pumpAndSettle();
+
+    // 进入只读预览路由。
+    expect(
+      find.text('stub:${app_paths.REMOTE_PLAYLIST_PAGE}'),
       findsOneWidget,
     );
+    // **一个字节都不写库**：预览不该碰订阅链路。
+    expect(playlistService.requestedPlaylists, isEmpty);
   });
 }
 

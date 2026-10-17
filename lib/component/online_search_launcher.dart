@@ -20,8 +20,9 @@ final class OnlineTrackSelection {
   /// **[onlyPlayable]**（2026-10-12 新增）：默认仍按内容平台声明的 `availability` 过滤 ✓
   ///（老调用点语义不变 ✓）。但**内容平台的标记不等于能不能播** ✗ ——
   /// 播放解析（`stream`）是**独立能力、可以路由到另一个平台** ✓（用户指出的正是这一点 ✓）。
-  /// ⇒ 已经按"**解析权限在哪个平台**"（`capabilities.canResolveIdentity` ✓）筛过的调用方，
-  /// 传 `onlyPlayable: false` ✓，别再拿内容平台的标记二次过滤 ✗。
+  /// ⇒ 已经自己按**统一判据**（`OnlineMusicCapabilities.canPlayTrack`：解析侧身份 **且**
+  /// 平台未声明 `paid`/`unavailable`，`unknown` 放行 ✓）筛过的调用方，传 `onlyPlayable: false` ✓，
+  /// 别再拿内容平台的标记二次过滤 ✗ —— 否则会把可播曲目又踢出去，与行上的结论再次分叉。
   factory OnlineTrackSelection.fromResultPage({
     required Iterable<MusicTrack> tracks,
     required PlatformTrackRef selectedRef,

@@ -127,7 +127,7 @@ class _AppearanceTabContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      padding: const EdgeInsets.only(bottom: Spacing.bottomNav, right: 20),
       children: const [
         _ThemeOptionControl(),
         SizedBox(height: 16.0),
@@ -1164,7 +1164,7 @@ class _LyricsTabContentState extends State<_LyricsTabContent> {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      padding: const EdgeInsets.only(bottom: Spacing.bottomNav, right: 20),
       children: [
         // ── 顶栏歌词 ──
         const _LyricsSectionTitle('顶栏歌词'),
@@ -1497,7 +1497,7 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
         final running = _service.isRunning;
         final busy = _service.isKilling;
         return ListView(
-          padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+          padding: const EdgeInsets.only(bottom: Spacing.bottomNav, right: 20),
           children: [
             SettingsTile(
               description: '桌面歌词',
@@ -2092,7 +2092,7 @@ class _AdvancedTabContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      padding: const EdgeInsets.only(bottom: Spacing.bottomNav, right: 20),
       children: const [
         ReplayGainControl(),
         SizedBox(height: 16.0),
@@ -2484,7 +2484,7 @@ class _AboutTabContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      padding: const EdgeInsets.only(bottom: Spacing.bottomNav, right: 20),
       children: const [
         _AboutSectionHeader('更新'),
         SizedBox(height: 4.0),

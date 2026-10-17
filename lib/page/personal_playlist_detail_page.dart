@@ -7,6 +7,7 @@ import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_cover_cache.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/preference.dart';
@@ -384,7 +385,7 @@ class _PersonalPlaylistDetailPageState
   Widget _buildReorderBody(List<MusicTrack> tracks) {
     final scheme = Theme.of(context).colorScheme;
     return ReorderableListView.builder(
-      padding: const EdgeInsets.only(bottom: 96),
+      padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
       // 关闭框架默认的桌面拖拽手柄：它是 Stack 里 Positioned(end: 8) 覆盖在行尾
       // 的 Icons.drag_handle，不参与布局，会直接压住行尾的时长文本与悬浮操作按钮。
       // 这里与歌单详情页（playlist_detail_page.dart 的 _ReorderItem）一致，

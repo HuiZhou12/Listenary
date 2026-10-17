@@ -56,6 +56,7 @@ void main() {
     VoidCallback? onTap,
     VoidCallback? onRemove,
     bool animateEntrance = true,
+    bool? playable,
   }) async {
     tester.view.physicalSize = const Size(900, 400);
     tester.view.devicePixelRatio = 1;
@@ -70,6 +71,7 @@ void main() {
               onTap: onTap,
               onRemove: onRemove,
               animateEntrance: animateEntrance,
+              playable: playable,
             ),
           ),
         ),
@@ -188,5 +190,108 @@ void main() {
 
     await pumpEntry(tester, forTrack: track('t1'));
     expect(find.byType(DirectionalListItemEntrance), findsOneWidget);
+  });
+
+  // ----------------------------------------------------------------- F1 判据统一
+  //
+  // 背景（2026-10-17 用户裁定）：`canPlayTrack`（解析侧身份 **且** 平台未声明
+  // paid/unavailable，`unknown` 放行）是**唯一**的可播判据。
+  // 此前预览页/专辑页的「播放全部」只问"解析侧能不能解析"、行却另按 availability 判
+  // ⇒ 同一页里**行灰掉、按钮却把这首歌算进了队列**。
+  // 这两条把"判据本身"与"行能接受页面算好的结论"钉住。
+
+  testWidgets('★ 可播判据 = canPlayTrack：身份与可用状态都要过，unknown 放行', (tester) async {
+    final capabilities = OnlineMusicCapabilities(
+      searchablePlatforms: const [],
+      // 网易云有解析能力；QQ 没有 ⇒ 用来验"解析侧身份"这一维。
+      resolvablePlatforms: const [MusicPlatform.netease],
+    );
+    final resolveable = track('n1', platform: MusicPlatform.netease);
+    final notResolveable = track('q1', platform: MusicPlatform.qq);
+    final paid = track(
+      'n2',
+      platform: MusicPlatform.netease,
+      availability: TrackAvailability.paid,
+    );
+    final unknown = track(
+      'n3',
+      platform: MusicPlatform.netease,
+      availability: TrackAvailability.unknown,
+    );
+
+    expect(
+      OnlineTrackEntry.playableOf(
+        track: resolveable,
+        providerCapabilities: capabilities,
+      ),
+      isTrue,
+      reason: '有解析能力且平台没声明问题时必须可播 ✓',
+    );
+    expect(
+      OnlineTrackEntry.playableOf(
+        track: notResolveable,
+        providerCapabilities: capabilities,
+      ),
+      isFalse,
+      reason: '没有任何解析侧能处理这条身份 ⇒ 不可播（这是"播放解析是独立能力"的直接后果）',
+    );
+    expect(
+      OnlineTrackEntry.playableOf(
+        track: paid,
+        providerCapabilities: capabilities,
+      ),
+      isFalse,
+      reason: '平台明确声明付费 ⇒ 不可播',
+    );
+    expect(
+      OnlineTrackEntry.playableOf(
+        track: unknown,
+        providerCapabilities: capabilities,
+      ),
+      isTrue,
+      reason: '`unknown` 只是"平台没说" ⇒ **不能**当成不可播 ✓（用户明确要求保留兼容）',
+    );
+
+    // 没有注册在线音乐 Provider（组件级测试常见）⇒ 回落分支必须给出**同一套结论**。
+    expect(
+      OnlineTrackEntry.playableOf(track: resolveable),
+      isTrue,
+      reason: '回落分支：身份有效 + 可用状态放行 ⇒ 可播',
+    );
+    expect(
+      OnlineTrackEntry.playableOf(track: paid),
+      isFalse,
+      reason: '回落分支同样要挡住 paid',
+    );
+    expect(
+      OnlineTrackEntry.playableOf(track: unknown),
+      isTrue,
+      reason: '回落分支同样放行 unknown',
+    );
+  });
+
+  testWidgets('★ 行接受调用方算好的结论（与「播放全部」共用一份判据）', (tester) async {
+    // 调用方（预览页/专辑页）把 `canPlayTrack` 的结论传进来 ⇒ 行必须照它走，
+    // 不许再按 availability 自己判一遍 —— 那正是"行与按钮分叉"的来源。
+    await pumpEntry(
+      tester,
+      forTrack: track('t1'),
+      playable: false,
+      onTap: () {},
+    );
+    var row = tester.widget<OnlineTrackRow>(find.byType(OnlineTrackRow));
+    expect(row.enabled, isFalse, reason: '调用方说不可播 ⇒ 行不可点');
+    expect(row.onTap, isNull);
+
+    // 反过来：调用方说可播（解析侧握有权限），行就该可点。
+    await pumpEntry(
+      tester,
+      forTrack: track('t1'),
+      playable: true,
+      onTap: () {},
+    );
+    row = tester.widget<OnlineTrackRow>(find.byType(OnlineTrackRow));
+    expect(row.enabled, isTrue);
+    expect(row.onTap, isNotNull);
   });
 }

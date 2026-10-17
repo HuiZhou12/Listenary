@@ -6,6 +6,7 @@ import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/component/settings_tile.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/play_service.dart';
@@ -476,7 +477,7 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
           _buildLogHeader(scheme),
           const SizedBox(height: 4),
           Expanded(flex: 2, child: _buildLogField()),
-          const Padding(padding: EdgeInsets.only(bottom: 96.0)),
+          const Padding(padding: EdgeInsets.only(bottom: Spacing.bottomNav)),
         ],
       );
     }
@@ -487,7 +488,7 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
         Expanded(child: _buildDescriptionField()),
         const SizedBox(height: 8),
         _buildLogHeader(scheme),
-        const Padding(padding: EdgeInsets.only(bottom: 96.0)),
+        const Padding(padding: EdgeInsets.only(bottom: Spacing.bottomNav)),
       ],
     );
   }

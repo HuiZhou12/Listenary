@@ -8,7 +8,6 @@ import 'package:pure_music/core/database.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/page/online_playlist_detail_page.dart';
-import 'package:pure_music/page/online_playlists_page.dart';
 import 'package:pure_music/page/personal_playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
@@ -42,102 +41,6 @@ void main() {
     controller.dispose();
     personalController.dispose();
     database.dispose();
-  });
-
-  testWidgets('empty subscription view exposes the add action', (tester) async {
-    await _pump(
-      tester,
-      controller,
-      personalController,
-      const OnlinePlaylistsPage(),
-    );
-
-    await tester.tap(find.byTooltip('添加在线歌单'));
-    await tester.pump();
-    expect(find.text('网易云歌单 ID'), findsOneWidget);
-  });
-
-  testWidgets('多平台时可选择来源平台，并把手选的 (平台, ID) 交给控制器', (tester) async {
-    final service = _FakeOnlineMusicService(
-      playlistPlatforms: const {MusicPlatform.netease, MusicPlatform.qq},
-    );
-    final multiController = OnlinePlaylistController(
-      repository: SynchronousFuture(repository),
-      service: service,
-    );
-    addTearDown(multiController.dispose);
-
-    await _pump(
-      tester,
-      multiController,
-      personalController,
-      const OnlinePlaylistsPage(),
-      service: service,
-    );
-    await tester.tap(find.byTooltip('添加在线歌单'));
-    await tester.pumpAndSettle();
-
-    // 两个平台都能提供歌单详情 ⇒ 出现来源选择，默认是列表里的第一个（网易云）。
-    expect(find.byType(SegmentedButton<MusicPlatform>), findsOneWidget);
-    expect(find.text('网易云歌单 ID'), findsOneWidget);
-
-    await tester.tap(find.text('QQ音乐'));
-    await tester.pumpAndSettle();
-    expect(find.text('QQ音乐歌单 ID'), findsOneWidget);
-
-    await tester.enterText(find.byType(TextField), '7729596131');
-    await tester.tap(find.text('添加'));
-    await tester.pumpAndSettle();
-
-    // 来源身份不能丢：控制器拿到的是**用户选的平台**，不是硬编码的网易云。
-    expect(service.requestedPlaylists, hasLength(1));
-    expect(service.requestedPlaylists.single.platform, MusicPlatform.qq);
-    expect(service.requestedPlaylists.single.id, '7729596131');
-  });
-
-  testWidgets('单平台时不摆来源选择控件，且校验平台自己的 ID 形状', (tester) async {
-    final service = _FakeOnlineMusicService();
-    final singleController = OnlinePlaylistController(
-      repository: SynchronousFuture(repository),
-      service: service,
-    );
-    addTearDown(singleController.dispose);
-
-    await _pump(
-      tester,
-      singleController,
-      personalController,
-      const OnlinePlaylistsPage(),
-      service: service,
-    );
-    await tester.tap(find.byTooltip('添加在线歌单'));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(SegmentedButton<MusicPlatform>), findsNothing);
-    expect(find.text('网易云歌单 ID'), findsOneWidget);
-
-    // 网易云的 ID 是数字：填字母时内联报错且不发请求。
-    await tester.enterText(find.byType(TextField), 'abc');
-    await tester.tap(find.text('添加'));
-    await tester.pumpAndSettle();
-    expect(find.text('网易云歌单 ID 是数字'), findsOneWidget);
-    expect(service.requestedPlaylists, isEmpty);
-  });
-
-  testWidgets('subscription list shows safe metadata and read-only actions', (
-    tester,
-  ) async {
-    repository.replaceSubscriptionSnapshot(_playlist());
-
-    await _pump(
-      tester,
-      controller,
-      personalController,
-      const OnlinePlaylistsPage(),
-    );
-
-    expect(find.byTooltip('添加在线歌单'), findsOneWidget);
-    expect(find.byTooltip('编辑'), findsNothing);
   });
 
   testWidgets(
@@ -437,6 +340,60 @@ void main() {
     expect(find.text('Remote Playlist'), findsOneWidget);
     expect(find.text('播放全部'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('★ /playlists/online 是纯分组节点：它的子路由仍然挂得上', (tester) async {
+    // 背景（2026-10-16 用户裁定）：`online` 下面那个"在线歌单"独立列表页与歌单页做的是
+    // 同一件事、且全仓没有任何入口指向它 ⇒ 页面与 `ONLINE_PLAYLISTS_PAGE` 常量一起删除，
+    // `online` 退回**纯分组节点**（与下面的 `personal` 同构 ✓）。
+    //
+    // 这条测试把分组节点的**嵌套结构**钉住（用替身页，不拉真页面与网络）：
+    // 若哪天把 `detail`/`preview` 挂错层级，或者给 `online` 换回一个会吞掉子路由的 builder，
+    // 它会当场变红 —— 而"两条子路由还进得去"正是删除这个页面时唯一需要守住的东西。
+    final router = GoRouter(
+      initialLocation: '/playlists',
+      routes: [
+        GoRoute(
+          path: '/playlists',
+          builder: (context, state) => const Scaffold(body: Text('stub:playlists')),
+          routes: [
+            GoRoute(
+              // 纯分组节点 ✓（生产里是 `SizedBox.shrink`，这里换成可见替身以便断言）。
+              path: 'online',
+              builder: (context, state) =>
+                  const Scaffold(body: Text('stub:online-group')),
+              routes: [
+                GoRoute(
+                  path: 'detail',
+                  builder: (context, state) =>
+                      const Scaffold(body: Text('stub:online-detail')),
+                ),
+                GoRoute(
+                  path: 'preview',
+                  builder: (context, state) =>
+                      const Scaffold(body: Text('stub:online-preview')),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    expect(find.text('stub:playlists'), findsOneWidget);
+
+    router.push('/playlists/online/detail');
+    await tester.pumpAndSettle();
+    expect(find.text('stub:online-detail'), findsOneWidget);
+    expect(find.text('stub:online-group'), findsNothing);
+
+    router.go('/playlists');
+    await tester.pumpAndSettle();
+    router.push('/playlists/online/preview');
+    await tester.pumpAndSettle();
+    expect(find.text('stub:online-preview'), findsOneWidget);
   });
 }
 

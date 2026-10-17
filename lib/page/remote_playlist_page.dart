@@ -202,14 +202,19 @@ class _RemotePlaylistPageState extends State<RemotePlaylistPage>
                   track.artistDisplay.toLowerCase().contains(query))
                 track,
           ];
-    // **"能不能播"问解析侧**（2026-10-12 用户纠正 ✓）：内容平台的 `availability` 只说明它自己
-    // 放不放（要不要会员 ✓）；我们的播放解析（`stream`）是**独立能力、可路由到别的平台** ✓
-    // ⇒ 判据用 `capabilities.canResolveIdentity(...)`（"谁握有播放权限" ✓）。
+    // **"能不能播"与行用同一套判据**（2026-10-17 统一 ✓，用户裁定 W6/F1）：
+    // 此前这里只问"解析侧有没有人能处理这条身份"✗，而行（`OnlineTrackEntry`）另按
+    // 内容平台的 `availability` 判 ⇒ 同一页里**行灰掉、但「播放全部」把它算进了队列** ✗。
+    // 现在两处都走 [OnlineTrackEntry.playableOf]，而它就是
+    // `capabilities.canPlayTrack`（解析侧身份 **且** 平台未声明 paid/unavailable，
+    // `unknown` 放行 ✓ —— 这正是 F1 定下的唯一语义 ✓）。
     final service = context.read<OnlineMusicService?>();
-    final resolvable = [
+    final playableTracks = [
       for (final track in visible)
-        if (service?.capabilities.canResolveIdentity(track.ref.identity) ??
-            false)
+        if (OnlineTrackEntry.playableOf(
+          track: track,
+          providerCapabilities: service?.capabilities,
+        ))
           track,
     ];
 
@@ -248,6 +253,11 @@ class _RemotePlaylistPageState extends State<RemotePlaylistPage>
       secondaryContentBuilder: (context, track, index, msc, view) =>
           OnlineTrackEntry(
             track: track,
+            // 行与「播放全部」共用页面上算好的同一份结论 ✓（不再各判各的 ✓）。
+            playable: OnlineTrackEntry.playableOf(
+              track: track,
+              providerCapabilities: service?.capabilities,
+            ),
             onTap: () => playOnlineTrackSelection(
               context,
               OnlineTrackSelection.fromResultPage(
@@ -271,18 +281,19 @@ class _RemotePlaylistPageState extends State<RemotePlaylistPage>
         // **灰色 = 真的按不了**（用户问过 ✓）：这一批曲目若**全部不可播**（待解锁/需会员 ✓）
         // 就禁用 ✓（不给按了没反应的按钮 ✓）；但**必须说明理由** ✗ ⇒ 悬停提示讲清楚 ✓。
         Tooltip(
-          message: resolvable.isEmpty
-              ? '当前没有任何平台握有这些曲目的播放解析权限 ⇒ 所以按不了'
+          message: playableTracks.isEmpty
+              ? '这批曲目当前都不可播（平台未放行，或没有任何平台握有解析权限）⇒ 所以按不了'
               : '从这批曲目开始播放（由握有解析权限的平台解析）',
           child: FilledButton.icon(
-            onPressed: resolvable.isEmpty
+            onPressed: playableTracks.isEmpty
                 ? null
                 : () => playOnlineTrackSelection(
                     context,
                     OnlineTrackSelection.fromResultPage(
-                      tracks: resolvable,
-                      selectedRef: resolvable.first.ref,
-                      // **不要再按内容平台的标记二次过滤** ✗（用户指出的那个错 ✓）。
+                      tracks: playableTracks,
+                      selectedRef: playableTracks.first.ref,
+                      // 队列已经按**统一判据**筛过了 ⇒ 不要再让旧的内容平台标记过滤一遍 ✗
+                      //（那会把可播曲目又被 `paid` 标记踢掉，与行上的结论再次分叉）。
                       onlyPlayable: false,
                     ),
                   ),

@@ -409,7 +409,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   Widget build(BuildContext context) {
     final settings = _controller.settings;
     return ListView(
-      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      padding: const EdgeInsets.only(bottom: Spacing.bottomNav, right: 20),
       children: [
         const _SettingsSectionTitle('服务提供商'),
         if (_controller.hasPendingRestart) ...[

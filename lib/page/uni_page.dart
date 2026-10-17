@@ -645,9 +645,9 @@ class _UniPageState<T> extends State<UniPage<T>> {
 
       final listView = ListView.builder(
         controller: listScrollController,
-        padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+        padding: const EdgeInsets.only(bottom: Spacing.bottomNav, right: 20),
         itemCount: widget.contentList.length,
-        itemExtent: 64,
+        itemExtent: AppExtent.listRow,
         itemBuilder: (context, i) => widget.contentBuilder(
           context,
           widget.contentList[i],
@@ -658,7 +658,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
       );
       final tableView = GridView.builder(
         controller: tableScrollController,
-        padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+        padding: const EdgeInsets.only(bottom: Spacing.bottomNav, right: 20),
         gridDelegate: widget.gridDelegate ?? gridDelegate,
         itemCount: widget.contentList.length,
         itemBuilder: (context, i) => widget.contentBuilder(

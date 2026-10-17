@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:pure_music/component/online_source_label.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
+import 'package:pure_music/component/remote_media_details.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/services/music_platform/index.dart';
@@ -14,7 +15,8 @@ import 'package:pure_music/services/music_platform/index.dart';
 ///
 /// 约定：
 /// - 元信息以「**专辑 · 年份 · N 首**」自报家门 ✓（参考产品的"类型前缀"做法 ✓），
-///   而且**只写平台声明的事实** ✓（年份/曲目数，缺就不写 ✓）；
+///   而且**只写平台声明的事实** ✓（年份/曲目数，缺就不写 ✓）——规则在 [albumDetailsOf]
+///   （`remote_media_details.dart` ✓），与**卡片**（`AlbumShelf`）共用同一份 ✓；
 /// - 自带透明 `Material` ✓ —— 可点区域**不假设**祖先里有 Material（R84 的教训 ✓）；
 /// - 点它打开**专辑页** ✓（曲目有序号、整张可播 ✓）。
 class OnlineAlbumRow extends StatelessWidget {
@@ -24,13 +26,6 @@ class OnlineAlbumRow extends StatelessWidget {
 
   /// 覆盖默认的"打开专辑页"（例如将来要"先订阅再打开"时 ✓）。
   final VoidCallback? onTapOverride;
-
-  /// 元信息：**平台声明**的事实 ✓（类型前缀 + 年份 + 曲目数 ✓）。
-  static String detailsOf(OnlineAlbumSummary album) => [
-    '专辑',
-    if (album.releaseTime case final time?) '${time.year} 年',
-    if (album.trackCount case final count?) '$count 首',
-  ].join(' · ');
 
   @override
   Widget build(BuildContext context) {
@@ -95,7 +90,7 @@ class OnlineAlbumRow extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        detailsOf(album),
+                        albumDetailsOf(album),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: scheme.onSurfaceVariant),
