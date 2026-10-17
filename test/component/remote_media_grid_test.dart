@@ -8,6 +8,30 @@ import 'package:pure_music/component/remote_media_grid.dart';
 /// 网格的 `mainAxisExtent` 若与卡片实际高度不一致，就会裁切或溢出 ——
 /// 这里用"渲染高度 == 声明高度"把它钉住。
 void main() {
+  test('★ 网格几何同源：榜单页与平台歌单页的卡宽由同一个函数决定', () {
+    // 2026-10-17（用户指出封面尺寸不一致）：此前榜单页用本组件（上限 168），
+    // 平台歌单页自己写 `SliverGridDelegateWithMaxCrossAxisExtent(260)` ✗ ⇒
+    // 同一个 `RemoteMediaCard` 在两页差 ~80px。现在两边都走 `mediaGridGeometry`。
+    const width = 1496.0; // 约等于 1568 宽窗口减去页壳与右侧留白
+    final geometry = mediaGridGeometry(availableWidth: width);
+
+    // `maxCardWidth` 是**偏好上限**：列数向下取整后，均分出来的卡宽最多到
+    // `上限 + 间距` 以内（例：1496 宽 → 8 列 → 176.5）✓ —— 关键是**不会再出现
+    // 旧那套 260 上限导致的 240+ 大卡** ✓。
+    expect(geometry.cardWidth, lessThan(168 + 12));
+    expect(geometry.columns, greaterThanOrEqualTo(2));
+    // 列数与卡宽必须**恰好铺满**可用宽度（否则页面上会莫名多出一条缝）。
+    expect(
+      geometry.cardWidth * geometry.columns + 12 * (geometry.columns - 1),
+      closeTo(width, 0.01),
+    );
+
+    // 更宽的窗口 ⇒ 只会更多列，卡宽不会跟着无限变大（上限仍在起作用）。
+    final wider = mediaGridGeometry(availableWidth: width + 600);
+    expect(wider.columns, greaterThan(geometry.columns));
+    expect(wider.cardWidth, lessThan(168 + 12));
+  });
+
   Future<void> pumpGrid(
     WidgetTester tester, {
     required int itemCount,

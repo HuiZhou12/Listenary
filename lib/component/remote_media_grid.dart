@@ -2,6 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:pure_music/component/remote_media_card.dart';
 import 'package:pure_music/core/design_tokens.dart';
 
+/// **网格几何**：列数 + 单卡宽度（由可用宽度与上限唯一决定）。
+///
+/// 为什么抽出来（2026-10-17）：同一批卡片在两个页面**封面尺寸不一样** ✓ ——
+/// 榜单页用本文件（上限 168），而平台歌单页自己写了一版
+/// `SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 260)` ✗ ⇒
+/// 同一张 `RemoteMediaCard` 在榜单页 ~156、在平台歌单页 ~240 ✓。
+/// 两个页面都需要"按可用宽度均分"，但一个是 `GridView`、一个是 `CustomScrollView` 里的
+/// sliver ⇒ 抽成**纯函数**共用，而不是让 sliver 去套组件 ✓。
+typedef MediaGridGeometry = ({int columns, double cardWidth});
+
+MediaGridGeometry mediaGridGeometry({
+  required double availableWidth,
+  double maxCardWidth = 168,
+  double spacing = Spacing.md,
+}) {
+  var columns = (availableWidth / (maxCardWidth + spacing)).floor();
+  if (columns < 2) columns = 2;
+  final cardWidth = (availableWidth - spacing * (columns - 1)) / columns;
+  return (columns: columns, cardWidth: cardWidth);
+}
+
 /// 远端内容卡片的**自适应网格**。
 ///
 /// 为什么把这条链放在这里：网格的 `mainAxisExtent` **必须等于卡片的实际高度**，
@@ -38,26 +59,26 @@ class RemoteMediaGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        const spacing = Spacing.md;
-        var columns = (constraints.maxWidth / (maxCardWidth + spacing)).floor();
-        if (columns < 2) columns = 2;
-        final cardWidth =
-            (constraints.maxWidth - spacing * (columns - 1)) / columns;
+        final geometry = mediaGridGeometry(
+          availableWidth: constraints.maxWidth,
+          maxCardWidth: maxCardWidth,
+        );
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           padding: padding,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            mainAxisSpacing: spacing,
-            crossAxisSpacing: spacing,
+            crossAxisCount: geometry.columns,
+            mainAxisSpacing: Spacing.md,
+            crossAxisSpacing: Spacing.md,
             mainAxisExtent: RemoteMediaCard.extentFor(
-              width: cardWidth,
+              width: geometry.cardWidth,
               hasFooter: hasFooter,
             ),
           ),
           itemCount: itemCount,
-          itemBuilder: (context, index) => itemBuilder(context, index, cardWidth),
+          itemBuilder: (context, index) =>
+              itemBuilder(context, index, geometry.cardWidth),
         );
       },
     );

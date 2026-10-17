@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
+import 'package:pure_music/component/remote_media_grid.dart';
 import 'package:pure_music/component/remote_playlist_launcher.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/utils.dart';
@@ -186,72 +187,81 @@ class _PlatformPlaylistsPageState extends State<PlatformPlaylistsPage>
                       message: '这个条件下没有歌单。',
                     ),
             )
-          : CustomScrollView(
-              controller: _scroll,
-              slivers: [
-                SliverPadding(
-                  padding: const EdgeInsets.only(
-                    bottom: Spacing.lg,
-                    right: 20,
-                  ),
-                  sliver: SliverGrid.builder(
-                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 260,
-                      mainAxisSpacing: Spacing.md,
-                      crossAxisSpacing: Spacing.md,
-                      // **按卡片自己声明的高度**给格子 ✓（2026-10-12 改 ✓）：
-                      // 以前用 `childAspectRatio: 0.72` **猜**一个比例 ✗；
-                      // 副标题改成两行后卡片变高 ⇒ 猜的比例当场溢出（10px ✗，
-                      // 被 `explore_category_tap_test` 抓到 ✓）。
-                      // `mainAxisExtent` 是**精确高度** ⇒ 不再依赖比例 ✓；
-                      // 用最大可能宽度算 ⇒ 窄格子只是多一点留白 ✓，不会溢出 ✓。
-                      mainAxisExtent: RemoteMediaCard.extentFor(
-                        width: 260,
-                        hasFooter: true,
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                // **与榜单页共用同一套网格几何** ✓（2026-10-17 用户指出封面尺寸不一致）：
+                // 此前这里自己写 `SliverGridDelegateWithMaxCrossAxisExtent(260)` ✗，
+                // 而榜单页用 `RemoteMediaGrid`（上限 168）⇒ 同一个 `RemoteMediaCard`
+                // 在榜单页 ≈156、在这里 ≈240 ✓。现在两边都由 `mediaGridGeometry` 决定 ✓。
+                const rightInset = 20.0;
+                final geometry = mediaGridGeometry(
+                  availableWidth: constraints.maxWidth - rightInset,
+                );
+                return CustomScrollView(
+                  controller: _scroll,
+                  slivers: [
+                    SliverPadding(
+                      padding: const EdgeInsets.only(
+                        bottom: Spacing.lg,
+                        right: rightInset,
+                      ),
+                      sliver: SliverGrid.builder(
+                        gridDelegate:
+                            SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: geometry.columns,
+                              mainAxisSpacing: Spacing.md,
+                              crossAxisSpacing: Spacing.md,
+                              // **按实际卡宽**算格高 ✓（旧版按写死的 260 算 ⇒ 与实际卡宽
+                              // 不一致，窄一点就多留白 ✓）。
+                              mainAxisExtent: RemoteMediaCard.extentFor(
+                                width: geometry.cardWidth,
+                                hasFooter: true,
+                              ),
+                            ),
+                        itemCount: items.length,
+                        itemBuilder: (context, index) {
+                          final summary = items[index];
+                          // 卡片宽度由几何**均分**得到（不再用 LayoutBuilder 量格子 ✓）。
+                          return RemoteMediaCard(
+                            width: geometry.cardWidth,
+                            title: summary.name,
+                            coverUri: summary.coverUri,
+                            details: _detailsOf(summary),
+                            sourceLabel: platformLabelForIdentityOnly(
+                              summary.identity,
+                            ),
+                            placeholderIcon: Symbols.queue_music,
+                            // **点封面 = 打开预览**（与探索页同一条规则 ✓）：只读、不订阅 ✓，
+                            // 也不会点了没反应 ✗；订阅只由下面的按钮触发 ✓。
+                            // 跳转走共享入口 ✓（2026-10-17 / F2 收口），字段拼装只有一份。
+                            onTap: () => openRemotePlaylistSummaryPreview(
+                              context,
+                              summary,
+                            ),
+                            semanticLabel:
+                                '${summary.name}，来自'
+                                '${platformLabelForIdentityOnly(summary.identity)}，'
+                                '点击预览（不会订阅）',
+                            onSubscribe: () => unawaited(_subscribe(summary)),
+                            subscribeEnabled: !_subscribing.contains(
+                              widget.platform,
+                            ),
+                          );
+                        },
                       ),
                     ),
-                    itemCount: items.length,
-                    itemBuilder: (context, index) {
-                      final summary = items[index];
-                      // 网格里卡片**撑满格子**：宽度由格子给 ⇒ 用 LayoutBuilder 取实测宽 ✓。
-                      return LayoutBuilder(
-                        builder: (context, constraints) => RemoteMediaCard(
-                          width: constraints.maxWidth,
-                          title: summary.name,
-                        coverUri: summary.coverUri,
-                        details: _detailsOf(summary),
-                        sourceLabel: platformLabelForIdentityOnly(
-                          summary.identity,
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: Spacing.bottomNav,
+                          right: rightInset,
                         ),
-                        placeholderIcon: Symbols.queue_music,
-                        // **点封面 = 打开预览**（与探索页同一条规则 ✓）：只读、不订阅 ✓，
-                        // 也不会点了没反应 ✗；订阅只由下面的按钮触发 ✓。
-                        // 跳转走共享入口 ✓（2026-10-17 / F2 收口），字段拼装只有一份。
-                        onTap: () => openRemotePlaylistSummaryPreview(
-                          context,
-                          summary,
-                        ),
-                        semanticLabel:
-                            '${summary.name}，来自'
-                            '${platformLabelForIdentityOnly(summary.identity)}，'
-                            '点击预览（不会订阅）',
-                        onSubscribe: () => unawaited(_subscribe(summary)),
-                        subscribeEnabled: !_subscribing.contains(widget.platform),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.only(
-                      bottom: Spacing.bottomNav,
-                      right: 20,
+                        child: _buildFooter(scheme),
+                      ),
                     ),
-                    child: _buildFooter(scheme),
-                  ),
-                ),
-              ],
+                  ],
+                );
+              },
             ),
     );
   }
