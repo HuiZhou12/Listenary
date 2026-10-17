@@ -1,3 +1,4 @@
+import 'dart:ui' show ImageFilter;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -233,7 +234,9 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
         title: title,
         subtitle: '来源：${musicPlatformLabel(widget.platform)}',
         actions: [
-          IconButton(
+          // 页头动作统一成 filledTonal（2026-10-17 / Q10）：与主页、探索页、榜单页一致；
+          // 这里只有"刷新"一个动作，且没有禁用态 ⇒ 操作语义不变。
+          IconButton.filledTonal(
             tooltip: '刷新',
             onPressed: _load,
             icon: const Icon(Symbols.refresh),
@@ -460,19 +463,35 @@ class _ArtistHero extends StatelessWidget {
               alignment: Alignment.bottomLeft,
               children: [
                 Positioned.fill(
-                  child: RemoteMediaCover(
-                    // ⚠️ 2026-10-16 修 ✓：**向平台 CDN 要更大的同一张图** ✓。
-                    // 实测 `?param=1920y1920` 下发 **498 KB**（原始仅 236 KB ✓）⇒ 是真·更大画质 ✓，
-                    // 不是把 ~500px 放大 ✗ —— 用户报的"像素很低"就是**放大**造成的 ✓。
-                    coverUri: hiResCoverUri(artist.avatarUri),
-                    // 占位用**主题的封面底色** ✓ —— 此前写死 `Color(0xFF1B1B1B)` ✗，
-                    // 在浅色主题下会先闪出一块近黑矩形 ✓（与卡片/结果行的占位色分叉 ✓）。
-                    placeholder: ColoredBox(
-                      color: scheme.surfaceContainerHighest,
-                    ),
-                    // 缓存尺寸与**源图比例**同族（方形 ✓）+ 按请求的 1920 解 ✓。
-                    cacheWidth: 1920,
-                    cacheHeight: 1920,
+                  // ⚠️ 2026-10-16 改 ✓：平台**只给方形头像** ✗（`backgroundUrl` 这个本地服务
+                  // 根本不返回 ✓，带凭据也不返回 ✗）⇒ 宽横幅里**必然留空** ✗。
+                  // 以前用 `cover` 硬撑 ✗ ⇒ 主体被放大得发虚 ✓、还被裁掉一截 ✗（用户两次都指这个 ✓）。
+                  // 现在：**模糊底补空** ✓ + **主体 `contain` 完整显示** ✓ ⇒ 不虚 ✓、不裁 ✓。
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // ① 背景：同一张图的放大模糊版（只负责补空 ✓，不承担清晰度 ✓）。
+                      ImageFiltered(
+                        imageFilter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                        child: RemoteMediaCover(
+                          coverUri: hiResCoverUri(artist.avatarUri),
+                          placeholder: ColoredBox(
+                            color: scheme.surfaceContainerHighest,
+                          ),
+                          // 模糊底不需要细节 ⇒ 小图即可 ✓（省内存 ✓）。
+                          cacheWidth: 640,
+                          cacheHeight: 640,
+                        ),
+                      ),
+                      // ② 主体：**完整、不裁、不拉伸** ✓。
+                      RemoteMediaCover(
+                        coverUri: hiResCoverUri(artist.avatarUri),
+                        placeholder: const SizedBox.shrink(),
+                        cacheWidth: 1920,
+                        cacheHeight: 1920,
+                        fit: BoxFit.contain,
+                      ),
+                    ],
                   ),
                 ),
                 // 渐变铺满整幅 ✓（hero 长高时它也跟着长 ✓），颜色 = 页面真正刷的那层色 ✓。
