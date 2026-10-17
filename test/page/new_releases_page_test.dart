@@ -9,14 +9,18 @@ import 'package:pure_music/services/music_platform/online_library/online_library
 import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-/// **「新发行」页**（2026-10-12 新增 ✓）。
+/// **「新专辑」与「新歌」两个落地页**（2026-10-17 从「专辑和单曲」单页拆开 ✓）。
 ///
-/// 依据：参考 Explore 第一个区块的「更多」→ 一个 H1 为「**专辑和单曲**」的落地页 ✓
-///（`09-new-releases-albums-full.txt:49` ✓，且**页内没有「加载更多」** ✓）。
-/// 我们的落地页与它同类：按平台分组，先「新专辑」再「新歌」✓；专辑行以「专辑 · 年份 · N 首」
-/// 自报家门 ✓（与搜索结果**共用同一个组件** ✓）。
+/// 拆开的理由有两条，都要钉住：
+/// 1. 合在一页时**页标题 + 区块标题**叠在一起（同一个层级出现两次标题）——现在每页只有一层；
+/// 2. 探索页两个「查看全部」此前**落到同一页**，点「新歌」先看到「新专辑」——
+///    现在一页只放一类内容。
 void main() {
-  testWidgets('「新发行」页：标题是「专辑和单曲」，两个区块都在且各自标出平台', (tester) async {
+  Future<void> pump(
+    WidgetTester tester,
+    Widget page, {
+    bool supported = true,
+  }) async {
     tester.view.physicalSize = const Size(1200, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -34,59 +38,49 @@ void main() {
       ChangeNotifierProvider<PersonalOnlinePlaylistController>.value(
         value: favorites,
         child: Provider<OnlineMusicService?>.value(
-          value: _NewReleasesService(),
-          child: const MaterialApp(
-            home: Scaffold(body: NewReleasesPage()),
-          ),
+          value: _NewReleasesService(supported: supported),
+          child: MaterialApp(home: Scaffold(body: page)),
         ),
       ),
     );
     await tester.pumpAndSettle();
+  }
 
-    expect(find.text('专辑和单曲'), findsOneWidget);
+  testWidgets('★ 新专辑页：只有一层标题，且不含「新歌」内容', (tester) async {
+    await pump(tester, const NewAlbumsPage());
+
+    // **标题只出现一次** ✓（拆页前是"页标题 + 区块标题"两遍）。
     expect(find.text('新专辑'), findsOneWidget);
-    expect(find.text('新歌'), findsOneWidget);
-    // 专辑行：类型前缀 + 平台声明的事实 ✓（与搜索结果同一个组件 ✓）。
+    expect(find.text('新歌'), findsNothing, reason: '新专辑页不该出现另一类内容');
+    expect(find.text('专辑和单曲'), findsNothing, reason: '合并页的旧标题已不存在');
+    // 内容：专辑行以「专辑 · 年份 · N 首」自报家门（与搜索结果同一个组件）。
     expect(find.text('故里逢春'), findsOneWidget);
     expect(find.textContaining('专辑 · 2020 年 · 2 首'), findsOneWidget);
-    // 曲目行：标题 + 来源 ✓。
-    expect(find.text('新歌一'), findsOneWidget);
-    expect(find.text('网易云'), findsWidgets);
-    // 参考页里**没有**「加载更多」✓ ⇒ 我们也不给 ✗。
+    // 参考页里**没有**「加载更多」✓。
     expect(find.text('加载更多'), findsNothing);
     expect(find.text('没有更多了'), findsNothing);
   });
 
-  testWidgets('平台都没有相应能力 ⇒ 两个区块都不出现（不摆空区块）', (tester) async {
-    tester.view.physicalSize = const Size(1200, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets('★ 新歌页：只有一层标题，且不含专辑内容', (tester) async {
+    await pump(tester, const NewSongsPage());
 
-    final database = sqlite3.openInMemory();
-    initializeAppDatabase(database);
-    final favorites = PersonalOnlinePlaylistController(
-      repository: SynchronousFuture(OnlineLibraryRepository(database)),
-    );
-    addTearDown(favorites.dispose);
-    addTearDown(database.dispose);
+    expect(find.text('新歌'), findsOneWidget);
+    expect(find.text('新专辑'), findsNothing, reason: '新歌页不该出现另一个区块');
+    expect(find.text('专辑和单曲'), findsNothing, reason: '合并页的旧标题已不存在');
+    expect(find.text('新歌一'), findsOneWidget);
+    expect(find.text('网易云'), findsWidgets);
+  });
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider<PersonalOnlinePlaylistController>.value(
-        value: favorites,
-        child: Provider<OnlineMusicService?>.value(
-          value: _NewReleasesService(supported: false),
-          child: const MaterialApp(
-            home: Scaffold(body: NewReleasesPage()),
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
+  testWidgets('平台没有相应能力 ⇒ 各自给出中性说明（不摆空区块）', (tester) async {
+    await pump(tester, const NewAlbumsPage(), supported: false);
+    expect(find.text('新专辑'), findsOneWidget, reason: '标题仍在');
+    expect(find.textContaining('当前没有能提供新专辑的平台'), findsOneWidget);
+    expect(find.text('故里逢春'), findsNothing);
 
-    expect(find.text('专辑和单曲'), findsOneWidget);
-    expect(find.text('新专辑'), findsNothing);
-    expect(find.text('新歌'), findsNothing);
+    await pump(tester, const NewSongsPage(), supported: false);
+    expect(find.text('新歌'), findsOneWidget);
+    expect(find.textContaining('当前没有能播放新歌的平台'), findsOneWidget);
+    expect(find.text('新歌一'), findsNothing);
   });
 }
 
@@ -129,10 +123,7 @@ final class _NewReleasesService implements OnlineMusicService {
     required OnlineMusicCancelToken cancelToken,
   }) async => [
     MusicTrack(
-      ref: const PlatformTrackRef(
-        platform: MusicPlatform.netease,
-        trackId: 'n1',
-      ),
+      ref: const PlatformTrackRef(platform: MusicPlatform.netease, trackId: 'n1'),
       title: '新歌一',
       artists: const ['甲'],
     ),

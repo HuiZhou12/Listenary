@@ -7,9 +7,12 @@ const String ONLINE_ARTIST_PAGE = '/online/artist';
 const String ARTIST_HOT_SONGS_PAGE = '/online/artist/hot-songs';
 // 在线专辑页（`album` 能力，2026-10-12）：同为 `/online` 的子路由 ✓。
 const String ONLINE_ALBUM_PAGE = '/online/album';
-// 「新发行」（专辑和单曲）落地页（2026-10-12）：参考里 Explore 第一个区块「更多」的目标 ✓，
+// 「新专辑」与「新歌」是**两个**落地页（2026-10-17 拆开 ✓）：探索页两个区块的
+// 「查看全部」各进自己的页 ✓ —— 此前共用一个「专辑和单曲」页，于是某个入口下
+// 两个标题叠在一起，且点「新歌 → 查看全部」先看到「新专辑」✗。
 // 作为 `/explore` 的子路由 ⇒ 与探索页同族 ✓。
-const String NEW_RELEASES_PAGE = '/explore/new-releases';
+const String NEW_ALBUMS_PAGE = '/explore/new-albums';
+const String NEW_SONGS_PAGE = '/explore/new-songs';
 // 平台歌单列表页（2026-10-12）：探索页「平台歌单 → 查看全部」与「歌单分类 → 点 tag」都进这里 ✓。
 const String PLATFORM_PLAYLISTS_PAGE = '/explore/playlists';
 const String FAVORITES_PAGE = '/favorites';

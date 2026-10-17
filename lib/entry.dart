@@ -817,12 +817,20 @@ class _EntryState extends State<Entry>
                       );
                     },
                   ),
-                  // 探索页「新歌 / 新专辑」的「查看全部」落地：参考第一个区块「更多」的目标 ✓。
+                  // 探索页「新专辑」「新歌」两个区块的「查看全部」各进**自己的**页 ✓
+                  //（2026-10-17 拆分：此前两处都进同一个「专辑和单曲」页 ✗）。
                   GoRoute(
-                    path: 'new-releases',
+                    path: 'new-albums',
                     pageBuilder: (context, state) => SlideTransitionPage(
                       key: state.pageKey,
-                      child: const NewReleasesPage(),
+                      child: const NewAlbumsPage(),
+                    ),
+                  ),
+                  GoRoute(
+                    path: 'new-songs',
+                    pageBuilder: (context, state) => SlideTransitionPage(
+                      key: state.pageKey,
+                      child: const NewSongsPage(),
                     ),
                   ),
                   // 探索页货架上的「查看全部」落地：榜单全量网格。
