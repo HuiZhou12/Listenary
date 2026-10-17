@@ -1413,8 +1413,9 @@ class _PersonalPlaylistNameDialogState
                   controller: _controller,
                   onSubmitted: (_) => _submit(),
                   decoration: const InputDecoration(
+                    // **不覆盖边框** ✓（2026-10-17 / F16）：与同页其它三个"歌单名称"
+                    // 输入框、以及在线歌单对话框保持同一套主题样式（填充 + 无边框）。
                     labelText: '歌单名称',
-                    border: OutlineInputBorder(),
                   ),
                 ),
               ),

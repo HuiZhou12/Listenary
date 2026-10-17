@@ -21,7 +21,9 @@ void main() {
     expect(find.byTooltip('在线搜索'), findsNothing);
     expect(
       tester.widget<TextField>(find.byType(TextField)).decoration?.hintText,
-      '搜索歌曲、艺术家、专辑',
+      // 2026-10-17（Q4）：范围如实写明 —— 全局搜索**只搜本机曲库**，不聚合在线结果 ✓
+      //（在线搜索在「在线音乐」页，那是另一条入口 ✓）。
+      '搜索本地曲库（歌曲、艺术家、专辑）',
     );
   });
 

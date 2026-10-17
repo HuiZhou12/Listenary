@@ -104,8 +104,11 @@ class _CollectPlaylistDialogState<T> extends State<_CollectPlaylistDialog<T>> {
                 autofocus: true,
                 onSubmitted: (_) => _create(),
                 decoration: const InputDecoration(
+                  // **不覆盖边框** ✓（2026-10-17 / F16）：主题里的输入框是"填充 + 无边框"
+                  //（见 `entry.dart` 的 `inputDecorationTheme`）——这里原本加了一条
+                  // `border: OutlineInputBorder()` 覆盖 ✗，于是同一个"新建歌单名称"框
+                  // 在相邻的两个对话框里一个描边、一个填充圆角 ✓。
                   labelText: '新建歌单名称',
-                  border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 8),

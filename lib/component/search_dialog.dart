@@ -8,6 +8,7 @@ import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/search_dialog_layout.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/list_action_state.dart';
+import 'package:pure_music/core/menu_styles.dart';
 import 'package:pure_music/core/search_action_state.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
@@ -206,6 +207,9 @@ class _SearchDialogState extends State<SearchDialog> {
               : hasNowPlaying
               ? '下一首播放'
               : '先播放一首歌',
+          // 行内操作图标统一 20px ✓（2026-10-17 / F24）：与 `audio_tile`、
+          // `online_track_row`、`remote_media_card` 的既有约定一致（此前这里走默认 24 ✗）。
+          iconSize: 20,
           style: IconButton.styleFrom(
             backgroundColor: isQueuedNext ? scheme.primaryContainer : null,
             disabledBackgroundColor: isQueuedNext
@@ -217,7 +221,8 @@ class _SearchDialogState extends State<SearchDialog> {
           ),
           onPressed: canAddNext ? () => _addSearchResultToNext(audio) : null,
           icon: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
+            // 用动画令牌 ✓（2026-10-17 / Q8）：180ms 正是 MotionDuration.fast，手感不变 ✓。
+            duration: MotionDuration.fast,
             child: Icon(
               isQueuedNext ? Symbols.check : Symbols.plus_one,
               key: ValueKey(isQueuedNext),
@@ -226,12 +231,16 @@ class _SearchDialogState extends State<SearchDialog> {
         ),
         MenuAnchor(
           consumeOutsideTap: true,
+          // 菜单外观走**全局样式** ✓（2026-10-17 / F24）：全仓 26 处都用它，
+          // 只有这里漏了 ⇒ 同一个"加入歌单"菜单在搜索框里是默认 Material 形状 ✗。
+          style: appMenuStyle,
           menuChildren: List.generate(playlists.length, (playlistIndex) {
             final playlist = playlists[playlistIndex];
             final isAddingTarget =
                 isAddingThisAudio && identical(_addingTargetPlaylist, playlist);
             final alreadyInPlaylist = playlist.containsPath(audio.path);
             return MenuItemButton(
+              style: appMenuItemStyle,
               onPressed: _addingAudioToPlaylist == null && !alreadyInPlaylist
                   ? () => _addSearchResultToPlaylist(audio, playlist)
                   : null,
@@ -249,6 +258,8 @@ class _SearchDialogState extends State<SearchDialog> {
           }),
           builder: (context, controller, _) {
             return IconButton(
+              // 同上：行内操作图标统一 20px ✓。
+              iconSize: 20,
               tooltip: isAddingThisAudio
                   ? '添加中'
                   : alreadyInAllPlaylists
@@ -298,7 +309,8 @@ class _SearchDialogState extends State<SearchDialog> {
               style: TextStyle(color: scheme.onSurface),
               decoration: InputDecoration(
                 prefixIcon: const Icon(Symbols.search),
-                hintText: '搜索歌曲、艺术家、专辑',
+                // 搜索范围如实写明（2026-10-17 / Q4）：全局搜索**只搜本机曲库**，不聚合在线结果 ✓。
+                  hintText: '搜索本地曲库（歌曲、艺术家、专辑）',
                 suffixIcon: ValueListenableBuilder<TextEditingValue>(
                   valueListenable: _searchController,
                   builder: (context, value, _) {
@@ -379,7 +391,7 @@ class _SearchDialogState extends State<SearchDialog> {
                   return const _SearchEmptyState(
                     icon: Symbols.search,
                     title: '输入关键词开始搜索',
-                    message: '支持搜索歌曲、艺术家、专辑。',
+                    message: '搜索范围：本机曲库里的歌曲、艺术家、专辑。',
                   );
                 }
 
@@ -404,7 +416,7 @@ class _SearchDialogState extends State<SearchDialog> {
     if (value.audios.isEmpty) {
       return const _SearchEmptyState(
         icon: Symbols.music_note,
-        title: '没有找到相关音乐',
+        title: '本地曲库没有匹配的音乐',
         message: '换个关键词，或者切到艺术家、专辑再看。',
       );
     }
@@ -427,7 +439,7 @@ class _SearchDialogState extends State<SearchDialog> {
     if (value.artists.isEmpty) {
       return const _SearchEmptyState(
         icon: Symbols.person,
-        title: '没有找到相关艺术家',
+        title: '本地曲库没有匹配的艺术家',
         message: '换个关键词，或者回到音乐结果里找。',
       );
     }
@@ -446,7 +458,7 @@ class _SearchDialogState extends State<SearchDialog> {
     if (value.album.isEmpty) {
       return const _SearchEmptyState(
         icon: Symbols.album,
-        title: '没有找到相关专辑',
+        title: '本地曲库没有匹配的专辑',
         message: '换个关键词，或者先从歌曲结果进入专辑。',
       );
     }
