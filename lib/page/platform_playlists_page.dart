@@ -1,14 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
+import 'package:pure_music/component/remote_playlist_launcher.dart';
 import 'package:pure_music/core/design_tokens.dart';
-import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/services/music_platform/index.dart';
@@ -166,7 +165,8 @@ class _PlatformPlaylistsPageState extends State<PlatformPlaylistsPage>
           widget.subtitle ??
           '${musicPlatformLabel(widget.platform)} · 滑到底自动加载更多',
       actions: [
-        IconButton(
+        // 页头动作统一成 filledTonal（2026-10-17 / Q10）：单个刷新、无禁用态 ⇒ 语义不变。
+        IconButton.filledTonal(
           tooltip: '刷新',
           onPressed: () => unawaited(_loadFirst()),
           icon: const Icon(Symbols.refresh),
@@ -226,17 +226,10 @@ class _PlatformPlaylistsPageState extends State<PlatformPlaylistsPage>
                         placeholderIcon: Symbols.queue_music,
                         // **点封面 = 打开预览**（与探索页同一条规则 ✓）：只读、不订阅 ✓，
                         // 也不会点了没反应 ✗；订阅只由下面的按钮触发 ✓。
-                        onTap: () => context.push(
-                          app_paths.REMOTE_PLAYLIST_PAGE,
-                          extra: (
-                            platform: summary.platform,
-                            playlistId: summary.id,
-                            name: summary.name,
-                            coverUri: summary.coverUri,
-                            creator: summary.creator,
-                            trackCount: summary.trackCount,
-                            ranked: false,
-                          ),
+                        // 跳转走共享入口 ✓（2026-10-17 / F2 收口），字段拼装只有一份。
+                        onTap: () => openRemotePlaylistSummaryPreview(
+                          context,
+                          summary,
                         ),
                         semanticLabel:
                             '${summary.name}，来自'

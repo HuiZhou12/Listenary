@@ -12,6 +12,7 @@ import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/platform_capability_view.dart';
 import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
+import 'package:pure_music/component/remote_playlist_launcher.dart';
 import 'package:pure_music/component/shelf_geometry.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
@@ -303,6 +304,9 @@ class _ExplorePageState extends State<ExplorePage>
   }
 
   /// 打开**只读预览**（不订阅 ✓）—— 榜单 / 平台歌单的封面点击都走这里 ✓。
+  ///
+  /// 跳转本身走共享入口 ✓（2026-10-17 / F2 收口）：四个页面复用同一份字段拼装，
+  /// 少传 `ranked`/`creator` 那种细微不一致就没机会发生 ✓。
   Future<void> _openRemotePlaylist({
     required MusicPlatform platform,
     required String playlistId,
@@ -311,17 +315,15 @@ class _ExplorePageState extends State<ExplorePage>
     String? creator,
     int? trackCount,
     bool ranked = false,
-  }) => context.push(
-    app_paths.REMOTE_PLAYLIST_PAGE,
-    extra: (
-      platform: platform,
-      playlistId: playlistId,
-      name: name,
-      coverUri: coverUri,
-      creator: creator,
-      trackCount: trackCount,
-      ranked: ranked,
-    ),
+  }) => openRemotePlaylistPreview(
+    context,
+    platform: platform,
+    playlistId: playlistId,
+    name: name,
+    coverUri: coverUri,
+    creator: creator,
+    trackCount: trackCount,
+    ranked: ranked,
   );
 
   @override

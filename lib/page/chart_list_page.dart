@@ -1,16 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
+import 'package:pure_music/component/remote_playlist_launcher.dart';
 import 'package:pure_music/component/remote_media_grid.dart';
 import 'package:pure_music/core/design_tokens.dart';
-import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/page_scaffold.dart';
@@ -102,19 +101,11 @@ class _ChartListPageState extends State<ChartListPage>
   /// 远端歌单详情、**一个字节都不写库**（见 `remote_playlist_page.dart`）。
   /// 订阅只由卡片下方的「订阅」按钮触发 —— 此前这一页点封面会**直接入库并跳详情**，
   /// 与探索页"点封面只预览"的做法相反，同一个动作在两个页面给出不同结论。
-  Future<void> _preview(RemotePlaylistSummary summary) => context.push(
-    app_paths.REMOTE_PLAYLIST_PAGE,
-    extra: (
-      platform: summary.platform,
-      playlistId: summary.id,
-      name: summary.name,
-      coverUri: summary.coverUri,
-      creator: summary.creator,
-      trackCount: summary.trackCount,
-      // 本页每一项都是**名次集合**（榜单）⇒ 预览页据此显示行首序号。
-      ranked: true,
-    ),
-  );
+  ///
+  /// 跳转本身走共享入口 ✓（2026-10-17 / F2 收口）：本页每一项都是**名次集合**（榜单）
+  /// ⇒ `ranked: true` ⇒ 预览页据此显示行首序号 ✓。
+  Future<void> _preview(RemotePlaylistSummary summary) =>
+      openRemotePlaylistSummaryPreview(context, summary, ranked: true);
 
   /// **订阅入库**（**不跳转** ✓）：只把这份榜单放进媒体库。
   ///

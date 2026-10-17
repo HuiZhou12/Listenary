@@ -14,6 +14,7 @@ import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/platform_capability_view.dart';
 import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
+import 'package:pure_music/component/remote_playlist_launcher.dart';
 import 'package:pure_music/component/shelf_arrows.dart';
 import 'package:pure_music/component/shelf_geometry.dart';
 import 'package:pure_music/component/shelf_scroll_state.dart';
@@ -510,18 +511,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
                 sourceLabel: platformLabelForIdentityOnly(summary.identity),
                 placeholderIcon: Symbols.queue_music,
                 // 与探索页同一条规则 ✓：**点封面 = 只读预览**（不是偷偷订阅 ✗）。
-                onTap: () => context.push(
-                  app_paths.REMOTE_PLAYLIST_PAGE,
-                  extra: (
-                    platform: summary.platform,
-                    playlistId: summary.id,
-                    name: summary.name,
-                    coverUri: summary.coverUri,
-                    creator: summary.creator,
-                    trackCount: summary.trackCount,
-                    ranked: false,
-                  ),
-                ),
+                // 跳转走共享入口 ✓（2026-10-17 / F2 收口），字段拼装只有一份。
+                onTap: () => openRemotePlaylistSummaryPreview(context, summary),
                 semanticLabel: '${summary.name}，点击预览（不会订阅）',
               );
             },
