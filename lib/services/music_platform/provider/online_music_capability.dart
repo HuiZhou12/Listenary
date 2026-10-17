@@ -151,14 +151,14 @@ String onlineMusicCapabilityLabel(OnlineMusicCapability capability) =>
       OnlineMusicCapability.playlist => '歌单详情',
       // 2026-10-16：用户反馈这几个名字是**内部术语** ✗ ⇒ 换成用户看得懂的说法 ✓。
       // 能力卡与设置页共用这一份 ✓ ⇒ 改这里两处一起变 ✓，也不会再"两处不一致" ✗。
-      OnlineMusicCapability.playlistCollection => '平台歌单',
+      OnlineMusicCapability.playlistCollection => '歌单列表',
       OnlineMusicCapability.playlistCategories => '歌单分类',
       OnlineMusicCapability.chartList => '榜单',
       OnlineMusicCapability.newSongs => '新歌',
       OnlineMusicCapability.artist => '艺人详情',
       OnlineMusicCapability.album => '专辑详情',
-      OnlineMusicCapability.artistAlbums => '艺人的专辑',
-      OnlineMusicCapability.artistSongs => '艺人的单曲',
+      OnlineMusicCapability.artistAlbums => '艺人专辑列表',
+      OnlineMusicCapability.artistSongs => '艺人单曲列表',
       OnlineMusicCapability.newAlbums => '新专辑',
       OnlineMusicCapability.searchAlbums => '搜索专辑',
       OnlineMusicCapability.searchArtists => '搜索艺人',
@@ -168,5 +168,5 @@ String onlineMusicCapabilityLabel(OnlineMusicCapability capability) =>
       OnlineMusicCapability.personalizedPlaylists => '个性化合辑',
       OnlineMusicCapability.lyric => '歌词',
       // 「播放解析」是内部说法 ✗ ⇒ 用户关心的是"**能不能播**" ✓。
-      OnlineMusicCapability.stream => '能播放',
+      OnlineMusicCapability.stream => '播放解析',
     };

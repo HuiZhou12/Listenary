@@ -22,14 +22,14 @@ const platformCapabilityRows =
     <({String label, CapabilityProbe available})>[
       (label: '搜索', available: _searchable),
       (label: '歌单详情', available: _playlistDetail),
-      (label: '平台歌单', available: _playlistCollection),
+      (label: '歌单列表', available: _playlistCollection),
       (label: '歌单分类', available: _playlistCategories),
       (label: '榜单', available: _chartList),
       (label: '新歌', available: _newSongs),
       (label: '艺人详情', available: _artist),
       (label: '专辑详情', available: _album),
-      (label: '艺人的专辑', available: _artistAlbums),
-      (label: '艺人的单曲', available: _artistSongs),
+      (label: '艺人专辑列表', available: _artistAlbums),
+      (label: '艺人单曲列表', available: _artistSongs),
       (label: '新专辑', available: _newAlbums),
       (label: '搜索专辑', available: _searchAlbums),
       (label: '搜索艺人', available: _searchArtists),
@@ -38,7 +38,7 @@ const platformCapabilityRows =
       (label: '关注的艺人', available: _followedArtists),
       (label: '个性化合辑', available: _personalizedPlaylists),
       (label: '歌词', available: _lyrics),
-      (label: '能播放', available: _resolvable),
+      (label: '播放解析', available: _resolvable),
     ];
 
 bool _searchable(OnlineMusicCapabilities c, MusicPlatform p) =>

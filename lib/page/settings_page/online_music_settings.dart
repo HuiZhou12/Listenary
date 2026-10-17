@@ -463,7 +463,7 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
         for (final issue in settings.legacyKnobIssues()) _SettingsHint(issue),
         if (settings.legacyKnobIssues().isNotEmpty) const SizedBox(height: 12),
         const SizedBox(height: 24),
-        const _SettingsSectionTitle('平台'),
+        const _SettingsSectionTitle('提供商配置'),
         if (_controller.hasPendingRestart)
           const _SettingsHint('平台与能力的改动将在下次启动时生效'),
         for (final platform in builtinMusicPlatforms) ...[
