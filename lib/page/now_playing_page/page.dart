@@ -9,6 +9,7 @@ import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/hotkey_ui_feedback.dart';
 import 'package:pure_music/component/motion.dart';
+import 'package:pure_music/component/personal_playlist_picker.dart';
 import 'package:pure_music/component/side_nav.dart';
 import 'package:pure_music/component/title_bar.dart';
 import 'package:pure_music/core/menu_styles.dart';
@@ -48,6 +49,7 @@ import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_service.dart';
+import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:go_router/go_router.dart';
@@ -832,17 +834,28 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
 
   @override
   Widget build(BuildContext context) {
-    final showLocalActions = context.select<ActivePlaybackSession, bool>(
-      (session) => shouldShowLocalNowPlayingActions(session.value),
-    );
-    if (!showLocalActions) return const SizedBox.shrink();
+    final snapshot = context.select<ActivePlaybackSession,
+        ActivePlaybackSessionSnapshot>((session) => session.value);
 
     final useMonet = AppSettings.instance.useMaterialYouForControls;
-    final playbackService = context.watch<PlaybackService>();
-    final nowPlaying = playbackService.nowPlaying;
     final scheme = Theme.of(context).colorScheme;
     final menuStyle = appMenuStyle;
     final menuItemStyle = appMenuItemStyle;
+
+    // **在线曲目也有自己的「更多」** ✓（2026-10-17）：此前这里对在线直接
+    // `SizedBox.shrink()` ✗ —— 本地播放有「更多」而在线播放一个入口都没有 ✓。
+    // ⚠️ 但**内容按在线语义定**，不是把本地那份搬过来 ✗：本地那几项服务的是本地曲库
+    //（本地艺人/专辑条目、本地歌词源、本地文件详情）⇒ 在线没有对应物 ✓。
+    if (snapshot.source == ActivePlaybackSessionSource.remote) {
+      return _buildRemoteMoreMenu(context, scheme, useMonet);
+    }
+
+    if (!shouldShowLocalNowPlayingActions(snapshot)) {
+      return const SizedBox.shrink();
+    }
+
+    final playbackService = context.watch<PlaybackService>();
+    final nowPlaying = playbackService.nowPlaying;
 
     if (nowPlaying == null) {
       return IconButton(
@@ -1000,6 +1013,109 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
           },
           icon: const Icon(Symbols.more_vert),
           color: useMonet ? scheme.primary : scheme.onSurface,
+        ),
+      ),
+    );
+  }
+
+  /// **在线曲目的「更多」**（2026-10-17）。
+  ///
+  /// 外观与本地那份一致（同一套 `appMenuStyle` / `appMenuItemStyle`、同一个 `more_vert`），
+  /// 但**内容是在线自己的** ✓，不是把本地菜单搬过来 ✗：
+  ///
+  /// - **艺人详细**：逐位艺人 → 在线艺人页；入口判据与曲目行一致 —— **确实带了平台 id 才给** ✓；
+  /// - **专辑详细**：→ 在线专辑页；同样只在带了专辑 id 时可用 ✓；
+  /// - **收藏 / 取消收藏**：在线收藏（`PersonalOnlinePlaylistController`），与曲目行的爱心**同一条链路** ✓；
+  /// - **添加到在线歌单**：走既有的在线歌单选择器（不是本地文件路径那套）✓。
+  ///
+  /// **本地独有的两项不搬** ✗：
+  /// - 「歌词来源」只接受本地 `Audio`（本地歌词源搜索/替换），在线歌词走平台接口、没有该界面；
+  /// - 「详细信息」是本地音频详情页（文件/标签/EQ…），在线曲目没有对应页面。
+  /// 塞一个点不动的项比没有更糟 ✓ —— 要补得先做对应的在线界面（属新功能）。
+  Widget _buildRemoteMoreMenu(
+    BuildContext context,
+    ColorScheme scheme,
+    bool useMonet,
+  ) {
+    final item = context.watch<RemotePlaybackQueue>().value.currentItem;
+    final color = useMonet ? scheme.primary : scheme.onSurface;
+
+    if (item == null) {
+      return IconButton(
+        tooltip: '更多',
+        onPressed: null,
+        icon: const Icon(Symbols.more_vert),
+        color: color,
+      );
+    }
+
+    final track = item.toMusicTrack();
+    final favorites = context.watch<PersonalOnlinePlaylistController>();
+    final isFavorite = favorites.isFavorite(track.ref);
+    return MenuTheme(
+      data: MenuThemeData(style: appMenuStyle),
+      child: MenuAnchor(
+        style: appMenuStyle,
+        menuChildren: [
+          for (var index = 0; index < track.artists.length; index++)
+            MenuItemButton(
+              style: appMenuItemStyle,
+              onPressed: index < track.artistIds.length
+                  ? () => context.pushReplacement(
+                      app_paths.ONLINE_ARTIST_PAGE,
+                      extra: (
+                        platform: track.ref.platform,
+                        artistId: track.artistIds[index],
+                        name: track.artists[index],
+                      ),
+                    )
+                  : null,
+              leadingIcon: const Icon(Symbols.people),
+              child: Text(track.artists[index]),
+            ),
+          if (track.album.isNotEmpty)
+            MenuItemButton(
+              style: appMenuItemStyle,
+              onPressed: track.albumIds.isEmpty
+                  ? null
+                  : () => context.pushReplacement(
+                      app_paths.ONLINE_ALBUM_PAGE,
+                      extra: (
+                        platform: track.ref.platform,
+                        albumId: track.albumIds.first,
+                        name: track.album,
+                      ),
+                    ),
+              leadingIcon: const Icon(Symbols.album),
+              child: Text(track.album),
+            ),
+          MenuItemButton(
+            style: appMenuItemStyle,
+            onPressed: () => favorites.toggleFavorite(track),
+            leadingIcon: Icon(
+              isFavorite ? Symbols.favorite : Symbols.favorite_border,
+              color: isFavorite ? AppColor.favorite : null,
+            ),
+            child: Text(isFavorite ? '取消收藏' : '收藏'),
+          ),
+          MenuItemButton(
+            style: appMenuItemStyle,
+            onPressed: () => showPersonalPlaylistPicker(context, track: track),
+            leadingIcon: const Icon(Symbols.playlist_add),
+            child: const Text('添加到在线歌单'),
+          ),
+        ],
+        builder: (context, controller, _) => IconButton(
+          tooltip: '更多',
+          onPressed: () {
+            if (controller.isOpen) {
+              controller.close();
+            } else {
+              controller.open();
+            }
+          },
+          icon: const Icon(Symbols.more_vert),
+          color: color,
         ),
       ),
     );

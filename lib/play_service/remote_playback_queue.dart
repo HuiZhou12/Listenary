@@ -13,7 +13,11 @@ final class RemotePlaybackQueueItem {
     this.album = '',
     this.coverUri,
     this.duration = Duration.zero,
-  }) : artists = List.unmodifiable(artists);
+    Iterable<String> artistIds = const <String>[],
+    Iterable<String> albumIds = const <String>[],
+  }) : artists = List.unmodifiable(artists),
+       artistIds = List.unmodifiable(artistIds),
+       albumIds = List.unmodifiable(albumIds);
 
   factory RemotePlaybackQueueItem.fromTrack(MusicTrack track) {
     return RemotePlaybackQueueItem(
@@ -23,6 +27,11 @@ final class RemotePlaybackQueueItem {
       album: track.album,
       coverUri: track.coverUri,
       duration: track.duration,
+      // **平台 id 随曲目一起入队** ✓（2026-10-17）：播放页的在线「更多」菜单要给出
+      // 「艺人详细 / 专辑详细」；入口判据与曲目行一致 —— **确实带了 id 才给** ✓。
+      // 此前这两个 id 在入队时被丢掉 ✗ ⇒ 播放页拿不到入口所需的信息 ✓。
+      artistIds: track.artistIds,
+      albumIds: track.albumIds,
     );
   }
 
@@ -33,7 +42,26 @@ final class RemotePlaybackQueueItem {
   final Uri? coverUri;
   final Duration duration;
 
+  /// 平台侧的艺人 / 专辑 id（**可能为空** ⇒ 调用方据此不给入口，不拿名字凑 id ✓）。
+  final List<String> artistIds;
+  final List<String> albumIds;
+
   String get artistDisplay => artists.join('、');
+
+  /// 还原成 [MusicTrack]（播放页的在线「更多」菜单用它去跳艺人/专辑、加歌单、收藏）。
+  ///
+  /// 只还原**队列里确实保存过**的字段 ✓：`availability` 这类"入队时就没带"的字段
+  /// 不做猜测（保持构造函数默认值 ✓）。
+  MusicTrack toMusicTrack() => MusicTrack(
+    ref: ref,
+    title: title,
+    artists: artists,
+    album: album,
+    coverUri: coverUri,
+    duration: duration,
+    artistIds: artistIds,
+    albumIds: albumIds,
+  );
 
   RemotePlaybackQueueItem withCoverUri(Uri value) {
     return withMetadata(coverUri: value);
@@ -47,6 +75,8 @@ final class RemotePlaybackQueueItem {
       album: album,
       coverUri: coverUri ?? this.coverUri,
       duration: duration ?? this.duration,
+      artistIds: artistIds,
+      albumIds: albumIds,
     );
   }
 }

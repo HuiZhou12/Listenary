@@ -26,6 +26,53 @@ void main() {
     expect(item.toString(), isNot(contains('cover.invalid')));
   });
 
+  test('★ 入队不丢平台 id：播放页「更多」靠它给艺人/专辑入口', () {
+    // 2026-10-17：在线播放页此前没有「更多」入口，而本地有。
+    // 补这个能力需要**队列项保留 artistIds / albumIds** —— 入口判据与曲目行一致：
+    // 确实带了 id 才给入口，不拿名字凑 id。
+    final track = MusicTrack(
+      ref: const PlatformTrackRef(
+        platform: MusicPlatform.netease,
+        trackId: 'track-1',
+      ),
+      title: '曲目',
+      artists: const ['甲'],
+      album: '专辑',
+      artistIds: const ['artist-1'],
+      albumIds: const ['album-1'],
+    );
+    final item = RemotePlaybackQueueItem.fromTrack(track);
+    expect(item.artistIds, ['artist-1']);
+    expect(item.albumIds, ['album-1']);
+
+    // 还原成曲目后 id 仍在（播放页用它拼艺人页 / 专辑页的 extra）。
+    final restored = item.toMusicTrack();
+    expect(restored.artistIds, ['artist-1']);
+    expect(restored.albumIds, ['album-1']);
+    expect(restored.title, '曲目');
+    expect(restored.album, '专辑');
+
+    // 换封面/时长这类队列内更新**不能把 id 弄丢**。
+    final enriched = item.withMetadata(duration: const Duration(minutes: 4));
+    expect(enriched.artistIds, ['artist-1']);
+    expect(enriched.albumIds, ['album-1']);
+
+    // 平台没给 id 时**不能凭空造**（空列表 ⇒ 菜单里对应项禁用）。
+    final bare = RemotePlaybackQueueItem.fromTrack(
+      MusicTrack(
+        ref: const PlatformTrackRef(
+          platform: MusicPlatform.netease,
+          trackId: 'track-2',
+        ),
+        title: '没有 id',
+        artists: const ['乙'],
+      ),
+    );
+    expect(bare.artistIds, isEmpty);
+    expect(bare.albumIds, isEmpty);
+    expect(bare.toMusicTrack().artistIds, isEmpty);
+  });
+
   test('replaces the queue with an immutable snapshot', () {
     final queue = RemotePlaybackQueue();
     final input = [_item('1'), _item('2')];
