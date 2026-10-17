@@ -134,7 +134,8 @@ class _NewReleasesPageState extends State<NewReleasesPage>
       title: '专辑和单曲',
       subtitle: '来源：$platformName · 每个平台分开显示，各 ${widget.limit} 项',
       actions: [
-        IconButton(
+        // 页头动作统一成 filledTonal（2026-10-17 / Q10）：单个刷新、无禁用态 ⇒ 语义不变。
+        IconButton.filledTonal(
           tooltip: '刷新',
           onPressed: () => unawaited(_load()),
           icon: const Icon(Symbols.refresh),

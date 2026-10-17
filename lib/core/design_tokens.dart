@@ -68,3 +68,14 @@ abstract final class Alpha {
   static const double hover = 0.04;
   static const double focus = 0.04;
 }
+
+/// **不随主题漂移的语义色**。
+///
+/// 目前只有一个：收藏心形。它是**品牌语义色**（"喜欢"这件事的颜色），刻意**不**从
+/// `ColorScheme` 派生 —— 用户换封面取色的主题时，心形仍是同一个红 ✓。
+/// 之所以搬到这里：它此前是 `online_track_row.dart` 里的私有常量 ✗，全仓只有一处定义、
+/// 却是"最显眼的一个颜色值"，散在页面里迟早被复制或被随手改掉 ✓。
+abstract final class AppColor {
+  /// 收藏（已收藏）态的心形颜色。
+  static const Color favorite = Color(0xFFE0245E);
+}

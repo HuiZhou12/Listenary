@@ -8,9 +8,6 @@ import 'package:pure_music/play_service/active_playback_session.dart';
 import 'package:pure_music/play_service/remote_playback_queue.dart';
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 
-/// 已收藏爱心的强调色，与主题 primary 区分更明显。
-const Color _favoriteColor = Color(0xFFE0245E);
-
 /// 在线曲目的「正在播放」判定：当前播放来源为在线，且在线队列的当前曲目
 /// 与本行曲目是同一个 [PlatformTrackRef]（按值相等，不比对象身份）。
 /// 与本地 `audio_tile.dart` 的 `resolveAudioTileFocus` 保持一致：
@@ -266,7 +263,9 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                     const SizedBox(width: Spacing.md),
                     // 右侧操作区：未悬浮显示时长，悬浮时由操作按钮替换，避免内容前移。
                     AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 120),
+                      // 用动画令牌 ✓（2026-10-17 / Q8）：120ms 正是 `MotionDuration.xFast`，
+                      // 换成令牌**不改变手感** ✓（本文件别处已在用令牌 ✓）。
+                      duration: MotionDuration.xFast,
                       child: _hovered
                           ? Row(
                               key: const ValueKey('row-actions'),
@@ -288,7 +287,9 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                                     onPressed: widget.onToggleFavorite,
                                     visualDensity: VisualDensity.compact,
                                     color: widget.favorite
-                                        ? _favoriteColor
+                                        // 收藏语义色统一在令牌里 ✓（2026-10-17 / Q6）：
+                                        // 它是**固定**的（不跟主题走），所以放在 `AppColor` ✓。
+                                        ? AppColor.favorite
                                         : null,
                                     icon: Icon(
                                       widget.favorite
