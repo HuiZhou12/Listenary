@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_entry.dart';
+import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_cover_cache.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
@@ -159,6 +160,10 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
     ].join(' · ');
 
     // 失败 / 加载中仍走页壳 ✓（与本地歌单页、预览页一致 ✓）。
+    //
+    // ⚠️ 2026-10-17（F4）：这两个状态占的是**整页** ⇒ 按既有分工用页面级组件
+    //（[PageLoadingIndicator] / [QuietEmptyState]），不再用区块级的 `Inline*Hint`
+    // 与默认尺寸的转圈 —— 否则同族页面之间"加载中/读不到"的轻重不一致。
     if (_error case final message?) {
       return PageScaffold(
         title: title,
@@ -170,9 +175,15 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
             icon: const Icon(Symbols.refresh),
           ),
         ],
-        body: InlineFailureHint(
+        body: QuietEmptyState(
+          icon: Symbols.cloud_off,
+          title: '专辑读取失败',
           message: message,
-          onRetry: () => unawaited(_load()),
+          action: FilledButton.tonalIcon(
+            onPressed: () => unawaited(_load()),
+            icon: const Icon(Symbols.refresh),
+            label: const Text('重试'),
+          ),
         ),
       );
     }
@@ -180,7 +191,7 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
       return PageScaffold(
         title: title,
         subtitle: '来源：$platformName',
-        body: const Center(child: CircularProgressIndicator()),
+        body: const PageLoadingIndicator(),
       );
     }
     // **空（这张专辑确实没有曲目）** ⇒ 中性提示、**不给重试** ✓ —— 与歌单预览页同一条做法 ✓
@@ -189,9 +200,10 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
       return PageScaffold(
         title: album.name,
         subtitle: subtitle,
-        body: const InlineEmptyHint(
+        body: const QuietEmptyState(
           icon: Symbols.music_off,
-          message: '这张专辑暂时没有曲目。',
+          title: '这张专辑暂时没有曲目',
+          message: '换一张专辑，或稍后再看这张。',
         ),
       );
     }

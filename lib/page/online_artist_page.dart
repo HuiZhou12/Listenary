@@ -8,6 +8,7 @@ import 'package:pure_music/component/album_shelf.dart';
 import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/horizontal_shelf.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
+import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/design_tokens.dart';
@@ -225,12 +226,30 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
     final artist = _artist;
     final title = artist?.name ?? widget.initialName ?? '艺人';
 
+    // ⚠️ 2026-10-17（F4）：这两个状态占的是**整页** ⇒ 用页面级组件
+    //（[PageLoadingIndicator] / [QuietEmptyState]），不再用区块级的 `Inline*Hint`
+    // 与默认尺寸的转圈 —— 该页**区块内**的三态（热门歌曲/单曲）仍用 `Inline*Hint` ✓。
     if (_error case final message?) {
       return PageScaffold(
         title: title,
         subtitle: '来源：${musicPlatformLabel(widget.platform)}',
-        actions: [IconButton(tooltip: '刷新', onPressed: _load, icon: const Icon(Symbols.refresh))],
-        body: InlineFailureHint(message: message, onRetry: _load),
+        actions: [
+          IconButton(
+            tooltip: '刷新',
+            onPressed: _load,
+            icon: const Icon(Symbols.refresh),
+          ),
+        ],
+        body: QuietEmptyState(
+          icon: Symbols.cloud_off,
+          title: '艺人信息读取失败',
+          message: message,
+          action: FilledButton.tonalIcon(
+            onPressed: _load,
+            icon: const Icon(Symbols.refresh),
+            label: const Text('重试'),
+          ),
+        ),
       );
     }
     if (_loading || artist == null) {
@@ -238,7 +257,7 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
         title: title,
         subtitle: '来源：${musicPlatformLabel(widget.platform)}',
         actions: const [],
-        body: const Center(child: CircularProgressIndicator()),
+        body: const PageLoadingIndicator(),
       );
     }
 

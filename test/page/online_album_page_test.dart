@@ -138,9 +138,11 @@ void main() {
     );
 
     await pumpAlbum(tester, service);
-    await settle(tester, find.text('这张专辑暂时没有曲目。'));
+    await settle(tester, find.text('这张专辑暂时没有曲目'));
 
-    expect(find.text('这张专辑暂时没有曲目。'), findsOneWidget);
+    // 2026-10-17（F4）：页面级空态统一为 `QuietEmptyState`（标题 + 说明），
+    // 但"空不给重试"这条行为契约不变 ✓。
+    expect(find.text('这张专辑暂时没有曲目'), findsOneWidget);
     expect(find.text('重试'), findsNothing, reason: '空 ≠ 失败：空态不该给重试');
   });
 

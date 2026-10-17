@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_entry.dart';
+import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_cover_cache.dart';
 import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/core/design_tokens.dart';
@@ -164,11 +165,17 @@ class _RemotePlaylistPageState extends State<RemotePlaylistPage>
 
     // **加载 / 失败 / 空** 这三种"还没有内容"的状态仍走页壳 ✓ —— 与本地歌单页一致
     //（它们也是先 PageScaffold 报错、有内容了才用 UniDetailPage ✓）。
+    //
+    // ⚠️ 2026-10-17（F4）修正 ✓：这三态此前用的是**区块级**的 `Inline*Hint` 与默认尺寸的
+    // 转圈 ✗ —— 但它们占的是**整页**，于是同一个"在线歌单"在预览页是一行小字、在订阅详情页
+    // 是居中空态（同一族两种观感 ✗）。现在按既有分工统一：
+    // **页面级 ⇒ [PageLoadingIndicator] + [QuietEmptyState]**，
+    // **区块级 ⇒ `Inline*Hint`**（区块级的用法见 `horizontal_shelf` / `explore_page`）。
     if (_tracks.isLoading(_key) && tracks.isEmpty) {
       return PageScaffold(
         title: name,
         subtitle: subtitle,
-        body: const Center(child: CircularProgressIndicator()),
+        body: const PageLoadingIndicator(),
       );
     }
     final error = _tracks.error(_key);
@@ -176,9 +183,15 @@ class _RemotePlaylistPageState extends State<RemotePlaylistPage>
       return PageScaffold(
         title: name,
         subtitle: subtitle,
-        body: InlineFailureHint(
+        body: QuietEmptyState(
+          icon: Symbols.cloud_off,
+          title: '歌单读取失败',
           message: error,
-          onRetry: () => unawaited(_load()),
+          action: FilledButton.tonalIcon(
+            onPressed: () => unawaited(_load()),
+            icon: const Icon(Symbols.refresh),
+            label: const Text('重试'),
+          ),
         ),
       );
     }
@@ -186,9 +199,12 @@ class _RemotePlaylistPageState extends State<RemotePlaylistPage>
       return PageScaffold(
         title: name,
         subtitle: subtitle,
-        body: const InlineEmptyHint(
+        // **空 ≠ 失败**：这是"歌单确实没有可播曲目"⇒ 中性提示、**不给重试** ✓
+        //（给了重试就等于说"刚才那次读取失败了"，那是谎 ✓）。
+        body: const QuietEmptyState(
           icon: Symbols.music_off,
-          message: '这个歌单没有可播放的曲目。',
+          title: '这个歌单没有可播放的曲目',
+          message: '换一个歌单，或稍后再看这个歌单。',
         ),
       );
     }

@@ -149,3 +149,31 @@ class InlineFailureHint extends StatelessWidget {
     );
   }
 }
+
+/// **页面级加载指示器**（2026-10-17 统一 ✓）。
+///
+/// 为什么要有它：同一个"内容正在路上"此前在页面级有三种画法 —— 默认 36/4 的
+/// `CircularProgressIndicator`、24/2 的小圈、以及"文字空态 + 线性进度条"，
+/// 于是同一个产品里的"加载中"轻重不一。
+///
+/// 现在定一条规矩（与 [InlineEmptyHint] / [InlineFailureHint] 的分工正交）：
+/// - **页面级**（整页还没有内容）⇒ 本组件 + [QuietEmptyState]；
+/// - **区块级**（页面里某一块没内容）⇒ `Inline*Hint`。
+class PageLoadingIndicator extends StatelessWidget {
+  const PageLoadingIndicator({super.key, this.semanticsLabel});
+
+  /// 读屏标签；为 null 时由外层提供（与既有实现一致，不额外加语义层）。
+  final String? semanticsLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    const indicator = SizedBox.square(
+      dimension: 24,
+      child: CircularProgressIndicator(strokeWidth: 2),
+    );
+    final label = semanticsLabel;
+    return Center(
+      child: label == null ? indicator : Semantics(label: label, child: indicator),
+    );
+  }
+}
