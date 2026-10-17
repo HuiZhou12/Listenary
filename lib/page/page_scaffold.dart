@@ -156,6 +156,10 @@ class PageScaffold extends StatelessWidget {
             fontSize: AppType.body,
             color: scheme.onSurfaceVariant,
           ),
+          // **限行 + 省略**（2026-10-17 / F20）：此前只写了 `overflow: ellipsis` 却**没有
+          // `maxLines`** ✗ —— 那行 `overflow` 是不生效的 ✓，于是四段式副标题（来源 · 作者 ·
+          // 曲目数 · 状态）在窄窗里会**自由换行**，把头部撑高、把动作区往下推 ✓。
+          maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
       ],

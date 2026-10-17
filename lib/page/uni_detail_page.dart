@@ -807,6 +807,11 @@ class _UniDetailPageHeader extends StatelessWidget {
                   ),
                   Text(
                     subtitle,
+                    // **与标题同一条约束**（2026-10-17 / F20）：详情页的副标题常常是四段
+                    //（来源 · 作者 · 曲目数 · 状态）⇒ 不限行时会在窄窗里自由换行、把动作区
+                    // 往下推 ✓。这里与上面的标题一样限 2 行并省略 ✓。
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: AppType.body,
                       color: scheme.onSurface,
