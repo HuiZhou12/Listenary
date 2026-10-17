@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
+import 'package:pure_music/component/album_shelf.dart';
 import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/horizontal_shelf.dart';
 import 'package:pure_music/component/new_song_shelf.dart';
@@ -527,8 +528,6 @@ class _ExplorePageState extends State<ExplorePage>
   Widget _buildNewAlbumSection(MusicPlatform platform) {
     final scheme = Theme.of(context).colorScheme;
     final albums = _newAlbumState.items(platform);
-    // 与榜单一致放大 15%（用户要求封面整体放大 ✓）；只影响这一块的货架尺寸 ✓。
-    final width = _cardWidth * 1.15;
     return Padding(
       padding: const EdgeInsets.only(bottom: Spacing.lg),
       child: Column(
@@ -543,45 +542,20 @@ class _ExplorePageState extends State<ExplorePage>
             ),
           ),
           const SizedBox(height: Spacing.sm),
-          HorizontalShelf(
+          // 2026-10-16：**抽成公共组件** ✓ —— 艺人页的「专辑」也用同一份 ✓
+          //（此前两处各写一套：宽度 168 ✗ / 1.15 ✓，元信息有/没有「专辑」前缀 ✗）。
+          AlbumShelf(
+            albums: albums,
             loading: _newAlbumState.isLoading(platform),
             errorMessage: _newAlbumState.error(platform),
             onRetry: () => _retryNewAlbums(platform),
             emptyMessage: '该平台今天没有新专辑',
-            emptyIcon: Symbols.album,
-            itemCount: albums.length,
-            itemWidth: width,
-            itemHeight: RemoteMediaCard.extentFor(
-              width: width,
-              hasFooter: false,
-            ),
-            itemBuilder: (context, index) {
-              final album = albums[index];
-              return RemoteMediaCard(
-                width: width,
-                title: album.name,
-                coverUri: album.coverUri,
-                details: _newAlbumDetailsOf(album),
-                sourceLabel: platformLabelForIdentityOnly(album.identity),
-                placeholderIcon: Symbols.album,
-                // 点开专辑页：专辑曲目**有序号**、整张可播 ✓（R83 已有页面 ✓）。
-                onTap: () => _openAlbum(album),
-                semanticLabel:
-                    '${album.name}，来自${platformLabelForIdentityOnly(album.identity)}，点击打开专辑',
-              );
-            },
+            onOpen: _openAlbum,
           ),
         ],
       ),
     );
   }
-
-  /// 新专辑卡片：元信息沿用既有的「**类型 · …**」两段式 ✓（发行年份 + 曲目数都是平台声明的 ✓）。
-  String _newAlbumDetailsOf(OnlineAlbumSummary album) => [
-    '专辑',
-    if (album.releaseTime case final time?) '${time.year} 年',
-    if (album.trackCount case final count?) '$count 首',
-  ].join(' · ');
 
   void _openAlbum(OnlineAlbumSummary album) {
     context.push(

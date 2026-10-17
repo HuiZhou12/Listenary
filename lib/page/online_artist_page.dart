@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
+import 'package:pure_music/component/album_shelf.dart';
 import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/horizontal_shelf.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
-import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/remote_media_card.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/design_tokens.dart';
@@ -293,38 +293,22 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
             ContentSection(
               title: '专辑',
               subtitle: '来自${musicPlatformLabel(artist.platform)}；点一张打开专辑页',
-              child: HorizontalShelf(
-                itemCount: _albums.length,
-                itemWidth: _albumCardWidth,
-                itemHeight: RemoteMediaCard.extentFor(
-                  width: _albumCardWidth,
-                  hasFooter: false,
-                ),
+              // 2026-10-16：**复用探索页「新专辑」那个模块** ✓（用户指出这里也是自造格式 ✗）。
+              // 宽度、元信息格式（「专辑 · 年份 · N 首」）、三态文案全部统一 ✓。
+              child: AlbumShelf(
+                albums: _albums,
                 loading: _albumsLoading,
                 errorMessage: _albumsError,
                 onRetry: _retryAlbums,
                 emptyMessage: '这位艺人暂时没有公开专辑。',
-                emptyIcon: Symbols.album,
-                itemBuilder: (context, index) {
-                  final album = _albums[index];
-                  return RemoteMediaCard(
-                    width: _albumCardWidth,
-                    title: album.name,
-                    coverUri: album.coverUri,
-                    details: _albumDetailsOf(album),
-                    sourceLabel: platformLabelForIdentityOnly(album.identity),
-                    placeholderIcon: Symbols.album,
-                    onTap: () => context.push(
-                      app_paths.ONLINE_ALBUM_PAGE,
-                      extra: (
-                        platform: album.platform,
-                        albumId: album.id,
-                        name: album.name,
-                      ),
-                    ),
-                    semanticLabel: '${album.name}，打开专辑',
-                  );
-                },
+                onOpen: (album) => context.push(
+                  app_paths.ONLINE_ALBUM_PAGE,
+                  extra: (
+                    platform: album.platform,
+                    albumId: album.id,
+                    name: album.name,
+                  ),
+                ),
               ),
             ),
           ],
@@ -333,7 +317,7 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
             const SizedBox(height: Spacing.lg),
             ContentSection(
               title: '单曲和迷你专辑',
-              subtitle: '来自${musicPlatformLabel(artist.platform)}；点一行即从这些单曲开始播放',
+              subtitle: '来自${musicPlatformLabel(artist.platform)}；点一张即从这些单曲开始播放',
               child: _songsBody(),
             ),
           ],
@@ -358,15 +342,6 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
       ),
     );
   }
-
-  /// 专辑卡片的宽度（与 Explore 的货架同一种"能放下就固定宽"的朴素做法 ✓）。
-  static const double _albumCardWidth = 168;
-
-  /// 专辑卡片的元信息：**平台声明**的发行年份与曲目数（有什么说什么 ✓）。
-  String _albumDetailsOf(OnlineAlbumSummary album) => [
-    if (album.releaseTime case final time?) '${time.year} 年',
-    if (album.trackCount case final count?) '$count 首',
-  ].join(' · ');
 
   void _retryAlbums() {
     final service = context.read<OnlineMusicService?>();
@@ -398,11 +373,29 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
         message: '这位艺人暂时没有单曲。',
       );
     }
-    return Column(
-      children: [
-        for (final song in _songs)
-          OnlineTrackEntry(track: song, onTap: () => _playSongs(song)),
-      ],
+    // 2026-10-16：**改成卡片** ✓（用户指出这里用了列表 ✗，而同一页的「专辑」是卡片 ✓
+    // ⇒ 一页两套规则就是杂乱 ✓）。宽度与「专辑」同一套取法 ✓，两排卡对齐 ✓。
+    final width = RemoteMediaCard.widthFor(MediaQuery.sizeOf(context)) * 1.15;
+    return HorizontalShelf(
+      itemCount: _songs.length,
+      itemWidth: width,
+      itemHeight: RemoteMediaCard.extentFor(width: width, hasFooter: false),
+      itemBuilder: (context, index) {
+        final song = _songs[index];
+        return RemoteMediaCard(
+          width: width,
+          title: song.title,
+          coverUri: song.coverUri,
+          details: [
+            song.artistDisplay,
+            if (song.album.isNotEmpty) song.album,
+          ].join(' · '),
+          sourceLabel: platformLabelForIdentityOnly(song.ref.identity),
+          placeholderIcon: Symbols.music_note,
+          onTap: () => _playSongs(song),
+          semanticLabel: '播放"${song.title} - ${song.artistDisplay}"',
+        );
+      },
     );
   }
 
@@ -463,14 +456,14 @@ class _ArtistHero extends StatelessWidget {
               children: [
                 Positioned.fill(
                   child: RemoteMediaCover(
-                    coverUri: artist.avatarUri,
+                    // ⚠️ 2026-10-16 修 ✓：**向平台 CDN 要更大的同一张图** ✓。
+                    // 实测 `?param=1920y1920` 下发 **498 KB**（原始仅 236 KB ✓）⇒ 是真·更大画质 ✓，
+                    // 不是把 ~500px 放大 ✗ —— 用户报的"像素很低"就是**放大**造成的 ✓。
+                    coverUri: hiResCoverUri(artist.avatarUri),
                     placeholder: const ColoredBox(color: Color(0xFF1B1B1B)),
-                    // ⚠️ 缓存尺寸必须与**源图比例**同族（这里用方形 ✓）：
-                    // `cacheWidth/cacheHeight` 会**按这两个数改解码尺寸** ✗ —— 之前写 1200×525，
-                    // 方形艺人图就被**拉扁**了 ✗（用户一眼看出来的"压扁" ✓）。
-                    // 正确做法：方形缓存 + `BoxFit.cover` 自己去裁 ✓（只裁不形变 ✓）。
-                    cacheWidth: 1024,
-                    cacheHeight: 1024,
+                    // 缓存尺寸与**源图比例**同族（方形 ✓）+ 按请求的 1920 解 ✓。
+                    cacheWidth: 1920,
+                    cacheHeight: 1920,
                   ),
                 ),
                 // 渐变铺满整幅 ✓（hero 长高时它也跟着长 ✓），颜色 = 页面真正刷的那层色 ✓。
@@ -494,7 +487,10 @@ class _ArtistHero extends StatelessWidget {
             Align(
               alignment: Alignment.bottomLeft,
               child: Padding(
-                padding: const EdgeInsets.all(Spacing.xl),
+                // ⚠️ 2026-10-16 修 ✓：**左右必须与页面正文对齐** ✗。
+                // 正文由 `PageScaffold` 统一留 `horizontal: 16` ✓；这里原来用 `all: Spacing.xl`
+                // ⇒ 文字比下面的「热门歌曲」**右移几像素** ✗（用户："还缩进来了一点" ✓）。
+                padding: const EdgeInsets.fromLTRB(16, Spacing.xl, 16, Spacing.xl),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -769,4 +765,21 @@ class _ArtistTrackRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// **向平台 CDN 要更大的同一张图**（2026-10-16 ✓）。
+///
+/// 网易云的图片地址支持 `?param=WxH` ✓：实测同一张艺人图**原始 236 KB**、
+/// `?param=1920y1920` 下发 **498 KB** ✓ ⇒ 是**真的更清晰** ✓，不是把 ~500px 放大 ✗
+///（用户报的"背景照片像素很低"就是放大造成的 ✓）。
+///
+/// 只对网易云自家 CDN 加这个参数 ✓：别的 CDN 不认它 ✗（加了可能反而出错 ✓），
+/// 所以这里**有明确的域判断** ✓，不写"给所有 URL 都拼一个参数" ✗。
+Uri? hiResCoverUri(Uri? uri) {
+  if (uri == null) return null;
+  final text = uri.toString();
+  if (!text.contains('music.126.net')) return uri;
+  return Uri.parse(
+    text.contains('?') ? '$text&param=1920y1920' : '$text?param=1920y1920',
+  );
 }
