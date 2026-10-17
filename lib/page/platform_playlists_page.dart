@@ -242,12 +242,8 @@ class _PlatformPlaylistsPageState extends State<PlatformPlaylistsPage>
                             '${summary.name}，来自'
                             '${platformLabelForIdentityOnly(summary.identity)}，'
                             '点击预览（不会订阅）',
-                        footer: TextButton(
-                          onPressed: _subscribing.contains(widget.platform)
-                              ? null
-                              : () => unawaited(_subscribe(summary)),
-                          child: const Text('订阅'),
-                        ),
+                        onSubscribe: () => unawaited(_subscribe(summary)),
+                        subscribeEnabled: !_subscribing.contains(widget.platform),
                         ),
                       );
                     },

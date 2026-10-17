@@ -40,6 +40,9 @@ class RemoteMediaCard extends StatefulWidget {
     this.placeholderIcon = Symbols.queue_music,
     this.actions = const [],
     this.footer,
+    this.onSubscribe,
+    this.subscribeEnabled = true,
+    this.subscribeLabel = '订阅',
     this.isNowPlaying = false,
     this.semanticLabel,
   });
@@ -63,7 +66,23 @@ class RemoteMediaCard extends StatefulWidget {
   final List<RemoteMediaCardAction> actions;
 
   /// 静态页脚（例如「订阅」按钮）。
+  ///
+  /// 与 [onSubscribe] **互斥**（同时给时 `footer` 优先 ✓）—— 两个都想要就该用 `footer`
+  /// 自己拼，卡片不为"页脚里放几个控件"提供布局。
   final Widget? footer;
+
+  /// **订阅**页脚（可选）：给了它就在页脚位置画一个「[subscribeLabel]」按钮。
+  ///
+  /// 为什么收进卡片：同一个"订阅这个远端歌单/榜单"的页脚此前在 4 处各写一份
+  /// `TextButton`（探索页 ×2、榜单页、平台歌单页 ✗）⇒ 文案、禁用条件、页脚高度
+  /// 都可能各自走偏 ✓。
+  final VoidCallback? onSubscribe;
+
+  /// 订阅按钮是否可点；为 false 时按钮置灰（例如"该平台正在订阅中"）。
+  final bool subscribeEnabled;
+
+  /// 订阅按钮文案。
+  final String subscribeLabel;
 
   final bool isNowPlaying;
 
@@ -127,7 +146,7 @@ class _RemoteMediaCardState extends State<RemoteMediaCard> {
     final height = RemoteMediaCard.extentFor(
       width: widget.width,
       hasMeta: hasMeta,
-      hasFooter: widget.footer != null,
+      hasFooter: widget.footer != null || widget.onSubscribe != null,
     );
     final titleColor = widget.isNowPlaying ? scheme.primary : scheme.onSurface;
     final metadataColor = widget.isNowPlaying
@@ -256,6 +275,23 @@ class _RemoteMediaCardState extends State<RemoteMediaCard> {
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: footer,
+                      ),
+                    ),
+                  ] else if (widget.onSubscribe != null) ...[
+                    // **订阅页脚**（2026-10-17 ✓）：四处调用点此前各写一份 `TextButton`
+                    //（探索页 ×2、榜单页、平台歌单页 ✗）⇒ 收敛到这里 ✓。
+                    // 高度与自定义 [footer] **完全一致** ⇒ 替换不改变卡片几何 ✓。
+                    const SizedBox(height: RemoteMediaCard._footerGap),
+                    SizedBox(
+                      height: RemoteMediaCard._footerHeight,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: widget.subscribeEnabled
+                              ? widget.onSubscribe
+                              : null,
+                          child: Text(widget.subscribeLabel),
+                        ),
                       ),
                     ),
                   ],

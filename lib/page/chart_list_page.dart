@@ -221,10 +221,8 @@ class _ChartListPageState extends State<ChartListPage>
               onTap: () => _preview(summary),
               semanticLabel:
                   '${summary.name}，来自${platformLabelForIdentityOnly(summary.identity)}，点击预览（不会订阅）',
-              footer: TextButton(
-                onPressed: busy ? null : () => _subscribe(summary),
-                child: const Text('订阅'),
-              ),
+              onSubscribe: () => _subscribe(summary),
+              subscribeEnabled: !busy,
             );
           },
         ),
