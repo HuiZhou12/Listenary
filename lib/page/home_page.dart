@@ -5,12 +5,11 @@ import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/content_section.dart';
-import 'package:pure_music/component/home_greeting_header.dart';
-import 'package:pure_music/component/home_placeholder_shelf.dart';
 import 'package:pure_music/component/horizontal_shelf.dart';
 import 'package:pure_music/component/new_song_shelf.dart';
+import 'package:pure_music/component/home_greeting_header.dart';
+import 'package:pure_music/component/home_hero_banner.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
-import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/platform_capability_view.dart';
 import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
@@ -22,11 +21,8 @@ import 'package:pure_music/services/online_history/rediscovery_engine.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/preference.dart';
-import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/online_history_controller.dart';
-import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
-import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
 
 /// **聚合主页**：先把**你自己的东西**放前面，再是平台内容，最后才是配置诊断。
 ///
@@ -53,13 +49,6 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   bool _loaded = false;
 
-  /// 记住实例以便在 dispose 时摘掉监听（`context.removeListener` 不存在）。
-  PersonalOnlinePlaylistController? _personal;
-
-  PersonalOnlinePlaylistSnapshot? _favorites;
-  bool _favoritesLoading = false;
-  bool _favoritesFailed = false;
-
   /// **「猜你喜欢」货架**（`recommendedTracks` 能力，2026-10-12 新增 ✓）。
   ///
   /// 与「新曲上线」同一条规矩 ✓：只对**能播放**的平台出现 ✓
@@ -79,14 +68,10 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   _recommendedPlaylistState =
       RemoteLoadState<MusicPlatform, RemotePlaylistSummary>();
 
-  /// **「个性化合辑」货架**（`personalizedPlaylists` 能力，2026-10-12 新增 ✓）。
-  ///
-  /// 与「为你推荐的歌单」**形状相同** ✓（都是歌单摘要 ✓），但**语义不同** ✓：
-  /// 这条**免登录就有内容** ✓（实测 `/personalized` ✓）⇒ 失败时**不给**凭据指引 ✓。
-  List<MusicPlatform> _personalizedPlaylistPlatforms = const [];
-  final RemoteLoadState<MusicPlatform, RemotePlaylistSummary>
-  _personalizedPlaylistState =
-      RemoteLoadState<MusicPlatform, RemotePlaylistSummary>();
+  // **「个性化合辑」模块已按用户指令删除** ✗（2026-10-17）：
+  // 它与「为你推荐的歌单」**功能重合** ✓（都是平台给的一批歌单 ✓），主页摆两块就是重复 ✓。
+  // ⚠️ 只是**主页不再展示** ✓：`personalizedPlaylists` 这个**能力**仍在服务层 ✓
+  //（设置页的能力清单、声明式配方、探测都还在用它 ✓ ⇒ 没有连带删能力 ✓）。
 
   /// **「关注的艺人」货架**（`followedArtists` 能力，2026-10-12 新增 ✓）。
   ///
@@ -112,8 +97,6 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _personal = context.read<PersonalOnlinePlaylistController>();
-      _personal!.addListener(_onPersonalChanged);
       unawaited(_load());
     });
   }
@@ -124,14 +107,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       state.dispose();
     }
     _shelfScrollStates.clear();
-    _personal?.removeListener(_onPersonalChanged);
     super.dispose();
-  }
-
-  void _onPersonalChanged() {
-    if (!mounted) return;
-    // 收藏是异步读的，且读本身不会触发通知，因此这里直接刷新是安全的。
-    unawaited(_loadFavorites());
   }
 
   /// 这次打开距上次打开的间隔 ✓（null = 首次安装或不知道为什么 ✓）⇒ 交给问候头决定说不说"好久不见" ✓。
@@ -154,55 +130,21 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     AppPreference.instance.lastOpenedAt = DateTime.now().toUtc();
     AppPreference.instance.save().ignore();
     final history = context.read<OnlineHistoryController>();
-    final personal = context.read<PersonalOnlinePlaylistController>();
     unawaited(history.refresh());
-    unawaited(personal.load());
-    unawaited(_loadFavorites());
     unawaited(_loadRecommended());
     unawaited(_loadRecommendedPlaylists());
     unawaited(_loadFollowedArtists());
-    unawaited(_loadPersonalizedPlaylists());
   }
 
   Future<void> _refreshAll() async {
     final history = context.read<OnlineHistoryController>();
-    final personal = context.read<PersonalOnlinePlaylistController>();
     unawaited(history.refresh());
-    unawaited(personal.load());
     await Future.wait([
-      _loadFavorites(),
       _loadRecommended(),
       _loadRecommendedPlaylists(),
       _loadFollowedArtists(),
-      _loadPersonalizedPlaylists(),
     ]);
   }
-
-  Future<void> _loadFavorites() async {
-    if (_favoritesLoading || !mounted) return;
-    _favoritesLoading = true;
-    try {
-      final snapshot = await context
-          .read<PersonalOnlinePlaylistController>()
-          .readFavorites();
-      if (!mounted) return;
-      setState(() {
-        _favorites = snapshot;
-        _favoritesFailed = false;
-      });
-    } catch (_) {
-      // 收藏读不出来时该区块显示**失败**态（不是"还没有收藏"），不影响主页其它区块。
-      if (mounted) {
-        setState(() {
-          _favorites = null;
-          _favoritesFailed = true;
-        });
-      }
-    } finally {
-      _favoritesLoading = false;
-    }
-  }
-
 
   /// **推荐曲目**（`recommendedTracks` ✓）：与「新歌」同一套做法 ✓ ——
   /// 只对**能播放**的平台加载 ✓，单平台失败不影响其它平台 ✓。
@@ -243,14 +185,33 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   /// 「猜你喜欢」：**有平台具备该能力**就是真货架 ✓；一个都没有 ⇒ 保留**诚实展位** ✓
   ///（写明要接什么 ✓，不摆空货架 ✗）。"凭据没配/失效"由**平台自己的失败态**如实呈现 ✓
   ///（与"没有推荐"分开 ✓）。
+  /// **主页的模块显示规则**（2026-10-17 用户指令 ✓）：
+  /// **模块内没有内容就整块不渲染** ✓ —— 不再摆"还没有…"这类空态 ✓。
+  ///
+  /// "没有内容" = 该模块的**所有平台都取完了、而且每条都是空** ✓。
+  ///
+  /// 两种情况**仍然显示**（它们不是"空"）：
+  /// - **加载中**：还没有结论；藏起来会让模块忽隐忽现 ✓；
+  /// - **失败**：读不到 ≠ 没有。藏起来会把一次网络失败变成"这个模块消失了" ✓
+  ///（比一条空态更误导 —— 用户会以为平台没数据 ✓）。
+  bool _hasAnyContent<T>(
+    List<MusicPlatform> platforms,
+    RemoteLoadState<MusicPlatform, T> state,
+  ) {
+    for (final platform in platforms) {
+      if (state.items(platform).isNotEmpty ||
+          state.isLoading(platform) ||
+          state.error(platform) != null) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   Widget _buildRecommended() {
-    if (_recommendedPlatforms.isEmpty) {
-      return const HomePlaceholderShelf(
-        title: '猜你喜欢',
-        subtitle: '按你的口味挑的歌',
-        source: '在「设置 → 在线音乐」里启用该平台的推荐',
-        icon: Symbols.favorite,
-      );
+    // 没有内容（或根本没有可用平台）⇒ 整块不渲染 ✓。
+    if (!_hasAnyContent(_recommendedPlatforms, _recommendedState)) {
+      return const SizedBox.shrink();
     }
     return ContentSection(
       title: '猜你喜欢',
@@ -372,13 +333,12 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   /// 「为你推荐的歌单」✓ —— **名字如实** ♥：平台给的就是**歌单**（网易云 `/recommend/resource` 实测 ✓），
   /// 不是"推荐的专辑" ✗ ⇒ 不沿用参考图里那个名字（那会名不副实 ✓）。
   Widget _buildRecommendedPlaylists() {
-    if (_recommendedPlaylistPlatforms.isEmpty) {
-      return const HomePlaceholderShelf(
-        title: '为你推荐的歌单',
-        subtitle: '按你的账号推荐',
-        source: '在「设置 → 在线音乐」里启用该平台的推荐',
-        icon: Symbols.queue_music,
-      );
+    // 没有内容 ⇒ 整块不渲染 ✓（规则见 `_hasAnyContent`）。
+    if (!_hasAnyContent(
+      _recommendedPlaylistPlatforms,
+      _recommendedPlaylistState,
+    )) {
+      return const SizedBox.shrink();
     }
     return ContentSection(
       title: '为你推荐的歌单',
@@ -403,44 +363,10 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     );
   }
 
-  /// 「**个性化合辑**」（`personalizedPlaylists` ✓，2026-10-12 ✓）：实测 `/personalized`
-  /// **免登录**就有内容 ✓ ⇒ 与"为你推荐的歌单"形状相同 ✓，但**不补凭据指引** ✗
-  ///（它不需要凭据；加了就是误导 ✓）。
-  Widget _buildPersonalizedPlaylists() {
-    if (_personalizedPlaylistPlatforms.isEmpty) {
-      return const HomePlaceholderShelf(
-        title: '个性化合辑',
-        subtitle: '平台按口味挑的歌单合集',
-        source: '在「设置 → 在线音乐」里启用该平台的个性化合辑',
-        icon: Symbols.auto_awesome,
-      );
-    }
-    return ContentSection(
-      title: '个性化合辑',
-      // 文案**不过度承诺** ✓：登录后更贴合而已 ✓，不是"为你量身定做" ✗。
-      subtitle: '登录后会更贴合你；点封面可先预览，不会自动订阅',
-      // 同「为你推荐的歌单」✓：区块头右侧是「查看全部」✓，箭头由货架自己画 ✓。
-      actionLabel: '查看全部',
-      onAction: () => context.go(app_paths.EXPLORE_PAGE),
-      child: Column(
-        children: [
-          for (final platform in _personalizedPlaylistPlatforms)
-            _playlistShelfSection(
-              platform,
-              state: _personalizedPlaylistState,
-              emptyMessage: '该平台今天没有合辑',
-              onRetry: () => _retryPersonalizedPlaylists(platform),
-            ),
-        ],
-      ),
-    );
-  }
-
-  /// 一条**歌单货架**（"为你推荐的歌单" 与 "个性化合辑" 共用 ✓，2026-10-12 ✓）。
+  /// 一条**歌单货架**（2026-10-12 ✓；2026-10-17 起只剩「为你推荐的歌单」在用 ✓）。
   ///
-  /// 两者形状完全一样 ✓（都是歌单摘要 ✓），差别只有：标题 ✓、数据状态 ✓、空态文案 ✓，
-  /// 以及 **`decorateError`** —— 只有**凭据型**的那条才补"可能是凭据失效"的指引 ✓
-  ///（"个性化合辑"免登录就有内容 ✓，给它加凭据指引就是误导 ✗）。
+  /// 参数 `decorateError` 保留 ✓：只有**凭据型**的货架才补"可能是凭据失效"的指引 ✓
+  ///（不是凭据型的货架给它加这段就是误导 ✗）。
   Widget _playlistShelfSection(
     MusicPlatform platform, {
     required RemoteLoadState<MusicPlatform, RemotePlaylistSummary> state,
@@ -528,49 +454,6 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     await _loadRecommendedPlaylistsFor(service, platform);
   }
 
-  /// **个性化合辑**（`personalizedPlaylists` ✓）：与"推荐歌单"同一套做法 ✓（判据相同 ✓）。
-  Future<void> _loadPersonalizedPlaylists() async {
-    final service = context.read<OnlineMusicService?>();
-    final platforms = service == null
-        ? const <MusicPlatform>[]
-        : [
-            for (final platform in builtinMusicPlatforms)
-              if (service
-                  .capabilities
-                  .openablePersonalizedPlaylistPlatforms
-                  .contains(platform))
-                platform,
-          ];
-    if (!mounted) return;
-    setState(() => _personalizedPlaylistPlatforms = platforms);
-    if (service == null) return;
-    await Future.wait([
-      for (final platform in platforms)
-        _loadPersonalizedPlaylistsFor(service, platform),
-    ]);
-  }
-
-  Future<void> _loadPersonalizedPlaylistsFor(
-    OnlineMusicService service,
-    MusicPlatform platform,
-  ) => loadRemoteList(
-    _personalizedPlaylistState,
-    platform,
-    () => service.fetchPersonalizedPlaylists(
-      platform: platform,
-      limit: widget.collectionLimit,
-      offset: 0,
-      cancelToken: newCancelToken(),
-    ),
-    fallback: '读取该平台个性化合辑失败',
-  );
-
-  Future<void> _retryPersonalizedPlaylists(MusicPlatform platform) async {
-    final service = context.read<OnlineMusicService?>();
-    if (service == null) return;
-    await _loadPersonalizedPlaylistsFor(service, platform);
-  }
-
   /// **关注的艺人**（`followedArtists` ✓）：与"推荐歌单"同一套做法 ✓。
   Future<void> _loadFollowedArtists() async {
     final service = context.read<OnlineMusicService?>();
@@ -608,13 +491,9 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   );
 
   Widget _buildFollowedArtists() {
-    if (_followedArtistPlatforms.isEmpty) {
-      return const HomePlaceholderShelf(
-        title: '关注的艺人',
-        subtitle: '你关注的艺人',
-        source: '在「设置 → 在线音乐」里启用「关注的艺人」',
-        icon: Symbols.artist,
-      );
+    // 没有内容 ⇒ 整块不渲染 ✓（规则见 `_hasAnyContent`）。
+    if (!_hasAnyContent(_followedArtistPlatforms, _followedArtistState)) {
+      return const SizedBox.shrink();
     }
     return ContentSection(
       title: '关注的艺人',
@@ -715,31 +594,33 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   Widget build(BuildContext context) {
     final service = context.read<OnlineMusicService?>();
     final history = context.watch<OnlineHistoryController>().snapshot;
-    final personal = context.watch<PersonalOnlinePlaylistController>().snapshot;
-    return PageScaffold(
-      title: '主页',
-      subtitle: '接着听、你的收藏，和各平台的推荐',
-      actions: [
-        IconButton.filledTonal(
-          tooltip: '搜索在线音乐',
-          onPressed: () => context.go(app_paths.ONLINE_MUSIC_PAGE),
-          icon: const Icon(Symbols.search),
-        ),
-        IconButton.filledTonal(
-          tooltip: '刷新主页',
-          onPressed: _refreshAll,
-          icon: const Icon(Symbols.refresh),
-        ),
-      ],
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: Spacing.bottomNav, right: 20),
-        children: [
-          // ================= 主页重置（2026-10-12，照用户给的 YT Music 图 ✓）=================
-          // 顺序与图一致 ✓；**有真实数据的接真实数据** ✓，缺的做成**诚实展位** ✓
-          //（展位写明"要接什么接口"✓，不塞假内容 ✗）。
-          HomeGreetingHeader(returningAfter: _returningAfter),
-          // ① 再听一遍（真实：本地在线历史 ✓）
-          _buildHistory(history),
+    // **主页不再用页壳** ✓（2026-10-17）：
+    // 1. 页壳给左右各 16 的硬内边距 ⇒ 顶部的名片带贴不到窗口边 ✗；
+    // 2. 页壳的标题行已去掉（问候语就是这一页唯一的一级标题 ✓）。
+    //
+    // 结构（视觉与逻辑解耦 ✓）：
+    // - **一张"用户名片"**（问候语 + 右侧横幅背景）作为滚动内容的**第一项** ✓
+    //   ⇒ 它跟着内容一起滚走 ✓（不会像别的页那样被钉在顶上 ✗），
+    //     并且**按内容宽度等比例定高** ✓（不是写死的 200×720 小方块 ✗）；
+    // - **名片的下面**才是各模块（再听一遍 / 猜你喜欢 …）✓ —— 二者**不重叠** ✓。
+    // ⚠️ **不拆 `ContentSection`** ✓ —— 区块自己管自己的头与内容，
+    // "没内容整块隐藏"的逻辑完全不动 ✓。
+    return ListView(
+      padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
+      children: [
+        // ① 用户名片：问候 + 横幅背景（等比例定高，随内容滚动 ✓）。
+        _buildIdentityBand(context),
+        // ② 名片下面是内容区（左右留白：右侧多出的 20 是滚动条位置 ✓）。
+        Padding(
+          padding: const EdgeInsets.only(
+            left: Spacing.lg,
+            right: Spacing.lg + 20,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ① 再听一遍（真实：本地在线历史 ✓）
+              _buildHistory(history),
           // ② 老歌重温（真实：历史里**播放次数最高**的那批 ✓ —— 复用既有的 `topPlayed` ✓）
           _buildTopPlayed(history),
           // ③ 「翻唱与混音」**已删除** ✗（2026-10-12 ✓）：
@@ -748,45 +629,108 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
           // ④ 「为你推荐的音乐视频」**已删除** ✗（2026-10-12 ✓）：
           // 网易云有 `/personalized/mv`（实测可用 ✓）但**是视频** ✗ —— 本应用只能播音频 ✓，
           // 本地也没有任何视频内容 ✗ ⇒ **两边都做不到** ⇒ 撤掉 ✓（不留空壳 ✗）。
-          // ⑤ 猜你喜欢（**有推荐能力就是真货架** ✓；没有就保留诚实展位 ✓）
+          // ⑤ 猜你喜欢（**有内容才出现** ✓ —— 见下方"模块显示规则"）
           _buildRecommended(),
-          // ⑥ 来自你的媒体库（真实：收藏 ✓ + 自建歌单 ✓ —— 图上是一块，我们拆成两块更清楚 ✓）
-          _buildFavorites(),
-          _buildPersonalPlaylists(personal),
-          // ⑦ 关注的艺人（**有该能力就是真货架** ✓；没有就保留诚实展位 ✓）
+          // ⑥ ⑦ 「我的收藏」「我的在线歌单」**已按用户指令移除** ✗（2026-10-17 ✓）：
+          // 这两类内容在各自的页面里都有 ✓（收藏页 / 歌单页），主页不再重复摆 ✓。
+          // ⑧ 关注的艺人（**有内容才出现** ✓）
           _buildFollowedArtists(),
-          // ⑧ 「来自社区」**已删除** ✗（2026-10-12 ✓）：
+          // ⑨ 「来自社区」**已删除** ✗（2026-10-12 ✓）：
           // 网易云只有 `/topic/sublist`（那是"**你自己订阅的专栏**" ✗，不是别人的社区内容 ✓），
           // 本地更没有社区 ✗ ⇒ 两边都做不到 ⇒ 撤掉 ✓。
-          // ⑨ 为你推荐的**歌单**（名字如实 ✓：平台给的是歌单 ✓；有该能力就是真货架 ✓）
+          // ⑩ 为你推荐的**歌单**（名字如实 ✓：平台给的是歌单 ✓；有内容才出现 ✓）
           _buildRecommendedPlaylists(),
-          // ⑩ 新曲上线：**已按用户指令删除** ✗（2026-10-16 ✓）——
+          // ⑪ 新曲上线：**已按用户指令删除** ✗（2026-10-16 ✓）——
           // 主页不再重复探索页已有的「新歌」块 ✓（那边信息更全 ✓：可翻页、带平台筛选 ✓）。
-          // ⑪ Recap：**用本机历史真做** ✓（2026-10-12 ✓）——
+          // ⑫ Recap：**用本机历史真做** ✓（2026-10-12 ✓）——
           // 官方 Recap 在这个服务上**实测 404** ✗（`/summary/annual` ✓），但**本地完全可做** ✓
           // ⇒ 按用户指令"能本地实现的就实现" ✓，并且**如实说明**这是本机数字 ✓（不冒充官方 Recap ✗）。
           _buildLocalRecap(history),
-          // ⑫ **每日发现：与「猜你喜欢」同源**（网易云实测两处都指向同一个每日推荐接口 ✓）
+          // ⑬ **每日发现：与「猜你喜欢」同源**（网易云实测两处都指向同一个每日推荐接口 ✓）
           // ⇒ **不摆两块重复内容** ✗ —— 这里不再单独放展位 ✓（已在「猜你喜欢」呈现 ✓）。
-          // ⑬ 个性化合辑（**有该能力就是真货架** ✓；没有就保留诚实展位 ✓）
-          _buildPersonalizedPlaylists(),
+          // ⑭ 个性化合辑（**有内容才出现** ✓）
+          // ⑭ 「个性化合辑」**已按用户指令删除** ✗（2026-10-17 ✓）：
+          // 它与「为你推荐的歌单」**功能重合** ✓（都是平台给的一批歌单 ✓）⇒ 主页只留一块 ✓。
+          //（能力本身仍在服务层 ✓，只是主页不再展示 ✓。）
 
           // ================= 图里没有、但我们本来就有的价值（保留 ✓）=================
-          // 用户这轮的指令是"元素全部推翻、采用 YT 设计" ✓ —— 但这两块是我们**已有的真实能力** ✓
-          // （各平台歌单 ✓ 与平台能力诊断 ✓），删掉是纯损失 ✗ ⇒ 放在最后保留 ✓，你要删说一句即可 ✓。
-          // 「来自平台的歌单」**已按用户指令删除** ✗（2026-10-16 ✓）——
-          // 探索页仍有「平台歌单」那一块 ✓（信息更全：分类筛选 ✓），主页不再重复 ✗。
+          // 平台能力诊断 ✓：它不是"内容模块"，不需要遵守"没内容就隐藏" ✓
+          //（它正好要在**没配好**的时候告诉你去哪配 ✓）。
           PlatformCapabilityView(
             capabilities: service?.capabilities,
             onConfigure: () => context.go(app_paths.SETTINGS_PAGE),
           ),
-        ],
-      ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
+  /// **用户名片带**：横幅背景 + 左下问候 + 右侧刷新 ✓。
+  ///
+  /// 高度**按内容宽度等比例**取（`宽 × 比例`，再夹在上下限之间）✓ ——
+  /// 全屏时它跟着变高变宽 ✓，而不是永远那个 200×720 的小方块 ✗（用户实测指出的问题）。
+  Widget _buildIdentityBand(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final height = (constraints.maxWidth * _identityHeightRatio).clamp(
+          _identityMinHeight,
+          _identityMaxHeight,
+        );
+        return SizedBox(
+          height: height,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // 背景：用户横幅（没设置 ⇒ 什么都不画，页面底色露出来 ✓）。
+              ValueListenableBuilder<String?>(
+                valueListenable: AppPreference.instance.homeBannerPathListenable,
+                builder: (context, bannerPath, _) =>
+                    HomeHeroBanner(bannerPath: bannerPath),
+              ),
+              // 前景：问候语压在左下、刷新在右端 ✓。
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  Spacing.lg,
+                  Spacing.md,
+                  Spacing.lg,
+                  Spacing.md,
+                ),
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: HomeGreetingHeader(
+                    returningAfter: _returningAfter,
+                    // 横向与底部留白由名片带统一给 ✓（避免两处再各加一份）。
+                    padding: EdgeInsets.zero,
+                    action: IconButton.filledTonal(
+                      tooltip: '刷新主页',
+                      onPressed: _refreshAll,
+                      icon: const Icon(Symbols.refresh),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 名片带的高度比例：宽度 × 这个数，再夹到 [_identityMinHeight]~[_identityMaxHeight] ✓。
+  ///
+  /// 0.20 ≈ 1500 宽时 300 高（被 280 上限接住）、900 宽时 180 ✓ —— 全屏与窄窗都自然 ✓。
+  static const double _identityHeightRatio = 0.20;
+  static const double _identityMinHeight = 140;
+  static const double _identityMaxHeight = 280;
+
   // --------------------------------------------------------------- 继续听
 
+  /// 「再听一遍」：**自己管自己的头与内容** ✓（`ContentSection` 保持完整 ✓）。
+  ///
+  /// 与横幅的"浸入式融合"靠**布局**实现（横幅在底下多延伸一截）✓，
+  /// **不靠**把区块头搬进背景组件 ✗ —— 那会破坏区块组件的内聚性 ✓。
   Widget _buildHistory(OnlineHistoryViewSnapshot history) {
     // **不再直接切统计的前 N 条** ✗（2026-10-12 用户要求 ✓）：
     // 统计的 `recent` 只有"时间倒序"这一个维度 ✓ ⇒ 连听一张专辑就会整块被它占满 ✗。
@@ -798,6 +742,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       limit: widget.previewLimit,
     );
     final entries = [for (final pick in picks) pick.entry];
+    // **模块内没有内容就整块不渲染** ✓（2026-10-17 用户指令）：不再摆空态文案 ✓。
+    if (entries.isEmpty) return const SizedBox.shrink();
     final reasons = {
       for (final pick in picks) pick.entry.track.ref: pick.reason,
     };
@@ -807,36 +753,29 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       subtitle: '你最近常听的，接着听',
       actionLabel: '查看全部',
       onAction: () => context.go('${app_paths.STATS_PAGE}?source=online'),
-      // 2026-10-16 用户指令 ✓：与探索页那两块统一 ✓ —— 标题行右侧只留「查看全部」✓，
-      // **不放头部箭头** ✗；箭头交给货架自己画在左右两侧 ✓（还能往那一侧滑时才出现 ✓）。
-      child: entries.isEmpty
-          ? InlineEmptyHint(
-              icon: Symbols.history,
-              message: history.status == OnlineHistoryLoadStatus.failed
-                  ? '播放历史读取失败，可稍后重试。'
-                  : '还没有在线播放记录：从探索或搜索进入任一平台曲目即可开始。',
-            )
-          // **卡片货架**（2026-10-12 ✓，用户裁定 ✓）：参考的第一块就是卡片货架 ✓，
-          // 不是一行行的曲目 ✗。数据仍是**真实的**本地历史 ✓。
-          : HorizontalShelf(
-          // 同上 ✓：不再把滚动状态接到头部（那会抢走货架自己的左右箭头 ✓）。
-      // **不传 `scrollState`** ✓ ⇒ `HorizontalShelf` 自己画覆盖层箭头 ✓（与探索页一致 ✓）。
-              itemCount: entries.length,
-              itemWidth: ShelfGeometry.cardWidth(context),
-              itemHeight: ShelfGeometry.cardExtent(
-                width: ShelfGeometry.cardWidth(context),
-                hasFooter: false,
-              ),
-              itemBuilder: (context, index) => _historyCard(
-                entries[index].track,
-                reason: reasons[entries[index].track.ref],
-                onTap: () => playOnlineHistoryEntry(
-                  context,
-                  entries: history.recent,
-                  selectedRef: entries[index].track.ref,
-                ),
-              ),
-            ),
+      // 2026-10-16 用户指令 ✓：标题行右侧只留「查看全部」✓，**不放头部箭头** ✗；
+      // 箭头交给货架自己画在左右两侧 ✓（还能往那一侧滑时才出现 ✓）。
+      // **卡片货架**（2026-10-12 ✓，用户裁定 ✓）：参考的第一块就是卡片货架 ✓，
+      // 不是一行行的曲目 ✗。数据仍是**真实的**本地历史 ✓。
+      child: HorizontalShelf(
+        // 同上 ✓：不再把滚动状态接到头部（那会抢走货架自己的左右箭头 ✓）。
+        // **不传 `scrollState`** ✓ ⇒ `HorizontalShelf` 自己画覆盖层箭头 ✓（与探索页一致 ✓）。
+        itemCount: entries.length,
+        itemWidth: ShelfGeometry.cardWidth(context),
+        itemHeight: ShelfGeometry.cardExtent(
+          width: ShelfGeometry.cardWidth(context),
+          hasFooter: false,
+        ),
+        itemBuilder: (context, index) => _historyCard(
+          entries[index].track,
+          reason: reasons[entries[index].track.ref],
+          onTap: () => playOnlineHistoryEntry(
+            context,
+            entries: history.recent,
+            selectedRef: entries[index].track.ref,
+          ),
+        ),
+      ),
     );
   }
 
@@ -905,6 +844,14 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       }
     }
 
+    // **没有任何播放记录 ⇒ 整块不渲染** ✓（2026-10-17 模块显示规则）：
+    // 这一块是"本机数字"，没有数字就没有内容 ✓。**失败仍然显示** ✓ ——
+    // "读不到"不等于"没有"，藏起来会让人以为这台机器从没播放过 ✓。
+    if (history.recent.isEmpty &&
+        history.status != OnlineHistoryLoadStatus.failed) {
+      return const SizedBox.shrink();
+    }
+
     return ContentSection(
       title: '你的回顾',
       // **口径写在副标题里** ✓：一看就知道这些数是哪来的 ✓。
@@ -971,6 +918,8 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       limit: widget.previewLimit,
     );
     final entries = [for (final pick in picks) pick.entry];
+    // 模块内没有内容 ⇒ 整块不渲染 ✓（与「再听一遍」同一条规则）。
+    if (entries.isEmpty) return const SizedBox.shrink();
     final reasons = {
       for (final pick in picks) pick.entry.track.ref: pick.reason,
     };
@@ -980,153 +929,31 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
       actionLabel: '查看全部',
       onAction: () => context.go('${app_paths.STATS_PAGE}?source=online'),
       // 同「再听一遍」✓：标题行只留「查看全部」✓，箭头由货架自己画 ✓。
-      child: entries.isEmpty
-          ? InlineEmptyHint(
-              icon: Symbols.replay,
-              message: history.status == OnlineHistoryLoadStatus.failed
-                  ? '播放历史读取失败，可稍后重试。'
-                  : '还没有"好久没听"的曲目：某一首反复听过、又隔上两周没听，它会出现在这里。',
-            )
-          // 与「再听一遍」同一套卡片货架 ✓（用户裁定：这两块都用卡片 ✓）。
-          : HorizontalShelf(
-              // 不传 `scrollState` ✓ ⇒ 货架自己画左右箭头 ✓（与「再听一遍」和探索页一致 ✓）。
-              itemCount: entries.length,
-              itemWidth: ShelfGeometry.cardWidth(context),
-              itemHeight: ShelfGeometry.cardExtent(
-                width: ShelfGeometry.cardWidth(context),
-                hasFooter: false,
-              ),
-              itemBuilder: (context, index) => _historyCard(
-                entries[index].track,
-                reason: reasons[entries[index].track.ref],
-                onTap: () => playOnlineHistoryEntry(
-                  context,
-                  entries: history.topPlayed,
-                  selectedRef: entries[index].track.ref,
-                ),
-              ),
-            ),
-    );
-  }
-
-  // ----------------------------------------------------------------- 收藏
-
-  Widget _buildFavorites() {
-    final tracks = _favorites?.tracks ?? const <MusicTrack>[];
-    final preview = tracks.take(widget.previewLimit).toList();
-    return ContentSection(
-      title: '我的收藏',
-      subtitle: '各平台的收藏都在这里，每行标明来源',
-      actionLabel: '查看全部',
-      onAction: () => context.go(app_paths.FAVORITES_PAGE),
-      child: switch (preview) {
-        // 读取失败 ≠ 没有收藏：两者文案必须不同，否则一次网络抖动会被读成"收藏丢了"。
-        _ when _favoritesFailed => InlineFailureHint(
-          message: '收藏读不到，稍后可重试',
-          onRetry: _loadFavorites,
+      // 与「再听一遍」同一套卡片货架 ✓（用户裁定：这两块都用卡片 ✓）。
+      child: HorizontalShelf(
+        // 不传 `scrollState` ✓ ⇒ 货架自己画左右箭头 ✓（与「再听一遍」和探索页一致 ✓）。
+        itemCount: entries.length,
+        itemWidth: ShelfGeometry.cardWidth(context),
+        itemHeight: ShelfGeometry.cardExtent(
+          width: ShelfGeometry.cardWidth(context),
+          hasFooter: false,
         ),
-        [] => const InlineEmptyHint(
-          icon: Symbols.favorite,
-          message: '还没有收藏：在曲目上点心形图标就能收藏',
-        ),
-        _ => Column(
-          children: [
-            for (final track in preview)
-              _buildTrackRow(
-                track,
-                onTap: () => playOnlineSearchResult(
-                  context,
-                  tracks: tracks,
-                  selectedRef: track.ref,
-                ),
-              ),
-          ],
-        ),
-      },
-    );
-  }
-
-  /// 一行在线曲目：组装、来源标记、收藏与"加入歌单"都收敛在 [OnlineTrackEntry] 里
-  /// （那段组装此前在四个页面各抄了一遍）。
-  Widget _buildTrackRow(MusicTrack track, {required VoidCallback onTap}) =>
-      OnlineTrackEntry(track: track, onTap: onTap);
-
-  // ------------------------------------------------------------- 自建歌单
-
-  Widget _buildPersonalPlaylists(PersonalOnlinePlaylistViewSnapshot snapshot) {
-    final playlists = snapshot.playlists.take(widget.previewLimit).toList();
-    return ContentSection(
-      title: '我的在线歌单',
-      subtitle: '你自己建的歌单，可以混放各平台的曲目',
-      actionLabel: '管理歌单',
-      onAction: () => context.go(app_paths.PLAYLISTS_PAGE),
-      child: playlists.isEmpty
-          ? const InlineEmptyHint(
-              icon: Symbols.playlist_add,
-              message: '还没有自建歌单：在歌单页新建一个即可',
-            )
-          : Column(
-              children: [
-                for (final playlist in playlists)
-                  _PersonalPlaylistTile(
-                    playlist: playlist,
-                    onTap: () => context.push(
-                      app_paths.PERSONAL_PLAYLIST_DETAIL_PAGE,
-                      extra: playlist.localId,
-                    ),
-                  ),
-              ],
-            ),
-    );
-  }
-}
-
-
-class _PersonalPlaylistTile extends StatelessWidget {
-  const _PersonalPlaylistTile({required this.playlist, required this.onTap});
-
-  final PersonalOnlinePlaylistSnapshot playlist;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      type: MaterialType.transparency,
-      borderRadius: AppRadius.smCircular,
-      child: InkWell(
-        borderRadius: AppRadius.smCircular,
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: Spacing.sm,
-            vertical: 10,
-          ),
-          child: Row(
-            children: [
-              Icon(Symbols.queue_music, color: scheme.onSurfaceVariant),
-              const SizedBox(width: Spacing.md),
-              Expanded(
-                child: Text(
-                  playlist.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: scheme.onSurface),
-                ),
-              ),
-              Text(
-                '${playlist.tracks.length} 首',
-                style: TextStyle(
-                  color: scheme.onSurfaceVariant,
-                  fontSize: AppType.caption,
-                ),
-              ),
-            ],
+        itemBuilder: (context, index) => _historyCard(
+          entries[index].track,
+          reason: reasons[entries[index].track.ref],
+          onTap: () => playOnlineHistoryEntry(
+            context,
+            entries: history.topPlayed,
+            selectedRef: entries[index].track.ref,
           ),
         ),
       ),
     );
   }
+
+  // 「我的收藏」与「我的在线歌单」两块**已按用户指令移除** ✓（2026-10-17）：
+  // 这两类内容原本在主页与各自的页面里各显示一遍 ✓（收藏页 / 歌单页），
+  // 主页不再重复摆 ✓ —— 侧边栏与各自页面仍是一级入口 ✓。
 }
 
 /// 「你的回顾」里的一格数字（**本机口径** ✓，2026-10-12 ✓）。

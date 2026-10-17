@@ -120,6 +120,9 @@ void main() {
   }
 
   testWidgets('★ 两边都做不到的展位已删除，且"你的回顾"是真数字', (tester) async {
+    // 「你的回顾」是"本机数字"：**没有播放记录就没有内容** ⇒ 按模块规则会整块隐藏 ✓
+    //（2026-10-17）。所以这里先播一首，才有回顾可看 ✓。
+    repository.recordPlaybackStarted(_track('n1', MusicPlatform.netease));
     await pumpHome(tester, service: _HomeService());
 
     // 用户裁定（2026-10-12 ✓）：**网易云做不到、本地也做不到**的板块**删掉** ✗，不留空壳 ✗。
@@ -137,28 +140,37 @@ void main() {
     expect(find.text('最近 30 天在听的曲目'), findsOneWidget);
   });
 
-  testWidgets('保证 1：空数据时给出可读的空状态，且配置说明可用', (tester) async {
+  testWidgets('★ 模块显示规则：模块内没有内容就整块隐藏（不再摆空态）', (tester) async {
+    // 2026-10-17 用户指令：**模块内没有内容就默认隐藏** ✓。
+    // 这里服务什么都不给、历史也是空的 ⇒ 所有内容模块都应当**不渲染**，
+    // 只剩问候头与底部的平台能力诊断 ✓。
     await pumpHome(tester, service: _HomeService());
 
-    // 2026-10-12 主页按用户给的 YT 图重置 ✓ ⇒ 区块与顺序都变了 ✓（这里只钉**关键几个** ✓）。
-    // 2026-10-16：**「来自平台的歌单」与「新歌上线」已按用户指令删除** ✗ ⇒ 从这份清单里去掉 ✓。
-    // ⚠️ 第二块**已改名**：原「老歌重温」→「**好久没听**」✓ —— 用户指出"老歌"有歧义 ✓，
-    // 而我们**没有发行年份** ✗（说"90 年代"就是编数据 ✗）⇒ 采用"确实听过、但好久没听"这个读法 ✓。
-    final titles = [
+    for (final hidden in [
       '再听一遍',
       '好久没听',
+      '猜你喜欢',
+      '关注的艺人',
+      '为你推荐的歌单',
+      '个性化合辑',
+      '你的回顾',
+      // 这两块**已按用户指令移除** ✓（2026-10-17）
       '我的收藏',
       '我的在线歌单',
-      '各平台支持什么',
-    ];
-    for (final title in titles) {
-      expect(find.text(title), findsOneWidget, reason: '$title 区块必须存在');
+    ]) {
+      expect(
+        find.text(hidden),
+        findsNothing,
+        reason: '「$hidden」没有内容 ⇒ 整块不该渲染 ✓',
+      );
     }
-    expect(find.textContaining('还没有在线播放记录'), findsOneWidget);
-    expect(find.textContaining('还没有收藏'), findsOneWidget);
-    expect(find.textContaining('还没有自建歌单'), findsOneWidget);
+    // 空态文案也不该再出现（隐藏比"还没有…"更符合这条规则 ✓）。
+    expect(find.textContaining('还没有在线播放记录'), findsNothing);
+    expect(find.textContaining('还没有收藏'), findsNothing);
+    expect(find.textContaining('还没有自建歌单'), findsNothing);
 
-    // 「平台能力」是诊断信息：默认收起，展开后三个平台都在且都显示未配置。
+    // 平台能力是**诊断信息**，不属于"内容模块" ⇒ 仍然在 ✓（默认收起）。
+    expect(find.text('各平台支持什么'), findsOneWidget);
     expect(find.text('未配置'), findsNothing, reason: '收起时不应渲染平台行');
     await expandCapabilities(tester);
     for (final platform in builtinMusicPlatforms) {
@@ -191,22 +203,14 @@ void main() {
     expect(find.text('未配置'), findsOneWidget);
   });
 
-  testWidgets('保证 3：再听一遍/老歌重温用卡片、收藏用行，且都标注来源（跨平台）', (tester) async {
+  testWidgets('保证 3：历史两块用卡片，且都标注来源（跨平台）', (tester) async {
     repository.recordPlaybackStarted(_track('n1', MusicPlatform.netease));
     repository.recordPlaybackStarted(_track('q1', MusicPlatform.qq));
-    repository.toggleFavorite(_track('q1', MusicPlatform.qq));
-    repository.toggleFavorite(_track('n2', MusicPlatform.netease));
     await pumpHome(tester, service: _HomeService());
 
-    // 2026-10-12（用户裁定 ✓）：**再听一遍 / 老歌重温改成卡片货架** ✓（与参考一致 ✓）
-    // ⇒ 曲目**行**只剩收藏区的两条 ✓。
-    expect(find.byType(OnlineTrackRow), findsNWidgets(2));
-    final labels = tester
-        .widgetList<OnlineTrackRow>(find.byType(OnlineTrackRow))
-        .map((row) => row.sourceLabel)
-        .toList(growable: false);
-    expect(labels, contains('网易云'));
-    expect(labels, contains('QQ音乐'));
+    // 2026-10-17：「我的收藏」模块已按用户指令移除 ⇒ 主页上**不再有曲目行** ✓，
+    // 只剩历史那两块**卡片**货架 ✓（用户 2026-10-12 裁定：这两块用卡片 ✓）。
+    expect(find.byType(OnlineTrackRow), findsNothing);
 
     // 历史那两块现在是**卡片** ✓：来源标记也必须**照样**出现在卡片上 ✓
     //（"来源始终可见"这条纪律不因换形状而失效 ✓）。
@@ -316,6 +320,8 @@ void main() {
   );
 
   testWidgets('★ 继续听「查看全部」→ 统计页的**在线**来源（query 不能丢）', (tester) async {
+    // 模块规则（2026-10-17）：没有内容就隐藏 ⇒ 先播一首，让「再听一遍」真的出现。
+    repository.recordPlaybackStarted(_track('n1', MusicPlatform.netease));
     await pumpHome(tester, service: _HomeService());
 
     await tester.tap(seeAllOf('再听一遍'));
@@ -326,33 +332,14 @@ void main() {
     expect(find.text('stub:${app_paths.STATS_PAGE}|source=online'), findsOneWidget);
   });
 
-  testWidgets('★ 我的收藏「查看全部」→ 在线收藏页', (tester) async {
-    await pumpHome(tester, service: _HomeService());
-
-    await tester.tap(seeAllOf('我的收藏'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('stub:${app_paths.FAVORITES_PAGE}|'), findsOneWidget);
-  });
-
-
-
-  testWidgets('★ 我的在线歌单「管理歌单」→ 歌单页', (tester) async {
-    await pumpHome(tester, service: _HomeService());
-
-    await tester.tap(find.text('管理歌单'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('stub:${app_paths.PLAYLISTS_PAGE}|'), findsOneWidget);
-  });
-
   testWidgets('★ 服务不可用（完全没有在线音乐服务）：平台能力区说明"尚未就绪"，且页面不崩', (
     tester,
   ) async {
     await pumpHome(tester); // 刻意不注册 OnlineMusicService
 
     expect(tester.takeException(), isNull);
-    expect(find.text('再听一遍'), findsOneWidget);
+    // 模块规则（2026-10-17）：没有内容 ⇒ 内容模块全部隐藏 ✓（含「再听一遍」）。
+    expect(find.text('再听一遍'), findsNothing);
 
     await expandCapabilities(tester);
     // 与"配了服务但没有能力"时的"未配置"**不是同一句话** —— 这里连服务都没有。
@@ -385,25 +372,25 @@ void main() {
 
 
   testWidgets('★ 刷新主页：真的重新拉取（不是只重画一遍）', (tester) async {
-    // 2026-10-16：「平台歌单」与「新歌上线」两只货架已按用户指令删除 ✗ ⇒
-    // 这里改盯**个性化合辑** ✓（它仍在 ✓）。判据不变 ✓：刷新必须真的**再请求一次** ✓。
+    // 2026-10-17：「个性化合辑」已按用户指令删除（与「为你推荐的歌单」功能重合）✗ ⇒
+    // 这里改盯**为你推荐的歌单** ✓（它仍在 ✓）。判据不变 ✓：刷新必须真的**再请求一次** ✓。
     final service = _HomeService(
       capabilities: OnlineMusicCapabilities(
         searchablePlatforms: const [],
         resolvablePlatforms: const [],
         // 既要有该能力、又要打得开歌单详情 ⇒ 两条都要给 ✓（与主页的门槛一致 ✓）。
         playlistPlatforms: const [MusicPlatform.netease],
-        personalizedPlaylistPlatforms: const [MusicPlatform.netease],
+        recommendedPlaylistPlatforms: const [MusicPlatform.netease],
       ),
     );
     await pumpHome(tester, service: service);
-    expect(service.personalizedCalls, 1, reason: '首次加载拉一次');
+    expect(service.recommendedPlaylistCalls, 1, reason: '首次加载拉一次');
 
     await tester.tap(find.byTooltip('刷新主页'));
     await tester.pumpAndSettle();
 
     // 只断言"按钮存在"是不够的：接了空回调的按钮看起来一模一样。
-    expect(service.personalizedCalls, 2, reason: '刷新必须真的再请求一次');
+    expect(service.recommendedPlaylistCalls, 2, reason: '刷新必须真的再请求一次');
   });
 }
 
@@ -421,10 +408,7 @@ final class _HomeService implements OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) async {
-    personalizedCalls++;
-    throw UnsupportedError('Personalized playlists are not implemented here');
-  }
+  }) => throw UnsupportedError('Personalized playlists are not implemented here');
 
   @override
   Future<List<OnlineArtistSummary>> fetchFollowedArtists({
@@ -440,7 +424,11 @@ final class _HomeService implements OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Recommended playlists are not implemented here');
+  }) async {
+    recommendedPlaylistCalls++;
+    // 返回空 ⇒ 该模块按"没有内容就隐藏"的规则不渲染 ✓（但请求确实发生了 ✓）。
+    return const <RemotePlaylistSummary>[];
+  }
 
   @override
   Future<List<MusicTrack>> fetchRecommendedTracks({
@@ -519,9 +507,9 @@ final class _HomeService implements OnlineMusicService {
   /// 「平台歌单」被请求了几次。用来验证**刷新真的重新拉取**，而不是只重画一遍。
   int collectionCalls = 0;
 
-  /// **个性化合辑**被请求了几次（2026-10-16 ✓）：删掉「平台歌单」之后，
+  /// **为你推荐的歌单**被请求了几次（2026-10-17 ✓）：「个性化合辑」删除之后，
   /// 「刷新必须真的再请求一次」这条守卫改盯它 ✓。
-  int personalizedCalls = 0;
+  int recommendedPlaylistCalls = 0;
 
   @override
   Future<AggregatedSearchResult> searchAggregated({
