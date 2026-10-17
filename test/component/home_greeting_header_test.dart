@@ -71,7 +71,7 @@ void main() {
     );
   });
 
-  testWidgets('渲染：小字在上、大字在下且加粗；不带头像', (tester) async {
+  testWidgets('渲染：大字在上、小字在下且加粗；不带头像', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -84,13 +84,46 @@ void main() {
     expect(find.text('上午好，佬友'), findsOneWidget);
 
     final title = tester.widget<Text>(find.text('上午好，佬友'));
+    final eyebrow = tester.widget<Text>(find.text('准备进入状态了吗'));
     expect(title.style?.fontWeight, FontWeight.bold, reason: '主标题必须加粗 ✓');
     expect(
-      title.style!.fontSize! > tester.widget<Text>(find.text('准备进入状态了吗')).style!.fontSize!,
+      title.style!.fontSize! > eyebrow.style!.fontSize!,
       isTrue,
       reason: '主标题必须比小字大 ✓',
     );
+    // **大字在上、小字在下**（2026-10-17 调整 ✓）：与页壳的"标题 + 副标题"同构 ✓。
+    // 此前是反的 ✗（小字压在大字上面，和全站其它地方不一样）。
+    expect(
+      tester.getTopLeft(find.text('上午好，佬友')).dy,
+      lessThan(tester.getTopLeft(find.text('准备进入状态了吗')).dy),
+      reason: '主标题必须在上面 ✓',
+    );
     // 无头像 ✓（组件里没有任何图片）。
     expect(find.byType(Image), findsNothing);
+  });
+
+  testWidgets('页级动作挂在问候行右端（主页没有页标题行可挂）', (tester) async {
+    // 2026-10-17：主页不再画页标题块 ⇒ 刷新按钮只能跟内容一起排 ✓。
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: HomeGreetingHeader(
+            now: DateTime(2026, 10, 12, 10),
+            action: IconButton(
+              tooltip: '刷新主页',
+              onPressed: () {},
+              icon: const Icon(Icons.refresh),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byTooltip('刷新主页'), findsOneWidget);
+    // 动作在**右侧**：它的左边缘应在问候标题的右边缘之后。
+    expect(
+      tester.getTopLeft(find.byTooltip('刷新主页')).dx,
+      greaterThan(tester.getTopLeft(find.text('上午好，佬友')).dx),
+    );
   });
 }

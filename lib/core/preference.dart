@@ -657,6 +657,26 @@ class AppPreference {
 
   bool sidebarExpanded = true;
 
+  /// **主页横幅**（2026-10-17 新增 ✓）：用户自己选的本地图片。
+  ///
+  /// - 存**绝对路径** ✓（本地文件，进度：先把"填入口"搭起来 ✓ —— 平台横幅接口是后续的事 ✓）；
+  /// - 为 null（或文件已不存在）⇒ 主页横幅区回落**页面底色**（浅色主题下就是白色 ✓）；
+  /// - **只写偏好键** ✓，不动数据库 ✓。
+  String? homeBannerPath;
+
+  /// 界面用的一份可监听值 ✓：设置页改完横幅，**不用重进主页**就能看到 ✓
+  ///（`AppPreference` 本身不是 `ChangeNotifier`，不该为这一个键把整仓偏好改成它 ✓）。
+  final ValueNotifier<String?> homeBannerPathListenable = ValueNotifier(
+    null,
+  );
+
+  /// 改横幅（null / 空串 = 清除 ✓）。
+  void setHomeBannerPath(String? value) {
+    final normalized = (value == null || value.trim().isEmpty) ? null : value;
+    homeBannerPath = normalized;
+    homeBannerPathListenable.value = normalized;
+  }
+
   /// **上次打开应用的时间**（2026-10-12 新增 ✓）。
   ///
   /// 用途：主页问候头据此判断"**好久不见**"✓（用户给的口径：超过 3 天 ✓）；
@@ -816,6 +836,10 @@ class AppPreference {
     if (rawLastOpened is String) {
       lastOpenedAt = DateTime.tryParse(rawLastOpened)?.toUtc();
     }
+    // **主页横幅**：缺键 / 非法值 ⇒ 没有横幅 ✓（回落页面底色 ✓）。路径存在与否交给界面判 ✓
+    //（读取阶段不做磁盘 IO ✓）。
+    final rawBannerPath = prefMap['homeBannerPath'];
+    setHomeBannerPath(rawBannerPath is String ? rawBannerPath : null);
     playbackPref = PlaybackPreference.fromMap(prefMap['playbackPref']);
     nowPlayingPagePref = NowPlayingPagePreference.fromMap(
       prefMap['nowPlayingPagePref'],
@@ -886,6 +910,7 @@ class AppPreference {
       'startPage': startPage,
       'sidebarExpanded': sidebarExpanded,
       'lastOpenedAt': lastOpenedAt?.toUtc().toIso8601String(),
+      'homeBannerPath': homeBannerPath,
       'playbackPref': playbackPref.toMap(),
       'nowPlayingPagePref': nowPlayingPagePref.toMap(),
       'customCpFeedbackKey': customCpFeedbackKey,

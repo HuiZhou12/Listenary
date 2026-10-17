@@ -6,7 +6,11 @@ import 'package:pure_music/core/design_tokens.dart';
 /// **主页问候头**（2026-10-12 新增 ✓）。
 ///
 /// 位置：主页**最顶端**，靠左、无头像 ✓（用户指定 ✓）。
-/// 结构：上方**浅色小字**（可空 ✓）+ 下方**加粗大字主标题** ✓。
+/// 结构：**大字加粗主标题在上、浅色小字在下**（2026-10-17 调整 ✓ —— 此前是反的 ✗）。
+///
+/// 为什么调过来：全站其它地方都是"**标题在上、副标题在下**"（页壳、区块头、卡片）✓，
+/// 只有这里把小的放上面 ⇒ 视觉上和整个体系不成一套 ✓。而且主页**不再画页标题块**
+/// （用户 2026-10-17 指令 ✓）⇒ 这一块就是页面的**唯一一级标题** ✓，顺序必须与页壳一致 ✓。
 ///
 /// 六段时间与文案是用户给定的 ✓（`06:00-09:00` 清晨 … `22:00-05:00` 深夜 ✓ ——
 /// 注意**深夜跨零点** ✓，判定顺序不能写反 ✗）。
@@ -23,6 +27,13 @@ class HomeGreetingHeader extends StatefulWidget {
     this.userName = defaultUserName,
     this.now,
     this.returningAfter,
+    this.action,
+    this.padding = const EdgeInsets.only(
+      left: Spacing.lg,
+      right: Spacing.lg,
+      top: Spacing.xl,
+      bottom: Spacing.lg,
+    ),
   });
 
   /// 开发期占位名 ✓（用户裁定 ✓：先用「佬友」，cookie 上线后换成账号昵称 ✓）。
@@ -36,6 +47,16 @@ class HomeGreetingHeader extends StatefulWidget {
 
   /// 距离上次打开过了多久 ✓：超过 [longAbsence] 就切成「好久不见」✓。
   final Duration? returningAfter;
+
+  /// 问候行右侧的**页级动作**（主页放刷新 ✓）。
+  ///
+  /// 为什么挂在这里而不是页壳：主页**不再画页标题块** ✓ ⇒ 页壳那一行没了，
+  /// 动作只能跟内容一起排 ✓；放这一行的右端，与「查看全部」的右对齐习惯一致 ✓。
+  final Widget? action;
+
+  /// 外边距。独立成参数是因为它现在会被放进**横幅**里 ✓（横幅通栏、文字要离边 24）；
+  /// 直接写在组件里的话，上层就只能再包一层 Padding 去抵消 ✓。
+  final EdgeInsetsGeometry padding;
 
   /// 超过这个时长没打开 ⇒ 「好久不见，甚是想念」✓（用户给的口径：3 天 ✓）。
   static const Duration longAbsence = Duration(days: 3);
@@ -76,38 +97,45 @@ class _HomeGreetingHeaderState extends State<HomeGreetingHeader> {
       returningAfter: widget.returningAfter,
     );
     return Padding(
-      padding: const EdgeInsets.only(
-        left: Spacing.lg,
-        right: Spacing.lg,
-        top: Spacing.xl,
-        bottom: Spacing.lg,
-      ),
-      child: Column(
+      padding: widget.padding,
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 上方浅色小字（这一段可能为空 ⇒ 不留空行 ✓）。
-          if (greeting.eyebrow case final eyebrow?) ...[
-            Text(
-              eyebrow,
-              style: TextStyle(
-                color: scheme.onSurfaceVariant,
-                fontSize: AppType.body,
-              ),
-            ),
-            const SizedBox(height: Spacing.xs),
-          ],
-          Semantics(
-            header: true,
-            child: Text(
-              greeting.title,
-              style: TextStyle(
-                color: scheme.onSurface,
-                // 大号 + 加粗 ✓（用户指定 ✓）。
-                fontSize: AppType.display,
-                fontWeight: AppType.weightBold,
-              ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // **大字在上** ✓：与页壳的"标题 + 副标题"同一套层级（2026-10-17 调整 ✓）。
+                Semantics(
+                  header: true,
+                  child: Text(
+                    greeting.title,
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      // 大号 + 加粗 ✓（用户指定 ✓）。
+                      fontSize: AppType.display,
+                      fontWeight: AppType.weightBold,
+                    ),
+                  ),
+                ),
+                // 下方浅色小字（这一段可能为空 ⇒ 不留空行 ✓）。
+                if (greeting.eyebrow case final eyebrow?) ...[
+                  const SizedBox(height: Spacing.xs),
+                  Text(
+                    eyebrow,
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: AppType.body,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
+          if (widget.action case final action?) ...[
+            const SizedBox(width: Spacing.md),
+            action,
+          ],
         ],
       ),
     );

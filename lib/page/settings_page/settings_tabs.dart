@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/desktop_lyric_colors.dart';
 import 'package:pure_music/core/enums.dart';
@@ -142,7 +143,68 @@ class _AppearanceTabContent extends StatelessWidget {
         _MonetControlsSwitch(),
         SizedBox(height: 16.0),
         _WavyProgressBarSwitch(),
+        SizedBox(height: 16.0),
+        // **主页横幅**（2026-10-17 ✓）：用户自己填的地方 ✓。
+        _HomeBannerSetting(),
       ],
+    );
+  }
+}
+
+/// **主页横幅**设置行（2026-10-17 新增 ✓）。
+///
+/// 这是"用户**填入**横幅"的入口 ✓：选一张本地图片 → 只写偏好键 `homeBannerPath` ✓
+/// （不动数据库 ✓）→ 主页顶部的横幅区立刻换成它 ✓（通过可监听值 ✓）。
+///
+/// 没设置时主页用**页面底色**（浅色主题下就是白）✓；文件被删了也回落到同一结果 ✓。
+class _HomeBannerSetting extends StatefulWidget {
+  const _HomeBannerSetting();
+
+  @override
+  State<_HomeBannerSetting> createState() => _HomeBannerSettingState();
+}
+
+class _HomeBannerSettingState extends State<_HomeBannerSetting> {
+  Future<void> _pick() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.image);
+    // 只取**单选**结果 ✓（多选时这里的语义不明确，宁可不处理 ✓）。
+    final path = result?.files.singleOrNull?.path;
+    if (path == null) return;
+    AppPreference.instance.setHomeBannerPath(path);
+    await AppPreference.instance.save();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _clear() async {
+    AppPreference.instance.setHomeBannerPath(null);
+    await AppPreference.instance.save();
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final path = AppPreference.instance.homeBannerPath;
+    // 只显示文件名：整条绝对路径对用户没有意义，还会把这一行撑爆 ✓。
+    final fileName = path?.split(RegExp(r'[\\/]')).last;
+    return SettingsTile(
+      description: '主页横幅',
+      subtitle: path == null
+          ? '显示在主页顶部、问候语背后。没设置时用页面底色'
+          : '当前：$fileName',
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (path != null) ...[
+            TextButton(onPressed: _clear, child: const Text('移除')),
+            const SizedBox(width: 8),
+          ],
+          FilledButton.tonalIcon(
+            onPressed: _pick,
+            icon: const Icon(Symbols.image, size: 18),
+            label: Text(path == null ? '选择图片' : '更换图片'),
+          ),
+        ],
+      ),
     );
   }
 }
