@@ -237,15 +237,7 @@ class _RemotePlaylistPageState extends State<RemotePlaylistPage>
     // **每个动作按钮都给同一套显式样式**（用户指出高度不齐 ✗）：
     // 只给「播放全部」加样式、其它按钮走默认高度 ⇒ 一排按钮高矮不一 ✗（本地歌单页是都给 ✓）。
     // 注意：`AppRadius.smCircular` 不是编译期常量 ⇒ 这里**不能**加 `const` ✗。
-    final actionStyle = ButtonStyle(
-      fixedSize: const WidgetStatePropertyAll(Size.fromHeight(40)),
-      padding: const WidgetStatePropertyAll(
-        EdgeInsets.symmetric(horizontal: 16),
-      ),
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
-      ),
-    );
+    const actionStyle = AppButtonStyle.primaryAction;
 
     // **统一骨架** ✓：与「本地歌单」两页同一个 [UniDetailPage] ✓。
     return UniDetailPage<RemotePlaylist, MusicTrack, Object>(

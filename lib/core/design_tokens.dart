@@ -32,6 +32,22 @@ abstract final class AppExtent {
   static const double listRow = 64;
 }
 
+/// **同一排动作按钮的统一规格**（详情页的「播放全部 / 随机播放 / 刷新 …」）。
+///
+/// 为什么要有它：这些按钮是**并排**出现的，高度一旦不一致就是肉眼可见的杂乱 ——
+/// 而主题里只定了圆角与内边距（见 `entry.dart`），**高度**得每个按钮自己给 ⇒ 此前这份
+/// `fixedSize + padding` 被复制了 8 份（含 `uni_page_components`），谁漏给一次就复现
+/// 一次"一排按钮高矮不一" ✓。
+///
+/// 只覆盖"主操作按钮"这一种：`folders_page` 的视图切换、`playlists_page` 的对话框按钮
+/// 等虽然也写了 40，但它们是**另一种语境**（不是同一排主操作）⇒ 本轮不去动它们 ✓。
+abstract final class AppButtonStyle {
+  static const ButtonStyle primaryAction = ButtonStyle(
+    fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+    padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
+  );
+}
+
 abstract final class AppType {
   static const double microlabel = 10;
   static const double caption = 12;

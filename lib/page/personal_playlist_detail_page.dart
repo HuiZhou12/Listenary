@@ -247,10 +247,7 @@ class _PersonalPlaylistDetailPageState
     final isCustomSort = currMethodIndex == sortMethods.length - 1;
     final canSortTracks = hasEnoughItemsToSort(tracks.length);
     final canReorder = canSortTracks && isCustomSort;
-    const primaryActionStyle = ButtonStyle(
-      fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
-      padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
-    );
+    const primaryActionStyle = AppButtonStyle.primaryAction;
     return UniDetailPage<PersonalOnlinePlaylistSnapshot, MusicTrack, Object>(
       pref: pref,
       primaryContent: snapshot,

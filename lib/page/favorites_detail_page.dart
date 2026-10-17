@@ -7,6 +7,7 @@ import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_cover_cache.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/preference.dart';
@@ -187,10 +188,7 @@ class _FavoritesDetailPageState extends State<FavoritesDetailPage> {
               t.availability != TrackAvailability.paid,
         )
         .toList(growable: false);
-    const primaryActionStyle = ButtonStyle(
-      fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
-      padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
-    );
+    const primaryActionStyle = AppButtonStyle.primaryAction;
     return UniDetailPage<PersonalOnlinePlaylistSnapshot, MusicTrack, Object>(
       pref: AppPreference.instance.playlistDetailPagePref,
       primaryContent: snapshot,

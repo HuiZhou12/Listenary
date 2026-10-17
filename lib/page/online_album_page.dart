@@ -236,15 +236,7 @@ class _OnlineAlbumPageState extends State<OnlineAlbumPage> {
     // 只给「播放全部」加样式、其它按钮走 M3 默认高度 ⇒ 一排按钮**高矮不一** ✗。
     // 本地歌单页是"每个按钮都显式给样式" ⇒ 所以它那一排是齐的 ✓（照它来 ✓）。
     // 注意：`AppRadius.smCircular` 不是编译期常量 ⇒ 这里**不能**加 `const` ✗。
-    final actionStyle = ButtonStyle(
-      fixedSize: const WidgetStatePropertyAll(Size.fromHeight(40)),
-      padding: const WidgetStatePropertyAll(
-        EdgeInsets.symmetric(horizontal: 16),
-      ),
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
-      ),
-    );
+    const actionStyle = AppButtonStyle.primaryAction;
 
     // **统一骨架** ✓。
     return UniDetailPage<OnlineAlbum, MusicTrack, Object>(

@@ -219,10 +219,7 @@ class _OnlinePlaylistDetailPageState extends State<OnlinePlaylistDetailPage> {
         track.availability != TrackAvailability.paid,
         )
         .toList(growable: false);
-    const primaryActionStyle = ButtonStyle(
-      fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
-      padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
-    );
+    const primaryActionStyle = AppButtonStyle.primaryAction;
     final creator = snapshot.playlist.creator?.trim();
     return UniDetailPage<OnlinePlaylistSnapshot, MusicTrack, Object>(
       pref: AppPreference.instance.onlinePlaylistDetailPagePref,

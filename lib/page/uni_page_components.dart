@@ -30,12 +30,9 @@ class ShufflePlay<T> extends StatelessWidget {
           : null,
       icon: const Icon(Symbols.shuffle, size: 20),
       label: const Text('随机播放'),
-      style: const ButtonStyle(
-        fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
-        padding: WidgetStatePropertyAll(
-          EdgeInsets.symmetric(horizontal: 16),
-        ),
-      ),
+      // 与详情页那一排主操作按钮**同一份规格** ✓（高度/内边距统一在 `AppButtonStyle` ✓）：
+      // 此前这里也自己写了一遍 `fixedSize + padding`，与其它页各写一份 ⇒ 迟早高矮不一 ✗。
+      style: AppButtonStyle.primaryAction,
     );
   }
 }
