@@ -15,6 +15,7 @@ import 'package:pure_music/component/platform_capability_view.dart';
 import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
 import 'package:pure_music/component/shelf_arrows.dart';
+import 'package:pure_music/component/shelf_geometry.dart';
 import 'package:pure_music/component/shelf_scroll_state.dart';
 import 'package:pure_music/services/online_history/rediscovery_engine.dart';
 import 'package:pure_music/core/design_tokens.dart';
@@ -449,9 +450,10 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     final scheme = Theme.of(context).colorScheme;
     final items = state.items(platform);
     // **与探索页的「歌单 / 新专辑」卡片同一套封面格式** ✓（2026-10-16 用户指令 ✓）：
-    // 探索页三处卡片都是 `_cardWidth * 1.15`（封面整体放大 15% ✓，R100 起的既定尺寸 ✓）；
-    // 主页这两块歌单卡此前用的是 `_cardWidth` ✗ ⇒ 看起来"小一号" ✓ ⇒ 对齐 ✓。
-    final width = _cardWidth * 1.15;
+    // 2026-10-17（F5）：取宽统一走 `ShelfGeometry` ✓ —— 主页四族货架（歌单 / 关注艺人 /
+    // 再听一遍 / 好久没听）此前**各自**算一遍宽高（其中两族还是未放大的 `widthFor` ✗）
+    // ⇒ 现在是同一个来源 ✓，同一页不会再有"大一号/小一号"的两排卡 ✓。
+    final width = ShelfGeometry.cardWidth(context);
     final loadError = state.error(platform);
     final errorMessage = items.isEmpty && loadError != null
         ? (decorateError?.call(loadError) ?? loadError)
@@ -488,7 +490,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
             emptyIcon: Symbols.queue_music,
             itemCount: items.length,
             itemWidth: width,
-            itemHeight: RemoteMediaCard.extentFor(
+            itemHeight: ShelfGeometry.cardExtent(
               width: width,
               hasFooter: false,
             ),
@@ -638,7 +640,9 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   Widget _buildFollowedArtistSection(MusicPlatform platform) {
     final scheme = Theme.of(context).colorScheme;
     final artists = _followedArtistState.items(platform);
-    final width = _cardWidth;
+    // 2026-10-17（F5）：与主页其它货架、探索页同一份取宽 ✓（此前这一族用的是**未放大**的
+    // `widthFor` ✗ ⇒ 与相邻货架差 15% ✓）。
+    final width = ShelfGeometry.cardWidth(context);
     // 与"推荐歌单"同一条：首屏失败时补上**凭据可能失效**的指引 ✓。
     final loadError = _followedArtistState.error(platform);
     final errorMessage = artists.isEmpty && loadError != null
@@ -678,7 +682,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
             emptyIcon: Symbols.artist,
             itemCount: artists.length,
             itemWidth: width,
-            itemHeight: RemoteMediaCard.extentFor(
+            itemHeight: ShelfGeometry.cardExtent(
               width: width,
               hasFooter: false,
             ),
@@ -715,11 +719,6 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   }
 
 
-
-  /// 货架里卡片的宽度：**统一取自 `RemoteMediaCard.widthFor`**（与 ResponsiveBuilder 同阈值），
-  /// 不在每个页面各写一个断点。
-  double get _cardWidth =>
-      RemoteMediaCard.widthFor(MediaQuery.sizeOf(context));
 
   @override
   Widget build(BuildContext context) {
@@ -832,9 +831,9 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
           // 同上 ✓：不再把滚动状态接到头部（那会抢走货架自己的左右箭头 ✓）。
       // **不传 `scrollState`** ✓ ⇒ `HorizontalShelf` 自己画覆盖层箭头 ✓（与探索页一致 ✓）。
               itemCount: entries.length,
-              itemWidth: _cardWidth,
-              itemHeight: RemoteMediaCard.extentFor(
-                width: _cardWidth,
+              itemWidth: ShelfGeometry.cardWidth(context),
+              itemHeight: ShelfGeometry.cardExtent(
+                width: ShelfGeometry.cardWidth(context),
                 hasFooter: false,
               ),
               itemBuilder: (context, index) => _historyCard(
@@ -861,7 +860,7 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   }) {
     final base = '播放"${track.title} - ${track.artistDisplay}"';
     return RemoteMediaCard(
-      width: _cardWidth,
+      width: ShelfGeometry.cardWidth(context),
       title: track.title,
       coverUri: track.coverUri,
       details: [
@@ -1001,9 +1000,9 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
           : HorizontalShelf(
               // 不传 `scrollState` ✓ ⇒ 货架自己画左右箭头 ✓（与「再听一遍」和探索页一致 ✓）。
               itemCount: entries.length,
-              itemWidth: _cardWidth,
-              itemHeight: RemoteMediaCard.extentFor(
-                width: _cardWidth,
+              itemWidth: ShelfGeometry.cardWidth(context),
+              itemHeight: ShelfGeometry.cardExtent(
+                width: ShelfGeometry.cardWidth(context),
                 hasFooter: false,
               ),
               itemBuilder: (context, index) => _historyCard(

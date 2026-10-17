@@ -6,11 +6,10 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/album_shelf.dart';
 import 'package:pure_music/component/content_section.dart';
-import 'package:pure_music/component/horizontal_shelf.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
-import 'package:pure_music/component/remote_media_card.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
+import 'package:pure_music/component/track_card_shelf.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/page/page_scaffold.dart';
@@ -393,28 +392,15 @@ class _OnlineArtistPageState extends State<OnlineArtistPage> {
       );
     }
     // 2026-10-16：**改成卡片** ✓（用户指出这里用了列表 ✗，而同一页的「专辑」是卡片 ✓
-    // ⇒ 一页两套规则就是杂乱 ✓）。宽度与「专辑」同一套取法 ✓，两排卡对齐 ✓。
-    final width = RemoteMediaCard.widthFor(MediaQuery.sizeOf(context)) * 1.15;
-    return HorizontalShelf(
-      itemCount: _songs.length,
-      itemWidth: width,
-      itemHeight: RemoteMediaCard.extentFor(width: width, hasFooter: false),
-      itemBuilder: (context, index) {
-        final song = _songs[index];
-        return RemoteMediaCard(
-          width: width,
-          title: song.title,
-          coverUri: song.coverUri,
-          details: [
-            song.artistDisplay,
-            if (song.album.isNotEmpty) song.album,
-          ].join(' · '),
-          sourceLabel: platformLabelForIdentityOnly(song.ref.identity),
-          placeholderIcon: Symbols.music_note,
-          onTap: () => _playSongs(song),
-          semanticLabel: '播放"${song.title} - ${song.artistDisplay}"',
-        );
-      },
+    // ⇒ 一页两套规则就是杂乱 ✓）。
+    // 2026-10-17（F3/F5）：**抽成与 `AlbumShelf` 并列的 `TrackCardShelf`** ✓ ——
+    // 这里原本在页面里**内联重算**宽度与高度 ✗，于是同一页两排卡片的几何各有一份实现
+    //（正是 `AlbumShelf` 的注释里警告过的漂移起点 ✗）。现在宽/高统一走 `ShelfGeometry` ✓。
+    // 用**卡片**货架而不是 `NewSongShelf`（多行分页）✓：两处职责不同，刻意不合并 ✓。
+    return TrackCardShelf(
+      tracks: _songs,
+      onPlay: _playSongs,
+      emptyMessage: '这位艺人暂时没有单曲。',
     );
   }
 

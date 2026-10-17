@@ -3,6 +3,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:pure_music/component/horizontal_shelf.dart';
 import 'package:pure_music/component/remote_media_card.dart';
 import 'package:pure_music/component/remote_media_details.dart';
+import 'package:pure_music/component/shelf_geometry.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 
 /// **专辑横向货架**（2026-10-16 从探索页抽取 ✓）。
@@ -12,7 +13,8 @@ import 'package:pure_music/services/music_platform/index.dart';
 /// 一个没有 ✗（用户指出"模块格式还是自造" ✗）。⇒ 现在**只有这一份实现** ✓。
 ///
 /// 约定（与探索页完全一致 ✓）：
-/// - 封面宽度 = `RemoteMediaCard.widthFor(size) * 1.15` ✓（R100 起"封面整体放大 15%" ✓）；
+/// - 封面宽度 = [ShelfGeometry.cardWidth] ✓、高度 = [ShelfGeometry.cardExtent] ✓
+///   —— 与**歌曲货架**（`TrackCardShelf`）共用同一份几何，不再各写一份 ✓；
 /// - 元信息两段式 ✓：「**专辑 · 年份 · N 首**」✓（有什么写什么，不编 ✓）——
 ///   规则在 [albumDetailsOf]（`remote_media_details.dart` ✓），与**结果行**共用一份 ✓；
 /// - 点一张打开专辑页 ✓（由调用方给 [onOpen] ✓）；
@@ -37,12 +39,12 @@ class AlbumShelf extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 与探索页同一条取宽规则 ✓（不要各页各写一个"看起来差不多"的数 ✗）。
-    final width = RemoteMediaCard.widthFor(MediaQuery.sizeOf(context)) * 1.15;
+    // 与探索页/歌曲货架同一条取宽规则 ✓（不要各页各写一个"看起来差不多"的数 ✗）。
+    final width = ShelfGeometry.cardWidth(context);
     return HorizontalShelf(
       itemCount: albums.length,
       itemWidth: width,
-      itemHeight: RemoteMediaCard.extentFor(width: width, hasFooter: false),
+      itemHeight: ShelfGeometry.cardExtent(width: width),
       loading: loading,
       errorMessage: errorMessage,
       onRetry: onRetry,

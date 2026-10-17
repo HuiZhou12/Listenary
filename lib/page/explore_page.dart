@@ -12,6 +12,7 @@ import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/platform_capability_view.dart';
 import 'package:pure_music/component/remote_load_state.dart';
 import 'package:pure_music/component/remote_media_card.dart';
+import 'package:pure_music/component/shelf_geometry.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/preference.dart';
@@ -323,11 +324,6 @@ class _ExplorePageState extends State<ExplorePage>
     ),
   );
 
-  /// 货架里卡片的宽度：**统一取自 `RemoteMediaCard.widthFor`**（与 ResponsiveBuilder 同阈值），
-  /// 不在每个页面各写一个断点。
-  double get _cardWidth =>
-      RemoteMediaCard.widthFor(MediaQuery.sizeOf(context));
-
   @override
   Widget build(BuildContext context) {
     final service = context.read<OnlineMusicService?>();
@@ -395,7 +391,7 @@ class _ExplorePageState extends State<ExplorePage>
     final preview = all.take(widget.chartPreviewLimit).toList(growable: false);
     // 榜单封面**放大 15%**（2026-10-12 用户要求 ✓）：一屏里卡片太多会"眼花缭乱"✗，
     // 放大后一屏看到更少、但每张更清楚 ✓。榜单 / 新专辑 / 平台歌单三处一起放大 ✓。
-    final width = _cardWidth * 1.15;
+    final width = ShelfGeometry.cardWidth(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: Spacing.lg),
       child: Column(
@@ -419,7 +415,7 @@ class _ExplorePageState extends State<ExplorePage>
             emptyIcon: Symbols.leaderboard,
             itemCount: preview.length,
             itemWidth: width,
-            itemHeight: RemoteMediaCard.extentFor(
+            itemHeight: ShelfGeometry.cardExtent(
               width: width,
               hasFooter: true,
             ),
@@ -445,16 +441,12 @@ class _ExplorePageState extends State<ExplorePage>
                 ),
                 semanticLabel:
                     '${summary.name}，来自${platformLabelForIdentityOnly(summary.identity)}，点击预览（不会订阅）',
-                footer: TextButton(
-                  onPressed: _subscribing.contains(platform)
-                      ? null
-                      : () => _subscribe(
-                          summary,
-                          failureLabel: '订阅该榜单失败',
-                          isRanked: true,
-                        ),
-                  child: const Text('订阅'),
+                onSubscribe: () => _subscribe(
+                  summary,
+                  failureLabel: '订阅该榜单失败',
+                  isRanked: true,
                 ),
+                subscribeEnabled: !_subscribing.contains(platform),
               );
             },
           ),
@@ -851,7 +843,7 @@ class _ExplorePageState extends State<ExplorePage>
     final key = (platform: platform, categoryId: categoryId);
     final items = _collectionState.items(key);
     // 与榜单一致放大 15%（用户要求封面整体放大 ✓）；只影响这一块的货架尺寸 ✓。
-    final width = _cardWidth * 1.15;
+    final width = ShelfGeometry.cardWidth(context);
     // 选中分类时把分类名写进小标题：否则用户只看到"网易云"，不知道这排是筛过的。
     final categoryName = categoryId == null
         ? null
@@ -906,7 +898,7 @@ class _ExplorePageState extends State<ExplorePage>
             emptyIcon: Symbols.queue_music,
             itemCount: items.length,
             itemWidth: width,
-            itemHeight: RemoteMediaCard.extentFor(
+            itemHeight: ShelfGeometry.cardExtent(
               width: width,
               hasFooter: true,
             ),
@@ -933,12 +925,8 @@ class _ExplorePageState extends State<ExplorePage>
                     '${summary.name}，来自'
                     '${platformLabelForIdentityOnly(summary.identity)}，'
                     '点击预览（不会订阅）',
-                footer: TextButton(
-                  onPressed: _subscribing.contains(platform)
-                      ? null
-                      : () => _subscribe(summary),
-                  child: const Text('订阅'),
-                ),
+                onSubscribe: () => _subscribe(summary),
+                subscribeEnabled: !_subscribing.contains(platform),
               );
             },
           ),
