@@ -7,8 +7,6 @@ import 'package:provider/provider.dart';
 import 'package:pure_music/component/content_section.dart';
 import 'package:pure_music/component/horizontal_shelf.dart';
 import 'package:pure_music/component/new_song_shelf.dart';
-import 'package:pure_music/component/home_greeting_header.dart';
-import 'package:pure_music/component/home_hero_banner.dart';
 import 'package:pure_music/component/online_search_launcher.dart';
 import 'package:pure_music/component/platform_capability_view.dart';
 import 'package:pure_music/component/remote_load_state.dart';
@@ -19,6 +17,7 @@ import 'package:pure_music/component/shelf_geometry.dart';
 import 'package:pure_music/component/shelf_scroll_state.dart';
 import 'package:pure_music/services/online_history/rediscovery_engine.dart';
 import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/services/music_platform/index.dart';
@@ -110,23 +109,14 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
     super.dispose();
   }
 
-  /// 这次打开距上次打开的间隔 ✓（null = 首次安装或不知道为什么 ✓）⇒ 交给问候头决定说不说"好久不见" ✓。
-  Duration? _returningAfter;
-
   Future<void> _load() async {
     if (_loaded) {
       await _refreshAll();
       return;
     }
     _loaded = true;
-    // **"好久不见"的口径**（2026-10-12 ✓）：先算"这次距上次打开过了多久"✓，
-    // 再记下本次时间 ✓ —— 顺序不能反 ✗（反了永远是"刚刚打开过" ✓）。
-    // 只读/写一个偏好键 ✓，**不动数据库** ✓；首次安装没有记录 ⇒ 不说"好久不见" ✓。
-    final lastOpened = AppPreference.instance.lastOpenedAt;
-    if (lastOpened != null) {
-      final absence = DateTime.now().toUtc().difference(lastOpened);
-      if (!absence.isNegative) _returningAfter = absence;
-    }
+    // **记下本次打开时间** ✓（2026-10-12）：问候语目前**暂时隐藏** ✓（2026-10-17 用户指令），
+    // 但这个键继续照常写 ✓ —— 等问候语回来时"好久不见"不用从零积累 ✓。
     AppPreference.instance.lastOpenedAt = DateTime.now().toUtc();
     AppPreference.instance.save().ignore();
     final history = context.read<OnlineHistoryController>();
@@ -594,33 +584,24 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
   Widget build(BuildContext context) {
     final service = context.read<OnlineMusicService?>();
     final history = context.watch<OnlineHistoryController>().snapshot;
-    // **主页不再用页壳** ✓（2026-10-17）：
-    // 1. 页壳给左右各 16 的硬内边距 ⇒ 顶部的名片带贴不到窗口边 ✗；
-    // 2. 页壳的标题行已去掉（问候语就是这一页唯一的一级标题 ✓）。
-    //
-    // 结构（视觉与逻辑解耦 ✓）：
-    // - **一张"用户名片"**（问候语 + 右侧横幅背景）作为滚动内容的**第一项** ✓
-    //   ⇒ 它跟着内容一起滚走 ✓（不会像别的页那样被钉在顶上 ✗），
-    //     并且**按内容宽度等比例定高** ✓（不是写死的 200×720 小方块 ✗）；
-    // - **名片的下面**才是各模块（再听一遍 / 猜你喜欢 …）✓ —— 二者**不重叠** ✓。
-    // ⚠️ **不拆 `ContentSection`** ✓ —— 区块自己管自己的头与内容，
-    // "没内容整块隐藏"的逻辑完全不动 ✓。
-    return ListView(
-      padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
-      children: [
-        // ① 用户名片：问候 + 横幅背景（等比例定高，随内容滚动 ✓）。
-        _buildIdentityBand(context),
-        // ② 名片下面是内容区（左右留白：右侧多出的 20 是滚动条位置 ✓）。
-        Padding(
-          padding: const EdgeInsets.only(
-            left: Spacing.lg,
-            right: Spacing.lg + 20,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ① 再听一遍（真实：本地在线历史 ✓）
-              _buildHistory(history),
+    // **顶部回到页壳** ✓（2026-10-17 用户指令：不做用户横幅、问候语先隐藏）：
+    // 名片带（问候语 + 横幅背景）整块撤掉 ✓，页面回到"页标题 + 模块列表"这个原本形态 ✓。
+    // ⚠️ **只撤这一块** ✓ —— 模块隐藏规则、已删掉的模块、以及其它批次的改动都不动 ✓。
+    return PageScaffold(
+      title: '主页',
+      subtitle: '接着听，和各平台的推荐',
+      actions: [
+        IconButton.filledTonal(
+          tooltip: '刷新主页',
+          onPressed: _refreshAll,
+          icon: const Icon(Symbols.refresh),
+        ),
+      ],
+      body: ListView(
+        padding: const EdgeInsets.only(bottom: Spacing.bottomNav, right: 20),
+        children: [
+          // ① 再听一遍（真实：本地在线历史 ✓）
+          _buildHistory(history),
           // ② 老歌重温（真实：历史里**播放次数最高**的那批 ✓ —— 复用既有的 `topPlayed` ✓）
           _buildTopPlayed(history),
           // ③ 「翻唱与混音」**已删除** ✗（2026-10-12 ✓）：
@@ -660,77 +641,14 @@ class _HomePageState extends State<HomePage> with RemoteListLoading<HomePage> {
             capabilities: service?.capabilities,
             onConfigure: () => context.go(app_paths.SETTINGS_PAGE),
           ),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
-
-  /// **用户名片带**：横幅背景 + 左下问候 + 右侧刷新 ✓。
-  ///
-  /// 高度**按内容宽度等比例**取（`宽 × 比例`，再夹在上下限之间）✓ ——
-  /// 全屏时它跟着变高变宽 ✓，而不是永远那个 200×720 的小方块 ✗（用户实测指出的问题）。
-  Widget _buildIdentityBand(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final height = (constraints.maxWidth * _identityHeightRatio).clamp(
-          _identityMinHeight,
-          _identityMaxHeight,
-        );
-        return SizedBox(
-          height: height,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // 背景：用户横幅（没设置 ⇒ 什么都不画，页面底色露出来 ✓）。
-              ValueListenableBuilder<String?>(
-                valueListenable: AppPreference.instance.homeBannerPathListenable,
-                builder: (context, bannerPath, _) =>
-                    HomeHeroBanner(bannerPath: bannerPath),
-              ),
-              // 前景：问候语压在左下、刷新在右端 ✓。
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  Spacing.lg,
-                  Spacing.md,
-                  Spacing.lg,
-                  Spacing.md,
-                ),
-                child: Align(
-                  alignment: Alignment.bottomLeft,
-                  child: HomeGreetingHeader(
-                    returningAfter: _returningAfter,
-                    // 横向与底部留白由名片带统一给 ✓（避免两处再各加一份）。
-                    padding: EdgeInsets.zero,
-                    action: IconButton.filledTonal(
-                      tooltip: '刷新主页',
-                      onPressed: _refreshAll,
-                      icon: const Icon(Symbols.refresh),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  /// 名片带的高度比例：宽度 × 这个数，再夹到 [_identityMinHeight]~[_identityMaxHeight] ✓。
-  ///
-  /// 0.20 ≈ 1500 宽时 300 高（被 280 上限接住）、900 宽时 180 ✓ —— 全屏与窄窗都自然 ✓。
-  static const double _identityHeightRatio = 0.20;
-  static const double _identityMinHeight = 140;
-  static const double _identityMaxHeight = 280;
 
   // --------------------------------------------------------------- 继续听
 
   /// 「再听一遍」：**自己管自己的头与内容** ✓（`ContentSection` 保持完整 ✓）。
-  ///
-  /// 与横幅的"浸入式融合"靠**布局**实现（横幅在底下多延伸一截）✓，
-  /// **不靠**把区块头搬进背景组件 ✗ —— 那会破坏区块组件的内聚性 ✓。
   Widget _buildHistory(OnlineHistoryViewSnapshot history) {
     // **不再直接切统计的前 N 条** ✗（2026-10-12 用户要求 ✓）：
     // 统计的 `recent` 只有"时间倒序"这一个维度 ✓ ⇒ 连听一张专辑就会整块被它占满 ✗。
