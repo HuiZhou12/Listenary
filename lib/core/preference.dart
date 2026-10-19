@@ -10,7 +10,7 @@ import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/utils.dart';
-import 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart';
+import 'package:pure_music/services/music_platform/index.dart';
 import 'package:path/path.dart' as path;
 
 class PagePreference {
