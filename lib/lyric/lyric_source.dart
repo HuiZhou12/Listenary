@@ -8,8 +8,9 @@ import 'package:sqlite3/sqlite3.dart';
 
 /// **本地库**那一套歌词子系统的来源枚举（P-15）。
 ///
-/// ⚠️ 这是**两套歌词子系统**里的"本地歌曲"那一套（另一套在
-/// `lib/services/online_lyric/models/lyric_source_type.dart`，值域不同）。
+/// ⚠️ 这是**两套歌词子系统**里的"本地歌曲"那一套。另一套（在线歌词**搜索**）的来源
+/// 枚举是 `lib/core/matcher.dart` 的 `ResultSource`，值域不同（没有 `local`）。
+/// 本文件曾有一个同名平行模块（`lib/services/online_lyric/sources/`），因全仓零使用已删除。
 /// 它只被本地播放链路使用（`play_service/lyric_service.dart` 的 `updateLyric` /
 /// `useOnlineLyric`，作用于本地 `audioPath`）。
 ///
