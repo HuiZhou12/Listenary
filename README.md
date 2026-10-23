@@ -12,6 +12,7 @@
   <img src="https://img.shields.io/badge/Platform-Windows-blue?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/Version-3.1.5-blue?style=flat-square" alt="Version 3.1.5">
   <img src="https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square" alt="License GPL-3.0">
+  <img src="https://img.shields.io/github/downloads/HuiZhou12/Listenary/total?style=flat-square&label=Downloads&color=brightgreen" alt="Total Downloads">
 </p>
 
 
