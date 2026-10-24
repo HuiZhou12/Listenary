@@ -170,6 +170,12 @@ void main() {
       OnlineMusicCapability.searchAlbums,
       // 搜索艺人：同上 ✓。
       OnlineMusicCapability.searchArtists,
+      // 推荐曲目 / 推荐歌单 / 关注艺人 / 个性化合辑：同样"不需要实体 ID"，
+      // 可独立执行并给出服务级证据 ⇒ 也可作候选 ✓（顺序沿用能力枚举）。
+      OnlineMusicCapability.recommendedTracks,
+      OnlineMusicCapability.recommendedPlaylists,
+      OnlineMusicCapability.followedArtists,
+      OnlineMusicCapability.personalizedPlaylists,
     ]);
     // 裁定第 3 条：需要具体曲目 / 歌单 ID 的能力**不作默认探针**（也绝不伪造 ID）。
     for (final capability in const [

@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// S9：**零迁移证明** + D1 的持久化守卫。
+/// schema 守卫：**v6 只加可空列**的持久化基线 + D1 的持久化守卫。
 ///
-/// 本阶段的核心前提之一是"多平台来源身份**已经**存在，不需要改库"。
-/// 这个测试把该前提变成可执行断言，任何人改动都会立刻被发现：
-/// - 一旦有人 bump schema 版本或改在线表主键 → 说明发生了迁移，必须重新走决策流程；
+/// v6 只给 `online_tracks` 补 `album_id`、给 `online_track_artists` 补 `artist_id`
+/// （均可空），不改在线内容身份。这个测试把基线钉住：
+/// - 一旦有人改动 schema 版本基线或在线表主键 → 必须重新走决策流程；
 /// - 一旦有人把 `provider` 写进在线表 → 违反 D1（Provider 是访问配置，不是内容事实）。
 void main() {
   const databasePath = 'lib/core/database.dart';
@@ -18,9 +18,9 @@ void main() {
     source = file.readAsStringSync();
   });
 
-  test('schema 版本仍为 5：本阶段零迁移', () {
-    expect(source, contains('latestAppDatabaseVersion = 5'));
-    expect(source, contains('PRAGMA user_version = 5'));
+  test('schema 基线为 6：v6 只加可空列，在线内容身份不变', () {
+    expect(source, contains('latestAppDatabaseVersion = 6'));
+    expect(source, contains('PRAGMA user_version = 6'));
   });
 
   test('在线内容身份仍是 (platform, remoteId) 复合主键', () {
@@ -42,6 +42,8 @@ void main() {
     // ⚠️ F5-S2 起 v5 的 DDL 是 `CREATE TABLE IF NOT EXISTS …`（幂等化）
     // ⇒ 锚点改用 `online_tracks (`：外键引用写的是 `online_tracks(platform, …)`（无空格），
     // 因此带空格的那个只出现在建表语句处，对"是否幂等"的写法变化保持鲁棒。
+    // 切片**止于 v5 迁移结束**（`PRAGMA user_version = 5`），不扩到 v6 段：
+    // 这里只守卫 v5 在线建表段，v6 的可空加列由迁移行为测试覆盖。
     final start = source.indexOf('online_tracks (');
     final end = source.indexOf('PRAGMA user_version = 5');
     expect(start, greaterThanOrEqualTo(0), reason: '找不到在线表定义段');

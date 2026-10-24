@@ -34,7 +34,7 @@ void main() {
   });
 
   group('可探测性（服务级探针）', () {
-    test('可探测的七项与顺序（顺序即执行顺序，搜索优先）', () {
+    test('可探测的十二项与顺序（顺序即执行顺序，搜索优先）', () {
       expect(probeCapableCapabilities, const [
         OnlineMusicCapability.search,
         OnlineMusicCapability.newSongs,
@@ -47,6 +47,12 @@ void main() {
         OnlineMusicCapability.searchAlbums,
         // 搜索艺人：同上 ✓。
         OnlineMusicCapability.searchArtists,
+        // 推荐曲目 / 推荐歌单 / 关注艺人 / 个性化合辑：均为服务级探测
+        // （不需要实体 ID，给默认 limit 即可）⇒ 按能力枚举顺序追加 ✓。
+        OnlineMusicCapability.recommendedTracks,
+        OnlineMusicCapability.recommendedPlaylists,
+        OnlineMusicCapability.followedArtists,
+        OnlineMusicCapability.personalizedPlaylists,
       ]);
     });
 
@@ -72,6 +78,20 @@ void main() {
         '个分类',
       );
       expect(probeResultUnitFor(OnlineMusicCapability.chartList), '个榜单');
+      // 追加的 4 项单位必须与"试跑"文案一致（曲目 / 歌单 / 艺人各自可读）。
+      expect(
+        probeResultUnitFor(OnlineMusicCapability.recommendedTracks),
+        '首曲目',
+      );
+      expect(
+        probeResultUnitFor(OnlineMusicCapability.recommendedPlaylists),
+        '个歌单',
+      );
+      expect(probeResultUnitFor(OnlineMusicCapability.followedArtists), '位艺人');
+      expect(
+        probeResultUnitFor(OnlineMusicCapability.personalizedPlaylists),
+        '个歌单',
+      );
     });
 
     test('可探测能力没有"不可探测原因"', () {

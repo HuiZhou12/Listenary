@@ -42,7 +42,8 @@ const probeNeedsEntityIdReason =
 
 /// **顺序即执行顺序**（搜索优先）。
 ///
-/// - 可探测：搜索 / 新歌 / 歌单列表 / 歌单分类 / 榜单 —— 各自用**自己的**响应结构判定；
+/// - 可探测：搜索 / 新歌 / 歌单列表 / 歌单分类 / 榜单 / 新专辑 / 搜索专辑 / 搜索艺人 /
+///   推荐曲目 / 推荐歌单 / 关注艺人 / 个性化合辑 —— 各自用**自己的**响应结构判定；
 /// - 不可探测：歌单详情 / 歌词 / 播放解析 —— 需要实体 ID，交给**试跑**，**绝不伪造 ID**。
 const declarativeProbeCapabilityContracts =
     <DeclarativeProbeCapabilityContract>[
@@ -80,6 +81,26 @@ const declarativeProbeCapabilityContracts =
       DeclarativeProbeCapabilityContract(
         capability: OnlineMusicCapability.searchArtists,
         unit: '位艺人',
+      ),
+      // 推荐曲目：平台按**这个账号**推荐什么歌 ✓（服务端决定内容 ⇒ 不需要实体 ID ✓）。
+      DeclarativeProbeCapabilityContract(
+        capability: OnlineMusicCapability.recommendedTracks,
+        unit: '首曲目',
+      ),
+      // 推荐歌单：与推荐曲目同源，但输出是歌单集合 ✓（单位是"个歌单" ✓）。
+      DeclarativeProbeCapabilityContract(
+        capability: OnlineMusicCapability.recommendedPlaylists,
+        unit: '个歌单',
+      ),
+      // 关注的艺人：输出艺人摘要数组 ✓；0 条是**中性空态** ✓，不是失败。
+      DeclarativeProbeCapabilityContract(
+        capability: OnlineMusicCapability.followedArtists,
+        unit: '位艺人',
+      ),
+      // 个性化合辑：输出歌单集合 ✓；免登录也可能有内容 ⇒ **不**强制凭据 ✓。
+      DeclarativeProbeCapabilityContract(
+        capability: OnlineMusicCapability.personalizedPlaylists,
+        unit: '个歌单',
       ),
       DeclarativeProbeCapabilityContract(
         capability: OnlineMusicCapability.playlist,
