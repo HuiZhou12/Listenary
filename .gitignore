@@ -89,6 +89,12 @@ output/
 todo/
 *.zip
 
+# 本机临时备份：wp-2 删除的 kg.dart / qq.dart 死代码文件原件与 tar 恢复源。
+# 这两个文件里含有一份与 lib/services/online_lyric/api/krc_decryptor.dart 重复的
+# KRC 密钥常量副本；死代码已从工作树删除，备份仅供恢复参考，不是密钥的权威副本。
+# 防呆：避免 `git add -A` 把备份误纳入索引。恢复完即删。
+.backup-wp2/
+
 # Local docs
 !page/docs/
 output/
