@@ -29,27 +29,36 @@ final class OnlineMusicCapabilities {
     Iterable<MusicPlatform> artistSongPlatforms = const [],
     Iterable<MusicPlatform> lyricPlatforms = const [],
     Iterable<PlatformIdentity> resolvableIdentities = const [],
+    Iterable<PlatformIdentity> searchableIdentities = const [],
     Map<MusicPlatform, String> unavailableSearchReasons = const {},
   }) : searchablePlatforms = Set.unmodifiable(searchablePlatforms),
        resolvablePlatforms = Set.unmodifiable(resolvablePlatforms),
        resolvableIdentities = Set.unmodifiable(resolvableIdentities),
+       searchableIdentities = Set.unmodifiable(
+         searchableIdentities.isEmpty
+             // 未显式给出 ⇒ 按枚举推导内置身份（`custom` 需要稳定 ID，推导不出来）。
+             ? {
+                 for (final platform in searchablePlatforms)
+                   if (platform != MusicPlatform.custom)
+                     PlatformIdentity.builtin(platform),
+               }
+             : searchableIdentities,
+       ),
        playlistPlatforms = Set.unmodifiable(playlistPlatforms),
        playlistCollectionPlatforms = Set.unmodifiable(
          playlistCollectionPlatforms,
        ),
-       playlistCategoryPlatforms = Set.unmodifiable(
-         playlistCategoryPlatforms,
-       ),
+       playlistCategoryPlatforms = Set.unmodifiable(playlistCategoryPlatforms),
        chartPlatforms = Set.unmodifiable(chartPlatforms),
        newSongPlatforms = Set.unmodifiable(newSongPlatforms),
-    recommendedTrackPlatforms = Set.unmodifiable(recommendedTrackPlatforms),
-    personalizedPlaylistPlatforms = Set.unmodifiable(
-      personalizedPlaylistPlatforms,
-    ),
-    recommendedPlaylistPlatforms = Set.unmodifiable(
-      recommendedPlaylistPlatforms,
-    ),
-    followedArtistPlatforms = Set.unmodifiable(followedArtistPlatforms),
+       recommendedTrackPlatforms = Set.unmodifiable(recommendedTrackPlatforms),
+       personalizedPlaylistPlatforms = Set.unmodifiable(
+         personalizedPlaylistPlatforms,
+       ),
+       recommendedPlaylistPlatforms = Set.unmodifiable(
+         recommendedPlaylistPlatforms,
+       ),
+       followedArtistPlatforms = Set.unmodifiable(followedArtistPlatforms),
        newAlbumPlatforms = Set.unmodifiable(newAlbumPlatforms),
        searchableAlbumPlatforms = Set.unmodifiable(searchableAlbumPlatforms),
        searchableArtistPlatforms = Set.unmodifiable(searchableArtistPlatforms),
@@ -62,6 +71,31 @@ final class OnlineMusicCapabilities {
 
   /// **可参与搜索**的平台（D3 硬门槛：必须同时具备可用的 Search 与 Stream 候选）。
   final Set<MusicPlatform> searchablePlatforms;
+
+  /// 2.2（R4/G3）：**按平台身份**可参与搜索的集合（在线搜索页据此列平台与分组）。
+  ///
+  /// 与 [searchablePlatforms] 的关系：后者是枚举级（两个自定义平台共用 `custom`），
+  /// 只够做门槛判断；界面要"按平台分别列出来、分别请求"时必须读这一份。
+  ///
+  /// 门槛与 [searchablePlatforms] **同一条**：该身份下既有可用的 Search 候选，
+  /// 又有可用的 Stream 候选（否则会出现"搜得到但播不了"）。身份无效/未配置 ⇒ 不出现。
+  ///
+  /// **未显式给出时**按 [searchablePlatforms] 推导为内置身份（既有替身/嵌入用法不必补参数；
+  /// `custom` 无法从枚举推导出稳定 ID，因此只在显式给出时才出现）。
+  final Set<PlatformIdentity> searchableIdentities;
+
+  /// 该身份能否参与搜索（[searchableIdentities] 的问答形式；身份无效 ⇒ false）。
+  bool canSearchIdentity(PlatformIdentity identity) =>
+      identity.isValid && searchableIdentities.contains(identity.normalized);
+
+  /// 该身份为何不能参与搜索（能搜索 / 未登记时返回 null）。
+  ///
+  /// 与 [unavailableSearchReasonFor] 同口径：只回答"有内容能力但进不了搜索"，
+  /// 不把"停用"或"尚未配置"混成能力结论（那两件事由设置页的平台卡如实说明）。
+  String? unavailableSearchReasonForIdentity(PlatformIdentity identity) {
+    if (canSearchIdentity(identity)) return null;
+    return unavailableSearchReasonFor(identity.platform);
+  }
 
   /// 可做播放解析的平台。
   final Set<MusicPlatform> resolvablePlatforms;
@@ -85,7 +119,9 @@ final class OnlineMusicCapabilities {
 
   bool canResolveIdentity(PlatformIdentity identity) {
     if (!identity.isValid) return false;
-    if (!identity.isCustom) return resolvablePlatforms.contains(identity.platform);
+    if (!identity.isCustom) {
+      return resolvablePlatforms.contains(identity.platform);
+    }
     return resolvableIdentities.contains(identity);
   }
 
@@ -298,18 +334,43 @@ final class AggregatedSearchResult {
 
   Iterable<MusicPlatform> get platforms => perPlatform.keys;
 
-  bool get hasFailures => failures.isNotEmpty;
+  bool get hasFailures => failures.isNotEmpty || failuresByIdentity.isNotEmpty;
 
   /// 所有平台的结果都为空（或根本没有平台）。
-  bool get isEmpty => perPlatform.values.every((page) => page.items.isEmpty);
+  ///
+  /// 2.2：**必须同时看身份键那一份** —— 两个自定义平台同时请求时，枚举键会因为
+  /// "同键不同身份"的守卫被移除（见 `_recordAggregatedPage`），只看 `perPlatform`
+  /// 会把"有结果"误判成"没有找到"。
+  bool get isEmpty =>
+      perPlatform.values.every((page) => page.items.isEmpty) &&
+      perPlatformIdentity.values.every((page) => page.items.isEmpty);
 
-  int get totalItems =>
-      perPlatform.values.fold(0, (sum, page) => sum + page.items.length);
+  /// 所有结果页的曲目总数（**按页去重**：同一页可能同时出现在两个 map 里）。
+  ///
+  /// 2.2：内置平台的成功结果同时写进 [perPlatform] 与 [perPlatformIdentity]；
+  /// 自定义平台冲突时只保留身份键那一份 ⇒ 直接相加会把内置平台算两遍。
+  int get totalItems {
+    var total = 0;
+    final countedPlatforms = <MusicPlatform>{
+      for (final identity in perPlatformIdentity.keys) identity.platform,
+    };
+    for (final entry in perPlatform.entries) {
+      // 该平台已经有身份键页 ⇒ 由下面那一份计入（不重复）。
+      if (countedPlatforms.contains(entry.key)) continue;
+      total += entry.value.items.length;
+    }
+    for (final page in perPlatformIdentity.values) {
+      total += page.items.length;
+    }
+    return total;
+  }
 
   @override
   String toString() =>
       'AggregatedSearchResult(${perPlatform.length} platforms, '
-      '$totalItems items, ${failures.length} failures)';
+      '${perPlatformIdentity.length} identities, '
+      '$totalItems items, ${failures.length} failures, '
+      '${failuresByIdentity.length} identity failures)';
 }
 
 abstract interface class OnlineMusicService {
@@ -328,6 +389,11 @@ abstract interface class OnlineMusicService {
   /// 只对 ∈ [OnlineMusicCapabilities.searchablePlatforms] 的平台发请求；各平台**并行**、
   /// **各自分页**、**不做跨平台去重**；单平台的失败只进
   /// [AggregatedSearchResult.failures]，不影响其它平台的结果。
+  ///
+  /// ⚠️ 2.2：需要**按平台身份**搜索的场景（自定义平台）走
+  /// `OnlineMusicIdentitySearchSource`（窄接口，见 `online_music_identity_search.dart`），
+  /// 不在这里加成员 —— 与 `OnlineMusicDiagnosticsSource` 同一理由：Dart 的 `implements`
+  /// 不继承实现，加一个成员会让全部测试替身编译失败。
   Future<AggregatedSearchResult> searchAggregated({
     required Iterable<MusicPlatform> platforms,
     required String keyword,
@@ -358,7 +424,7 @@ abstract interface class OnlineMusicService {
     required MusicPlatform platform,
     required String playlistId,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Playlist reading is not supported');
+  }) => throw unsupportedCapability();
 
   /// **歌单集合**（歌单列表，Spec §19.2）：元数据列表，**不含曲目**。
   ///
@@ -371,7 +437,7 @@ abstract interface class OnlineMusicService {
     int offset = 0,
     String? categoryId,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Playlist collection is not supported');
+  }) => throw unsupportedCapability();
 
   /// **歌单分类索引**：平台把歌单分成了哪些类，用于按分类浏览。
   ///
@@ -382,7 +448,7 @@ abstract interface class OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Playlist categories are not supported');
+  }) => throw unsupportedCapability();
 
   /// **榜单索引**：该平台发布了哪些名次集合，**不含曲目**。
   ///
@@ -395,7 +461,7 @@ abstract interface class OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Chart listing is not supported');
+  }) => throw unsupportedCapability();
 
   /// **新歌**：该平台最近发布的曲目。
   ///
@@ -407,7 +473,7 @@ abstract interface class OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('New songs are not supported');
+  }) => throw unsupportedCapability();
 
   /// **推荐曲目**（`recommendedTracks`，2026-10-12 新增 ✓）：平台按**这个账号**推荐什么歌 ✓。
   ///
@@ -423,7 +489,7 @@ abstract interface class OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Recommended tracks are not supported');
+  }) => throw unsupportedCapability();
 
   /// **推荐歌单**（`recommendedPlaylists`，2026-10-12 新增 ✓）：平台按**这个账号**推荐哪些歌单 ✓。
   ///
@@ -434,7 +500,7 @@ abstract interface class OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Recommended playlists are not supported');
+  }) => throw unsupportedCapability();
 
   /// **关注的艺人**（`followedArtists`，2026-10-12 新增 ✓）：**这个账号**关注了哪些艺人 ✓。
   ///
@@ -445,7 +511,7 @@ abstract interface class OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Followed artists are not supported');
+  }) => throw unsupportedCapability();
 
   /// **个性化合辑**（`personalizedPlaylists`，2026-10-12 新增 ✓）：
   /// 平台按"可能喜欢的口味"挑出来的**歌单合集** ✓。
@@ -459,7 +525,7 @@ abstract interface class OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Personalized playlists are not supported');
+  }) => throw unsupportedCapability();
 
   /// **艺人详情**（`artist`，2026-10-12 新增）：艺人标量信息 + **热门曲目**。
   ///
@@ -470,7 +536,7 @@ abstract interface class OnlineMusicService {
     required MusicPlatform platform,
     required String artistId,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Artist detail is not supported');
+  }) => throw unsupportedCapability();
 
   /// **专辑详情**（`album`，2026-10-12 新增）：专辑元数据 + **曲目**。
   ///
@@ -479,7 +545,7 @@ abstract interface class OnlineMusicService {
     required MusicPlatform platform,
     required String albumId,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Album detail is not supported');
+  }) => throw unsupportedCapability();
 
   /// **按关键词搜索艺人**（`searchArtists`，2026-10-12 新增）：搜索结果里的「艺人」那一段 ✓。
   Future<List<OnlineArtistSummary>> searchArtists({
@@ -488,7 +554,7 @@ abstract interface class OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Artist search is not supported');
+  }) => throw unsupportedCapability();
 
   /// **按关键词搜索专辑**（`searchAlbums`，2026-10-12 新增）：搜索页结果分区里的「专辑」✓。
   Future<List<OnlineAlbumSummary>> searchAlbums({
@@ -497,7 +563,7 @@ abstract interface class OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Album search is not supported');
+  }) => throw unsupportedCapability();
 
   /// **新专辑**（`newAlbums`，2026-10-12 新增）：平台最近发布的专辑（**输出是专辑摘要** ✓）。
   ///
@@ -507,7 +573,7 @@ abstract interface class OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('New albums are not supported');
+  }) => throw unsupportedCapability();
 
   /// **艺人的专辑列表**（`artistAlbums`，2026-10-12 新增）：参考艺人页的「专辑」区块 ✓。
   ///
@@ -518,7 +584,7 @@ abstract interface class OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Artist albums are not supported');
+  }) => throw unsupportedCapability();
 
   /// **艺人的单曲列表**（`artistSongs`，2026-10-12 新增）：参考艺人页的「单曲和迷你专辑」区块 ✓。
   ///
@@ -529,12 +595,12 @@ abstract interface class OnlineMusicService {
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Artist songs are not supported');
+  }) => throw unsupportedCapability();
 
   Future<MusicLyrics> fetchLyrics(
     PlatformTrackRef ref, {
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Lyric reading is not supported');
+  }) => throw unsupportedCapability();
 
   /// 该平台**应请求的内部偏好档位**（不是平台请求值）。
   ///

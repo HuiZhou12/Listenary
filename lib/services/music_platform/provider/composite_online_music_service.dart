@@ -1,6 +1,7 @@
 import 'package:pure_music/services/music_platform/models/music_models.dart';
 import 'package:pure_music/services/music_platform/online_music_diagnostics.dart';
 import 'package:pure_music/services/music_platform/online_music_error.dart';
+import 'package:pure_music/services/music_platform/online_music_identity_search.dart';
 import 'package:pure_music/services/music_platform/online_music_request.dart';
 import 'package:pure_music/services/music_platform/online_music_service.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
@@ -19,7 +20,10 @@ import 'package:pure_music/services/music_platform/provider/online_music_route_d
 /// 配置类错误一律**立即失败**，不换 Provider。回退默认**静默**（D5b:B），
 /// 但每次分发都记入 [routeLog] 以便诊断。
 final class CompositeOnlineMusicService
-    implements OnlineMusicService, OnlineMusicDiagnosticsSource {
+    implements
+        OnlineMusicService,
+        OnlineMusicDiagnosticsSource,
+        OnlineMusicIdentitySearchSource {
   CompositeOnlineMusicService({required this.registry})
     : capabilities = _capabilitiesFor(registry);
 
@@ -43,15 +47,26 @@ final class CompositeOnlineMusicService
     final reasons = <MusicPlatform, String>{};
     for (final platform in {...search, ...stream}) {
       if (searchable.contains(platform)) continue;
-      reasons[platform] = stream.contains(platform)
-          ? '该平台暂不支持搜索'
-          : '该平台暂不能播放';
+      reasons[platform] = stream.contains(platform) ? '该平台暂不支持搜索' : '该平台暂不能播放';
     }
     return OnlineMusicCapabilities(
       searchablePlatforms: searchable,
       resolvablePlatforms: stream,
-    // P-63: identity-level resolvable set (custom platforms need it).
-    resolvableIdentities: registry.identitiesFor(OnlineMusicCapability.stream),
+      // P-63: identity-level resolvable set (custom platforms need it).
+      resolvableIdentities: registry.identitiesFor(
+        OnlineMusicCapability.stream,
+      ),
+      // 2.2（R4/G3）：**身份级**可搜索集合 —— 在线搜索页按它列平台并逐个请求。
+      // 门槛与上面的枚举级判定同一条（Search + Stream 都有候选）。
+      searchableIdentities: {
+        for (final identity in registry.candidatesIdentitiesFor(
+          OnlineMusicCapability.search,
+        ))
+          if (registry
+              .providersForIdentity(identity, OnlineMusicCapability.stream)
+              .isNotEmpty)
+            identity,
+      },
       playlistPlatforms: registry.platformsFor(OnlineMusicCapability.playlist),
       playlistCollectionPlatforms: registry.platformsFor(
         OnlineMusicCapability.playlistCollection,
@@ -593,7 +608,7 @@ final class CompositeOnlineMusicService
   );
 
   List<OnlineMusicProvider> _streamCandidates(MusicPlatform platform) =>
-    _streamCandidatesForIdentity(PlatformIdentity.builtin(platform));
+      _streamCandidatesForIdentity(PlatformIdentity.builtin(platform));
 
   /// F5-P-39（P2）：按**平台身份**取 stream 候选（自定义平台靠稳定 ID 区分，不串台）。
   List<OnlineMusicProvider> _streamCandidatesForIdentity(
@@ -616,13 +631,45 @@ final class CompositeOnlineMusicService
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
+
     /// F5-P-39（P2）：各平台的**平台身份**（自定义平台必传；缺省按 builtin 处理 ⇒ fail-closed）。
     Map<MusicPlatform, PlatformIdentity> identities = const {},
   }) async {
-    final requested = {
+    final requested = <PlatformIdentity>[
       for (final platform in platforms)
-        if (capabilities.searchablePlatforms.contains(platform)) platform,
-    };
+        if (capabilities.searchablePlatforms.contains(platform))
+          identities[platform] ?? PlatformIdentity.builtin(platform),
+    ];
+    return _aggregate(requested, keyword, limit, offset, cancelToken);
+  }
+
+  /// 2.2（R4/G3）：**按平台身份**聚合（在线搜索页入口）—— 多个自定义平台同时请求时
+  /// 不会互相覆盖（旧枚举键在 `_recordAggregatedPage` 里会被守卫移除，身份键才是权威）。
+  @override
+  Future<AggregatedSearchResult> searchIdentities({
+    required Iterable<PlatformIdentity> identities,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) => _aggregate(
+    [
+      for (final identity in identities)
+        if (capabilities.canSearchIdentity(identity)) identity.normalized,
+    ],
+    keyword,
+    limit,
+    offset,
+    cancelToken,
+  );
+
+  Future<AggregatedSearchResult> _aggregate(
+    List<PlatformIdentity> requested,
+    String keyword,
+    int limit,
+    int offset,
+    OnlineMusicCancelToken cancelToken,
+  ) async {
     final perPlatform = <MusicPlatform, MusicSearchPage>{};
     final failures = <MusicPlatform, OnlineMusicException>{};
     // F5-P-39（P2）：身份键结果 + 同键不同身份的守卫（见 _recordAggregatedPage/_recordAggregatedFailure）。
@@ -631,20 +678,19 @@ final class CompositeOnlineMusicService
     final legacyOwner = <MusicPlatform, PlatformIdentity>{};
 
     await Future.wait([
-      for (final platform in requested)
+      for (final identity in requested)
         _searchOnePlatform(
-          platform: platform,
+          identity: identity,
           keyword: keyword,
           limit: limit,
           offset: offset,
           cancelToken: cancelToken,
-        perPlatform: perPlatform,
-        failures: failures,
-        perPlatformIdentity: perPlatformIdentity,
-        failuresByIdentity: failuresByIdentity,
-        legacyOwner: legacyOwner,
-        identity: identities[platform] ?? PlatformIdentity.builtin(platform),
-      ),
+          perPlatform: perPlatform,
+          failures: failures,
+          perPlatformIdentity: perPlatformIdentity,
+          failuresByIdentity: failuresByIdentity,
+          legacyOwner: legacyOwner,
+        ),
     ]);
 
     // 取消要如实向上传播，而不是被收进 failures 假装成"某个平台失败了"。
@@ -666,7 +712,7 @@ final class CompositeOnlineMusicService
   /// 单平台搜索；永不抛出 `OnlineMusicException`（改写进 failures），
   /// 以便 `Future.wait` 不会因为一个平台失败而丢掉其它平台的结果。
   Future<void> _searchOnePlatform({
-    required MusicPlatform platform,
+    required PlatformIdentity identity,
     required String keyword,
     required int limit,
     required int offset,
@@ -676,8 +722,8 @@ final class CompositeOnlineMusicService
     required Map<PlatformIdentity, MusicSearchPage> perPlatformIdentity,
     required Map<PlatformIdentity, OnlineMusicException> failuresByIdentity,
     required Map<MusicPlatform, PlatformIdentity> legacyOwner,
-    required PlatformIdentity identity,
   }) async {
+    final platform = identity.platform;
     try {
       final page = await search(
         platform: platform,
@@ -690,7 +736,13 @@ final class CompositeOnlineMusicService
       _recordAggregatedPage(legacyOwner, perPlatform, platform, identity, page);
       perPlatformIdentity[identity] = page;
     } on OnlineMusicException catch (error) {
-      _recordAggregatedFailure(legacyOwner, failures, platform, identity, error);
+      _recordAggregatedFailure(
+        legacyOwner,
+        failures,
+        platform,
+        identity,
+        error,
+      );
       failuresByIdentity[identity] = error;
     } catch (error) {
       final wrapped = OnlineMusicException(
@@ -699,7 +751,13 @@ final class CompositeOnlineMusicService
             '该平台抛出了非归一化异常（${error.runtimeType}）；'
             '其它平台的结果不受影响，请按此类型定位',
       );
-      _recordAggregatedFailure(legacyOwner, failures, platform, identity, wrapped);
+      _recordAggregatedFailure(
+        legacyOwner,
+        failures,
+        platform,
+        identity,
+        wrapped,
+      );
       failuresByIdentity[identity] = wrapped;
     }
   }
@@ -737,6 +795,7 @@ final class CompositeOnlineMusicService
     legacyOwner[platform] = identity;
     failures[platform] = error;
   }
+
   @override
   void dispose() {
     for (final provider in registry.providers) {
@@ -755,12 +814,16 @@ final class CompositeOnlineMusicService
     OnlineMusicCapability capability,
     Future<T> Function(OnlineMusicProvider provider) run, {
     T Function(T result, String providerId)? stamp,
+
     /// F5-P-39（P2）：平台身份。省略 ⇒ builtin(platform)（既有行为完全不变）；
     /// 自定义平台必须传 custom + 稳定 ID，否则身份无效 ⇒ 候选为空 ⇒ unavailable（fail-closed）。
     PlatformIdentity? identity,
   }) async {
     final resolvedIdentity = identity ?? PlatformIdentity.builtin(platform);
-    final candidates = registry.providersForIdentity(resolvedIdentity, capability);
+    final candidates = registry.providersForIdentity(
+      resolvedIdentity,
+      capability,
+    );
     if (candidates.isEmpty) throw unsupportedCapability();
 
     final attempts = <OnlineMusicRouteAttempt>[];
@@ -768,7 +831,13 @@ final class CompositeOnlineMusicService
     for (final provider in candidates) {
       try {
         final result = await run(provider);
-        _record(platform, capability, attempts, provider.providerId, resolvedIdentity);
+        _record(
+          platform,
+          capability,
+          attempts,
+          provider.providerId,
+          resolvedIdentity,
+        );
         return stamp == null ? result : stamp(result, provider.providerId);
       } on OnlineMusicException catch (error) {
         attempts.add(

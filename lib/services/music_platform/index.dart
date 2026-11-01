@@ -1,5 +1,7 @@
-export 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart' show platformLabelForIdentityOnly;
-export 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart' show platformLabelForRef;
+export 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart'
+    show platformLabelForIdentityOnly;
+export 'package:pure_music/services/music_platform/provider/online_music_provider_settings.dart'
+    show platformLabelForRef;
 // `OnlineMusicSettings` 是应用层要**持有**的配置契约（`core/preference.dart` 把它当
 // 偏好状态读写、`main.dart` 读它做装配）。在这里正式发布，应用层就不必再深入
 // `provider/` 路径引用它 —— 架构边界测试因此可以把 `lib/core` 纳入检查，
@@ -11,6 +13,8 @@ export 'online_music_credentials.dart';
 // P-29：诊断出口（窄接口 + 已本地化/已脱敏的 DTO）。应用层只读这些字符串，
 // 不引用 Provider 层的实现符号。
 export 'online_music_diagnostics.dart';
+// 2.2 / G3：按**平台身份**聚合搜索的窄接口（在线搜索页用；实现仍在 Provider 层）。
+export 'online_music_identity_search.dart';
 export 'online_music_error.dart';
 export 'online_music_request.dart';
 export 'online_music_service.dart';

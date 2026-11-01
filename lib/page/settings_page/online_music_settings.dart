@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/danger_confirm_dialog.dart';
@@ -115,12 +116,16 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
           _ProviderDialog(existingIds: _controller.providerIds),
     );
     if (result == null || !mounted) return;
+    // 2.2 / R2（G2）：新建自定义平台时才生成稳定 ID —— 生成器只有这一条调用路径，
+    // 读取/编辑既有配置**绝不**重新生成（那会改掉已有平台的身份）。
     final definition = OnlineMusicProviderDefinition.custom(
       id: result.id,
       baseUrl: result.baseUrl,
       requiresCredential: result.requiresCredential,
       displayName: result.displayName,
       contentPlatform: result.contentPlatform,
+      platformId: result.platformId,
+      platformName: result.platformName,
     );
     await _apply(_controller.addProvider(definition));
     if (mounted) setState(() => _configured[definition.id] = false);
@@ -135,11 +140,13 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
       ),
     );
     if (result == null || !mounted) return;
+    // R2：`editedBy` 不接受 `platformId` ⇒ 编辑保存不会改写身份。
     final updated = provider.editedBy(
       baseUrl: result.baseUrl,
       requiresCredential: result.requiresCredential,
       contentPlatform: result.contentPlatform,
       displayName: result.displayName,
+      platformName: result.platformName,
     );
     final saved = await _apply(_controller.updateProvider(updated));
     if (saved && mounted) {
@@ -322,6 +329,28 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
     return '${uri.scheme}://${uri.host}$port';
   }
 
+  /// 条目主标题（2.2 / R3 / G6）：展示名 + **短 ID**，用于区分同名的自定义平台。
+  ///
+  /// 规则：只有**自定义平台身份有效**、且**同名（展示名）在配置里出现多次**时才附短 ID
+  /// —— 不与任何平台同名时不加噪声（既有的内置平台条目标题完全不变）。
+  String _providerTitle(
+    OnlineMusicProviderDefinition provider,
+    OnlineMusicSettings settings,
+  ) {
+    final label = provider.label;
+    final identity = provider.identity;
+    final shortId = identity.shortId;
+    if (shortId == null || !identity.isValid) return label;
+    final name = provider.displayPlatformName;
+    final sameName = settings.providers.where((other) {
+      final otherIdentity = other.identity;
+      return otherIdentity.isCustom &&
+          otherIdentity.isValid &&
+          other.displayPlatformName == name;
+    }).length;
+    return sameName > 1 ? '$label（$shortId）' : label;
+  }
+
   Widget _buildProviderAction(OnlineMusicProviderDefinition provider) {
     // SettingsTile 在非紧凑宽度下不会替 action 做滚动，条目操作按钮较多时
     // 需要自己提供横向滚动，避免溢出。
@@ -425,11 +454,12 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
           SettingsTile(
             // W8：不再标「· 默认」—— D14 之后 defaultProvider 不参与任何路由，
             // 留着这个标记只会让用户以为它还在决定什么（字段本身仍兼容可读）。
-            description: provider.label,
+            description: _providerTitle(provider, settings),
             subtitle:
                 '${_hostOf(provider.effectiveBaseUrl)} · '
                 // P-64：内容来源也用中文平台名（以前这里露英文枚举名）。
-                '${musicPlatformLabel(provider.contentPlatform)} · '
+                // 2.2 / G6：自定义平台显示自己的 `platformName`（不再一律「自定义平台」）。
+                '${provider.displayPlatformName} · '
                 '${_authDescription(provider)}',
             action: _buildProviderAction(provider),
           ),
@@ -466,34 +496,37 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
         const _SettingsSectionTitle('提供商配置'),
         if (_controller.hasPendingRestart)
           const _SettingsHint('平台与能力的改动将在下次启动时生效'),
-        for (final platform in builtinMusicPlatforms) ...[
+        // 2.2（R3/G3/G5）：平台卡按**平台身份**渲染 —— 三个内置平台 + 配置里声明的
+        // 自定义平台（自定义平台此前根本不出现在这里 ⇒ 它的启用开关与逐能力候选无从设置）。
+        for (final identity in settings.platformIdentities) ...[
           _PlatformCard(
-            platform: platform,
+            identity: identity,
+            label: _platformCardLabel(identity, settings),
             settings: settings,
-            enabled: settings.isPlatformEnabled(platform),
+            enabled: settings.isIdentityEnabled(identity),
             // 空集 = 全部启用；不允许把最后一个启用的平台关掉（否则"全部停用"会退化成
             // "全部启用"，见 `OnlineMusicSettings.enabledPlatforms` 的约定）。
             canToggle:
-                !settings.isPlatformEnabled(platform) ||
-                _enabledPlatformCount(settings) > 1,
-            unavailableReason: _capabilities?.unavailableSearchReasonFor(
-              platform,
-            ),
+                !settings.isIdentityEnabled(identity) ||
+                _enabledIdentityCount(settings) > 1,
+            unavailableReason: identity.isCustom
+                ? _capabilities?.unavailableSearchReasonForIdentity(identity)
+                : _capabilities?.unavailableSearchReasonFor(identity.platform),
             // P-37：两个事实源各自标注来源。运行中的 service 是否**仍在服务**这个平台
             // （从它的能力集合推导），用来回答"配置里停用了、但运行中其实还能用"。
-            runtimeServesPlatform: _runtimeServesPlatform(
+            runtimeServesPlatform: _runtimeServesIdentity(
               _capabilities,
-              platform,
+              identity,
             ),
-            needsRestart: _controller.platformNeedsRestart(platform),
-            capabilityNeedsRestart: (capability) =>
-                _controller.capabilityNeedsRestart(platform, capability),
+            needsRestart: _controller.identityNeedsRestart(identity),
+            capabilityNeedsRestart: (capability) => _controller
+                .identityCapabilityNeedsRestart(identity, capability),
             onEnabledChanged: (value) => _apply(
-              _controller.setPlatformEnabled(platform, enabled: value),
+              _controller.setIdentityEnabled(identity, enabled: value),
             ),
             onCapabilityChanged: (capability, providerId) => _apply(
-              _controller.assignPlatformCapability(
-                platform,
+              _controller.assignIdentityCapability(
+                identity,
                 capability,
                 providerId,
               ),
@@ -509,9 +542,25 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   }
 }
 
+int _enabledIdentityCount(OnlineMusicSettings settings) =>
+    settings.platformIdentities.where(settings.isIdentityEnabled).length;
 
-int _enabledPlatformCount(OnlineMusicSettings settings) =>
-    builtinMusicPlatforms.where(settings.isPlatformEnabled).length;
+/// 平台卡的标题（2.2 / R3 / G6）：内置平台用既有中文名；自定义平台用 `platformName`
+/// （缺失 ⇒「自定义平台」），同名时附**短 ID** 以便区分。
+String _platformCardLabel(
+  PlatformIdentity identity,
+  OnlineMusicSettings settings,
+) {
+  final label = platformLabelForIdentity(settings, identity);
+  final shortId = identity.shortId;
+  if (shortId == null) return label;
+  final sameName = settings.platformIdentities.where((other) {
+    return other.isCustom &&
+        other.isValid &&
+        platformLabelForIdentity(settings, other) == label;
+  }).length;
+  return sameName > 1 ? '$label（$shortId）' : label;
+}
 
 /// 能力文案与能力编辑器共用 [onlineMusicCapabilityLabel]，避免两处走偏。
 String _capabilityLabel(OnlineMusicCapability capability) =>
@@ -528,7 +577,8 @@ const _autoProviderValue = '';
 /// 卡内每个能力一行，选择该平台下支持该能力的 Provider。
 class _PlatformCard extends StatelessWidget {
   const _PlatformCard({
-    required this.platform,
+    required this.identity,
+    required this.label,
     required this.settings,
     required this.enabled,
     required this.canToggle,
@@ -540,7 +590,11 @@ class _PlatformCard extends StatelessWidget {
     required this.onCapabilityChanged,
   });
 
-  final MusicPlatform platform;
+  final PlatformIdentity identity;
+
+  /// 卡头展示名（内置 = 既有中文名；自定义 = 条目的 platformName，同名附短 ID）。
+  final String label;
+
   final OnlineMusicSettings settings;
   final bool enabled;
 
@@ -603,7 +657,7 @@ class _PlatformCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        musicPlatformLabel(platform),
+                        label,
                         style: const TextStyle(
                           fontSize: AppType.body,
                           fontWeight: AppType.weightSemibold,
@@ -649,7 +703,10 @@ class _PlatformCard extends StatelessWidget {
     BuildContext context,
     OnlineMusicCapability capability,
   ) {
-    final candidates = settings.capableProviderIdsFor(platform, capability);
+    final candidates = settings.capableProviderIdsForIdentity(
+      identity,
+      capability,
+    );
     // P-04：**逐能力**的"未生效"标记。
     final pending = capabilityNeedsRestart(capability);
     if (candidates.isEmpty) {
@@ -665,7 +722,10 @@ class _PlatformCard extends StatelessWidget {
         ],
       );
     }
-    final selected = settings.selectedProviderIdFor(platform, capability);
+    final selected = settings.selectedProviderIdForIdentity(
+      identity,
+      capability,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -703,12 +763,21 @@ class _PlatformCard extends StatelessWidget {
   }
 }
 
-/// 运行中的能力集合是否**仍在这个平台提供服务**（P-37 的"配置停用但运行中可用"）。
-bool _runtimeServesPlatform(
+/// 运行中的能力集合是否**仍在这个平台身份上**提供服务（P-37 的"配置停用但运行中可用"）。
+///
+/// 2.2：自定义平台按**身份**判定 —— 只看枚举会让两个自定义平台互相冒充
+/// （A 停用、B 仍可用时会误报 A 也还能用）。
+bool _runtimeServesIdentity(
   OnlineMusicCapabilities? capabilities,
-  MusicPlatform platform,
+  PlatformIdentity identity,
 ) {
   if (capabilities == null) return false;
+  if (identity.isCustom) {
+    if (!identity.isValid) return false;
+    return capabilities.resolvableIdentities.contains(identity.normalized) ||
+        capabilities.searchableIdentities.contains(identity.normalized);
+  }
+  final platform = identity.platform;
   return capabilities.searchablePlatforms.contains(platform) ||
       capabilities.resolvablePlatforms.contains(platform) ||
       capabilities.playlistPlatforms.contains(platform) ||
@@ -861,6 +930,8 @@ final class _ProviderDraft {
     required this.requiresCredential,
     this.displayName = '',
     this.contentPlatform = MusicPlatform.netease,
+    this.platformId,
+    this.platformName,
   });
 
   final String id;
@@ -868,6 +939,12 @@ final class _ProviderDraft {
   final bool requiresCredential;
   final String displayName;
   final MusicPlatform contentPlatform;
+
+  /// 自定义平台的**稳定身份**（2.2 / R2）：新建时由对话框生成，编辑时原样带出。
+  final String? platformId;
+
+  /// 自定义平台的展示名（2.2 / R2）：用户输入；内置平台为 null。
+  final String? platformName;
 }
 
 class _ProviderDialog extends StatefulWidget {
@@ -884,12 +961,23 @@ class _ProviderDialogState extends State<_ProviderDialog> {
   late final TextEditingController _idController;
   late final TextEditingController _baseUrlController;
   late final TextEditingController _displayNameController;
+  late final TextEditingController _platformNameController;
   late bool _requiresCredential;
   late MusicPlatform _contentPlatform;
+
+  /// 自定义平台的稳定 ID（2.2 / R2）。
+  ///
+  /// - 新建时**惰性生成**（只在用户选到「自定义平台」那一刻生成 —— 只创建内置平台条目的
+  ///   用户不会因此多出任何键）；
+  /// - 编辑时取既有条目的值并**原样保留**（创建后不可修改，界面只读、可复制）。
+  String? _platformId;
   String? _idError;
   String? _baseUrlError;
+  String? _platformNameError;
 
   bool get _isEditing => widget.editing != null;
+
+  bool get _isCustom => _contentPlatform == MusicPlatform.custom;
 
   @override
   void initState() {
@@ -904,8 +992,14 @@ class _ProviderDialogState extends State<_ProviderDialog> {
     _displayNameController = TextEditingController(
       text: editing?.displayName ?? '',
     );
+    _platformNameController = TextEditingController(
+      text: editing?.platformName ?? '',
+    );
     _requiresCredential = editing?.requiresCredential ?? true;
     _contentPlatform = editing?.contentPlatform ?? MusicPlatform.netease;
+    // ⚠️ 编辑既有条目时**只读取**已有 ID：即使它是手工写进 json 的，也不改写、不补生成。
+    final existing = editing?.platformId?.trim();
+    _platformId = (existing == null || existing.isEmpty) ? null : existing;
   }
 
   @override
@@ -913,7 +1007,18 @@ class _ProviderDialogState extends State<_ProviderDialog> {
     _idController.dispose();
     _baseUrlController.dispose();
     _displayNameController.dispose();
+    _platformNameController.dispose();
     super.dispose();
+  }
+
+  /// 选到「自定义平台」时为**新建**流程生成稳定 ID（R2：UUID v4、创建后不变）。
+  void _selectPlatform(MusicPlatform platform) {
+    setState(() {
+      _contentPlatform = platform;
+      if (platform == MusicPlatform.custom) {
+        _platformId ??= generateCustomPlatformId();
+      }
+    });
   }
 
   void _submit() {
@@ -923,11 +1028,19 @@ class _ProviderDialogState extends State<_ProviderDialog> {
         : validateOnlineMusicProviderId(id, existingIds: widget.existingIds);
     final baseUrl = _baseUrlController.text.trim();
     final baseUrlError = _validateBaseUrl(baseUrl);
+    // 自定义平台必须能分辨：展示名必填（Spec §2-1），否则条目列表里只剩短 ID。
+    final platformName = _platformNameController.text.trim();
+    final platformNameError = _isCustom && platformName.isEmpty
+        ? '请填写平台展示名'
+        : null;
     setState(() {
       _idError = idError;
       _baseUrlError = baseUrlError;
+      _platformNameError = platformNameError;
     });
-    if (idError != null || baseUrlError != null) return;
+    if (idError != null || baseUrlError != null || platformNameError != null) {
+      return;
+    }
     Navigator.of(context).pop(
       _ProviderDraft(
         id: id,
@@ -935,6 +1048,10 @@ class _ProviderDialogState extends State<_ProviderDialog> {
         requiresCredential: _requiresCredential,
         displayName: _displayNameController.text.trim(),
         contentPlatform: _contentPlatform,
+        platformId: _isCustom ? _platformId : null,
+        platformName: _isCustom && platformName.isNotEmpty
+            ? platformName
+            : null,
       ),
     );
   }
@@ -943,6 +1060,15 @@ class _ProviderDialogState extends State<_ProviderDialog> {
     if (value.trim().isEmpty) return '请填写服务地址';
     // 非空值的判据只有一份（`onlineMusicBaseUrlIssue`），避免界面与模型各说一套。
     return onlineMusicBaseUrlIssue(value);
+  }
+
+  /// 把稳定 ID 复制到剪贴板并提示（R2：展示可复制）。
+  Future<void> _copyPlatformId() async {
+    final platformId = _platformId;
+    if (platformId == null) return;
+    await Clipboard.setData(ClipboardData(text: platformId));
+    if (!mounted) return;
+    showTextOnSnackBar('已复制平台 ID');
   }
 
   @override
@@ -1002,7 +1128,7 @@ class _ProviderDialogState extends State<_ProviderDialog> {
               // 所以创建后只读；需要别的平台请新建条目。
               subtitle: _isEditing
                   ? '创建后不可修改；需要其它平台请新建条目'
-                  : '该服务代理哪一家的内容；非网易云来源属于当前模型边界',
+                  : '该服务代理哪一家的内容；选「自定义平台」可新接入一家服务',
               action: SegmentedButton<MusicPlatform>(
                 showSelectedIcon: false,
                 segments: [
@@ -1013,14 +1139,59 @@ class _ProviderDialogState extends State<_ProviderDialog> {
                       // 而平台卡用的是 `musicPlatformLabel`。同一个平台两种称呼 ⇒ 统一成中文。
                       label: Text(musicPlatformLabel(platform)),
                     ),
+                  // 2.2（R1/G2）：自定义平台不是"新平台类型"，只是换个内容来源身份 ——
+                  // 端点与能力仍由既有声明式契约表达。
+                  ButtonSegment(
+                    value: MusicPlatform.custom,
+                    label: Text(musicPlatformLabel(MusicPlatform.custom)),
+                  ),
                 ],
                 selected: {_contentPlatform},
                 onSelectionChanged: _isEditing
                     ? null
-                    : (selection) =>
-                          setState(() => _contentPlatform = selection.first),
+                    : (selection) => _selectPlatform(selection.first),
               ),
             ),
+            if (_isCustom) ...[
+              const SizedBox(height: 12),
+              Focus(
+                onFocusChange: HotkeysHelper.onFocusChanges,
+                child: TextField(
+                  controller: _platformNameController,
+                  onChanged: (_) => setState(() => _platformNameError = null),
+                  decoration: InputDecoration(
+                    labelText: '平台展示名',
+                    hintText: '例如「我的自建服务」',
+                    errorText: _platformNameError,
+                    helperText: '允许与其它平台同名；同名时界面会附上短 ID 以便区分',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // R2：稳定 ID **只读展示、可复制、创建后不可修改**（编辑也不改写）。
+              SettingsTile(
+                description: '平台 ID',
+                subtitle: _platformId == null
+                    ? '选择「自定义平台」后自动生成'
+                    : '创建后不可修改；用于区分同名平台',
+                action: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SelectableText(
+                      _platformId ?? '—',
+                      key: const ValueKey('online-music-platform-id'),
+                      style: const TextStyle(fontSize: AppType.caption),
+                    ),
+                    if (_platformId != null)
+                      IconButton(
+                        tooltip: '复制平台 ID',
+                        onPressed: _copyPlatformId,
+                        icon: const Icon(Symbols.content_copy),
+                      ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             SettingsTile(
               description: '认证方式',
@@ -1048,7 +1219,6 @@ class _ProviderDialogState extends State<_ProviderDialog> {
     );
   }
 }
-
 
 class _ProviderApiKeyDialog extends StatefulWidget {
   const _ProviderApiKeyDialog({

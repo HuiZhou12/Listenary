@@ -46,10 +46,7 @@ List<MusicPlatform> get builtinMusicPlatforms => MusicPlatform.values
 /// - 内置平台 ⇒ [musicPlatformLabel]（既有文案不变）；
 /// - 自定义平台 ⇒ 条目配置的 `platformName`（缺失时回落「自定义平台」）；
 /// - **身份无效 / 未知名** ⇒ 「未知平台」（**绝不回落到网易云**，也不用名称/URL 反推平台）。
-String platformDisplayLabel(
-  PlatformIdentity identity, {
-  String? platformName,
-}) {
+String platformDisplayLabel(PlatformIdentity identity, {String? platformName}) {
   // ⚠️ 顺序很重要：**条目声明的展示名优先**（F4-S5 语义 —— 内置平台也可以自定义展示名，
   // 例如"自建网易云代理"）。展示名不参与身份判定（P0），只是文案。
   final declared = platformName?.trim();
@@ -113,12 +110,48 @@ final class PlatformIdentity {
     return PlatformIdentity.custom(trimmed);
   }
 
+  /// 从**配置键**（[configKey] 的写法）解析平台身份（G5）。
+  ///
+  /// 与 [tryParse] 的区别是**写法**：配置键里自定义平台带 `custom:` 前缀
+  /// （例如 `custom:<uuid>`），因此两个自定义平台可以分别出现在 `enabledPlatforms`
+  /// 与 `routing` 里。可识别的写法：
+  ///
+  /// - 内置平台名（`netease` / `qq` / `kugou`）⇒ 对应内置身份；
+  /// - `custom:<非空稳定 ID>` ⇒ 该自定义身份；
+  /// - `custom` 单独出现 / 其它无法识别的名字 / 空值 ⇒ `null`（调用方按"忽略该项"处理，
+  ///   与旧版丢弃未知平台名的行为一致 —— 旧配置里没有这种写法）。
+  static PlatformIdentity? tryParseConfigKey(Object? value) {
+    if (value is! String) return null;
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return null;
+    final separator = trimmed.indexOf(':');
+    if (separator < 0) return tryParse(trimmed);
+    final prefix = trimmed.substring(0, separator).trim();
+    final rest = trimmed.substring(separator + 1).trim();
+    if (prefix != MusicPlatform.custom.name || rest.isEmpty) return null;
+    return PlatformIdentity.custom(rest);
+  }
+
+  /// 解析一组配置键（丢弃无法识别的项，保持出现顺序、去重）。
+  static List<PlatformIdentity> parseConfigKeys(Object? value) {
+    if (value is! List) return const [];
+    final result = <PlatformIdentity>[];
+    for (final raw in value) {
+      final identity = tryParseConfigKey(raw);
+      if (identity == null || result.contains(identity)) continue;
+      result.add(identity);
+    }
+    return result;
+  }
+
   final MusicPlatform platform;
 
   /// 稳定平台 ID：内置平台恒为 `null`；`custom` 必须非空才构成有效身份。
   final String? platformId;
 
   bool get isCustom => platform == MusicPlatform.custom;
+
+  bool get isBuiltin => !isCustom;
 
   /// 身份是否**可用于网络路由**（也决定"能否安全落库"）。
   bool get isValid => !isCustom || (platformId?.trim().isNotEmpty ?? false);
@@ -127,8 +160,32 @@ final class PlatformIdentity {
   /// （复用既有 `platform TEXT` 列 —— 无需迁移即可容纳自定义身份。）
   String get storageValue => isCustom ? (platformId ?? '') : platform.name;
 
+  /// **配置键**里的身份写法（G5）：内置 = 枚举名；自定义 = `custom:<稳定 ID>`。
+  ///
+  /// 用途：让 `enabledPlatforms` / `routing` 这类**平台键**能表达"哪一个"自定义平台
+  /// （只用枚举名时，两个自定义平台共用 `custom` ⇒ 无法分别启用/指定候选）。
+  /// 内置平台仍写枚举名 ⇒ 旧配置的写法与读法都不变（往返字节不变）。
+  String get configKey => isCustom
+      ? '${MusicPlatform.custom.name}:${platformId ?? ''}'
+      : platform.name;
+
+  /// 界面区分同名平台用的**短 ID**：自定义 = 稳定 ID 前 8 位；内置 = `null`（不需要）。
+  String? get shortId {
+    if (!isCustom) return null;
+    final id = platformId?.trim() ?? '';
+    if (id.isEmpty) return null;
+    return id.length <= 8 ? id : id.substring(0, 8);
+  }
+
+  /// 规范化身份：自定义平台的稳定 ID 去首尾空白；内置平台恒为 `platformId == null`。
+  ///
+  /// 用作集合/映射键之前统一一次，避免 `custom('id')` 与 `custom('id ')` 被当成两个身份。
+  PlatformIdentity get normalized => isCustom
+      ? PlatformIdentity.custom(platformId?.trim() ?? '')
+      : PlatformIdentity.builtin(platform);
+
   /// 仅用于诊断展示；**不参与身份比较**。
-  String get debugLabel => isCustom ? 'custom:${platformId ?? ''}' : platform.name;
+  String get debugLabel => configKey;
 
   @override
   bool operator ==(Object other) =>
@@ -570,7 +627,6 @@ final class MusicSearchPage {
   final int? total;
   final String? nextCursor;
 }
-
 
 /// 生成标准 **UUID v4**（小写带连字符）——P0 规则③：**新建**自定义平台时用它作稳定 ID。
 ///

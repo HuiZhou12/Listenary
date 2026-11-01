@@ -197,10 +197,8 @@ final class OnlineMusicProviderDefinition {
   /// F4-S5 / F5-P-39（P3）：界面展示用的平台名 —— 统一走 `platformDisplayLabel`
   /// （内置 ⇒ 既有中文名；自定义 ⇒ 条目的 `platformName`，缺失时「自定义平台」；
   /// 身份无效 ⇒ 「未知平台」，**绝不回落网易云**）。
-  String get displayPlatformName => platformDisplayLabel(
-    identity,
-    platformName: platformName,
-  );
+  String get displayPlatformName =>
+      platformDisplayLabel(identity, platformName: platformName);
 
   /// **静态声明**的音质档位表（F4-S4 / P-13 / D10b:a）：内部级别 → 平台取值 + 展示名。
   ///
@@ -381,8 +379,8 @@ final class OnlineMusicProviderDefinition {
     if (hasBuiltin) return const [];
     return const [
       'capabilityAuth（能力级认证覆盖）对声明式绑定无效：本条目没有内置能力，'
-      '因此这个旋钮不起作用。请改在各能力的「认证方式」里设置；'
-      '如需清理，可在该能力的 JSON 视图里删掉 capabilityAuth',
+          '因此这个旋钮不起作用。请改在各能力的「认证方式」里设置；'
+          '如需清理，可在该能力的 JSON 视图里删掉 capabilityAuth',
     ];
   }
 
@@ -401,6 +399,10 @@ final class OnlineMusicProviderDefinition {
   /// 界面新增条目：只暴露标识、服务地址与是否需要 Key，其余用默认值。
   ///
   /// 槽位总是先派生好（即使当前不需要 Key），以便之后打开认证时复用。
+  ///
+  /// [platformId] / [platformName]（2.2 / G5）：自定义平台的**稳定身份**与展示名。
+  /// 只有用户显式选择「自定义平台」时界面才传；缺省时行为与以前完全一致
+  /// （旧配置不写这两个键 ⇒ 往返字节不变）。
   factory OnlineMusicProviderDefinition.custom({
     required String id,
     required String baseUrl,
@@ -408,7 +410,11 @@ final class OnlineMusicProviderDefinition {
     String? credentialReference,
     String displayName = '',
     MusicPlatform contentPlatform = MusicPlatform.netease,
+    String? platformId,
+    String? platformName,
   }) {
+    final stableId = platformId?.trim();
+    final declaredName = platformName?.trim();
     return OnlineMusicProviderDefinition(
       id: id,
       protocol: defaultOnlineMusicProtocol,
@@ -416,6 +422,11 @@ final class OnlineMusicProviderDefinition {
       baseUrl: baseUrl.trim(),
       displayName: displayName.trim(),
       contentPlatform: contentPlatform,
+      // 缺省不写盘（`toJson` 只在非空时写）⇒ 旧配置形态不变。
+      platformId: (stableId == null || stableId.isEmpty) ? null : stableId,
+      platformName: (declaredName == null || declaredName.isEmpty)
+          ? null
+          : declaredName,
       connectTimeout: defaultOnlineMusicConnectTimeout,
       sendTimeout: defaultOnlineMusicSendTimeout,
       receiveTimeout: defaultOnlineMusicReceiveTimeout,
@@ -430,12 +441,16 @@ final class OnlineMusicProviderDefinition {
     );
   }
 
-  /// 界面可编辑的部分：服务地址、认证方式与内容来源；标识、协议与凭据槽位保持不变。
+  /// 界面可编辑的部分：服务地址、认证方式、内容来源与平台展示名；标识、协议与凭据槽位保持不变。
+  ///
+  /// ⚠️ 2.2 / R2：这里**刻意不接收 `platformId`** —— 稳定平台身份创建后不可修改，
+  /// 编辑保存必须原样透传（下面 `platformId: platformId`），否则历史曲目会失联。
   OnlineMusicProviderDefinition editedBy({
     required String baseUrl,
     required bool requiresCredential,
     MusicPlatform? contentPlatform,
     String? displayName,
+    String? platformName,
   }) {
     return OnlineMusicProviderDefinition(
       id: id,
@@ -453,8 +468,12 @@ final class OnlineMusicProviderDefinition {
       capabilities: capabilities,
       contentPlatform: contentPlatform ?? this.contentPlatform,
       // F4-S4：编辑条目时**必须透传**档位声明，否则表单保存会把用户填的档位静默丢掉。
+      // 2.2 / R2：`platformId` 一律原样透传（创建后不可修改）；
+      // `platformName` 可由对话框编辑（显式传入时以新值为准）。
       platformId: platformId,
-      platformName: platformName,
+      platformName: platformName == null
+          ? this.platformName
+          : (platformName.trim().isEmpty ? null : platformName.trim()),
       qualityTiers: qualityTiers,
     );
   }
@@ -525,7 +544,8 @@ final class OnlineMusicProviderDefinition {
             const OnlineMusicBuiltinCapabilityBinding(),
         OnlineMusicCapability.playlist:
             const OnlineMusicBuiltinCapabilityBinding(),
-        OnlineMusicCapability.lyric: const OnlineMusicBuiltinCapabilityBinding(),
+        OnlineMusicCapability.lyric:
+            const OnlineMusicBuiltinCapabilityBinding(),
         OnlineMusicCapability.stream:
             const OnlineMusicBuiltinCapabilityBinding(),
       }),
@@ -583,7 +603,8 @@ final class OnlineMusicProviderDefinition {
     if (displayName.trim().isNotEmpty) 'displayName': displayName,
     // F4-S5：缺省不写盘 ⇒ 旧配置往返后字节不变。
     if (platformId?.trim().isNotEmpty == true) 'platformId': platformId!.trim(),
-    if (platformName?.trim().isNotEmpty == true) 'platformName': platformName!.trim(),
+    if (platformName?.trim().isNotEmpty == true)
+      'platformName': platformName!.trim(),
     'contentPlatform': contentPlatform.name,
     'connectTimeoutMs': connectTimeout.inMilliseconds,
     'sendTimeoutMs': sendTimeout.inMilliseconds,
@@ -803,11 +824,14 @@ final class OnlineMusicSettings {
   /// 旧界面仍会读写它；解析候选时作为 [routing] 缺失项的回落（D13:A：不迁移、改写）。
   final Map<OnlineMusicCapability, String> capabilityProviders;
 
-  /// **平台感知**的显式候选：`platform → capability → 有序 providerId`（D4:A）。
+  /// **平台感知**的显式候选：`平台身份 → capability → 有序 providerId`（D4:A）。
   ///
   /// 与 [capabilityProviders] **并存**而非互相派生：`routing` 优先，缺失时回落到旧的
-  /// 单值映射（且仅当该 Provider 的 `contentPlatform` 等于查询平台时才生效）。
-  final Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> routing;
+  /// 单值映射（且仅当该 Provider 的运行期 `platformsFor` 包含查询平台时才生效）。
+  ///
+  /// 2.2 / G5：键是**平台身份**（`PlatformIdentity`），因此两个自定义平台可以分别指定
+  /// 候选、互不串台；内置平台的键仍写枚举名（`netease`），旧配置读法与写法都不变。
+  final Map<PlatformIdentity, Map<OnlineMusicCapability, List<String>>> routing;
 
   /// 已**启用**的平台集合（D8:A 平台卡的启用开关）；**空集 = 全部启用**。
   ///
@@ -818,53 +842,85 @@ final class OnlineMusicSettings {
   /// 为什么不改名：`enabledPlatforms` 是**落盘键**，改名属配置格式变更、
   /// 会牵出 F0 冻结的迁移与兼容边界（Spec §4 / D6）⇒ 本阶段只把注释改成与代码一致。
   ///
+  /// 2.2 / G5（授权变更）：集合元素是**平台身份**（`PlatformIdentity`）：
+  /// - 内置平台仍然写枚举名（`netease`）⇒ 旧配置读写不变；
+  /// - 自定义平台写 `custom:<稳定 ID>`（[PlatformIdentity.configKey]）⇒ 可**逐个**启停。
+  ///
+  /// ⚠️ 2.2 之前这里只存内置平台枚举，而注册表对自定义身份要求"该平台在启用集合内"
+  /// ⇒ 用户只要停用过**任一**内置平台，所有自定义平台的候选就恒为空（G7 阻断缺陷）。
+  /// 身份化之后该判据按**身份**生效，两个自定义平台也能分别启停。
+  ///
   /// 语义细节：停用的平台不参与搜索，其 `(platform, capability)` 候选一律按"空"处理
   /// （调用时报 `unavailable`）。默认配置与旧配置都**不需要**这个键
   /// （D13:A：不改写默认配置），只在用户真的停用过某些平台时才写盘。
   ///
   /// 代价：无法用同一个表示表达"全部停用"。因此界面**不允许**停用最后一个启用的平台
-  /// （见 `withPlatformEnabled`），以免"全部停用"退化成"全部启用"。
-  final Set<MusicPlatform> enabledPlatforms;
+  /// （见 [withIdentityEnabled]），以免"全部停用"退化成"全部启用"。
+  final Set<PlatformIdentity> enabledPlatforms;
 
-  /// 该平台当前是否启用（空集 = 全部启用，因此默认返回 true）。
+  /// 该平台（内置）当前是否启用（空集 = 全部启用，因此默认返回 true）。
   bool isPlatformEnabled(MusicPlatform platform) =>
-      enabledPlatforms.isEmpty || enabledPlatforms.contains(platform);
+      isIdentityEnabled(PlatformIdentity.builtin(platform));
 
-  /// 把平台列表归一化：覆盖全部平台时回到"空集 = 全部启用"。
-  static Set<MusicPlatform> _normalizeEnabledPlatforms(
-    Iterable<MusicPlatform> platforms,
-  ) {
-    final kept = {
-      for (final platform in platforms)
-        if (builtinMusicPlatforms.contains(platform)) platform,
-    };
-    return kept.length == builtinMusicPlatforms.length ? const {} : kept;
+  /// 该**平台身份**当前是否启用（空集 = 全部启用）。
+  bool isIdentityEnabled(PlatformIdentity identity) =>
+      enabledPlatforms.isEmpty ||
+      enabledPlatforms.contains(identity.normalized);
+
+  /// 全部"可启用"的身份：三个内置平台 + 配置里声明的自定义平台（按条目顺序去重）。
+  ///
+  /// 界面据此渲染平台卡、[toJson] 据此排序，避免同一份配置产生两种键顺序。
+  List<PlatformIdentity> get platformIdentities {
+    final result = <PlatformIdentity>[
+      for (final platform in builtinMusicPlatforms)
+        PlatformIdentity.builtin(platform),
+    ];
+    for (final provider in providers) {
+      final identity = provider.identity.normalized;
+      if (!identity.isCustom || !identity.isValid) continue;
+      if (result.contains(identity)) continue;
+      result.add(identity);
+    }
+    return List.unmodifiable(result);
   }
 
-  /// 开/关一个平台；返回新配置（不落盘，由控制器决定）。
-  ///
-  /// 不允许把**最后一个**启用的平台关掉（`enabledPlatforms` 用空集表示"全部启用"，
-  /// 两者会撞在一起）；此时原样返回，界面也会禁用该开关。
+  /// 把启用集合归一化：只保留"真实存在的身份"，覆盖全部身份时回到"空集 = 全部启用"。
+  Set<PlatformIdentity> _normalizeEnabledPlatforms(
+    Iterable<PlatformIdentity> identities,
+  ) => _normalizeIdentities(identities, platformIdentities);
+
+  /// 开/关一个内置平台；返回新配置（不落盘，由控制器决定）。
   OnlineMusicSettings withPlatformEnabled(
     MusicPlatform platform, {
     required bool enabled,
+  }) =>
+      withIdentityEnabled(PlatformIdentity.builtin(platform), enabled: enabled);
+
+  /// 开/关一个**平台身份**；返回新配置（不落盘，由控制器决定）。
+  ///
+  /// 不允许把**最后一个**启用的身份关掉（`enabledPlatforms` 用空集表示"全部启用"，
+  /// 两者会撞在一起）；此时原样返回，界面也会禁用该开关。
+  OnlineMusicSettings withIdentityEnabled(
+    PlatformIdentity identity, {
+    required bool enabled,
   }) {
+    final normalized = identity.normalized;
     final current = enabledPlatforms.isEmpty
-        ? {for (final value in builtinMusicPlatforms) value}
+        ? {for (final value in platformIdentities) value}
         : {...enabledPlatforms};
     if (enabled) {
-      current.add(platform);
+      current.add(normalized);
     } else {
-      if (!current.contains(platform)) return this;
+      if (!current.contains(normalized)) return this;
       if (current.length <= 1) return this;
-      current.remove(platform);
+      current.remove(normalized);
     }
     return _copyWith(enabledPlatforms: _normalizeEnabledPlatforms(current));
   }
 
   /// 只替换 [enabledPlatforms]；其余字段原样带过。
   OnlineMusicSettings _copyWith({
-    required Set<MusicPlatform> enabledPlatforms,
+    required Set<PlatformIdentity> enabledPlatforms,
   }) => OnlineMusicSettings(
     providers: providers,
     defaultProviderId: defaultProviderId,
@@ -882,17 +938,36 @@ final class OnlineMusicSettings {
     return null;
   }
 
-  /// 解析 `(platform, capability)` 的**显式**候选 id（D4:A + D13:A）。
+  /// 解析内置平台 `(platform, capability)` 的**显式**候选 id（D4:A + D13:A）。
   ///
-  /// 顺序：`routing[platform][capability]`（过滤未注册 id）→ 旧单值映射
-  /// （仅当该 Provider 的 `contentPlatform` 恰为查询平台时生效）→ 空列表。
-  /// 空列表表示"没有显式候选"，由调用方按注册顺序补齐支持的 Provider；
-  /// 这里**不做**平台无关的默认回落（D14）。
+  /// 这是 [explicitCandidateIdsForIdentity] 的内置平台便捷入口（既有调用点全部保持不变）。
   List<String> explicitCandidateIdsFor(
     MusicPlatform platform,
     OnlineMusicCapability capability,
+  ) => explicitCandidateIdsForIdentity(
+    PlatformIdentity.builtin(platform),
+    capability,
+  );
+
+  /// 解析**平台身份** `(identity, capability)` 的**显式**候选 id（D4:A + D13:A + 2.2/G5）。
+  ///
+  /// 顺序：`routing[identity][capability]`（过滤未注册 id）→ 旧单值映射
+  /// （仅当该 Provider 的运行期 `platformsFor` 恰含查询平台时生效）→ 空列表。
+  /// 空列表表示"没有显式候选"，由调用方按注册顺序补齐支持的 Provider；
+  /// 这里**不做**平台无关的默认回落（D14）。
+  ///
+  /// - 内置身份 ⇒ 与身份化之前逐项等价（routing 键仍是枚举名 `netease`）；
+  /// - 自定义身份 ⇒ 键是 `custom:<稳定 ID>`，两个自定义平台各自独立、互不串台；
+  ///   身份无效（缺稳定 ID）⇒ 空（fail-closed，不路由）。
+  /// - 旧单值 `capabilityProviders` 是**平台无关**的，因此它在自定义身份上同样只按
+  ///   "该条目运行期是否服务这个平台"判定（不做任何展示名/URL 推断）。
+  List<String> explicitCandidateIdsForIdentity(
+    PlatformIdentity identity,
+    OnlineMusicCapability capability,
   ) {
-    final configured = routing[platform]?[capability];
+    final normalized = identity.normalized;
+    if (!normalized.isValid) return const [];
+    final configured = routing[normalized]?[capability];
     if (configured != null && configured.isNotEmpty) {
       return [
         for (final id in configured)
@@ -902,7 +977,8 @@ final class OnlineMusicSettings {
     final legacy = capabilityProviders[capability];
     if (legacy == null) return const [];
     final provider = providerById(legacy);
-    if (provider == null || !_legacyAffects(provider, capability, platform)) {
+    if (provider == null ||
+        !_legacyAffects(provider, capability, normalized.platform)) {
       return const [];
     }
     return [legacy];
@@ -981,10 +1057,29 @@ final class OnlineMusicSettings {
   List<String> capableProviderIdsFor(
     MusicPlatform platform,
     OnlineMusicCapability capability,
-  ) => [
-    for (final provider in providers)
-      if (provider.platformsFor(capability).contains(platform)) provider.id,
-  ];
+  ) => capableProviderIdsForIdentity(
+    PlatformIdentity.builtin(platform),
+    capability,
+  );
+
+  /// 该**平台身份**下**能够**服务某能力的条目 id（按条目顺序）—— 平台卡的候选项。
+  ///
+  /// 2.2 / G5：自定义身份要求条目的**身份完全相等**（`custom` + 同一个稳定 ID）；
+  /// 只比枚举会让两个自定义平台互相冒充（Spec §1.5-2 的"custom 返回所有自定义条目"）。
+  List<String> capableProviderIdsForIdentity(
+    PlatformIdentity identity,
+    OnlineMusicCapability capability,
+  ) {
+    final normalized = identity.normalized;
+    if (!normalized.isValid) return const [];
+    return [
+      for (final provider in providers)
+        if (provider.platformsFor(capability).contains(normalized.platform) &&
+            (!normalized.isCustom ||
+                provider.identity.normalized == normalized))
+          provider.id,
+    ];
+  }
 
   /// 平台卡当前要显示的选中项：显式候选的第一个；没有显式配置时返回 null（= 自动）。
   ///
@@ -992,8 +1087,17 @@ final class OnlineMusicSettings {
   String? selectedProviderIdFor(
     MusicPlatform platform,
     OnlineMusicCapability capability,
+  ) => selectedProviderIdForIdentity(
+    PlatformIdentity.builtin(platform),
+    capability,
+  );
+
+  /// [selectedProviderIdFor] 的身份版（2.2 / G5：自定义平台逐个显示自己的选中项）。
+  String? selectedProviderIdForIdentity(
+    PlatformIdentity identity,
+    OnlineMusicCapability capability,
   ) {
-    final explicit = explicitCandidateIdsFor(platform, capability);
+    final explicit = explicitCandidateIdsForIdentity(identity, capability);
     return explicit.isEmpty ? null : explicit.first;
   }
 
@@ -1052,12 +1156,13 @@ final class OnlineMusicSettings {
   }
 
   /// 从所有平台候选中剔除某个 providerId；空掉的层级一并移除。
-  static Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>>
+  static Map<PlatformIdentity, Map<OnlineMusicCapability, List<String>>>
   _routingWithoutProvider(
-    Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> routing,
+    Map<PlatformIdentity, Map<OnlineMusicCapability, List<String>>> routing,
     String providerId,
   ) {
-    final result = <MusicPlatform, Map<OnlineMusicCapability, List<String>>>{};
+    final result =
+        <PlatformIdentity, Map<OnlineMusicCapability, List<String>>>{};
     for (final platform in routing.entries) {
       final capabilities = <OnlineMusicCapability, List<String>>{};
       for (final entry in platform.value.entries) {
@@ -1091,13 +1196,29 @@ final class OnlineMusicSettings {
     );
   }
 
-  /// 设置某个 `(platform, capability)` 的**显式有序候选**（D4:A）。
+  /// 设置某个内置平台 `(platform, capability)` 的**显式有序候选**（D4:A）。
   /// 传入空列表等价于清除该组合的显式配置（回到按注册顺序推导）。
   OnlineMusicSettings withRoutingCandidates(
     MusicPlatform platform,
     OnlineMusicCapability capability,
     Iterable<String> providerIds,
+  ) => withRoutingCandidatesForIdentity(
+    PlatformIdentity.builtin(platform),
+    capability,
+    providerIds,
+  );
+
+  /// 设置某个**平台身份** `(identity, capability)` 的**显式有序候选**（D4:A + 2.2/G5）。
+  /// 传入空列表等价于清除该组合的显式配置（回到按注册顺序推导）。
+  ///
+  /// 落盘写法：内置身份写枚举名（`netease`），自定义身份写 `custom:<稳定 ID>`
+  /// ⇒ 旧配置的写法不变，两个自定义平台也能分别指定候选。
+  OnlineMusicSettings withRoutingCandidatesForIdentity(
+    PlatformIdentity identity,
+    OnlineMusicCapability capability,
+    Iterable<String> providerIds,
   ) {
+    final normalized = identity.normalized;
     final kept = [
       for (final id in providerIds)
         if (this.providerIds.contains(id)) id,
@@ -1105,17 +1226,18 @@ final class OnlineMusicSettings {
     // 显式写出类型：否则 `...?` 展开 + 条件元素会让字面量退化成 Map<dynamic, dynamic>，
     // 运行时 Map.unmodifiable 的视图无法转回声明类型。
     final Map<OnlineMusicCapability, List<String>> platformRouting = {
-      ...?routing[platform],
+      ...?routing[normalized],
       if (kept.isNotEmpty) capability: List.unmodifiable(kept),
     };
     if (kept.isEmpty) platformRouting.remove(capability);
-    final Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> next = {
-      ...routing,
-      if (platformRouting.isNotEmpty)
-        platform: Map.unmodifiable(platformRouting),
-    };
+    final Map<PlatformIdentity, Map<OnlineMusicCapability, List<String>>> next =
+        {
+          ...routing,
+          if (platformRouting.isNotEmpty)
+            normalized: Map.unmodifiable(platformRouting),
+        };
     // 空列表 = 清除该组合的显式配置：把从 `...routing` 带过来的旧项删掉。
-    if (platformRouting.isEmpty) next.remove(platform);
+    if (platformRouting.isEmpty) next.remove(normalized);
     // P-22：**「自动」必须真的清空**。
     //
     // 以前这里只清 `routing`，而候选解析紧接着回落到旧的 `capabilityProviders`
@@ -1132,9 +1254,10 @@ final class OnlineMusicSettings {
     if (kept.isEmpty) {
       final legacyId = capabilityProviders[capability];
       final legacy = legacyId == null ? null : providerById(legacyId);
-      // ⚠️ 判据必须与 `explicitCandidateIdsFor` 的**回落判据同源**（`_legacyAffects`），
+      // ⚠️ 判据必须与 `explicitCandidateIdsForIdentity` 的**回落判据同源**（`_legacyAffects`），
       // 否则"点自动"清不掉界面上真正在生效的那个旧值（P-22 就是这种不同源造成的）。
-      if (legacy != null && _legacyAffects(legacy, capability, platform)) {
+      if (legacy != null &&
+          _legacyAffects(legacy, capability, normalized.platform)) {
         nextCapabilityProviders.remove(capability);
       }
     }
@@ -1162,6 +1285,10 @@ final class OnlineMusicSettings {
   ///
   /// `routing` 为空时不写该键 —— 默认配置与旧配置的落盘内容保持不变（D13:A：不迁移）。
   /// `enabledPlatforms` 同理：**全部平台都启用**（= 空集）时不写该键。
+  ///
+  /// 2.2 / G5：两个键的**平台段**都是 `PlatformIdentity.configKey` —— 内置平台写枚举名
+  /// （`netease`），只有自定义平台才写成 `custom:<稳定 ID>`。因此**没有自定义平台的旧配置
+  /// 读写往返后字节不变**（R6），也只在用户真的用到自定义平台时才产生新形态。
   Map<String, dynamic> toJson() => {
     'defaultProvider': defaultProviderId,
     'providers': [for (final provider in providers) provider.toJson()],
@@ -1171,18 +1298,32 @@ final class OnlineMusicSettings {
     },
     if (routing.isNotEmpty)
       'routing': {
-        for (final platform in routing.entries)
-          platform.key.name: {
-            for (final entry in platform.value.entries)
+        for (final identity in _orderedIdentities(routing.keys))
+          identity.configKey: {
+            for (final entry in routing[identity]!.entries)
               entry.key.name: entry.value,
           },
       },
     if (enabledPlatforms.isNotEmpty)
       'enabledPlatforms': [
-        for (final platform in builtinMusicPlatforms)
-          if (enabledPlatforms.contains(platform)) platform.name,
+        for (final identity in _orderedIdentities(enabledPlatforms))
+          identity.configKey,
       ],
   };
+
+  /// 写盘顺序：先按 [platformIdentities] 的固定顺序（内置平台 → 配置里声明的自定义平台），
+  /// 再补上配置里没登记的身份（例如手工编辑留下的 `custom:<id>`）。
+  ///
+  /// 固定顺序让"同一份配置"只有一种落盘形态，避免集合迭代顺序导致无意义 diff。
+  List<PlatformIdentity> _orderedIdentities(Iterable<PlatformIdentity> values) {
+    final wanted = {for (final value in values) value.normalized};
+    final ordered = <PlatformIdentity>[
+      for (final identity in platformIdentities)
+        if (wanted.remove(identity)) identity,
+    ];
+    ordered.addAll(wanted);
+    return ordered;
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -1224,8 +1365,8 @@ final class OnlineMusicSettings {
   String toString() =>
       'OnlineMusicSettings(${providers.length} providers, '
       'default=$defaultProviderId, capabilities=${capabilityProviders.length}, '
-      'routing=${routing.length} platforms, '
-      'disabledPlatforms=${builtinMusicPlatforms.length - enabledPlatforms.length})';
+      'routing=${routing.length} identities, '
+      'enabled=${enabledPlatforms.isEmpty ? 'all' : enabledPlatforms.length})';
 
   /// 解析 `onlineMusic` 配置；任何缺失、非法或未注册的内容逐项回落默认。
   ///
@@ -1247,33 +1388,85 @@ final class OnlineMusicSettings {
         ids,
       ),
       routing: _parseRouting(value['routing'], ids),
-      enabledPlatforms: _parseEnabledPlatforms(value['enabledPlatforms']),
+      enabledPlatforms: _parseEnabledPlatforms(
+        value['enabledPlatforms'],
+        universe: _identitiesOf(providers),
+      ),
     );
   }
 
-  /// 解析 `enabledPlatforms`：无法识别的名字直接丢弃；解析结果覆盖全部平台时归一化为
-  /// 空集（= 全部启用，与 [toJson] 的"全启用不写键"对称）。
-  static Set<MusicPlatform> _parseEnabledPlatforms(Object? value) {
-    if (value is! List) return const {};
-    final platforms = <MusicPlatform>[];
-    for (final raw in value) {
-      final platform = _matchPlatform(raw);
-      if (platform != null) platforms.add(platform);
+  /// 一份条目列表对应的"可启用身份全集"（内置平台 + 其中的自定义平台）。
+  static List<PlatformIdentity> _identitiesOf(
+    List<OnlineMusicProviderDefinition> providers,
+  ) {
+    final result = <PlatformIdentity>[
+      for (final platform in builtinMusicPlatforms)
+        PlatformIdentity.builtin(platform),
+    ];
+    for (final provider in providers) {
+      final identity = provider.identity.normalized;
+      if (!identity.isCustom || !identity.isValid) continue;
+      if (result.contains(identity)) continue;
+      result.add(identity);
     }
-    return _normalizeEnabledPlatforms(platforms);
+    return result;
   }
 
-  /// 解析 `routing{platform → capability → [providerId]}`。
+  /// 归一化启用集合（静态版，供 `fromJson` 使用）：只保留全集里的身份；
+  /// 覆盖全集时回到"空集 = 全部启用"。
+  static Set<PlatformIdentity> _normalizeIdentities(
+    Iterable<PlatformIdentity> identities,
+    List<PlatformIdentity> universe,
+  ) {
+    final kept = <PlatformIdentity>{
+      for (final identity in identities)
+        if (identity.isValid && universe.contains(identity))
+          identity.normalized,
+    };
+    return kept.length >= universe.length ? const {} : kept;
+  }
+
+  /// 解析 `enabledPlatforms`：无法识别的键直接丢弃；解析结果覆盖全部平台时归一化为
+  /// 空集（= 全部启用，与 [toJson] 的"全启用不写键"对称）。
   ///
-  /// 逐项容错：平台名 / 能力名无法识别就跳过该项；未注册的 providerId 直接丢弃
+  /// 2.2 / G5：接受 `PlatformIdentity.configKey` 写法 —— 内置平台名（`netease`）与
+  /// 自定义平台串（`custom:<稳定 ID>`）。旧配置里只有内置平台名，因此读法不变。
+  static Set<PlatformIdentity> _parseEnabledPlatforms(
+    Object? value, {
+    required List<PlatformIdentity> universe,
+  }) {
+    if (value is! List) return const {};
+    final identities = <PlatformIdentity>[];
+    for (final raw in value) {
+      final identity = PlatformIdentity.tryParseConfigKey(raw);
+      if (identity != null) identities.add(identity.normalized);
+    }
+    return _normalizeIdentities(identities, universe);
+  }
+
+  /// 解析 `routing{平台身份 → capability → [providerId]}`。
+  ///
+  /// 逐项容错：平台键 / 能力名无法识别就跳过该项；未注册的 providerId 直接丢弃
   /// （不是回落到默认 Provider —— D14）。整体为空时返回空表。
-  static Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>>
+  ///
+  /// 2.2 / G5：平台段接受 `custom:<稳定 ID>`，因此两个自定义平台可以分别指定候选。
+  ///
+  /// ⚠️ **旧配置里裸写 `custom`（无 `custom:` 前缀）属歧义键，解析时明确丢弃、不迁移。**
+  /// 原因：`custom` 只说明"这是个自定义平台"，不含**哪一个**稳定 ID —— 两个自定义平台
+  /// 共用同一键会互相覆盖（串台）。按 G5 的正确写法是 `custom:<uuid>`。这里不猜测、
+  /// 不把一个键拆给多个平台、也不回落到任何内置平台；受影响的那一格回到"自动"，
+  /// 用户需在设置页把来源重新选成对应的自定义平台（届时写入的就是 `custom:<uuid>`）。
+  /// 该决定由 `custom_platform_ui_contract_test.dart` 的用例钉住。
+  static Map<PlatformIdentity, Map<OnlineMusicCapability, List<String>>>
   _parseRouting(Object? value, Set<String> ids) {
     if (value is! Map) return const {};
-    final result = <MusicPlatform, Map<OnlineMusicCapability, List<String>>>{};
+    final result =
+        <PlatformIdentity, Map<OnlineMusicCapability, List<String>>>{};
     for (final platformEntry in value.entries) {
-      final platform = _matchPlatform(platformEntry.key);
-      if (platform == null) continue;
+      final identity = PlatformIdentity.tryParseConfigKey(platformEntry.key);
+      // 裸 `custom` / 未知名 ⇒ `tryParseConfigKey` 返回 null ⇒ 丢弃（见上）。
+      if (identity == null) continue;
+      final normalized = identity.normalized;
       final rawCapabilities = platformEntry.value;
       if (rawCapabilities is! Map) continue;
       final capabilities = <OnlineMusicCapability, List<String>>{};
@@ -1291,21 +1484,10 @@ final class OnlineMusicSettings {
         if (kept.isNotEmpty) capabilities[capability] = List.unmodifiable(kept);
       }
       if (capabilities.isNotEmpty) {
-        result[platform] = Map.unmodifiable(capabilities);
+        result[normalized] = Map.unmodifiable(capabilities);
       }
     }
     return Map.unmodifiable(result);
-  }
-
-  static MusicPlatform? _matchPlatform(Object? value) {
-    final name = _nonEmptyString(value);
-    if (name == null) return null;
-    // ⚠️ 这里**不能**用 `builtinMusicPlatforms`：内容来源/身份解析必须接受 `custom`
-    //（P-39 P0 裁定：自定义平台身份 = `custom` + 稳定 ID）。界面枚举才用内置列表。
-    for (final platform in MusicPlatform.values) {
-      if (platform.name == name) return platform;
-    }
-    return null;
   }
 
   static OnlineMusicCapability? _matchCapability(Object? value) {
@@ -1473,8 +1655,7 @@ final class OnlineMusicSettings {
       // 第二处静默降级（P-32）：整块 `capabilities` 不是对象时，旧实现直接返回空表
       // ⇒ 该条目变成"全部能力都不支持"，同样不报错。
       return (
-        bindings:
-            const <OnlineMusicCapability, OnlineMusicCapabilityBinding>{},
+        bindings: const <OnlineMusicCapability, OnlineMusicCapabilityBinding>{},
         issues: const [
           OnlineMusicCapabilityConfigIssue(
             reason: '能力配置不是一个对象 ⇒ 该条目的全部能力都按「不支持」处理，请重新配置',
@@ -1507,7 +1688,6 @@ final class OnlineMusicSettings {
       issues: List.unmodifiable(issues),
     );
   }
-
 }
 
 bool _sameProviders(
@@ -1532,12 +1712,12 @@ bool _sameCapabilityProviders(
   return true;
 }
 
-bool _samePlatformSet(Set<MusicPlatform> a, Set<MusicPlatform> b) =>
+bool _samePlatformSet(Set<PlatformIdentity> a, Set<PlatformIdentity> b) =>
     a.length == b.length && a.containsAll(b);
 
 bool _sameRouting(
-  Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> a,
-  Map<MusicPlatform, Map<OnlineMusicCapability, List<String>>> b,
+  Map<PlatformIdentity, Map<OnlineMusicCapability, List<String>>> a,
+  Map<PlatformIdentity, Map<OnlineMusicCapability, List<String>>> b,
 ) {
   if (a.length != b.length) return false;
   for (final platform in a.entries) {
@@ -1608,11 +1788,7 @@ _parsePlatformFields(Object? rawContentPlatform, Object? rawPlatformId) {
   }
   for (final platform in builtinMusicPlatforms) {
     if (platform.name == name) {
-      return (
-        contentPlatform: platform,
-        platformId: declaredId,
-        issue: null,
-      );
+      return (contentPlatform: platform, platformId: declaredId, issue: null);
     }
   }
   // P-39 / P0 规则⑩：写成 `custom` 却没有稳定 ID ⇒ **明确报错**（身份无效，不得路由）。
@@ -1654,7 +1830,9 @@ String platformLabelForIdentity(
 ) {
   if (identity.isCustom) {
     for (final definition in settings.providers) {
-      if (definition.identity == identity) return definition.displayPlatformName;
+      if (definition.identity == identity) {
+        return definition.displayPlatformName;
+      }
     }
   }
   return platformDisplayLabel(identity);
@@ -1665,10 +1843,15 @@ String platformLabelForIdentity(
 ///
 /// 名字来源 = 当前已保存配置里同身份条目的 `platformName`；找不到/身份无效 ⇒ 兜底文案，
 /// **绝不回落网易云**。
-String platformLabelForRef(PlatformTrackRef ref) =>
-    platformLabelForIdentity(AppPreference.instance.onlineMusicSettings, ref.identity);
+String platformLabelForRef(PlatformTrackRef ref) => platformLabelForIdentity(
+  AppPreference.instance.onlineMusicSettings,
+  ref.identity,
+);
 
 /// F5-P-39（P3）：**应用层可直接调用**的身份版展示名（签名只有 `PlatformIdentity`，
 /// 不含 provider 类型 ⇒ 满足依赖边界守卫）。
 String platformLabelForIdentityOnly(PlatformIdentity identity) =>
-    platformLabelForIdentity(AppPreference.instance.onlineMusicSettings, identity);
+    platformLabelForIdentity(
+      AppPreference.instance.onlineMusicSettings,
+      identity,
+    );

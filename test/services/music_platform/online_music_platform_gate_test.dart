@@ -131,7 +131,9 @@ void main() {
           lyric: const {netease, qq},
         }),
       ],
-      enabledPlatforms: const {netease},
+      // 2.2 / G5：启用集合的元素改为**平台身份**（内置平台写枚举名，
+      // 自定义平台写 `custom:<稳定 ID>`）—— 断言语义不变，只是键的类型跟着授权变更。
+      enabledPlatforms: {const PlatformIdentity.builtin(netease)},
     );
     final service = CompositeOnlineMusicService(registry: registry);
 

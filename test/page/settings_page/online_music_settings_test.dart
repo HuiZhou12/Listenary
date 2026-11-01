@@ -781,8 +781,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      controller.settings.routing[MusicPlatform.netease]?[OnlineMusicCapability
-          .search],
+      // 2.2 / G5：`routing` 的键改为**平台身份**（内置写枚举名，自定义写
+      // `custom:<稳定 ID>`）—— 断言的目标值不变，只是键跟着授权变更换成身份。
+      controller.settings
+          .routing[const PlatformIdentity.builtin(MusicPlatform.netease)]
+          ?[OnlineMusicCapability.search],
       ['neB'],
     );
     expect(find.text('已指定 neB'), findsOneWidget);
@@ -797,7 +800,12 @@ void main() {
           .first,
     );
     await tester.pumpAndSettle();
-    expect(controller.settings.routing[MusicPlatform.netease], isNull);
+    expect(
+      controller
+          .settings
+          .routing[const PlatformIdentity.builtin(MusicPlatform.netease)],
+      isNull,
+    );
     controller.dispose();
   });
 

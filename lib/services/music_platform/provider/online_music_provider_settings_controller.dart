@@ -287,16 +287,25 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   bool capabilityNeedsRestart(
     MusicPlatform platform,
     OnlineMusicCapability capability,
+  ) => identityCapabilityNeedsRestart(
+    PlatformIdentity.builtin(platform),
+    capability,
+  );
+
+  /// [capabilityNeedsRestart] 的**身份版**（2.2 / G5：自定义平台逐个判定）。
+  bool identityCapabilityNeedsRestart(
+    PlatformIdentity identity,
+    OnlineMusicCapability capability,
   ) {
     if (!_sameIds(
-      _settings.capableProviderIdsFor(platform, capability),
-      _activeSettings.capableProviderIdsFor(platform, capability),
+      _settings.capableProviderIdsForIdentity(identity, capability),
+      _activeSettings.capableProviderIdsForIdentity(identity, capability),
     )) {
       return true;
     }
     return !_sameIds(
-      _settings.explicitCandidateIdsFor(platform, capability),
-      _activeSettings.explicitCandidateIdsFor(platform, capability),
+      _settings.explicitCandidateIdsForIdentity(identity, capability),
+      _activeSettings.explicitCandidateIdsForIdentity(identity, capability),
     );
   }
 
@@ -310,13 +319,17 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
   }
 
   /// 该平台是否有尚未生效的改动（启用状态，或任一能力的候选）。
-  bool platformNeedsRestart(MusicPlatform platform) {
-    if (_settings.isPlatformEnabled(platform) !=
-        _activeSettings.isPlatformEnabled(platform)) {
+  bool platformNeedsRestart(MusicPlatform platform) =>
+      identityNeedsRestart(PlatformIdentity.builtin(platform));
+
+  /// [platformNeedsRestart] 的**身份版**（2.2 / G5）。
+  bool identityNeedsRestart(PlatformIdentity identity) {
+    if (_settings.isIdentityEnabled(identity) !=
+        _activeSettings.isIdentityEnabled(identity)) {
       return true;
     }
     for (final capability in OnlineMusicCapability.values) {
-      if (capabilityNeedsRestart(platform, capability)) return true;
+      if (identityCapabilityNeedsRestart(identity, capability)) return true;
     }
     return false;
   }
@@ -387,15 +400,32 @@ final class OnlineMusicProviderSettingsController extends ChangeNotifier {
     required bool enabled,
   }) => apply(_settings.withPlatformEnabled(platform, enabled: enabled));
 
+  /// 平台卡上**按身份**的启用开关（2.2 / G5：自定义平台可单独启停）。
+  Future<bool> setIdentityEnabled(
+    PlatformIdentity identity, {
+    required bool enabled,
+  }) => apply(_settings.withIdentityEnabled(identity, enabled: enabled));
+
   /// 平台卡上为某个能力指定的条目；[providerId] 为 null 表示回到"自动"
   /// （清除该 `(platform, capability)` 的显式候选）。
   Future<bool> assignPlatformCapability(
     MusicPlatform platform,
     OnlineMusicCapability capability,
     String? providerId,
+  ) => assignIdentityCapability(
+    PlatformIdentity.builtin(platform),
+    capability,
+    providerId,
+  );
+
+  /// [assignPlatformCapability] 的**身份版**（2.2 / G5）。
+  Future<bool> assignIdentityCapability(
+    PlatformIdentity identity,
+    OnlineMusicCapability capability,
+    String? providerId,
   ) => apply(
-    _settings.withRoutingCandidates(
-      platform,
+    _settings.withRoutingCandidatesForIdentity(
+      identity,
       capability,
       providerId == null ? const [] : [providerId],
     ),

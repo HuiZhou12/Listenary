@@ -38,10 +38,23 @@ const int _searchPageSize = 30;
 ///
 /// 多平台聚合下每个平台都有自己的一份：自己的累计结果、自己的分页游标、
 /// 自己的错误（D6 / D6c:a）。一个平台失败不会动到另一个平台的状态。
+///
+/// 2.2（R4/G3）：分组的键是**平台身份**而不是枚举 —— 所有自定义平台共用
+/// `MusicPlatform.custom`，用枚举当键会让它们互相覆盖、统一显示「自定义平台」。
 final class _PlatformSearchState {
-  _PlatformSearchState({required this.platform});
+  _PlatformSearchState({required this.identity, required this.label});
 
-  final MusicPlatform platform;
+  final PlatformIdentity identity;
+
+  /// 该分组的展示名（内置平台中文名 / 自定义平台自己的 `platformName`）。
+  final String label;
+
+  MusicPlatform get platform => identity.platform;
+
+  /// 分组/分页 key 里的稳定后缀（自定义平台要带稳定 ID，否则两个分组会撞 key）。
+  String get keySuffix => identity.isCustom
+      ? 'custom-${identity.platformId}'
+      : identity.platform.name;
 
   /// 该平台**累计**的结果页（`items` 即"已加载的全部结果"）。
   ///
@@ -88,9 +101,9 @@ sealed class _SearchEntry {
 }
 
 final class _GroupHeaderEntry extends _SearchEntry {
-  const _GroupHeaderEntry(this.platform);
+  const _GroupHeaderEntry(this.group);
 
-  final MusicPlatform platform;
+  final _PlatformSearchState group;
 }
 
 final class _TrackEntry extends _SearchEntry {
@@ -107,9 +120,9 @@ final class _FailureEntry extends _SearchEntry {
 }
 
 final class _EmptyGroupEntry extends _SearchEntry {
-  const _EmptyGroupEntry(this.platform);
+  const _EmptyGroupEntry(this.group);
 
-  final MusicPlatform platform;
+  final _PlatformSearchState group;
 }
 
 /// **专辑结果行**（2026-10-12 ✓）：与曲目行**混在同一个列表**里 ✓，
@@ -130,17 +143,17 @@ final class _ArtistEntry extends _SearchEntry {
 
 /// **艺人搜索失败的提示行**（只属于该平台 ✓，不静默 ✓）。
 final class _ArtistFailureEntry extends _SearchEntry {
-  const _ArtistFailureEntry(this.platform);
+  const _ArtistFailureEntry(this.group);
 
-  final MusicPlatform platform;
+  final _PlatformSearchState group;
 }
 
 /// **专辑搜索失败的提示行**（只属于该平台 ✓）：不静默 ✓ ——
 /// 否则"没有专辑"与"专辑搜索失败"看起来一模一样 ✗。
 final class _AlbumFailureEntry extends _SearchEntry {
-  const _AlbumFailureEntry(this.platform);
+  const _AlbumFailureEntry(this.group);
 
-  final MusicPlatform platform;
+  final _PlatformSearchState group;
 }
 
 final class _FooterEntry extends _SearchEntry {
@@ -172,30 +185,35 @@ class OnlineMusicPage extends StatefulWidget {
 
 class _OnlineMusicPageState extends State<OnlineMusicPage> {
   late final TextEditingController _searchController = TextEditingController();
-  /// 搜索结果里的**专辑**（2026-10-12）：按平台各存一份 ✓（与曲目分组一一对应 ✓）。
-  final Map<MusicPlatform, List<OnlineAlbumSummary>> _albums = {};
 
-  /// 专辑搜索失败的平台（**只影响该平台的专辑行** ✓，曲目结果照常显示 ✓）。
-  final Set<MusicPlatform> _albumsFailed = {};
+  /// 搜索结果里的**专辑**（2026-10-12）：按**平台身份**各存一份 ✓（与曲目分组一一对应 ✓）。
+  ///
+  /// 2.2（R4/G3）：键从枚举换成身份 —— 用枚举时两个自定义平台的专辑会互相覆盖。
+  final Map<PlatformIdentity, List<OnlineAlbumSummary>> _albums = {};
 
-  /// 搜索结果里的**艺人**（2026-10-12）：与专辑同一套（按平台各存一份 ✓）。
-  final Map<MusicPlatform, List<OnlineArtistSummary>> _artists = {};
+  /// 专辑搜索失败的平台身份（**只影响该身份的专辑行** ✓，曲目结果照常显示 ✓）。
+  final Set<PlatformIdentity> _albumsFailed = {};
 
-  /// 艺人搜索失败的平台（同样只影响该平台的艺人行 ✓）。
-  final Set<MusicPlatform> _artistsFailed = {};
+  /// 搜索结果里的**艺人**（2026-10-12）：与专辑同一套（按平台身份各存一份 ✓）。
+  final Map<PlatformIdentity, List<OnlineArtistSummary>> _artists = {};
+
+  /// 艺人搜索失败的平台身份（同样只影响该身份的艺人行 ✓）。
+  final Set<PlatformIdentity> _artistsFailed = {};
 
   _OnlineSearchStatus _status = _OnlineSearchStatus.idle;
 
-  /// 已搜索的平台分组（顺序 = `builtinMusicPlatforms`）。
+  /// 已搜索的平台分组（顺序 = 本次请求的身份顺序）。
   final List<_PlatformSearchState> _groups = [];
 
   /// 「全部 / 各平台」筛选（D6:A）；null = 全部。
+  ///
+  /// 2.2：筛选的键是**平台身份**（否则两个自定义平台无法分别筛）。
   ///
   /// ⚠️ 行为以**实现**为准（W6 起）：切换筛选会**重新发起搜索**（`_onFilterChanged` ⇒
   /// `setState` + `_submitSearch()`）—— 单选某个平台时只请求该平台，避免"为了看一个平台
   /// 却打了全部平台"。此处旧注释曾写"只在已取回结果上做显示过滤、不重新发请求"，
   /// 与实现相反，已按当前行为更正。
-  MusicPlatform? _filter;
+  PlatformIdentity? _filter;
 
   /// 首请求（聚合请求）的取消令牌。
   OnlineMusicCancelToken? _cancelToken;
@@ -205,6 +223,24 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
 
   /// 整次搜索失败（所有平台都失败）时的错误。
   OnlineMusicException? _error;
+
+  /// 当前可搜索的**平台身份**（2.2 / R4：按身份列平台，而不是只列内置枚举）。
+  ///
+  /// 门槛由服务层的 `searchableIdentities` 决定（D3：Search + Stream 候选都要有），
+  /// 页面不再自己按枚举过滤 —— 否则自定义平台永远进不了筛选与分组。
+  ///
+  /// 注入单平台搜索时不读 service —— 组件级测试与单平台嵌入用法都不需要 provider。
+  List<PlatformIdentity> _availableIdentities(BuildContext context) {
+    if (widget.search != null) {
+      return const [PlatformIdentity.builtin(MusicPlatform.netease)];
+    }
+    final service = context.read<OnlineMusicService?>();
+    if (service == null) return const [];
+    return [
+      for (final identity in service.capabilities.searchableIdentities)
+        identity.normalized,
+    ];
+  }
 
   @override
   void initState() {
@@ -231,44 +267,33 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     }
   }
 
-  /// 当前可搜索的平台（D3 门槛由服务层的 `searchablePlatforms` 决定）。
-  ///
-  /// 注入单平台搜索时不读 service —— 组件级测试与单平台嵌入用法都不需要 provider。
-  List<MusicPlatform> _availablePlatforms(BuildContext context) {
-    if (widget.search != null) return const [MusicPlatform.netease];
-    final capabilities = context.read<OnlineMusicService>().capabilities;
-    return [
-      for (final platform in builtinMusicPlatforms)
-        if (capabilities.searchablePlatforms.contains(platform)) platform,
-    ];
-  }
-
-  _PlatformSearchState? _groupFor(MusicPlatform platform) {
+  _PlatformSearchState? _groupFor(PlatformIdentity identity) {
+    final normalized = identity.normalized;
     for (final group in _groups) {
-      if (group.platform == platform) return group;
+      if (group.identity == normalized) return group;
     }
     return null;
   }
 
-  /// 当前实际显示的平台分组（W6 之后 = 本次**真正请求过**的平台）。
+  /// 当前实际显示的**平台身份**分组（W6 之后 = 本次**真正请求过**的平台）。
   ///
   /// 筛选不再只是"隐藏别的分组"：切换平台会用该平台**重新发起一次搜索**
   /// （单平台模式只请求这一个平台），因此 `_groups` 本身就只包含该平台。
-  List<MusicPlatform> get _visiblePlatforms => [
-    for (final group in _groups) group.platform,
+  List<PlatformIdentity> get _visibleIdentities => [
+    for (final group in _groups) group.identity,
   ];
 
-  /// 本次搜索要请求的平台：默认「全部」，选定了平台就只请求它。
-  List<MusicPlatform> _requestTargets(List<MusicPlatform> available) {
+  /// 本次搜索要请求的平台身份：默认「全部」，选定了平台就只请求它。
+  List<PlatformIdentity> _requestTargets(List<PlatformIdentity> available) {
     final filter = _filter;
     if (filter == null) return available;
     return available.contains(filter) ? [filter] : available;
   }
 
   /// 切换平台筛选（W6）：单平台模式**只请求该平台**，不再"先全搜再过滤"。
-  Future<void> _onFilterChanged(MusicPlatform? platform) async {
-    if (_filter == platform) return;
-    setState(() => _filter = platform);
+  Future<void> _onFilterChanged(PlatformIdentity? identity) async {
+    if (_filter == identity) return;
+    setState(() => _filter = identity);
     // 还没有搜索过（idle 且没有任何分组）时只记住选择，等用户提交关键词。
     if (_status == _OnlineSearchStatus.idle && _groups.isEmpty) return;
     if (normalizedSearchQuery(_searchController.text).isEmpty) return;
@@ -300,13 +325,46 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     _resetSearch();
   }
 
+  /// 某个身份在**这一处并列显示**时的展示名（2.2 / R4 / G6）。
+  ///
+  /// 基础文案统一走 `platformLabelForIdentityOnly*`（自定义平台 ⇒ 条目自己的
+  /// `platformName`，缺失 ⇒「自定义平台」）。**同名**（基础文案相同）的自定义平台在
+  /// [universe] 里出现 **>1** 次时附**短 ID**，否则不加噪声 —— 与设置页同一条规则
+  /// （`online_music_settings.dart` 的 `_providerTitle` / `_platformCardLabel`），
+  /// 否则两个同名的自定义平台在筛选与分组里完全无法分辨。
+  String _labelOf(
+    PlatformIdentity identity,
+    Iterable<PlatformIdentity> universe,
+  ) {
+    final label = platformLabelForIdentityOnly(identity);
+    final shortId = identity.shortId;
+    if (shortId == null || !identity.isValid) return label;
+    var sameName = 0;
+    for (final other in universe) {
+      final normalized = other.normalized;
+      if (!normalized.isCustom || !normalized.isValid) continue;
+      if (platformLabelForIdentityOnly(normalized) == label) sameName++;
+    }
+    return sameName > 1 ? '$label（$shortId）' : label;
+  }
+
+  /// 新建一个分组的展示状态（[universe] = 本次并列显示的身份集合，用于同名短 ID）。
+  _PlatformSearchState _stateFor(
+    PlatformIdentity identity,
+    Iterable<PlatformIdentity> universe,
+  ) => _PlatformSearchState(
+    identity: identity.normalized,
+    label: _labelOf(identity, universe),
+  );
+
   /// 发起一次搜索请求。
   ///
   /// - 注入单平台搜索时：只请求网易云，并把结果/错误包成 [AggregatedSearchResult]，
   ///   这样页面只有一条渲染路径；
-  /// - 否则：走 `searchAggregated`（并行、每平台独立分页、每平台独立错误）。
+  /// - 否则：优先走**身份版**聚合（`OnlineMusicIdentitySearchSource`，2.2/G3：多个
+  ///   自定义平台不会互相覆盖）；实现没有该接口时回落到 `searchAggregated`（既有行为）。
   Future<AggregatedSearchResult> _request({
-    required Iterable<MusicPlatform> platforms,
+    required Iterable<PlatformIdentity> identities,
     required String keyword,
     required int limit,
     required int offset,
@@ -323,17 +381,35 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
         );
         return AggregatedSearchResult(
           perPlatform: {page.platform: page},
+          perPlatformIdentity: {
+            const PlatformIdentity.builtin(MusicPlatform.netease): page,
+          },
           failures: const {},
         );
       } on OnlineMusicException catch (error) {
         return AggregatedSearchResult(
           perPlatform: const {},
           failures: {MusicPlatform.netease: error},
+          failuresByIdentity: {
+            const PlatformIdentity.builtin(MusicPlatform.netease): error,
+          },
         );
       }
     }
-    return context.read<OnlineMusicService>().searchAggregated(
-      platforms: platforms,
+    final service = context.read<OnlineMusicService>();
+    // 2.2 / G3：实现了窄接口的服务按**身份**聚合（多个自定义平台不会互相覆盖）；
+    // 测试替身 / 单平台嵌入没有它 ⇒ 回落到既有枚举版（那正是"只有内置平台"的情形）。
+    if (service is OnlineMusicIdentitySearchSource) {
+      return (service as OnlineMusicIdentitySearchSource).searchIdentities(
+        identities: identities,
+        keyword: keyword,
+        limit: limit,
+        offset: offset,
+        cancelToken: cancelToken,
+      );
+    }
+    return service.searchAggregated(
+      platforms: [for (final identity in identities) identity.platform],
       keyword: keyword,
       limit: limit,
       offset: offset,
@@ -348,17 +424,21 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
   /// 而且会**如实标出**失败 ✓（否则"搜不到专辑"与"专辑搜索失败"看起来一样 ✗）。
   Future<void> _loadAlbums({
     required OnlineMusicService service,
-    required List<MusicPlatform> platforms,
+    required List<PlatformIdentity> identities,
     required String keyword,
     required OnlineMusicCancelToken token,
     required int generation,
   }) async {
+    // 专辑/艺人两条链路**只按枚举**分发（接口没有身份参数）⇒ 只对内置平台发起，
+    // 否则两个自定义平台会共用一个枚举键、互相串行。
+    // 自定义平台的曲目结果不受影响（见 `_request` 的身份版搜索）。
     final targets = [
-      for (final platform in platforms)
-        if (service.capabilities.openableSearchAlbumPlatforms.contains(
-          platform,
-        ))
-          platform,
+      for (final identity in identities)
+        if (identity.isBuiltin &&
+            service.capabilities.openableSearchAlbumPlatforms.contains(
+              identity.platform,
+            ))
+          identity.platform,
     ];
     if (targets.isEmpty) return;
     final results = await Future.wait([
@@ -372,11 +452,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
               offset: 0,
               cancelToken: token,
             );
-            return (
-              platform: platform,
-              albums: albums,
-              failed: false,
-            );
+            return (platform: platform, albums: albums, failed: false);
           } on Object {
             return (
               platform: platform,
@@ -389,8 +465,10 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     if (!mounted || generation != _generation) return;
     setState(() {
       for (final result in results) {
-        if (result.albums.isNotEmpty) _albums[result.platform] = result.albums;
-        if (result.failed) _albumsFailed.add(result.platform);
+        // 只对内置平台发起（见上）⇒ 键用内置身份。
+        final identity = PlatformIdentity.builtin(result.platform);
+        if (result.albums.isNotEmpty) _albums[identity] = result.albums;
+        if (result.failed) _albumsFailed.add(identity);
       }
     });
   }
@@ -399,17 +477,19 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
   ///（`openableSearchArtistPlatforms` ✓）。失败**只影响该平台的艺人行**且如实标出 ✓。
   Future<void> _loadArtists({
     required OnlineMusicService service,
-    required List<MusicPlatform> platforms,
+    required List<PlatformIdentity> identities,
     required String keyword,
     required OnlineMusicCancelToken token,
     required int generation,
   }) async {
+    // 同 `_loadAlbums`：艺人检索同样只有枚举入口 ⇒ 只对内置平台发起。
     final targets = [
-      for (final platform in platforms)
-        if (service.capabilities.openableSearchArtistPlatforms.contains(
-          platform,
-        ))
-          platform,
+      for (final identity in identities)
+        if (identity.isBuiltin &&
+            service.capabilities.openableSearchArtistPlatforms.contains(
+              identity.platform,
+            ))
+          identity.platform,
     ];
     if (targets.isEmpty) return;
     final results = await Future.wait([
@@ -423,11 +503,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
               offset: 0,
               cancelToken: token,
             );
-            return (
-              platform: platform,
-              artists: artists,
-              failed: false,
-            );
+            return (platform: platform, artists: artists, failed: false);
           } on Object {
             return (
               platform: platform,
@@ -440,10 +516,11 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     if (!mounted || generation != _generation) return;
     setState(() {
       for (final result in results) {
+        final identity = PlatformIdentity.builtin(result.platform);
         if (result.artists.isNotEmpty) {
-          _artists[result.platform] = result.artists;
+          _artists[identity] = result.artists;
         }
-        if (result.failed) _artistsFailed.add(result.platform);
+        if (result.failed) _artistsFailed.add(identity);
       }
     });
   }
@@ -455,8 +532,8 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
       return;
     }
 
-    final platforms = _requestTargets(_availablePlatforms(context));
-    if (platforms.isEmpty) {
+    final identities = _requestTargets(_availableIdentities(context));
+    if (identities.isEmpty) {
       _cancelAllTokens();
       _generation++;
       setState(() {
@@ -476,8 +553,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
       _groups
         ..clear()
         ..addAll([
-          for (final platform in platforms)
-            _PlatformSearchState(platform: platform),
+          for (final identity in identities) _stateFor(identity, identities),
         ]);
       // 专辑/艺人结果与曲目结果**同时开跑** ✓（清掉上一次的 ✓）。
       _albums.clear();
@@ -494,7 +570,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
       unawaited(
         _loadAlbums(
           service: albumService,
-          platforms: platforms,
+          identities: identities,
           keyword: query,
           token: token,
           generation: generation,
@@ -503,7 +579,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
       unawaited(
         _loadArtists(
           service: albumService,
-          platforms: platforms,
+          identities: identities,
           keyword: query,
           token: token,
           generation: generation,
@@ -513,14 +589,14 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
 
     try {
       final result = await _request(
-        platforms: platforms,
+        identities: identities,
         keyword: query,
         limit: _searchPageSize,
         offset: 0,
         cancelToken: token,
       );
       if (!mounted || generation != _generation) return;
-      setState(() => _applyInitialResult(result, platforms));
+      setState(() => _applyInitialResult(result, identities));
     } on OnlineMusicException catch (error) {
       if (!mounted || generation != _generation) return;
       if (error.kind == OnlineMusicErrorKind.cancelled) {
@@ -546,24 +622,31 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
   }
 
   /// 把首请求结果摊进各平台分组，并决定整页状态。
+  ///
+  /// 2.2（R4）：结果先按**身份键**取（`perPlatformIdentity`，自定义平台的权威来源），
+  /// 退回枚举键 —— 枚举键在多个自定义平台同时请求时会被聚合层守卫移除。
   void _applyInitialResult(
     AggregatedSearchResult result,
-    List<MusicPlatform> requested,
+    List<PlatformIdentity> requested,
   ) {
     _groups
       ..clear()
       ..addAll([
-        for (final platform in requested)
-          _PlatformSearchState(platform: platform),
+        for (final identity in requested) _stateFor(identity, requested),
       ]);
 
     for (final group in _groups) {
-      final page = result.perPlatform[group.platform];
+      final identity = group.identity;
+      final page =
+          result.perPlatformIdentity[identity] ??
+          result.perPlatform[identity.platform];
       if (page != null) {
         group.page = page;
         group.lastPageCount = page.items.length;
       }
-      group.error = result.failures[group.platform];
+      group.error =
+          result.failuresByIdentity[identity] ??
+          result.failures[identity.platform];
     }
 
     // 全部平台都失败 ⇒ 整页错误（保留第一个失败的错误分类与文案）。
@@ -571,7 +654,8 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
       for (final group in _groups)
         if (group.error != null) group.error!,
     ];
-    final succeeded = result.perPlatform.isNotEmpty;
+    final succeeded =
+        result.perPlatformIdentity.isNotEmpty || result.perPlatform.isNotEmpty;
     if (!succeeded && failures.isNotEmpty) {
       if (failures.every(
         (error) => error.kind == OnlineMusicErrorKind.cancelled,
@@ -593,9 +677,10 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     _status = _OnlineSearchStatus.success;
   }
 
-  /// 某个平台各自的「加载更多」：`offset = 该平台已加载数量`、同一 keyword、每页 `_searchPageSize`。
-  Future<void> _loadMore(MusicPlatform platform) async {
-    final group = _groupFor(platform);
+  /// 某个平台身份各自的「加载更多」：`offset = 该平台已加载数量`、同一 keyword、
+  /// 每页 `_searchPageSize`（2.2：按身份定位分组 ⇒ 两个自定义平台各自分页）。
+  Future<void> _loadMore(PlatformIdentity identity) async {
+    final group = _groupFor(identity);
     if (group == null || group.loadingMore || !group.hasMore) return;
     final query = normalizedSearchQuery(_searchController.text);
     if (query.isEmpty) return;
@@ -613,7 +698,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
 
     try {
       final result = await _request(
-        platforms: [platform],
+        identities: [group.identity],
         keyword: query,
         limit: _searchPageSize,
         offset: offset,
@@ -621,8 +706,12 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
       );
       if (!mounted || generation != _generation) return;
       if (revision != group.loadMoreRevision) return;
-      final failure = result.failures[platform];
-      final page = result.perPlatform[platform];
+      final failure =
+          result.failuresByIdentity[group.identity] ??
+          result.failures[group.identity.platform];
+      final page =
+          result.perPlatformIdentity[group.identity] ??
+          result.perPlatform[group.identity.platform];
       setState(() {
         if (failure != null) {
           if (failure.kind == OnlineMusicErrorKind.cancelled) {
@@ -691,7 +780,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
 
   @override
   Widget build(BuildContext context) {
-    final platforms = _availablePlatforms(context);
+    final identities = _availableIdentities(context);
     return PageScaffold(
       title: '在线音乐',
       actions: [
@@ -734,40 +823,39 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
                           ),
                         IconButton(
                           tooltip: '在线搜索',
-                            onPressed:
-                                hasText &&
-                                    _status != _OnlineSearchStatus.loading
-                                ? _submitSearch
-                                : null,
-                            icon: const Icon(Symbols.travel_explore),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
+                          onPressed:
+                              hasText && _status != _OnlineSearchStatus.loading
+                              ? _submitSearch
+                              : null,
+                          icon: const Icon(Symbols.travel_explore),
+                        ),
+                      ],
+                    );
+                  },
                 ),
-                onChanged: _onQueryChanged,
-                onSubmitted: (_) {
-                  if (_status != _OnlineSearchStatus.loading) _submitSearch();
-                },
               ),
+              onChanged: _onQueryChanged,
+              onSubmitted: (_) {
+                if (_status != _OnlineSearchStatus.loading) _submitSearch();
+              },
             ),
-            if (platforms.isNotEmpty) ...[
-              const SizedBox(height: 8.0),
-              _buildPlatformFilter(platforms),
-            ],
-            SizedBox(
-              height: 12.0,
-              child: _status == _OnlineSearchStatus.loading
-                  ? const Align(
-                      alignment: Alignment.topCenter,
-                      child: LinearProgressIndicator(minHeight: 2.0),
-                    )
-                  : null,
-            ),
-            Expanded(child: _buildSearchBody()),
+          ),
+          if (identities.isNotEmpty) ...[
+            const SizedBox(height: 8.0),
+            _buildPlatformFilter(identities),
           ],
-        ),
+          SizedBox(
+            height: 12.0,
+            child: _status == _OnlineSearchStatus.loading
+                ? const Align(
+                    alignment: Alignment.topCenter,
+                    child: LinearProgressIndicator(minHeight: 2.0),
+                  )
+                : null,
+          ),
+          Expanded(child: _buildSearchBody()),
+        ],
+      ),
     );
   }
 
@@ -776,15 +864,19 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
   /// - ≥2 个可用平台：可切换的「全部 / 各平台」，**切到某个平台就只搜索它**；
   /// - 只有 1 个可用平台：不给假的选项，而是明确写出"当前平台：X" ——
   ///   让用户看得懂现在搜的就是这一家，而不是以为筛选功能不存在。
-  Widget _buildPlatformFilter(List<MusicPlatform> platforms) {
-    if (platforms.length < 2) {
+  ///
+  /// 2.2（R4/G3/G6）：选项是**平台身份**（自定义平台按自己的 `platformName` 显示），
+  /// 因此两个自定义平台在筛选里是两个可分辨的选项，而不是一个「自定义平台」；
+  /// **同名**时按 [identities] 这条并列清单附短 ID（同设置页规则）。
+  Widget _buildPlatformFilter(List<PlatformIdentity> identities) {
+    if (identities.length < 2) {
       final scheme = Theme.of(context).colorScheme;
       return Row(
         children: [
           Icon(Symbols.public, size: 14, color: scheme.onSurfaceVariant),
           const SizedBox(width: Spacing.xs),
           Text(
-            '当前平台：${musicPlatformLabel(platforms.single)}',
+            '当前平台：${_labelOf(identities.single, identities)}',
             key: const ValueKey('online-search-single-platform'),
             style: TextStyle(
               color: scheme.onSurfaceVariant,
@@ -796,14 +888,17 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     }
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      child: SegmentedButton<MusicPlatform?>(
+      child: SegmentedButton<PlatformIdentity?>(
         showSelectedIcon: false,
         segments: [
-          const ButtonSegment<MusicPlatform?>(value: null, label: Text('全部')),
-          for (final platform in platforms)
-            ButtonSegment<MusicPlatform?>(
-              value: platform,
-              label: Text(musicPlatformLabel(platform)),
+          const ButtonSegment<PlatformIdentity?>(
+            value: null,
+            label: Text('全部'),
+          ),
+          for (final identity in identities)
+            ButtonSegment<PlatformIdentity?>(
+              value: identity,
+              label: Text(_labelOf(identity, identities)),
             ),
         ],
         selected: {_filter},
@@ -868,19 +963,19 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
 
   /// 把各平台分组摊平成一维行列表，交给 `ListView.builder` 保持懒构建。
   List<_SearchEntry> _buildEntries() {
-    final visible = _visiblePlatforms;
+    final visible = _visibleIdentities;
     // 只有一个平台（或筛选到单一平台）时不摆分组表头：多平台聚合才需要它。
     final showHeaders = visible.length > 1;
     final entries = <_SearchEntry>[];
     for (final group in _groups) {
-      if (!visible.contains(group.platform)) continue;
-      if (showHeaders) entries.add(_GroupHeaderEntry(group.platform));
+      if (!visible.contains(group.identity)) continue;
+      if (showHeaders) entries.add(_GroupHeaderEntry(group));
       if (group.error != null) {
         entries.add(_FailureEntry(group));
         continue;
       }
       if (group.items.isEmpty) {
-        entries.add(_EmptyGroupEntry(group.platform));
+        entries.add(_EmptyGroupEntry(group));
         continue;
       }
       for (final track in group.items) {
@@ -888,24 +983,24 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
       }
       // **专辑结果与曲目混排** ✓（同一平台内：曲目之后接专辑 ✓）——
       // 每行以「专辑 · …」自报家门 ✓，与参考"混合结果 + 类型前缀"一致 ✓。
-      final albums = _albums[group.platform];
+      final albums = _albums[group.identity];
       if (albums != null) {
         for (final album in albums) {
           entries.add(_AlbumEntry(album));
         }
       }
-      if (_albumsFailed.contains(group.platform)) {
-        entries.add(_AlbumFailureEntry(group.platform));
+      if (_albumsFailed.contains(group.identity)) {
+        entries.add(_AlbumFailureEntry(group));
       }
       // **艺人结果同样混排** ✓（曲目 → 专辑 → 艺人 ✓；每行自报类型 ✓）。
-      final artists = _artists[group.platform];
+      final artists = _artists[group.identity];
       if (artists != null) {
         for (final artist in artists) {
           entries.add(_ArtistEntry(artist));
         }
       }
-      if (_artistsFailed.contains(group.platform)) {
-        entries.add(_ArtistFailureEntry(group.platform));
+      if (_artistsFailed.contains(group.identity)) {
+        entries.add(_ArtistFailureEntry(group));
       }
       entries.add(_FooterEntry(group));
     }
@@ -919,29 +1014,27 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
       padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
       itemCount: entries.length,
       itemBuilder: (context, index) => switch (entries[index]) {
-        _GroupHeaderEntry(:final platform) => _buildGroupHeader(platform),
+        _GroupHeaderEntry(:final group) => _buildGroupHeader(group),
         _TrackEntry(:final group, :final track) => _buildTrackRow(group, track),
         // 专辑行已抽成公共组件 ✓（搜索结果与「新发行」页共用 ✓，R95 ✓）。
         _AlbumEntry(:final album) => OnlineAlbumRow(album: album),
-        _AlbumFailureEntry(:final platform) => _buildAlbumFailureRow(platform),
+        _AlbumFailureEntry(:final group) => _buildAlbumFailureRow(group),
         _ArtistEntry(:final artist) => _buildArtistRow(artist),
-        _ArtistFailureEntry(:final platform) => _buildArtistFailureRow(
-          platform,
-        ),
+        _ArtistFailureEntry(:final group) => _buildArtistFailureRow(group),
         _FailureEntry(:final group) => _buildFailureRow(group),
-        _EmptyGroupEntry(:final platform) => _buildEmptyGroupRow(platform),
+        _EmptyGroupEntry(:final group) => _buildEmptyGroupRow(group),
         _FooterEntry(:final group) => _buildLoadMoreFooter(group),
       },
     );
   }
 
-  Widget _buildGroupHeader(MusicPlatform platform) {
+  Widget _buildGroupHeader(_PlatformSearchState group) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(8.0, 12.0, 8.0, 4.0),
       child: Text(
-        musicPlatformLabel(platform),
-        key: ValueKey('online-search-group-${platform.name}'),
+        group.label,
+        key: ValueKey('online-search-group-${group.keySuffix}'),
         style: TextStyle(
           color: scheme.onSurfaceVariant,
           fontSize: AppType.caption,
@@ -956,10 +1049,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
   /// 组装、来源标记、收藏与"加入歌单"都收敛在 [OnlineTrackEntry] 里；
   /// 来源取自**曲目自己的 ref**（与其它在线列表同一条规则），而不是搜索分组。
   Widget _buildTrackRow(_PlatformSearchState group, MusicTrack track) =>
-      OnlineTrackEntry(
-        track: track,
-        onTap: () => _selectTrack(group, track),
-      );
+      OnlineTrackEntry(track: track, onTap: () => _selectTrack(group, track));
 
   /// 一行**专辑结果**：已抽成公共组件 [OnlineAlbumRow] ✓
   ///（搜索结果与「新发行」页共用一份 ✓ —— 各写一份必然走偏 ✓，R95 ✓）。
@@ -1045,7 +1135,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
   }
 
   /// 艺人搜索失败：**如实标出** ✓（不静默 ✓，也不影响该平台的曲目结果 ✓）。
-  Widget _buildArtistFailureRow(MusicPlatform platform) {
+  Widget _buildArtistFailureRow(_PlatformSearchState group) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
@@ -1055,7 +1145,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
           const SizedBox(width: 8.0),
           Expanded(
             child: Text(
-              '${musicPlatformLabel(platform)}的艺人结果没取到（曲目结果不受影响）',
+              '${group.label}的艺人结果没取到（曲目结果不受影响）',
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
           ),
@@ -1067,7 +1157,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
   /// 专辑结果的元信息已随组件搬走 ✓（见 [OnlineAlbumRow.detailsOf] ✓）。
 
   /// 专辑搜索失败：**如实标出** ✓（不静默 ✓，也不影响该平台的曲目结果 ✓）。
-  Widget _buildAlbumFailureRow(MusicPlatform platform) {
+  Widget _buildAlbumFailureRow(_PlatformSearchState group) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
@@ -1077,7 +1167,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
           const SizedBox(width: 8.0),
           Expanded(
             child: Text(
-              '${musicPlatformLabel(platform)}的专辑结果没取到（曲目结果不受影响）',
+              '${group.label}的专辑结果没取到（曲目结果不受影响）',
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
           ),
@@ -1106,12 +1196,12 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
     );
   }
 
-  Widget _buildEmptyGroupRow(MusicPlatform platform) {
+  Widget _buildEmptyGroupRow(_PlatformSearchState group) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
       child: Text(
-        '${musicPlatformLabel(platform)}没有找到结果',
+        '${group.label}没有找到结果',
         style: TextStyle(color: scheme.onSurfaceVariant),
       ),
     );
@@ -1120,16 +1210,17 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
   /// 某个平台的分页入口：可加载 → 「加载更多」；加载中 → 转圈且禁用；
   /// 失败 → 安全提示 + 可重试；到底 → 「没有更多了」。
   ///
-  /// 多平台时 key 带平台名，单平台（含注入单平台搜索与筛选到单一平台）沿用既有 key。
+  /// 多平台时 key 带平台名（自定义平台带稳定 ID，避免两个分组撞 key），
+  /// 单平台（含注入单平台搜索与筛选到单一平台）沿用既有 key。
   Widget _buildLoadMoreFooter(_PlatformSearchState group) {
     final scheme = Theme.of(context).colorScheme;
-    final single = _visiblePlatforms.length <= 1;
+    final single = _visibleIdentities.length <= 1;
     final loadMoreKey = single
         ? const ValueKey('online-search-load-more')
-        : ValueKey('online-search-load-more-${group.platform.name}');
+        : ValueKey('online-search-load-more-${group.keySuffix}');
     final retryKey = single
         ? const ValueKey('online-search-load-more-retry')
-        : ValueKey('online-search-load-more-retry-${group.platform.name}');
+        : ValueKey('online-search-load-more-retry-${group.keySuffix}');
     final error = group.loadMoreError;
     if (error != null) {
       return Padding(
@@ -1145,7 +1236,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
             const SizedBox(height: 8.0),
             FilledButton.tonalIcon(
               key: retryKey,
-              onPressed: () => _loadMore(group.platform),
+              onPressed: () => _loadMore(group.identity),
               icon: const Icon(Symbols.refresh),
               label: const Text('重试'),
             ),
@@ -1171,7 +1262,7 @@ class _OnlineMusicPageState extends State<OnlineMusicPage> {
         child: Center(
           child: FilledButton.tonalIcon(
             key: loadMoreKey,
-            onPressed: () => _loadMore(group.platform),
+            onPressed: () => _loadMore(group.identity),
             icon: const Icon(Symbols.expand_more),
             label: const Text('加载更多'),
           ),

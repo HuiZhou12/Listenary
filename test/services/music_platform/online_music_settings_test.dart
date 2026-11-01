@@ -407,7 +407,11 @@ void main() {
         MusicPlatform.kugou,
         enabled: false,
       );
-      expect(settings.enabledPlatforms, {MusicPlatform.netease});
+      // 2.2 / G5：启用集合的元素从 `MusicPlatform` 换成 `PlatformIdentity`
+      //（内置平台写枚举名、自定义平台写 `custom:<稳定 ID>`）—— 目标值语义不变。
+      expect(settings.enabledPlatforms, {
+        const PlatformIdentity.builtin(MusicPlatform.netease),
+      });
 
       final blocked = settings.withPlatformEnabled(
         MusicPlatform.netease,
@@ -434,7 +438,8 @@ void main() {
           ],
           'enabledPlatforms': ['netease'],
         }).enabledPlatforms,
-        {MusicPlatform.netease},
+        // 同上：元素类型随 G5 换为身份（值仍是"网易云"）。
+        {const PlatformIdentity.builtin(MusicPlatform.netease)},
       );
     });
 

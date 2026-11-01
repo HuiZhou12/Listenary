@@ -146,10 +146,11 @@ OnlineMusicComposition createOnlineMusicComposition({
         credentials: access,
         // P-54：**唯一**的"凭据是否可用"口径（`declarativeCredentialAvailable`），
         // 试跑侧用同一个函数 ⇒ 不会再出现"试跑成功、运行期 missingCredential"。
-        credentialReference: declarativeCredentialAvailable(
-          requiresCredential: definition.requiresCredential,
-          credentialReference: definition.credentialReference,
-        )
+        credentialReference:
+            declarativeCredentialAvailable(
+              requiresCredential: definition.requiresCredential,
+              credentialReference: definition.credentialReference,
+            )
             ? definition.credentialReference
             : null,
         contentPlatform: definition.contentPlatform,
@@ -191,14 +192,19 @@ OnlineMusicComposition createOnlineMusicComposition({
     providerIdentities: {
       for (final provider in providers)
         for (final definition in settings.providers)
-          if (definition.id == provider.providerId) provider.providerId: definition.identity,
+          if (definition.id == provider.providerId)
+            provider.providerId: definition.identity,
     },
     defaultProviderId: settings.defaultProviderId,
     capabilityProviders: settings.capabilityProviders,
-    // 平台感知路由（D4:A / D14）：候选由配置层的 (platform, capability) 查询决定，
+    // 平台感知路由（D4:A / D14）：候选由配置层的 (identity, capability) 查询决定，
     // 其中已包含旧单值映射的回落语义；不再使用平台无关的 defaultProvider 做路由。
+    // 2.2 / G5：按**平台身份**查询 ⇒ 两个自定义平台可以分别指定候选（不串台）。
     explicitCandidates: settings.explicitCandidateIdsFor,
+    explicitCandidatesForIdentity: settings.explicitCandidateIdsForIdentity,
     // D8:A：平台卡上的启用开关。被停用的平台不参与搜索，其能力一律 `unavailable`。
+    // 2.2 / G7：元素是**平台身份**（内置写枚举名、自定义写 `custom:<稳定 ID>`）——
+    // 以前只录内置枚举，导致"停用任一内置平台后自定义平台候选恒为空"。
     enabledPlatforms: settings.enabledPlatforms,
   );
 

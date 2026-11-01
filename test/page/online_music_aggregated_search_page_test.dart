@@ -213,8 +213,10 @@ void main() {
     expect(service.calls.single.platforms, [netease, qq]);
 
     await tester.tap(
+      // 2.2（R4/G5）：筛选的键从 `MusicPlatform` 换成**平台身份**
+      //（枚举键会让两个自定义平台撞在一起、无法分别筛）⇒ finder 的类型跟着换。
       find.descendant(
-        of: find.byType(SegmentedButton<MusicPlatform?>),
+        of: find.byType(SegmentedButton<PlatformIdentity?>),
         matching: find.text('QQ音乐'),
       ),
     );
@@ -231,7 +233,7 @@ void main() {
 
     await tester.tap(
       find.descendant(
-        of: find.byType(SegmentedButton<MusicPlatform?>),
+        of: find.byType(SegmentedButton<PlatformIdentity?>),
         matching: find.text('全部'),
       ),
     );
@@ -256,7 +258,7 @@ void main() {
     );
 
     await _pumpPage(tester, service);
-    expect(find.byType(SegmentedButton<MusicPlatform?>), findsNothing);
+    expect(find.byType(SegmentedButton<PlatformIdentity?>), findsNothing);
     // W6：单个平台不摆假选项，但要让人看懂现在搜的是哪一家。
     expect(find.text('当前平台：网易云'), findsOneWidget);
 
