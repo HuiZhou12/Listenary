@@ -4,12 +4,12 @@ import 'package:pure_music/core/equalizer_action_state.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
-import 'package:pure_music/native/bass/bass_player.dart';
+import 'package:pure_music/play_service/local_playback_backend.dart';
 
 /// EQ 控制服务，从 PlaybackService 提取
 /// 管理均衡器增益、预设、自动增益和输出增益应用
 class EqualizerService {
-  final BassPlayer _player;
+  final LocalPlaybackBackend _player;
   final PlaybackPreference _pref;
 
   EqualizerService(this._player, this._pref) {

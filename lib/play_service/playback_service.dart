@@ -10,7 +10,10 @@ import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/equalizer_service.dart';
 import 'package:pure_music/play_service/local_smtc_publisher.dart';
 import 'package:pure_music/play_service/local_smtc_input.dart';
-import 'package:pure_music/native/bass/bass_player.dart';
+import 'package:pure_music/play_service/local_playback_backend.dart';
+// 只取状态/频谱枚举；BASS 具体实现已收敛到 LocalPlaybackBackend 之后。
+import 'package:pure_music/native/bass/bass_player.dart'
+    show PlayerState, SpectrumUpdateMode;
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
 import 'package:pure_music/native/rust/api/library_db.dart' as rust_library_db;
@@ -46,8 +49,12 @@ class PlaybackService extends ChangeNotifier {
 
   ValueListenable<int> get playCountRevision => _playCountRevision;
 
-  PlaybackService(this.playService, {LocalSmtcPublisher? localSmtcPublisher})
-    : _localSmtcPublisherSlot = LocalSmtcPublisherSlot(localSmtcPublisher) {
+  PlaybackService(
+    this.playService, {
+    LocalSmtcPublisher? localSmtcPublisher,
+    LocalPlaybackBackend? localPlaybackBackend,
+  }) : _localSmtcPublisherSlot = LocalSmtcPublisherSlot(localSmtcPublisher),
+       _player = localPlaybackBackend ?? BassLocalPlaybackBackend() {
     _smtcKeepAliveHandler = _pushSmtcKeepAlive;
     playService.bindSmtcKeepAlive(_smtcKeepAliveHandler);
     _player.onExclusiveModeChanged = (exclusive) {
@@ -78,7 +85,7 @@ class PlaybackService extends ChangeNotifier {
     });
   }
 
-  final _player = BassPlayer();
+  final LocalPlaybackBackend _player;
   final LocalSmtcPublisherSlot _localSmtcPublisherSlot;
   final _pref = AppPreference.instance.playbackPref;
   late final EqualizerService _eq;
@@ -368,7 +375,7 @@ class PlaybackService extends ChangeNotifier {
     ThemeProvider.instance.cancelPendingAudioTheme();
     final token = _songChangeTaskToken;
     try {
-      _player.setSource(audio.path);
+      _player.open(audio.path);
       _eq.reapplyOutputGain();
       _player.start();
 
@@ -875,7 +882,7 @@ class PlaybackService extends ChangeNotifier {
     nowPlaying!.loadSmallCoverBytes();
 
     try {
-      _player.setSource(nowPlaying!.path);
+      _player.open(nowPlaying!.path);
       _eq.reapplyOutputGain();
       playService.lyricService.updateLyric();
       ThemeProvider.instance.applyThemeFromAudio(nowPlaying!);
@@ -1059,9 +1066,9 @@ class PlaybackService extends ChangeNotifier {
 
     // 7. 最后释放 BASS 音频资源（此时所有回调和订阅已停止）
     try {
-      _player.free();
+      _player.dispose();
     } catch (e) {
-      logger.w('_player.free error: $e');
+      logger.w('_player.dispose error: $e');
     }
   }
 }
