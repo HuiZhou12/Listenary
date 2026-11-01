@@ -44,7 +44,8 @@ const probeNeedsEntityIdReason =
 ///
 /// - 可探测：搜索 / 新歌 / 歌单列表 / 歌单分类 / 榜单 / 新专辑 / 搜索专辑 / 搜索艺人 /
 ///   推荐曲目 / 推荐歌单 / 关注艺人 / 个性化合辑 —— 各自用**自己的**响应结构判定；
-/// - 不可探测：歌单详情 / 歌词 / 播放解析 —— 需要实体 ID，交给**试跑**，**绝不伪造 ID**。
+/// - 不可探测：歌单详情 / 艺人详情 / 专辑详情 / 艺人专辑列表 / 艺人单曲列表 /
+///   歌词 / 播放解析 —— 需要实体 ID，交给**试跑**，**绝不伪造 ID**。
 const declarativeProbeCapabilityContracts =
     <DeclarativeProbeCapabilityContract>[
       DeclarativeProbeCapabilityContract(

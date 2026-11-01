@@ -36,6 +36,22 @@ bool allowsProviderFallback(OnlineMusicErrorKind kind) => switch (kind) {
   _ => false,
 };
 
+/// 「当前音乐来源不支持该能力」的**唯一**构造点。
+///
+/// 为什么归一到 [OnlineMusicException] 而不是 `UnsupportedError`：
+/// `CompositeOnlineMusicService._dispatch` 只捕获并记录 `OnlineMusicException`
+/// （写进路由诊断、按 [allowsProviderFallback] 决定是否换下一个候选）；
+/// 其它异常会**穿透**这两层 —— 既没有可读文案，也不参与回退判定。
+/// 因此凡是"这个能力在这里没有"的实现（接口默认桩、Provider 桩、组合层缺委托）
+/// 都必须从这里取错误，而不是自己抛一个 Dart 核心异常。
+///
+/// 分类是 [OnlineMusicErrorKind.unavailable]：那是"Provider 级不可用"，
+/// 按 [allowsProviderFallback] 允许换下一个候选 —— 与"内容不存在 / 配置错误"不同。
+OnlineMusicException unsupportedCapability() => const OnlineMusicException(
+  kind: OnlineMusicErrorKind.unavailable,
+  safeMessage: '当前在线服务不支持该音乐来源',
+);
+
 /// 这次 HTTP 失败发生在**哪一类 Provider** 上（P-16：决定 404 的归属）。
 enum OnlineMusicErrorOrigin {
   /// 内置实现：请求路径由**代码**拥有 ⇒ 404 就是"资源不存在"（Spec §6.5）。

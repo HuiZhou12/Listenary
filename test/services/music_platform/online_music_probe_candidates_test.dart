@@ -191,12 +191,10 @@ void main() {
     }
   });
 
-  test('★ F3-S9 只配了歌单列表 / 分类 / 榜单 ⇒ 现在也能探测', () {
-    for (final capability in const [
-      OnlineMusicCapability.playlistCollection,
-      OnlineMusicCapability.playlistCategories,
-      OnlineMusicCapability.chartList,
-    ]) {
+  test('★ F3-S9 每个可探测能力单独配置 ⇒ 都能成为候选', () {
+    // 直接由契约派生：**每个** `probeCapableCapabilities` 成员都必须走一遍候选生成，
+    // 避免手写子集（旧写法只覆盖 3 个，推荐曲目等新增能力漏测）。
+    for (final capability in probeCapableCapabilities) {
       final definition = settingsWith({
         capability.name: binding('/x').toJson(),
       }).providers.single;
@@ -205,6 +203,12 @@ void main() {
 
       expect(candidates, hasLength(1), reason: '${capability.name} 应当能作探针');
       expect(candidates.single.capability, capability);
+      expect(candidates.single.id, 'user:${capability.name}');
+      expect(
+        candidates.single.binding.request.path,
+        '/x',
+        reason: '候选必须复用该能力自己的绑定，而不是别的能力的',
+      );
       expect(candidates.single.source, ProviderProbeCandidateSource.userConfig);
     }
   });

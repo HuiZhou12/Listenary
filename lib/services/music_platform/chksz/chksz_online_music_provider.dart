@@ -25,7 +25,7 @@ final class ChkszOnlineMusicProvider
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Personalized playlists are not implemented here');
+  }) async => throw unsupportedCapability();
 
   @override
   Future<List<OnlineArtistSummary>> fetchFollowedArtists({
@@ -33,7 +33,7 @@ final class ChkszOnlineMusicProvider
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Followed artists are not implemented here');
+  }) async => throw unsupportedCapability();
 
   @override
   Future<List<RemotePlaylistSummary>> fetchRecommendedPlaylists({
@@ -41,7 +41,7 @@ final class ChkszOnlineMusicProvider
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Recommended playlists are not implemented here');
+  }) async => throw unsupportedCapability();
 
   @override
   Future<List<MusicTrack>> fetchRecommendedTracks({
@@ -49,7 +49,7 @@ final class ChkszOnlineMusicProvider
     int limit = 30,
     int offset = 0,
     required OnlineMusicCancelToken cancelToken,
-  }) => throw UnsupportedError('Recommended tracks are not implemented here');
+  }) async => throw unsupportedCapability();
 
   ChkszOnlineMusicProvider({
     required ChkszRuntime runtime,

@@ -927,24 +927,6 @@ int _countListEntries(JsonPath? listPath, Object? body) {
   required MusicPlatform platform,
   required int limit,
 }) => switch (candidate.capability) {
-  // 艺人详情**需要实体 ID**（艺人 id 在请求里、不在响应里）⇒ 按既有设计它本就不参与
-  // "服务级探测"（见 `probeInputRequirementFor` 把它归入"需要实体 ID"那一组）。
-  // 这里**如实报错**，而不是假装能探测 ✓。
-  OnlineMusicCapability.artist => throw UnsupportedError(
-    '艺人详情需要艺人 ID，不参与服务级探测（请用「试跑」验证这份配置）',
-  ),
-  // 专辑详情同理：专辑 id 在请求里 ⇒ 不参与服务级探测，**如实报错** ✓。
-  OnlineMusicCapability.album => throw UnsupportedError(
-    '专辑详情需要专辑 ID，不参与服务级探测（请用「试跑」验证这份配置）',
-  ),
-  // 艺人专辑列表同理（艺人 id 在请求里 ✓）。
-  OnlineMusicCapability.artistAlbums => throw UnsupportedError(
-    '艺人专辑列表需要艺人 ID，不参与服务级探测（请用「试跑」验证这份配置）',
-  ),
-  // 艺人单曲列表同理 ✓。
-  OnlineMusicCapability.artistSongs => throw UnsupportedError(
-    '艺人单曲列表需要艺人 ID，不参与服务级探测（请用「试跑」验证这份配置）',
-  ),
   // 搜索艺人：与"搜索专辑"同一套（数组类 ✓）⇒ 用艺人列表映射数一数 ✓。
   OnlineMusicCapability.searchArtists ||
   // 关注艺人与"搜索艺人"**同构**（都是艺人摘要数组 ✓）⇒ 复用同一个映射 ✓。
@@ -1015,9 +997,16 @@ int _countListEntries(JsonPath? listPath, Object? body) {
     ).length,
     unit: probeResultUnitFor(candidate.capability),
   ),
-  // 需要具体实体 ID 的能力**不作为默认探针**（见能力契约）。
-  // 真走到这里说明候选策略被改坏了 ⇒ 明确失败，而不是硬套某个映射或伪造 ID。
+  // 需要具体实体 ID 的能力**不作为默认探针**（见能力契约：playlist / artist / album /
+  // artistAlbums / artistSongs / lyric / stream）。
+  // 真走到这里说明候选策略被改坏了 ⇒ 与其它不可探测能力**同一条**失败路径
+  //（`DeclarativeMappingException` ⇒ 探测报告里如实写"字段映射不完整/未尝试"），
+  // 而不是抛一个会穿透探测报告聚合的 Dart 核心异常。
   OnlineMusicCapability.playlist ||
+  OnlineMusicCapability.artist ||
+  OnlineMusicCapability.album ||
+  OnlineMusicCapability.artistAlbums ||
+  OnlineMusicCapability.artistSongs ||
   OnlineMusicCapability.lyric ||
   OnlineMusicCapability.stream => throw DeclarativeMappingException(
     probeNotProbeableReasonFor(candidate.capability) ?? '该能力不适合服务级探测',

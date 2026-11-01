@@ -5,6 +5,13 @@ import 'package:pure_music/services/music_platform/provider/online_music_capabil
 import 'package:pure_music/services/music_platform/provider/online_music_provider_auth.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_quality_tiers.dart';
 
+/// 供 Provider 实现抛出的统一「不支持该能力」错误。
+///
+/// 定义在错误层（`online_music_error.dart`）：需要它的不止 Provider 实现，
+/// 还有跨层的接口默认桩，错误口径只能有一个 owner，这里只做转出。
+export 'package:pure_music/services/music_platform/online_music_error.dart'
+    show unsupportedCapability;
+
 /// 一个具名的在线音乐 Provider。
 ///
 /// Provider 自己声明服务哪些能力、每个能力支持哪些音乐来源、每个能力需要什么认证；
@@ -334,9 +341,3 @@ abstract class UnsupportedOnlineMusicProvider implements OnlineMusicProvider {
   @override
   void dispose() {}
 }
-
-/// 供 Provider 实现抛出的统一「不支持该能力」错误。
-OnlineMusicException unsupportedCapability() => const OnlineMusicException(
-  kind: OnlineMusicErrorKind.unavailable,
-  safeMessage: '当前在线服务不支持该音乐来源',
-);
