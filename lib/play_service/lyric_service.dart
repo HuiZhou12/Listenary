@@ -28,6 +28,21 @@ const int lyricWordPreSwitchMs = 320;
 const int lyricHighlightCatchUpDurationMs = 260;
 const int lyricHighlightFinishLeadMs = 32;
 
+/// 把「首选在线歌词来源」解析成**在线搜索**用的 [ResultSource]。
+///
+/// **唯一裁定点**（原先是 `updateLyric` / `useOnlineLyric` 各写一遍的
+/// `?? ResultSource.qq`）：
+/// - `qq / kugou / ne / amll` → 同名的搜索来源（经 `matcher.dart` 的唯一桥接）；
+/// - `local` → 没有对应的在线搜索来源，回落 [ResultSource.qq]。
+///
+/// `local` 回落是**既有行为**（收敛前两处映射都写 `local => ResultSource.qq`），
+/// 这里只把它收敛到一处，不改搜索路由；`local` 也不会被当成活动来源写回
+/// `_activeLyricSourceType`（那边直接用设置值）。见 Spec §8 R3。
+ResultSource _resultSourceForPreferredOnline(
+  LyricSourceType preferredSource,
+) =>
+    resultSourceForLyricSourceType(preferredSource) ?? ResultSource.qq;
+
 class _ParallelLyricGroup {
   const _ParallelLyricGroup(this.members, this.endMs);
 
@@ -1202,20 +1217,11 @@ class LyricService extends ChangeNotifier {
       } else {
         // 在线模式：只看用户选的那个源，不看内嵌/外置
         final preferredSource = AppSettings.instance.preferredOnlineSource;
-        final rs = switch (preferredSource) {
-          LyricSourceType.qq => ResultSource.qq,
-          LyricSourceType.kugou => ResultSource.kugou,
-          LyricSourceType.ne => ResultSource.ne,
-          LyricSourceType.amll => ResultSource.amll,
-          LyricSourceType.local =>
-            ResultSource.qq, // unreachable in online mode
-        };
-        _activeLyricSourceType = switch (rs) {
-          ResultSource.qq => LyricSourceType.qq,
-          ResultSource.kugou => LyricSourceType.kugou,
-          ResultSource.ne => LyricSourceType.ne,
-          ResultSource.amll => LyricSourceType.amll,
-        };
+        // _activeLyricSourceType 唯一读取点是 `== LyricSourceType.amll`，
+        // 故直接采用设置值即可（`local` 留在此处与旧行为等价，见 Spec §8 R3）。
+        _activeLyricSourceType = preferredSource;
+        // 搜索源：经唯一裁定点解析（`local` 回落 qq 是既有行为）。
+        final rs = _resultSourceForPreferredOnline(preferredSource);
         logger.i('[updateLyric] online mode: preferred=$rs');
         currLyricFuture = getLyricFromPreferredSource(nowPlaying, rs);
       }
@@ -1458,19 +1464,10 @@ class LyricService extends ChangeNotifier {
       );
     } else {
       // 无指定来源 → 使用首选在线源（单源搜索，不三源并行）
-      final rs = switch (AppSettings.instance.preferredOnlineSource) {
-        LyricSourceType.qq => ResultSource.qq,
-        LyricSourceType.kugou => ResultSource.kugou,
-        LyricSourceType.ne => ResultSource.ne,
-        LyricSourceType.amll => ResultSource.amll,
-        LyricSourceType.local => ResultSource.qq,
-      };
-      _activeLyricSourceType = switch (rs) {
-        ResultSource.qq => LyricSourceType.qq,
-        ResultSource.kugou => LyricSourceType.kugou,
-        ResultSource.ne => LyricSourceType.ne,
-        ResultSource.amll => LyricSourceType.amll,
-      };
+      final preferredSource = AppSettings.instance.preferredOnlineSource;
+      // 同上（`updateLyric`）：设置值直接作为活动来源；搜索源走唯一裁定点。
+      _activeLyricSourceType = preferredSource;
+      final rs = _resultSourceForPreferredOnline(preferredSource);
       logger.i('[useOnlineLyric] no saved source, searching preferred: $rs');
       currLyricFuture = getLyricFromPreferredSource(nowPlaying, rs);
     }

@@ -6,7 +6,7 @@ import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-/// **本地库**那一套歌词子系统的来源枚举（P-15）。
+/// **本地库**那一套歌词子系统的来源枚举。
 ///
 /// ⚠️ 这是**两套歌词子系统**里的"本地歌曲"那一套。另一套（在线歌词**搜索**）的来源
 /// 枚举是 `lib/core/matcher.dart` 的 `ResultSource`，值域不同（没有 `local`）。
@@ -28,6 +28,140 @@ enum LyricSourceType {
   const LyricSourceType(this.name);
 }
 
+/// 歌词来源的 id **字段类型**：决定该来源的 id 存在 `LyricSource` 的哪一个字段里。
+///
+/// - `text`：qq / kugou / amll，字段为 `String?`；
+/// - `integer`：ne，字段为 `int?`；
+/// - `none`：local，没有 id。
+enum _LyricSourceIdKind { text, integer, none }
+
+/// **映射表的一行**：一个歌词来源的 wire 名、展示名、id 字段类型与读写方式。
+///
+/// ⚠️ 本表是 `LyricSourceType` 的**唯一映射 owner**（原 1.1 收敛 Spec §2/§3；
+/// 该草案已删除，结论见 `docs/specs/decoupling-open-issues.md` §1.1）：wire 名解析、
+/// id 字段读写、界面展示名**只能**经本表；其它文件不得再写
+/// 来源 switch，也不得再散落 id 字段映射。
+class _LyricSourceSpec {
+  const _LyricSourceSpec({
+    required this.wireName,
+    required this.label,
+    required this.idKind,
+    this.readId,
+    this.build,
+  });
+
+  /// 落库 / 落 `lyric_source.json` 的稳定来源名。
+  ///
+  /// **必须逐字等于对应 `LyricSourceType` 成员名**：成员自带的 `name` 字段被
+  /// `AppSettings.preferredOnlineSource`（`core/settings.dart`）直接持久化，
+  /// 表内却用显式常量，避免"改名只改一处、另一处静默漂移"（历史缺陷 D-A）。
+  final String wireName;
+
+  /// 界面展示名。D3 已裁定统一为 `QQ` / `网易` / `酷狗` / `AMLL`。
+  final String label;
+
+  final _LyricSourceIdKind idKind;
+
+  /// 从 [LyricSource] 读该来源的 id；`local` 没有 id，恒为 `null`。
+  final String? Function(LyricSource source)? readId;
+
+  /// 用 id 构造 [LyricSource]：文本来源取 [text]，整数来源取 [integer]。
+  final LyricSource Function(String? text, int? integer)? build;
+}
+
+/// 唯一映射表（按枚举键）。
+final Map<LyricSourceType, _LyricSourceSpec> _lyricSourceSpecs = {
+  LyricSourceType.qq: _LyricSourceSpec(
+    wireName: 'qq',
+    label: 'QQ',
+    idKind: _LyricSourceIdKind.text,
+    readId: (source) => source.qqSongId,
+    build: (text, _) => LyricSource(LyricSourceType.qq, qqSongId: text),
+  ),
+  LyricSourceType.kugou: _LyricSourceSpec(
+    wireName: 'kugou',
+    label: '酷狗',
+    idKind: _LyricSourceIdKind.text,
+    readId: (source) => source.kugouSongHash,
+    build: (text, _) => LyricSource(LyricSourceType.kugou, kugouSongHash: text),
+  ),
+  LyricSourceType.ne: _LyricSourceSpec(
+    wireName: 'ne',
+    label: '网易',
+    idKind: _LyricSourceIdKind.integer,
+    readId: (source) => source.neSongId?.toString(),
+    build: (_, integer) => LyricSource(LyricSourceType.ne, neSongId: integer),
+  ),
+  LyricSourceType.amll: _LyricSourceSpec(
+    wireName: 'amll',
+    label: 'AMLL',
+    idKind: _LyricSourceIdKind.text,
+    readId: (source) => source.amllTtmlFile,
+    build: (text, _) => LyricSource(LyricSourceType.amll, amllTtmlFile: text),
+  ),
+  LyricSourceType.local: _LyricSourceSpec(
+    wireName: 'local',
+    label: '本地',
+    idKind: _LyricSourceIdKind.none,
+    build: (_, _) => LyricSource(LyricSourceType.local),
+  ),
+};
+
+/// wire 名 → 枚举（表内派生，禁止另建一份）。
+final Map<String, LyricSourceType> _lyricSourceTypesByWire = {
+  for (final entry in _lyricSourceSpecs.entries)
+    entry.value.wireName: entry.key,
+};
+
+_LyricSourceSpec _lyricSourceSpec(LyricSourceType source) {
+  final spec = _lyricSourceSpecs[source];
+  if (spec == null) {
+    throw StateError('LyricSourceType.$source 缺少映射表条目');
+  }
+  return spec;
+}
+
+_LyricSourceSpec? _lyricSourceSpecFromWire(String? wire) {
+  final source = lyricSourceTypeFromWire(wire);
+  return source == null ? null : _lyricSourceSpecs[source];
+}
+
+/// 该来源落库 / 落 JSON 的稳定来源名。
+String lyricSourceWireName(LyricSourceType source) =>
+    _lyricSourceSpec(source).wireName;
+
+/// 该来源的界面展示名（唯一文案 owner）。
+String lyricSourceLabel(LyricSourceType source) =>
+    _lyricSourceSpec(source).label;
+
+/// 由 wire 名解析来源；无法识别时返回 `null`（调用方自行决定回落）。
+LyricSourceType? lyricSourceTypeFromWire(String? wire) =>
+    wire == null ? null : _lyricSourceTypesByWire[wire];
+
+/// 该来源在 `lyric_sources.id` 列里的取值；`local` 为 `null`。
+String? lyricSourceId(LyricSource source) =>
+    _lyricSourceSpec(source.source).readId?.call(source);
+
+/// 用 id 构造 [LyricSource]（表驱动的唯一 id 写入口）。
+///
+/// [normalizeTextId] 是**既有行为差异**（D5 保留，不统一）：
+/// - `fromMap`（`lyric_source.json`）传 `true`：文本 id 走 [_normalizedTextSongId]；
+/// - `_lyricSourceFromDb`（数据库行）传 `false`：文本 id **原样透传**。
+/// `ne` 是整数来源，两条路径都走 [_normalizedNeSongId]。
+LyricSource _lyricSourceWithId(
+  _LyricSourceSpec spec,
+  Object? rawId, {
+  required bool normalizeTextId,
+}) {
+  final text = spec.idKind == _LyricSourceIdKind.text
+      ? (normalizeTextId ? _normalizedTextSongId(rawId) : rawId?.toString())
+      : null;
+  final integer = spec.idKind == _LyricSourceIdKind.integer && rawId != null
+      ? _normalizedNeSongId(rawId)
+      : null;
+  return spec.build!(text, integer);
+}
+
 class LyricSource {
   LyricSourceType source;
   String? qqSongId;
@@ -45,51 +179,17 @@ class LyricSource {
 
   static LyricSource? fromMap(Map? map) {
     if (map == null) return null;
-    final source = _normalizedSourceName(map['source']);
-    if (source == 'qq') {
-      return LyricSource(
-        LyricSourceType.qq,
-        qqSongId: _normalizedTextSongId(map['id']),
-      );
-    } else if (source == 'kugou') {
-      return LyricSource(
-        LyricSourceType.kugou,
-        kugouSongHash: _normalizedTextSongId(map['id']),
-      );
-    } else if (source == 'ne') {
-      final rawId = map['id'];
-      int? neSongId;
-      if (rawId is int) {
-        neSongId = _normalizedNeSongId(rawId);
-      } else if (rawId is num) {
-        neSongId = _normalizedNeSongId(rawId);
-      } else if (rawId is String) {
-        neSongId = _normalizedNeSongId(rawId);
-      }
-      return LyricSource(LyricSourceType.ne, neSongId: neSongId);
-    } else if (source == 'amll') {
-      return LyricSource(
-        LyricSourceType.amll,
-        amllTtmlFile: _normalizedTextSongId(map['id']),
-      );
-    } else {
-      return LyricSource(LyricSourceType.local);
-    }
+    final spec = _lyricSourceSpecFromWire(_normalizedSourceName(map['source']));
+    // 认不出的来源沿用既有容错：回落本地歌词（不抛异常），见 Spec §5。
+    if (spec == null) return LyricSource(LyricSourceType.local);
+    return _lyricSourceWithId(spec, map['id'], normalizeTextId: true);
   }
 
   Map toMap() {
-    switch (source) {
-      case LyricSourceType.qq:
-        return {'source': source.name, 'id': qqSongId};
-      case LyricSourceType.kugou:
-        return {'source': source.name, 'id': kugouSongHash};
-      case LyricSourceType.ne:
-        return {'source': source.name, 'id': neSongId};
-      case LyricSourceType.amll:
-        return {'source': source.name, 'id': amllTtmlFile};
-      case LyricSourceType.local:
-        return {'source': source.name, 'id': null};
-    }
+    return {
+      'source': lyricSourceWireName(source),
+      'id': lyricSourceId(this),
+    };
   }
 }
 
@@ -175,8 +275,8 @@ void _writeLyricSourcesToDb(Database db, Map<String, LyricSource> sources) {
     db.execute('DELETE FROM lyric_sources');
     for (final e in sources.entries) {
       final p = e.key;
-      final s = e.value.source.name;
-      final id = _lyricSourceId(e.value);
+      final s = lyricSourceWireName(e.value.source);
+      final id = lyricSourceId(e.value);
       db.execute(
         'INSERT INTO lyric_sources(path, source, id) VALUES(?, ?, ?)',
         [p, s, id],
@@ -189,39 +289,10 @@ void _writeLyricSourcesToDb(Database db, Map<String, LyricSource> sources) {
   }
 }
 
-String? _lyricSourceId(LyricSource s) {
-  switch (s.source) {
-    case LyricSourceType.qq:
-      return s.qqSongId?.toString();
-    case LyricSourceType.kugou:
-      return s.kugouSongHash;
-    case LyricSourceType.ne:
-      return s.neSongId?.toString();
-    case LyricSourceType.amll:
-      return s.amllTtmlFile;
-    case LyricSourceType.local:
-      return null;
-  }
-}
-
 LyricSource? _lyricSourceFromDb(String source, String? id) {
-  final normalizedSource = _normalizedSourceName(source);
-  if (normalizedSource == LyricSourceType.qq.name) {
-    return LyricSource(LyricSourceType.qq, qqSongId: id);
-  }
-  if (normalizedSource == LyricSourceType.kugou.name) {
-    return LyricSource(LyricSourceType.kugou, kugouSongHash: id);
-  }
-  if (normalizedSource == LyricSourceType.ne.name) {
-    return LyricSource(
-      LyricSourceType.ne,
-      neSongId: id == null ? null : _normalizedNeSongId(id),
-    );
-  }
-  if (normalizedSource == LyricSourceType.amll.name) {
-    return LyricSource(LyricSourceType.amll, amllTtmlFile: id);
-  }
-  return LyricSource(LyricSourceType.local);
+  final spec = _lyricSourceSpecFromWire(_normalizedSourceName(source));
+  if (spec == null) return LyricSource(LyricSourceType.local);
+  return _lyricSourceWithId(spec, id, normalizeTextId: false);
 }
 
 String? _normalizedSourceName(Object? value) {

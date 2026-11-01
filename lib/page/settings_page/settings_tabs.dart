@@ -2422,7 +2422,7 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SettingsTile(
-          // P-15：作用域必须写明 —— 这一项只作用于**本地歌曲**（库里的文件）。
+          // 作用域必须写明 —— 这一项只作用于**本地歌曲**（库里的文件）。
           // 在线曲目的歌词按曲目所属平台取，不受这里影响（以前没有任何说明，
           // 用户会以为它决定所有歌曲的歌词来源）。
           description: '首选歌词来源（仅本地歌曲）',
@@ -2451,20 +2451,28 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
           Padding(
             padding: const EdgeInsets.only(left: 16),
             child: SettingsTile(
-              // P-15：同上 —— 它是本地库那一套子系统的来源，**只对本地歌曲生效**。
+              // 同上 —— 它是本地库那一套子系统的来源，**只对本地歌曲生效**。
               description: '默认在线源（仅本地歌曲）',
               action: SegmentedButton<LyricSourceType>(
                 showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(value: LyricSourceType.qq, label: Text('QQ')),
+                // 展示名统一取 `lyric_source.dart` 的映射表（唯一文案 owner），
+                // 不再在此处复制一份来源中文名。顺序沿用既有（不属本项范围）。
+                segments: [
+                  ButtonSegment(
+                    value: LyricSourceType.qq,
+                    label: Text(lyricSourceLabel(LyricSourceType.qq)),
+                  ),
                   ButtonSegment(
                     value: LyricSourceType.kugou,
-                    label: Text('酷狗'),
+                    label: Text(lyricSourceLabel(LyricSourceType.kugou)),
                   ),
-                  ButtonSegment(value: LyricSourceType.ne, label: Text('网易')),
+                  ButtonSegment(
+                    value: LyricSourceType.ne,
+                    label: Text(lyricSourceLabel(LyricSourceType.ne)),
+                  ),
                   ButtonSegment(
                     value: LyricSourceType.amll,
-                    label: Text('AMLL'),
+                    label: Text(lyricSourceLabel(LyricSourceType.amll)),
                   ),
                 ],
                 selected: {settings.preferredOnlineSource},

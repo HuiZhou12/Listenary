@@ -14,32 +14,18 @@ import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart'
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-LyricSourceType _lyricSourceTypeFromResultSource(ResultSource source) {
-  return switch (source) {
-    ResultSource.qq => LyricSourceType.qq,
-    ResultSource.kugou => LyricSourceType.kugou,
-    ResultSource.ne => LyricSourceType.ne,
-    ResultSource.amll => LyricSourceType.amll,
-  };
-}
-
+/// 该搜索结果是否就是当前已保存的来源（**映射一律经 canonical table**）。
+///
+/// 来源枚举映射走 `matcher.dart` 的唯一桥接；id 比对走 `lyric_source.dart` 映射表的
+/// `lyricSourceId`（D5：归一化差异保留在表内，本处不重复实现字段映射）。
 bool _isSavedLyricResult(String audioPath, SongSearchResult result) {
   final saved = lyricSources[audioPath];
   if (saved == null ||
-      saved.source != _lyricSourceTypeFromResultSource(result.source)) {
+      saved.source != lyricSourceTypeForResultSource(result.source)) {
     return false;
   }
-  return switch (result.source) {
-    ResultSource.qq =>
-      saved.qqSongId != null && saved.qqSongId == result.qqSongId,
-    ResultSource.kugou =>
-      saved.kugouSongHash != null &&
-          saved.kugouSongHash == result.kugouSongHash,
-    ResultSource.ne =>
-      saved.neSongId != null && saved.neSongId == result.neSongId,
-    ResultSource.amll =>
-      saved.amllTtmlFile != null && saved.amllTtmlFile == result.amllTtmlFile,
-  };
+  final savedId = lyricSourceId(saved);
+  return savedId != null && savedId == lyricSourceId(result.toLyricSource());
 }
 
 @visibleForTesting
@@ -731,13 +717,25 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  _buildTab(ResultSource.qq, 'QQ'),
+                  _buildTab(
+                    ResultSource.qq,
+                    lyricSourceLabel(LyricSourceType.qq),
+                  ),
                   const SizedBox(width: 8),
-                  _buildTab(ResultSource.ne, '网易'),
+                  _buildTab(
+                    ResultSource.ne,
+                    lyricSourceLabel(LyricSourceType.ne),
+                  ),
                   const SizedBox(width: 8),
-                  _buildTab(ResultSource.kugou, '酷狗'),
+                  _buildTab(
+                    ResultSource.kugou,
+                    lyricSourceLabel(LyricSourceType.kugou),
+                  ),
                   const SizedBox(width: 8),
-                  _buildTab(ResultSource.amll, 'AMLL'),
+                  _buildTab(
+                    ResultSource.amll,
+                    lyricSourceLabel(LyricSourceType.amll),
+                  ),
                 ],
               ),
               const SizedBox(height: 8),
@@ -1177,12 +1175,9 @@ class _SearchResultItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final selected = _isSavedLyricResult(audio.path, searchResult);
-    final sourceText = switch (searchResult.source) {
-      ResultSource.qq => 'QQ',
-      ResultSource.kugou => '酷狗',
-      ResultSource.ne => '网易',
-      ResultSource.amll => 'AMLL',
-    };
+    final sourceText = lyricSourceLabel(
+      lyricSourceTypeForResultSource(searchResult.source),
+    );
 
     return ListTile(
       selected: selected,

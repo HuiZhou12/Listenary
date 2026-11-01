@@ -17,6 +17,25 @@ final logger = utils.logger;
 
 enum ResultSource { qq, kugou, ne, amll }
 
+/// **唯一**的 `ResultSource` ↔ `LyricSourceType` 桥接（原 1.1 收敛 Spec §3.1；
+/// 该草案已删除，结论见 `docs/specs/decoupling-open-issues.md` §1.1）。
+///
+/// 两个枚举域不同（`ResultSource` 没有 `local`），故映射只做"来源名一致"的解析：
+/// 委托给 `lib/lyric/lyric_source.dart` 的映射表（wire 名），本文件**不复制** 4 对成员。
+/// 任何地方都不得再写一份 `ResultSource.xxx => LyricSourceType.yyy` 的 switch。
+LyricSourceType lyricSourceTypeForResultSource(ResultSource source) {
+  final resolved = lyricSourceTypeFromWire(source.name);
+  if (resolved == null) {
+    throw StateError('ResultSource.$source 缺少歌词来源映射');
+  }
+  return resolved;
+}
+
+/// 反向桥接：`local` 没有对应的搜索来源，返回 `null`
+/// （**不**兜底成 `ResultSource.qq`；调用方显式处理 `local`）。
+ResultSource? resultSourceForLyricSourceType(LyricSourceType source) =>
+    ResultSource.values.asNameMap()[lyricSourceWireName(source)];
+
 const int _lyricCacheMaxSize = 64;
 const int _amllSearchLimit = 30;
 const int _preferredSourceSearchLimit = 12;
@@ -794,14 +813,8 @@ class SongSearchResult {
       this.lyricType});
 
   LyricSource toLyricSource() {
-    final sourceType = switch (source) {
-      ResultSource.qq => LyricSourceType.qq,
-      ResultSource.kugou => LyricSourceType.kugou,
-      ResultSource.ne => LyricSourceType.ne,
-      ResultSource.amll => LyricSourceType.amll,
-    };
     return LyricSource(
-      sourceType,
+      lyricSourceTypeForResultSource(source),
       qqSongId: qqSongId,
       kugouSongHash: kugouSongHash,
       neSongId: neSongId,
