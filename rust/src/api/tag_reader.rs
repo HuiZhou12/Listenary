@@ -44,7 +44,6 @@ use windows::{
 
 use crate::frb_generated::StreamSink;
 
-use super::library_db;
 use super::logger::log_to_dart;
 
 /// 将迭代器中的字符串去重后用 "/" 拼接。
@@ -2332,7 +2331,6 @@ pub fn build_index_from_folders_recursively(
     index_path: String,
     sink: StreamSink<IndexActionState>,
 ) -> Result<(), io::Error> {
-    let index_dir = PathBuf::from(&index_path);
     let mut audio_folders: Vec<AudioFolder> = vec![];
     let mut scanned: u64 = 0;
     let mut seen: HashSet<String> = HashSet::new();
@@ -2401,11 +2399,6 @@ pub fn build_index_from_folders_recursively(
     let mut index_path = PathBuf::from(index_path);
     index_path.push("index.json");
     fs::File::create(index_path)?.write_all(json_value.to_string().as_bytes())?;
-
-    if let Err(err) = library_db::write_index_value_to_sqlite(&index_dir, &json_value) {
-        log_to_dart(format!("sqlite index write failed: {}", err));
-    }
-
     Ok(())
 }
 
@@ -2443,14 +2436,6 @@ fn _update_index_below_1_1_0(
         .to_string()
         .as_bytes(),
     )?;
-
-    if let Some(index_dir) = index_path.parent() {
-        if let Err(err) =
-            library_db::migrate_index_json_to_sqlite(index_dir.to_string_lossy().to_string())
-        {
-            log_to_dart(format!("sqlite index migrate failed: {}", err));
-        }
-    }
 
     Ok(())
 }
@@ -2668,7 +2653,28 @@ mod tag_reader_tests {
     }
 }
 
-fn index_folder_snapshots_unchanged(folders: &[library_db::IndexFolderSnapshot]) -> bool {
+/// 索引更新快路径的**输入快照**：由 Dart 侧从 `library.sqlite` 读出后传入。
+///
+/// Rust 进程内不再持有任何 SQLite 依赖（见 `decoupling-3.5-b`），因此
+/// 「上次同步进库的索引是否还新鲜」这一判定不能在 Rust 内查询数据库完成，
+/// 改由 Dart 把快照作为入参传进来（FRB 签名变化的既定交付项）。
+pub struct IndexSnapshot {
+    /// `meta.version`：上次同步进库的索引格式版本。
+    pub version: u64,
+    /// `folders(path, modified)`，按 `path` 升序。
+    pub folders: Vec<IndexFolderSnapshot>,
+    /// `meta.index_source_modified`：上次同步时 `index.json` 的修改时间（**微秒**）。
+    pub index_source_modified: Option<i64>,
+    /// `meta.index_source_size`：上次同步时 `index.json` 的字节数。
+    pub index_source_size: Option<i64>,
+}
+
+pub struct IndexFolderSnapshot {
+    pub path: String,
+    pub modified: u64,
+}
+
+fn index_folder_snapshots_unchanged(folders: &[IndexFolderSnapshot]) -> bool {
     folders.iter().all(|folder| {
         fs::metadata(&folder.path)
             .and_then(|metadata| metadata.modified())
@@ -2683,19 +2689,42 @@ fn index_folder_snapshots_unchanged(folders: &[library_db::IndexFolderSnapshot])
     })
 }
 
+/// 快照是否仍然可用：`index.json` 的签名与入库时一致，且格式版本未过期。
+///
+/// 与旧实现（Rust 内 `read_current_index_snapshot`）等价：签名不符或版本缺失
+/// 都视为「无快照 ⇒ 必须全量检查」。这里只 `stat` 文件，**不解析** `index.json`。
+///
+/// 时间戳单位是**微秒**（`Duration::as_micros`）：快照由 Dart 侧读库产生，
+/// `DateTime.microsecondsSinceEpoch` 与 Windows 上的 `stat` 精度都到微秒；
+/// 用纳秒会因为 Dart 侧只能给到微秒而永远对不上，使快路径静默失效。
+fn snapshot_is_usable(index_dir: &Path, snapshot: &IndexSnapshot) -> bool {
+    let index_json = index_dir.join("index.json");
+    let Ok(metadata) = fs::metadata(&index_json) else {
+        return false;
+    };
+    let modified = metadata
+        .modified()
+        .map(|value| value.duration_since(UNIX_EPOCH).unwrap_or_default())
+        .map(|value| value.as_micros().min(i64::MAX as u128) as i64)
+        .unwrap_or(-1);
+    let size = metadata.len().min(i64::MAX as u64) as i64;
+    Some((modified, size))
+        == snapshot
+            .index_source_modified
+            .zip(snapshot.index_source_size)
+}
+
 pub fn update_index(
     index_path: String,
     force_metadata_check: bool,
+    snapshot: Option<IndexSnapshot>,
     sink: StreamSink<IndexActionState>,
 ) -> anyhow::Result<()> {
     let index_dir = PathBuf::from(&index_path);
-    let sqlite_snapshot = library_db::read_current_index_snapshot(&index_dir)
-        .ok()
-        .flatten();
-    let sqlite_snapshot_current = sqlite_snapshot.is_some();
     if !force_metadata_check {
-        if let Some(snapshot) = sqlite_snapshot.as_ref() {
+        if let Some(snapshot) = snapshot.as_ref() {
             if snapshot.version == CURRENT_INDEX_VERSION
+                && snapshot_is_usable(&index_dir, snapshot)
                 && index_folder_snapshots_unchanged(&snapshot.folders)
             {
                 log_to_dart("index update fast path: unchanged".to_string());
@@ -2887,11 +2916,6 @@ pub fn update_index(
 
     if index_changed {
         fs::File::create(index_path)?.write_all(index.to_string().as_bytes())?;
-    }
-    if index_changed || !sqlite_snapshot_current {
-        if let Err(err) = library_db::write_index_value_to_sqlite(&index_dir, &index) {
-            log_to_dart(format!("sqlite index write failed: {}", err));
-        }
     }
 
     let _ = sink.add(IndexActionState {

@@ -6,7 +6,6 @@
 import 'api/amll_ttml.dart';
 import 'api/color_extraction.dart';
 import 'api/installed_font.dart';
-import 'api/library_db.dart';
 import 'api/logger.dart';
 import 'api/ne.dart';
 import 'api/smtc_flutter.dart';
@@ -113,13 +112,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
+
+  @protected
+  IndexSnapshot dco_decode_box_autoadd_index_snapshot(dynamic raw);
+
+  @protected
   LyricContent dco_decode_box_autoadd_lyric_content(dynamic raw);
 
   @protected
   LyricUser dco_decode_box_autoadd_lyric_user(dynamic raw);
-
-  @protected
-  int dco_decode_box_autoadd_u_32(dynamic raw);
 
   @protected
   int dco_decode_box_autoadd_u_8(dynamic raw);
@@ -140,10 +142,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   IndexActionState dco_decode_index_action_state(dynamic raw);
 
   @protected
-  IndexAudio dco_decode_index_audio(dynamic raw);
+  IndexFolderSnapshot dco_decode_index_folder_snapshot(dynamic raw);
 
   @protected
-  IndexFolder dco_decode_index_folder(dynamic raw);
+  IndexSnapshot dco_decode_index_snapshot(dynamic raw);
 
   @protected
   InstalledFont dco_decode_installed_font(dynamic raw);
@@ -161,16 +163,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<AudioExtraItem> dco_decode_list_audio_extra_item(dynamic raw);
 
   @protected
-  List<IndexAudio> dco_decode_list_index_audio(dynamic raw);
-
-  @protected
-  List<IndexFolder> dco_decode_list_index_folder(dynamic raw);
+  List<IndexFolderSnapshot> dco_decode_list_index_folder_snapshot(dynamic raw);
 
   @protected
   List<InstalledFont> dco_decode_list_installed_font(dynamic raw);
-
-  @protected
-  List<PlayCountEntry> dco_decode_list_play_count_entry(dynamic raw);
 
   @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
@@ -197,13 +193,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
+  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
+
+  @protected
+  IndexSnapshot? dco_decode_opt_box_autoadd_index_snapshot(dynamic raw);
+
+  @protected
   LyricContent? dco_decode_opt_box_autoadd_lyric_content(dynamic raw);
 
   @protected
   LyricUser? dco_decode_opt_box_autoadd_lyric_user(dynamic raw);
-
-  @protected
-  int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
 
   @protected
   int? dco_decode_opt_box_autoadd_u_8(dynamic raw);
@@ -213,9 +212,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
-
-  @protected
-  PlayCountEntry dco_decode_play_count_entry(dynamic raw);
 
   @protected
   (Uint8List?, Uint32List)
@@ -344,15 +340,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  IndexSnapshot sse_decode_box_autoadd_index_snapshot(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   LyricContent sse_decode_box_autoadd_lyric_content(
     SseDeserializer deserializer,
   );
 
   @protected
   LyricUser sse_decode_box_autoadd_lyric_user(SseDeserializer deserializer);
-
-  @protected
-  int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
   int sse_decode_box_autoadd_u_8(SseDeserializer deserializer);
@@ -375,10 +376,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   IndexActionState sse_decode_index_action_state(SseDeserializer deserializer);
 
   @protected
-  IndexAudio sse_decode_index_audio(SseDeserializer deserializer);
+  IndexFolderSnapshot sse_decode_index_folder_snapshot(
+    SseDeserializer deserializer,
+  );
 
   @protected
-  IndexFolder sse_decode_index_folder(SseDeserializer deserializer);
+  IndexSnapshot sse_decode_index_snapshot(SseDeserializer deserializer);
 
   @protected
   InstalledFont sse_decode_installed_font(SseDeserializer deserializer);
@@ -402,18 +405,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  List<IndexAudio> sse_decode_list_index_audio(SseDeserializer deserializer);
-
-  @protected
-  List<IndexFolder> sse_decode_list_index_folder(SseDeserializer deserializer);
-
-  @protected
-  List<InstalledFont> sse_decode_list_installed_font(
+  List<IndexFolderSnapshot> sse_decode_list_index_folder_snapshot(
     SseDeserializer deserializer,
   );
 
   @protected
-  List<PlayCountEntry> sse_decode_list_play_count_entry(
+  List<InstalledFont> sse_decode_list_installed_font(
     SseDeserializer deserializer,
   );
 
@@ -444,6 +441,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
+  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  IndexSnapshot? sse_decode_opt_box_autoadd_index_snapshot(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   LyricContent? sse_decode_opt_box_autoadd_lyric_content(
     SseDeserializer deserializer,
   );
@@ -452,9 +457,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LyricUser? sse_decode_opt_box_autoadd_lyric_user(
     SseDeserializer deserializer,
   );
-
-  @protected
-  int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
   int? sse_decode_opt_box_autoadd_u_8(SseDeserializer deserializer);
@@ -466,9 +468,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
-
-  @protected
-  PlayCountEntry sse_decode_play_count_entry(SseDeserializer deserializer);
 
   @protected
   (Uint8List?, Uint32List)
@@ -627,6 +626,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_i_64(
+    PlatformInt64 self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_index_snapshot(
+    IndexSnapshot self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_lyric_content(
     LyricContent self,
     SseSerializer serializer,
@@ -637,9 +648,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     LyricUser self,
     SseSerializer serializer,
   );
-
-  @protected
-  void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_u_8(int self, SseSerializer serializer);
@@ -666,10 +674,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_index_audio(IndexAudio self, SseSerializer serializer);
+  void sse_encode_index_folder_snapshot(
+    IndexFolderSnapshot self,
+    SseSerializer serializer,
+  );
 
   @protected
-  void sse_encode_index_folder(IndexFolder self, SseSerializer serializer);
+  void sse_encode_index_snapshot(IndexSnapshot self, SseSerializer serializer);
 
   @protected
   void sse_encode_installed_font(InstalledFont self, SseSerializer serializer);
@@ -696,26 +707,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_list_index_audio(
-    List<IndexAudio> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_index_folder(
-    List<IndexFolder> self,
+  void sse_encode_list_index_folder_snapshot(
+    List<IndexFolderSnapshot> self,
     SseSerializer serializer,
   );
 
   @protected
   void sse_encode_list_installed_font(
     List<InstalledFont> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_play_count_entry(
-    List<PlayCountEntry> self,
     SseSerializer serializer,
   );
 
@@ -753,6 +752,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_String(String? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_i_64(
+    PlatformInt64? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_index_snapshot(
+    IndexSnapshot? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_lyric_content(
     LyricContent? self,
     SseSerializer serializer,
@@ -763,9 +774,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     LyricUser? self,
     SseSerializer serializer,
   );
-
-  @protected
-  void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_u_8(int? self, SseSerializer serializer);
@@ -779,12 +787,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_list_prim_u_8_strict(
     Uint8List? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_play_count_entry(
-    PlayCountEntry self,
     SseSerializer serializer,
   );
 

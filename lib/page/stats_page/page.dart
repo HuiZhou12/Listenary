@@ -1,8 +1,7 @@
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/design_tokens.dart';
-import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/local_play_history.dart';
 import 'package:pure_music/library/audio_library.dart';
-import 'package:pure_music/native/rust/api/library_db.dart' as rust_library_db;
 import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/page/stats_page/online_history_stats_view.dart';
 import 'package:pure_music/page/stats_page/stats_components.dart';
@@ -25,7 +24,7 @@ class StatsPage extends StatefulWidget {
 }
 
 class _StatsPageState extends State<StatsPage> {
-  List<rust_library_db.PlayCountEntry>? _topPlayed;
+  List<LocalPlayEntry>? _topPlayed;
   bool _loading = true;
   bool _loadFailed = false;
   int _loadRequestToken = 0;
@@ -71,11 +70,7 @@ class _StatsPageState extends State<StatsPage> {
       });
     }
     try {
-      final supportPath = (await getAppDataDir()).path;
-      final top = await rust_library_db.getTopPlayed(
-        indexPath: supportPath,
-        limit: -1,
-      );
+      final top = await LocalPlayHistory.instance.topPlayed();
       final visibleTop = top
           .where(
             (entry) => AudioLibrary.instance.audioByPath(entry.path) != null,
@@ -159,9 +154,7 @@ class _StatsPageState extends State<StatsPage> {
       (sum, audio) => sum + audio.duration,
     );
     final topArtists = _buildTopArtists(audios, data);
-    final rankedTracks = (data ?? const <rust_library_db.PlayCountEntry>[])
-        .take(100)
-        .toList();
+    final rankedTracks = (data ?? const <LocalPlayEntry>[]).take(100).toList();
 
     return CustomScrollView(
       slivers: [
@@ -549,7 +542,7 @@ class _StatsPageState extends State<StatsPage> {
 
   Widget _buildRow(
     ColorScheme scheme,
-    rust_library_db.PlayCountEntry entry, {
+    LocalPlayEntry entry, {
     required int index,
     required int maxPlays,
   }) {
@@ -700,7 +693,7 @@ class _StatsPageState extends State<StatsPage> {
 
   List<_ArtistPlayStat> _buildTopArtists(
     List<Audio> audios,
-    List<rust_library_db.PlayCountEntry>? entries,
+    List<LocalPlayEntry>? entries,
   ) {
     final counts = <String, int>{};
     final source = entries == null

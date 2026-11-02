@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:pure_music/core/library_db.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
@@ -160,28 +161,64 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
   @override
   void initState() {
     super.initState();
-    _subscription =
-        updateIndex(
-          indexPath: widget.indexPath.path,
-          forceMetadataCheck: false,
-        ).listen(
-          (action) {
-            if (action.message.isNotEmpty) {
-              logger.i('[update index] ${action.progress}: ${action.message}');
-            }
-            if (mounted) {
-              setState(() => _latestAction = action);
-            }
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            logger.e('更新音乐库索引失败', error: error, stackTrace: stackTrace);
-            if (mounted) {
-              setState(() => _errorMessage = '音乐库索引失败，请查看日志');
-            }
-          },
-          onDone: whenIndexUpdated,
-          cancelOnError: true,
-        );
+    _subscription = _startUpdate().listen(
+      (action) {
+        if (action.message.isNotEmpty) {
+          logger.i('[update index] ${action.progress}: ${action.message}');
+        }
+        if (mounted) {
+          setState(() => _latestAction = action);
+        }
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        logger.e('更新音乐库索引失败', error: error, stackTrace: stackTrace);
+        if (mounted) {
+          setState(() => _errorMessage = '音乐库索引失败，请查看日志');
+        }
+      },
+      onDone: whenIndexUpdated,
+      cancelOnError: true,
+    );
+  }
+
+  /// 先向 Dart 仓储取快照，再交给 Rust：SQLite 归 Dart 之后，Rust 已经没有
+  /// 「上次同步进库的索引是否还新鲜」的判定能力，快照因此改成入参（Q2 裁定）。
+  /// 取不到快照（库缺失 / 版本不足）时传 `null` ⇒ 走全量检查。
+  Stream<IndexActionState> _startUpdate() async* {
+    final snapshot = await _readSnapshot();
+    yield* updateIndex(
+      indexPath: widget.indexPath.path,
+      forceMetadataCheck: false,
+      snapshot: snapshot,
+    );
+  }
+
+  Future<IndexSnapshot?> _readSnapshot() async {
+    try {
+      final opened = await LibraryDb.instance.initialize(
+        indexDir: widget.indexPath.path,
+      );
+      if (!opened) return null;
+      final snapshot = LibraryDb.instance.readSnapshot();
+      if (snapshot == null) return null;
+      return IndexSnapshot(
+        version: BigInt.from(snapshot.version),
+        folders: snapshot.folders
+            .map(
+              (folder) => IndexFolderSnapshot(
+                path: folder.path,
+                modified: BigInt.from(folder.modified),
+              ),
+            )
+            .toList(growable: false),
+        // `PlatformInt64` 在原生平台就是 `int`（Web 才是 BigInt）。
+        indexSourceModified: snapshot.indexSourceModified,
+        indexSourceSize: snapshot.indexSourceSize,
+      );
+    } catch (err, trace) {
+      logger.w('读取索引快照失败，改为全量检查', error: err, stackTrace: trace);
+      return null;
+    }
   }
 
   @override

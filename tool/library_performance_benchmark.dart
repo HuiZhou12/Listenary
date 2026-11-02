@@ -11,7 +11,7 @@ import 'package:pure_music/component/artist_tile.dart';
 import 'package:pure_music/core/page_sort.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/core/workload_policy.dart';
-import 'package:pure_music/native/rust/api/library_db.dart' as library_db;
+import 'package:pure_music/core/library_db.dart';
 import 'package:pure_music/native/rust/frb_generated.dart';
 import 'package:pure_music/page/albums_page.dart';
 import 'package:pure_music/page/artists_page.dart';
@@ -265,9 +265,8 @@ class _LibraryBenchmarkDriverState extends State<_LibraryBenchmarkDriver> {
     final cpuBefore = _cpuClock.readSeconds();
     final totalClock = Stopwatch()..start();
     final sqliteClock = Stopwatch()..start();
-    final dbFolders = await library_db.readIndexFromSqlite(
-      indexPath: targetDirectory.path,
-    );
+    LibraryDb.instance.debugOpenAtForTest(targetDirectory.path);
+    final dbFolders = LibraryDb.instance.readIndex() ?? const <LibraryFolder>[];
     sqliteClock.stop();
 
     final conversionClock = Stopwatch()..start();
@@ -283,12 +282,12 @@ class _LibraryBenchmarkDriverState extends State<_LibraryBenchmarkDriver> {
             audio.album,
             audio.albumArtist,
             audio.track,
-            audio.duration.toInt(),
+            audio.duration,
             audio.bitrate,
             audio.sampleRate,
             audio.path,
-            audio.modified.toInt(),
-            audio.created.toInt(),
+            audio.modified,
+            audio.created,
             audio.by,
             disc: audio.disc,
             playCount: audio.playCount,
@@ -300,12 +299,7 @@ class _LibraryBenchmarkDriverState extends State<_LibraryBenchmarkDriver> {
         }
       }
       folders.add(
-        AudioFolder(
-          audios,
-          folder.path,
-          folder.modified.toInt(),
-          folder.latest.toInt(),
-        ),
+        AudioFolder(audios, folder.path, folder.modified, folder.latest),
       );
     }
     conversionClock.stop();

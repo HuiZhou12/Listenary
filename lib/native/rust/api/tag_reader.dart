@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `_get_lyric_from_lofty`, `_get_picture_by_lofty`, `_get_picture_by_windows`, `_picture_cache_key`, `_update_index_below_1_1_0`, `add_missing_audio_files`, `build_alternative_extra_metadata`, `collect_audio_files_by_folder`, `collect_symphonia_tags`, `discover_new_audio_folders`, `estimated_bitrate`, `file_name`, `get_embedded_picture_from_path`, `id3_tag_items`, `indexed_audio_needs_update`, `initialize`, `is_asf_path`, `is_dff_path`, `is_dsf_path`, `is_generic_id3_path`, `is_image_attachment`, `is_lyric_item_key`, `is_midi_path`, `is_supported_audio_path`, `is_symphonia_path`, `join_deduped`, `merge_symphonia_field`, `midi_metrical_micros`, `midi_payload`, `midi_text`, `midi_track_info`, `midi_track_micros`, `new_with_path`, `optional_nonempty`, `parse_alternative_number`, `parse_midi_metadata`, `push_dsf_item`, `read_alternative_extra_metadata`, `read_asf_extra_metadata`, `read_asf_picture`, `read_audio_paths_parallel`, `read_by_alternative`, `read_by_asf`, `read_by_dff`, `read_by_dsf`, `read_by_id3`, `read_by_lofty`, `read_by_midi`, `read_by_symphonia`, `read_by_win_music_properties`, `read_dff_metadata`, `read_dff_picture`, `read_dsf_audio_properties`, `read_dsf_extra_metadata`, `read_dsf_picture`, `read_from_folder`, `read_from_path`, `read_id3_from_bytes`, `read_id3_picture`, `read_midi_metadata`, `read_picture_by_alternative`, `read_symphonia_metadata`, `should_emit_index_progress`, `should_scan_indexed_audio_files`, `should_show_recording_date`, `symphonia_raw_value`, `symphonia_standard_value`, `tag_reader_worker_count`, `take_extra_item`, `to_json_value`, `to_json_value`, `unknown_if_empty`
+// These functions are ignored because they are not marked as `pub`: `_get_lyric_from_lofty`, `_get_picture_by_lofty`, `_get_picture_by_windows`, `_picture_cache_key`, `_update_index_below_1_1_0`, `add_missing_audio_files`, `build_alternative_extra_metadata`, `collect_audio_files_by_folder`, `collect_symphonia_tags`, `discover_new_audio_folders`, `estimated_bitrate`, `file_name`, `get_embedded_picture_from_path`, `id3_tag_items`, `index_folder_snapshots_unchanged`, `indexed_audio_needs_update`, `initialize`, `is_asf_path`, `is_dff_path`, `is_dsf_path`, `is_generic_id3_path`, `is_image_attachment`, `is_lyric_item_key`, `is_midi_path`, `is_supported_audio_path`, `is_symphonia_path`, `join_deduped`, `merge_symphonia_field`, `midi_metrical_micros`, `midi_payload`, `midi_text`, `midi_track_info`, `midi_track_micros`, `new_with_path`, `optional_nonempty`, `parse_alternative_number`, `parse_midi_metadata`, `push_dsf_item`, `read_alternative_extra_metadata`, `read_asf_extra_metadata`, `read_asf_picture`, `read_audio_paths_parallel`, `read_by_alternative`, `read_by_asf`, `read_by_dff`, `read_by_dsf`, `read_by_id3`, `read_by_lofty`, `read_by_midi`, `read_by_symphonia`, `read_by_win_music_properties`, `read_dff_metadata`, `read_dff_picture`, `read_dsf_audio_properties`, `read_dsf_extra_metadata`, `read_dsf_picture`, `read_from_folder`, `read_from_path`, `read_id3_from_bytes`, `read_id3_picture`, `read_midi_metadata`, `read_picture_by_alternative`, `read_symphonia_metadata`, `should_emit_index_progress`, `should_scan_indexed_audio_files`, `should_show_recording_date`, `snapshot_is_usable`, `symphonia_raw_value`, `symphonia_standard_value`, `tag_reader_worker_count_for`, `tag_reader_worker_count`, `take_extra_item`, `to_json_value`, `to_json_value`, `unknown_if_empty`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AudioFolder`, `Audio`, `DffMetadata`, `DsfAudioProperties`, `MidiMetadata`, `SymphoniaMetadata`, `SymphoniaTagCollection`, `WinRtWorkerGuard`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `drop`, `fmt`, `fmt`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
@@ -80,9 +80,11 @@ Stream<IndexActionState> buildIndexFromFoldersRecursively({
 Stream<IndexActionState> updateIndex({
   required String indexPath,
   required bool forceMetadataCheck,
+  IndexSnapshot? snapshot,
 }) => RustLib.instance.api.crateApiTagReaderUpdateIndex(
   indexPath: indexPath,
   forceMetadataCheck: forceMetadataCheck,
+  snapshot: snapshot,
 );
 
 class AudioExtraItem {
@@ -173,6 +175,67 @@ class IndexActionState {
           runtimeType == other.runtimeType &&
           progress == other.progress &&
           message == other.message;
+}
+
+class IndexFolderSnapshot {
+  final String path;
+  final BigInt modified;
+
+  const IndexFolderSnapshot({required this.path, required this.modified});
+
+  @override
+  int get hashCode => path.hashCode ^ modified.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is IndexFolderSnapshot &&
+          runtimeType == other.runtimeType &&
+          path == other.path &&
+          modified == other.modified;
+}
+
+/// 索引更新快路径的**输入快照**：由 Dart 侧从 `library.sqlite` 读出后传入。
+///
+/// Rust 进程内不再持有任何 SQLite 依赖（见 `decoupling-3.5-b`），因此
+/// 「上次同步进库的索引是否还新鲜」这一判定不能在 Rust 内查询数据库完成，
+/// 改由 Dart 把快照作为入参传进来（FRB 签名变化的既定交付项）。
+class IndexSnapshot {
+  /// `meta.version`：上次同步进库的索引格式版本。
+  final BigInt version;
+
+  /// `folders(path, modified)`，按 `path` 升序。
+  final List<IndexFolderSnapshot> folders;
+
+  /// `meta.index_source_modified`：上次同步时 `index.json` 的修改时间（**微秒**）。
+  final PlatformInt64? indexSourceModified;
+
+  /// `meta.index_source_size`：上次同步时 `index.json` 的字节数。
+  final PlatformInt64? indexSourceSize;
+
+  const IndexSnapshot({
+    required this.version,
+    required this.folders,
+    this.indexSourceModified,
+    this.indexSourceSize,
+  });
+
+  @override
+  int get hashCode =>
+      version.hashCode ^
+      folders.hashCode ^
+      indexSourceModified.hashCode ^
+      indexSourceSize.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is IndexSnapshot &&
+          runtimeType == other.runtimeType &&
+          version == other.version &&
+          folders == other.folders &&
+          indexSourceModified == other.indexSourceModified &&
+          indexSourceSize == other.indexSourceSize;
 }
 
 class WriteTagPayload {

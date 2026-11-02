@@ -16,10 +16,9 @@ import 'package:pure_music/native/bass/bass_player.dart'
     show PlayerState, SpectrumUpdateMode;
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
-import 'package:pure_music/native/rust/api/library_db.dart' as rust_library_db;
+import 'package:pure_music/core/local_play_history.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/theme.dart';
-import 'package:pure_music/core/settings.dart';
 import 'package:flutter/foundation.dart';
 
 /// 只通知 now playing 变更
@@ -42,7 +41,6 @@ class PlaybackService extends ChangeNotifier {
   bool _listenRecorded = false;
   int _listenSessionToken = 0;
   int? _listenRecordingToken;
-  String? _supportPath;
   bool _closed = false;
 
   final _playCountRevision = ValueNotifier<int>(0);
@@ -78,7 +76,6 @@ class PlaybackService extends ChangeNotifier {
     Future.microtask(() async {
       try {
         await _restoreLastSession();
-        _supportPath = (await getAppDataDir()).path;
       } catch (err, trace) {
         logger.e('[restoreLastSession] $err\n$trace');
       }
@@ -502,11 +499,14 @@ class PlaybackService extends ChangeNotifier {
     _listenRecordingToken = sessionToken;
 
     try {
-      final supportPath = _supportPath ??= (await getAppDataDir()).path;
-      await rust_library_db.incrementPlayCount(
-        indexPath: supportPath,
-        path: audioPath,
+      final recorded = await LocalPlayHistory.instance.recordPlayback(
+        audioPath,
       );
+      if (!recorded) {
+        // 禁写态（SQLite 版本不足）或写库失败：不增内存计数、不谎报成功。
+        logger.w('播放次数未记录（数据库不可写）');
+        return;
+      }
       audio.playCount++;
       if (sessionToken == _listenSessionToken) {
         _listenRecorded = true;

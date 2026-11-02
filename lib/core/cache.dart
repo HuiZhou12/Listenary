@@ -5,10 +5,10 @@ import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:pure_music/core/database.dart';
+import 'package:pure_music/core/library_db.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/workload_policy.dart';
 import 'package:pure_music/library/audio_library.dart';
-import 'package:pure_music/native/rust/api/library_db.dart' as library_db;
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -812,12 +812,13 @@ class CoverImageCache {
     final indexPath = _indexPath;
     if (indexPath != null) {
       try {
-        return await library_db.getCachedCover(
-          indexPath: indexPath,
+        await LibraryDb.instance.initialize(indexDir: indexPath);
+        final png = await _readOrDecodeCover(
           path: path,
           width: physicalWidth,
           height: physicalHeight,
         );
+        if (png != null) return png;
       } catch (error, trace) {
         if (!_databaseWarningLogged) {
           _databaseWarningLogged = true;
@@ -833,6 +834,42 @@ class CoverImageCache {
       width: physicalWidth,
       height: physicalHeight,
     );
+  }
+
+  /// 命中即返回 BLOB；未命中则解码（Rust `getPictureFromPath`）后写回。
+  ///
+  /// 源签名 `(modified, size)` 与旧引擎同口径：文件变了就自然失效，
+  /// 不会返回过期缩略图。
+  Future<Uint8List?> _readOrDecodeCover({
+    required String path,
+    required int width,
+    required int height,
+  }) async {
+    final signature = fileSourceSignature(path);
+    if (signature == null) return null;
+    final cached = LibraryDb.instance.readCoverThumbnail(
+      path: path,
+      width: width,
+      height: height,
+      sourceModified: signature.$1,
+      sourceSize: signature.$2,
+    );
+    if (cached != null) return cached;
+    final decoded = await getPictureFromPath(
+      path: path,
+      width: width,
+      height: height,
+    );
+    if (decoded == null) return null;
+    LibraryDb.instance.writeCoverThumbnail(
+      path: path,
+      width: width,
+      height: height,
+      sourceModified: signature.$1,
+      sourceSize: signature.$2,
+      png: decoded,
+    );
+    return decoded;
   }
 
   /// 后台预生成常用缩略图，字节写入磁盘后立即释放。
@@ -856,11 +893,7 @@ class CoverImageCache {
           continue;
         }
         try {
-          await loadBytes(
-            path: entry.key,
-            width: size,
-            height: size,
-          );
+          await loadBytes(path: entry.key, width: size, height: size);
           _persistentWarmCompleted.add(key);
         } catch (error, trace) {
           logger.d(

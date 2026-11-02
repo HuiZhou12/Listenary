@@ -175,7 +175,7 @@ void main() {
 
       initializeAppDatabase(database);
 
-      expect(_userVersion(database), 6);
+      expect(_userVersion(database), latestAppDatabaseVersion);
       _expectNullableTextColumn(database, 'online_tracks', 'album_id');
       _expectNullableTextColumn(database, 'online_track_artists', 'artist_id');
 
@@ -215,7 +215,7 @@ void main() {
 
       // 再次初始化：v6 已是 no-op（不抛 duplicate column），旧行与 NULL 不变。
       initializeAppDatabase(database);
-      expect(_userVersion(database), 6);
+      expect(_userVersion(database), latestAppDatabaseVersion);
       expect(_selectOldTrack(database)['title'], '旧曲目');
       expect(_selectOldTrack(database)['album_id'], isNull);
       expect(_selectOldArtist(database)['artist_id'], isNull);

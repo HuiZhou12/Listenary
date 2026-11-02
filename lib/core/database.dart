@@ -1,10 +1,18 @@
+import 'dart:convert';
 import 'dart:io';
 
-import 'package:pure_music/core/settings.dart';
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
+import 'package:pure_music/core/library_db.dart';
+import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/sqlite_version_guard.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-const latestAppDatabaseVersion = 6;
+const latestAppDatabaseVersion = 7;
+
+/// `meta` 里记录本地播放次数导入状态的键。
+const String localPlayImportKey = 'local_play_import_v1';
 
 class AppDb {
   AppDb._();
@@ -28,12 +36,41 @@ class AppDb {
   Future<Database> _open() async {
     Database? opened;
     try {
+      // 版本守卫必须在**首次打开任何连接之前**（Spec §6 / §4.3 步骤 3）。
+      final probe = SqliteVersionGuard.instance.probeOnce();
       final dir = await getDbDir();
       final dbFile = File(path.join(dir.path, 'app.sqlite'));
       dbFile.parent.createSync(recursive: true);
 
-      opened = sqlite3.open(dbFile.path);
-      initializeAppDatabase(opened);
+      if (probe.isWritable) {
+        opened = sqlite3.open(dbFile.path);
+      } else if (dbFile.existsSync()) {
+        // 禁写态：只读打开，不迁移、不改 schema。
+        opened = sqlite3.open(dbFile.path, mode: OpenMode.readOnly);
+        opened.execute('PRAGMA busy_timeout = 3000;');
+        _db = opened;
+        return opened;
+      } else {
+        throw StateError(
+          'SQLite 版本不足（${probe.versionNumber} < $minimumSupportedSqliteVersion），'
+          '且 app.sqlite 尚不存在',
+        );
+      }
+      final supportPath = (await getAppDataDir()).path;
+      initializeAppDatabase(
+        opened,
+        // 步骤 4 必须早于 LibraryDb 成为写者（Spec §4.3）：这里以**只读**
+        // 连接读旧计数，导入失败时曲库库一个字节都没被写过。
+        // 路径由 LibraryDb 提供，避免本文件成为第二个「知道曲库文件名」的地方。
+        localPlaySourcePath: LibraryDb.databasePathFor(supportPath),
+      );
+      // 注册 deferred 补跑钩子：等 LibraryDb 完成 checkpoint 后，
+      // 用同一段导入代码补跑（Spec §4.3:281-285 / §5.3:354）。
+      LibraryDb.instance.deferredPlayImportHook = (indexDir) =>
+          resumeDeferredLocalPlayImport(
+            sourcePath: LibraryDb.databasePathFor(indexDir),
+            database: opened,
+          );
       _db = opened;
       return opened;
     } catch (_) {
@@ -50,7 +87,7 @@ class AppDb {
   }
 }
 
-void initializeAppDatabase(Database db) {
+void initializeAppDatabase(Database db, {String? localPlaySourcePath}) {
   db.execute('''
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
@@ -90,7 +127,7 @@ CREATE TABLE IF NOT EXISTS album_colors (
 );
 ''');
 
-  _migrateAppDatabase(db);
+  _migrateAppDatabase(db, localPlaySourcePath: localPlaySourcePath);
 }
 
 /// 给表**补一列**（已经存在就跳过 ✓）—— 迁移里做幂等加列用 ✓。
@@ -111,14 +148,15 @@ void _addColumnIfMissing(
   db.execute('ALTER TABLE $table ADD COLUMN $column $type');
 }
 
-void _migrateAppDatabase(Database db) {
+void _migrateAppDatabase(Database db, {String? localPlaySourcePath}) {
   db.execute('BEGIN');
   try {
     final version =
         db.select('PRAGMA user_version').first['user_version'] as int;
     if (version < 1) {
       db.execute(
-          'ALTER TABLE playlist_items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
+        'ALTER TABLE playlist_items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0',
+      );
       db.execute('PRAGMA user_version = 1');
     }
     if (version < 2) {
@@ -246,6 +284,19 @@ CREATE INDEX IF NOT EXISTS idx_online_playlist_items_playlist
       _addColumnIfMissing(db, 'online_track_artists', 'artist_id', 'TEXT');
       db.execute('PRAGMA user_version = 6');
     }
+    if (version < 7) {
+      // v7（2026-11-02，3.5-b）：本地播放次数改存 app.sqlite。
+      // 表本身幂等；历史次数由 [_importLocalPlayHistory] 一次性从旧库搬过来。
+      db.execute('''
+CREATE TABLE IF NOT EXISTS local_play_history (
+  path TEXT PRIMARY KEY,
+  play_count INTEGER NOT NULL DEFAULT 0 CHECK(play_count >= 0),
+  last_played_at TEXT
+);
+''');
+      _importLocalPlayHistory(db, localPlaySourcePath);
+      db.execute('PRAGMA user_version = 7');
+    }
     db.execute('COMMIT');
   } catch (_) {
     db.execute('ROLLBACK');
@@ -253,6 +304,169 @@ CREATE INDEX IF NOT EXISTS idx_online_playlist_items_playlist
   }
 }
 
+/// v7 的一次性导入：`library.sqlite.audios.play_count` → `local_play_history`。
+///
+/// 约束（Spec §5）：
+/// - **只读源库**：`sqlite3.open(path, mode: OpenMode.readOnly)`，源库一个字节都不写；
+/// - 可重入：`meta.local_play_import_v1` 已是 `"1"` 就跳过；
+/// - 三类「未执行」都**不阻塞** v7 提交：`skipped-no-source` / `deferred` / `failed`；
+/// - 写入用 `ON CONFLICT(path) DO NOTHING`：绝不覆盖用户切换后新产生的计数。
+///
+/// 源库路径由调用方经 `initializeAppDatabase(localPlaySourcePath:)` 注入
+/// （测试用临时 fixture）；生产路径是 `<appData>/library.sqlite`。
+void _importLocalPlayHistory(Database db, String? sourcePath) {
+  final state = db.select('SELECT value FROM meta WHERE key = ?', [
+    localPlayImportKey,
+  ]);
+  if (state.isNotEmpty && state.first['value'] == '1') return;
+
+  if (sourcePath == null || !File(sourcePath).existsSync()) {
+    // `skipped-no-source`：源库不存在。**不自动重试** —— 需要用户先恢复/重建
+    // 曲库（重新扫描会写出新的 library.sqlite），届时才会重新判定。
+    _markLocalPlayImport(db, 'skipped-no-source');
+    return;
+  }
+
+  Database? source;
+  List<({String path, int playCount})> rows;
+  try {
+    source = sqlite3.open(sourcePath, mode: OpenMode.readOnly);
+    rows = source
+        .select(
+          'SELECT path, play_count FROM audios WHERE play_count > 0 ORDER BY path',
+        )
+        .map(
+          (row) => (
+            path: row['path'] as String,
+            playCount: row['play_count'] as int,
+          ),
+        )
+        .toList(growable: false);
+  } catch (err) {
+    // 只读打开失败（WAL 无 -shm 等）⇒ deferred，由接管完成 checkpoint 后补跑
+    // （见 [resumeDeferredLocalPlayImport]）；读到一半失败 ⇒ failed。
+    // 两者都正常提交 v7。
+    //
+    // `failed` **不自动重试**：源库可读但内容/services 出错属用户干预范畴
+    // （例如库损坏），静默重试只会重复失败。计数从 0 起步，不伪造历史。
+    final deferred = source == null;
+    _markLocalPlayImport(db, deferred ? 'deferred' : 'failed');
+    logger.w('本地播放次数导入未完成（${deferred ? 'deferred' : 'failed'}）', error: err);
+    return;
+  } finally {
+    source?.dispose();
+  }
+
+  if (rows.isEmpty) {
+    _markLocalPlayImport(db, '1', rowCount: 0, sum: 0, digest: _digestOf(rows));
+    return;
+  }
+
+  final insert = db.prepare(
+    'INSERT INTO local_play_history(path, play_count) VALUES(?, ?) '
+    'ON CONFLICT(path) DO NOTHING',
+  );
+  try {
+    for (final row in rows) {
+      insert.execute([row.path, row.playCount]);
+    }
+  } finally {
+    insert.dispose();
+  }
+  final sum = rows.fold<int>(0, (total, row) => total + row.playCount);
+  _markLocalPlayImport(
+    db,
+    '1',
+    rowCount: rows.length,
+    sum: sum,
+    digest: _digestOf(rows),
+  );
+}
+
+/// 补跑 `deferred` 的导入（Spec §4.3 的「只读打开的已知限制」）。
+///
+/// 首次导入若因「库处于 WAL 且 `-shm` 缺失/不可写」而读不了源库，会记
+/// `deferred` 并正常提交 v7；等 `LibraryDb` 完成 `wal_checkpoint(TRUNCATE)`
+/// 后，源库已可读，于是在**同一进程内**补跑一次。
+///
+/// 与首次路径**共用同一段代码**（[_importLocalPlayHistory]），因此断言口径
+/// 完全一致；成功后标记改成 `"1"`。
+///
+/// **只处理 `deferred`**：`skipped-no-source`（源库不存在）与 `failed`
+/// （读取中途抛错）**不自动重试** —— 前者要等用户重新建库/恢复文件，后者
+/// 属用户干预范畴；两者都会在下次导入条件满足时由新的 v7 流程重新判定。
+///
+/// 返回 `true` 表示这次补跑真的把标记推进到了 `"1"`。
+Future<bool> resumeDeferredLocalPlayImport({
+  required String sourcePath,
+  Database? database,
+}) async {
+  final db = database ?? await AppDb.instance.db();
+  if (db.select('SELECT 1 FROM meta WHERE key = ?', [
+    localPlayImportKey,
+  ]).isEmpty) {
+    return false;
+  }
+  final state = db.select('SELECT value FROM meta WHERE key = ?', [
+    localPlayImportKey,
+  ]).first['value'];
+  if (state != 'deferred') return false;
+
+  db.execute('BEGIN IMMEDIATE');
+  try {
+    _importLocalPlayHistory(db, sourcePath);
+    db.execute('COMMIT');
+  } catch (_) {
+    db.execute('ROLLBACK');
+    rethrow;
+  }
+  final after = db.select('SELECT value FROM meta WHERE key = ?', [
+    localPlayImportKey,
+  ]);
+  return after.isNotEmpty && after.first['value'] == '1';
+}
+
+/// 源侧与目标侧 `(path, play_count)` 全集的 sha256 摘要（按 `path` 排序）。
+///
+/// 这是 §5.2 的**行级强一致**断言载体：两侧摘要相同即证明搬过去的
+/// 每一行都一致，而不是只比了总数。
+String playHistoryDigest(Iterable<({String path, int playCount})> rows) =>
+    _digestOf(rows);
+
+String _digestOf(Iterable<({String path, int playCount})> rows) {
+  final sorted = rows.toList(growable: false)
+    ..sort((a, b) => a.path.compareTo(b.path));
+  final buffer = StringBuffer();
+  for (final row in sorted) {
+    buffer
+      ..write(row.path)
+      ..write('\u001f')
+      ..write(row.playCount)
+      ..write('\n');
+  }
+  return sha256.convert(utf8.encode(buffer.toString())).toString();
+}
+
+void _markLocalPlayImport(
+  Database db,
+  String state, {
+  int? rowCount,
+  int? sum,
+  String? digest,
+}) {
+  void put(String key, String value) {
+    db.execute(
+      'INSERT INTO meta(key, value) VALUES(?, ?) '
+      'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      [key, value],
+    );
+  }
+
+  put(localPlayImportKey, state);
+  if (rowCount != null) put('local_play_import_rows', '$rowCount');
+  if (sum != null) put('local_play_import_sum', '$sum');
+  if (digest != null) put('local_play_import_digest', digest);
+}
 
 /// F5-S2（P-43）：v5 在线表的**期望列**。
 ///
@@ -282,7 +496,12 @@ const _onlineTableExpectedColumns = <String, List<String>>{
     // v6（2026-10-12）：艺人 id（可空 ✓）。
     'artist_id',
   ],
-  'online_play_history': ['platform', 'track_id', 'play_count', 'last_played_at'],
+  'online_play_history': [
+    'platform',
+    'track_id',
+    'play_count',
+    'last_played_at',
+  ],
   'online_playlists': [
     'id',
     'kind',

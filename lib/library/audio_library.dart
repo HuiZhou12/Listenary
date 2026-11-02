@@ -12,7 +12,7 @@ import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/workload_policy.dart';
 import 'package:pure_music/core/page_sort.dart';
-import 'package:pure_music/native/rust/api/library_db.dart' as library_db;
+import 'package:pure_music/core/library_db.dart';
 import 'package:pure_music/library/library_page_order_cache.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/play_service/play_service.dart';
@@ -86,19 +86,19 @@ class _AudioLoadPool {
   }
 }
 
-Audio _audioFromIndex(library_db.IndexAudio audio, _AudioLoadPool pool) =>
+Audio _audioFromIndex(LibraryAudio audio, _AudioLoadPool pool) =>
     Audio._fromLoaded(
       audio.title,
       audio.artist,
       audio.album,
       audio.albumArtist,
       audio.track,
-      audio.duration.toInt(),
+      audio.duration,
       audio.bitrate,
       audio.sampleRate,
       audio.path,
-      audio.modified.toInt(),
-      audio.created.toInt(),
+      audio.modified,
+      audio.created,
       audio.by,
       pool,
       disc: audio.disc,
@@ -413,7 +413,6 @@ class AudioLibrary {
     try {
       final supportPath = (await getAppDataDir()).path;
       final indexPath = p.join(supportPath, 'index.json');
-      final sqlitePath = p.join(supportPath, 'library.sqlite');
       final pageCachePath = p.join(
         supportPath,
         'cache',
@@ -424,19 +423,25 @@ class AudioLibrary {
         hasPlaybackSession: PlayService.instance.hasPlaybackSession,
       );
 
-      if (!File(sqlitePath).existsSync() && File(indexPath).existsSync()) {
-        try {
-          await library_db.migrateIndexJsonToSqlite(indexPath: supportPath);
-        } catch (err, trace) {
-          logger.e(err, stackTrace: trace);
-        }
+      // library.sqlite 的 owner 自 3.5-b 起是 Dart 侧的 LibraryDb。
+      // 库缺失而 index.json 在 ⇒ 建库后全量灌入（取代旧的
+      // Rust `migrateIndexJsonToSqlite`）；否则只在签名变化时同步。
+      try {
+        await LibraryDb.instance.initialize(
+          indexDir: supportPath,
+          createIfMissing: File(indexPath).existsSync(),
+        );
+        LibraryDb.instance.syncIndexJsonIfStale(indexDir: supportPath);
+      } catch (err, trace) {
+        logger.w('曲库库同步失败，回退 JSON 索引', error: err, stackTrace: trace);
       }
 
       try {
         final sqliteReadStopwatch = Stopwatch()..start();
-        final dbFolders = await library_db.readIndexFromSqlite(
-          indexPath: supportPath,
-        );
+        final dbFolders = LibraryDb.instance.readIndex();
+        if (dbFolders == null) {
+          throw StateError('曲库索引库不可读');
+        }
         sqliteReadStopwatch.stop();
         final rssAfterRead = ProcessInfo.currentRss;
         final conversionStopwatch = Stopwatch()..start();
@@ -2133,7 +2138,7 @@ class Audio {
   /// 标签来源（Lofty、Windows、null）
   String? by;
 
-  /// 播放次数（从 library.sqlite 读取/写入）
+  /// 播放次数（历史快照；3.5-b 起写路径归 app.sqlite）
   int playCount;
 
   /// 缓存 ImageProvider 实例，避免每次创建新实例导致 Flutter ImageCache 失效

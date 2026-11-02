@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/sqlite_version_guard.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:path/path.dart' as path;
 import 'package:pure_music/entry.dart';
@@ -34,10 +35,12 @@ Future<void> initWindow() async {
   final display = view.display;
   final displayW = display.size.width / display.devicePixelRatio;
   final displayH = display.size.height / display.devicePixelRatio;
-  final maxW =
-      (displayW - 16.0).clamp(minimumSize.width, double.infinity).toDouble();
-  final maxH =
-      (displayH - 16.0).clamp(minimumSize.height, double.infinity).toDouble();
+  final maxW = (displayW - 16.0)
+      .clamp(minimumSize.width, double.infinity)
+      .toDouble();
+  final maxH = (displayH - 16.0)
+      .clamp(minimumSize.height, double.infinity)
+      .toDouble();
   targetSize = Size(
     targetSize.width.clamp(minimumSize.width, maxW),
     targetSize.height.clamp(minimumSize.height, maxH),
@@ -97,6 +100,18 @@ Future<void> main() async {
     logger.e('RustLib.init failed: $e\n$s');
   }
 
+  // Spec §4.3 步骤 3：版本守卫必须在**首次 sqlite3.open 之前**（下面
+  // AlbumColorCache.init 就会打开 app.sqlite）。不足则进入三段式降级态，
+  // 提示推迟到窗口就绪后再弹（此刻还没有可用的 overlay）。
+  final sqliteProbe = SqliteVersionGuard.instance.probeOnce();
+  if (!sqliteProbe.isWritable) {
+    logger.w(
+      'SQLite 版本低于下限，进入禁写降级态：'
+      '${sqliteProbe.libVersion} (${sqliteProbe.versionNumber}) '
+      '< $minimumSupportedSqliteVersion',
+    );
+  }
+
   _rustLoggerSub = initRustLogger().listen((msg) {
     logger.i('[rs]: $msg');
   });
@@ -148,6 +163,19 @@ Future<void> main() async {
       onlineMusicSettings: onlineMusicSettingsController,
     ),
   );
+
+  // 三段式降级的第②段：一次性提示。放在 runApp 之后，等首帧把
+  // overlay/messenger 装好再弹；`takeDegradedNotice()` 自带「每进程一次」。
+  final degradedNotice = SqliteVersionGuard.instance.takeDegradedNotice();
+  if (degradedNotice != null) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      showTextOnSnackBar(
+        degradedNotice,
+        icon: Icons.info_outline,
+        variant: ToastVariant.error,
+      );
+    });
+  }
 }
 
 StreamSubscription<String>? _rustLoggerSub;
