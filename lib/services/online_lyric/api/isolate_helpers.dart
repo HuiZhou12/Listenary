@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:isolate';
+
+import 'package:pure_music/services/online_lyric/api/lyric_http_transport.dart';
 
 const _kgSearchUrl = 'http://mobilecdn.kugou.com/api/v3/search/song';
 const _kgSearchFallbackUrl = 'https://songsearch.kugou.com/song_search_v2';
@@ -22,28 +23,48 @@ const _kgApiHeaders = {
   'Accept': 'application/json,text/plain,*/*',
 };
 
+/// 执行 isolate 内生效的 transport 工厂与实例。
+///
+/// 库级变量**按 isolate 独立**：主 isolate 的注册值不会自动出现在
+/// [Isolate.run] spawn 出来的 isolate 里。因此公开入口先在**调用方 isolate**
+/// 读出注册值，把工厂（可发送的纯数据/tear-off）捕获进闭包送过去，再在执行
+/// isolate 内写回本变量。transport **实例**始终在执行 isolate 内构造，
+/// 不跨边界。
+///
+/// 实例按「每个 isolate 执行一份」缓存：factory 每次请求都调用会得到多个
+/// transport，而改造前的形态是「每次请求一个新 `HttpClient`」——把粒度统一到
+/// isolate 执行而非单次请求，是为了让替身脚本在一次调用内保持连续。
+LyricHttpTransportFactory? _isolateTransportFactory;
+LyricHttpTransport? _isolateTransport;
+
+Future<T> _withTransportFactory<T>(
+  LyricHttpTransportFactory factory,
+  Future<T> Function() body,
+) {
+  _isolateTransportFactory = factory;
+  _isolateTransport = null;
+  return body();
+}
+
+LyricHttpTransport _transport() => _isolateTransport ??=
+    (_isolateTransportFactory ?? lyricHttpTransportFactory)();
+
 Future<String?> _httpPost(
   String urlStr,
   String body,
   Map<String, String> headers,
 ) async {
   try {
-    final uri = Uri.parse(urlStr);
-    final client = HttpClient();
-    client.connectionTimeout = const Duration(seconds: 4);
-    final request = await client.postUrl(uri);
-    for (final entry in headers.entries) {
-      request.headers.add(entry.key, entry.value);
-    }
-    request.write(body);
-    final response = await request.close();
-    if (response.statusCode != 200) {
-      client.close();
-      return null;
-    }
-    final result = await response.transform(utf8.decoder).join();
-    client.close();
-    return result;
+    final response = await _transport().send(
+      LyricHttpRequest(
+        method: LyricHttpMethod.post,
+        url: Uri.parse(urlStr),
+        headers: headers,
+        body: body,
+      ),
+    );
+    if (response == null || response.statusCode != 200) return null;
+    return response.body;
   } catch (_) {
     return null;
   }
@@ -148,23 +169,11 @@ Future<String?> _httpGet(
     } else {
       uri = Uri.parse(urlStr).replace(queryParameters: queryParameters);
     }
-    final client = HttpClient();
-    client.connectionTimeout = const Duration(seconds: 4);
-    final request = await client.getUrl(uri);
-    request.headers.removeAll(HttpHeaders.acceptEncodingHeader);
-    if (headers != null) {
-      for (final entry in headers.entries) {
-        request.headers.add(entry.key, entry.value);
-      }
-    }
-    final response = await request.close();
-    if (response.statusCode != 200) {
-      client.close();
-      return null;
-    }
-    final res = await response.transform(utf8.decoder).join();
-    client.close();
-    return res;
+    final response = await _transport().send(
+      LyricHttpRequest(method: LyricHttpMethod.get, url: uri, headers: headers),
+    );
+    if (response == null || response.statusCode != 200) return null;
+    return response.body;
   } catch (_) {
     return null;
   }
@@ -176,13 +185,18 @@ Future<List<dynamic>> kgSearchIsolate({
   required int limit,
   int? cacheBust,
 }) async {
+  // 工厂在**调用方 isolate** 读取：库级注册值不跨 isolate 共享。
+  final factory = lyricHttpTransportFactory;
   return Isolate.run(
-    () => _kgSearchInIsolate({
-      'text': text,
-      'offset': offset,
-      'limit': limit,
-      'cacheBust': cacheBust,
-    }),
+    () => _withTransportFactory(
+      factory,
+      () => _kgSearchInIsolate({
+        'text': text,
+        'offset': offset,
+        'limit': limit,
+        'cacheBust': cacheBust,
+      }),
+    ),
   ).timeout(const Duration(seconds: 8), onTimeout: () => []);
 }
 
@@ -233,8 +247,10 @@ Future<Map<String, String?>> _kgLyricInIsolate(
 }
 
 Future<Map<String, String?>> kgLyricIsolate({required String hash}) async {
+  final factory = lyricHttpTransportFactory;
   return Isolate.run(
-    () => _kgLyricInIsolate({'hash': hash}),
+    () =>
+        _withTransportFactory(factory, () => _kgLyricInIsolate({'hash': hash})),
   ).timeout(const Duration(seconds: 8), onTimeout: () => {'encrypted': null});
 }
 
@@ -288,13 +304,17 @@ Future<List<dynamic>> neSearchIsolate({
   required int limit,
   int? cacheBust,
 }) async {
+  final factory = lyricHttpTransportFactory;
   return Isolate.run(
-    () => _neSearchInIsolate({
-      'text': text,
-      'offset': offset,
-      'limit': limit,
-      'cacheBust': cacheBust,
-    }),
+    () => _withTransportFactory(
+      factory,
+      () => _neSearchInIsolate({
+        'text': text,
+        'offset': offset,
+        'limit': limit,
+        'cacheBust': cacheBust,
+      }),
+    ),
   ).timeout(const Duration(seconds: 8), onTimeout: () => []);
 }
 
@@ -331,7 +351,10 @@ Future<Map<String, String?>> _neLyricInIsolate(
 }
 
 Future<Map<String, String?>> neLyricIsolate({required int id}) async {
-  return Isolate.run(() => _neLyricInIsolate({'id': id})).timeout(
+  final factory = lyricHttpTransportFactory;
+  return Isolate.run(
+    () => _withTransportFactory(factory, () => _neLyricInIsolate({'id': id})),
+  ).timeout(
     const Duration(seconds: 8),
     onTimeout: () => {
       'main': null,
@@ -415,8 +438,13 @@ Future<List<dynamic>> qqSearchIsolate({
   required int offset,
   required int limit,
 }) async {
+  final factory = lyricHttpTransportFactory;
   return Isolate.run(
-    () => _qqSearchInIsolate({'text': text, 'offset': offset, 'limit': limit}),
+    () => _withTransportFactory(
+      factory,
+      () =>
+          _qqSearchInIsolate({'text': text, 'offset': offset, 'limit': limit}),
+    ),
   ).timeout(const Duration(seconds: 8), onTimeout: () => []);
 }
 
@@ -545,14 +573,18 @@ Future<Map<String, String?>> qqLyricIsolate({
   String? artist,
   int? durationSec,
 }) async {
+  final factory = lyricHttpTransportFactory;
   return Isolate.run(
-    () => _qqLyricInIsolate({
-      'id': id,
-      'title': title,
-      'album': album,
-      'artist': artist,
-      'durationSec': durationSec ?? 0,
-    }),
+    () => _withTransportFactory(
+      factory,
+      () => _qqLyricInIsolate({
+        'id': id,
+        'title': title,
+        'album': album,
+        'artist': artist,
+        'durationSec': durationSec ?? 0,
+      }),
+    ),
   ).timeout(
     const Duration(seconds: 12),
     onTimeout: () {
