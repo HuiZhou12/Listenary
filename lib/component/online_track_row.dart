@@ -37,6 +37,17 @@ bool isOnlineTrackNowPlaying(BuildContext context, PlatformTrackRef trackRef) {
   );
 }
 
+/// 详情行里的**一段**（艺人 / 专辑…）：文字 + 自己的点击目标 + 悬停提示。
+///
+/// [separator] 是这一段**前面**的分隔符（为空则用默认的 ` · ` ✓）——
+/// 多艺人时就能渲染成 `甲、乙 · 专辑 · 平台` ✓，而不是把艺人拆开后各段都顶着 ` · ` ✗。
+typedef OnlineTrackDetailPart = ({
+  String text,
+  VoidCallback? onTap,
+  String? tooltip,
+  String? separator,
+});
+
 class OnlineTrackRow extends StatefulWidget {
   const OnlineTrackRow({
     super.key,
@@ -83,7 +94,10 @@ class OnlineTrackRow extends StatefulWidget {
   /// 只有"确实带 id"的那一段才给 `onTap`（艺人名要 `artistIds`、专辑名要 `albumIds` ✓）；
   /// 没给的部分就是**纯文本** —— 界面上不出现"看着能点、其实点不动"的东西 ✓。
   /// 为空时退化成 [details] 一行普通文字 ✓。
-  final List<({String text, VoidCallback? onTap, String? tooltip})> detailParts;
+  ///
+  /// **每位艺人各是一段**（2026-11-03）：这样"点第二位艺人"才能带自己的 id 去艺人页 ✓；
+  /// 段与段之间默认用 ` · `，艺人之间用 `、`（见 [OnlineTrackDetailPart.separator]）。
+  final List<OnlineTrackDetailPart> detailParts;
 
   /// **读屏标签**（2026-10-12）：参考产品的曲目行是"一个带完整标签的按钮" ✓
   ///（形如 `播放"<曲名> - <艺人> - <时长>"`）⇒ 调用方按同一套格式给标签 ✓。
@@ -223,9 +237,16 @@ class _OnlineTrackRowState extends State<OnlineTrackRow> {
                                                         : 1);
                                             i++
                                           ) ...[
+                                            // 分隔符由**后一段**自带（艺人之间是 `、`、其后是 ` · `✓）——
+                                            // 多艺人时才能渲染成 `甲、乙 · 专辑 · 平台` ✓。
                                             if (i > 0)
                                               Text(
-                                                ' · ',
+                                                i < widget.detailParts.length
+                                                    ? (widget
+                                                              .detailParts[i]
+                                                              .separator ??
+                                                          ' · ')
+                                                    : ' · ',
                                                 style: TextStyle(
                                                   color: metadataColor,
                                                 ),
@@ -372,7 +393,7 @@ class _OnlineTrackCover extends StatelessWidget {
 class _DetailSegment extends StatefulWidget {
   const _DetailSegment({required this.part, required this.color});
 
-  final ({String text, VoidCallback? onTap, String? tooltip}) part;
+  final OnlineTrackDetailPart part;
   final Color color;
 
   @override

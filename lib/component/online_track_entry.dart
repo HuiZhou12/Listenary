@@ -94,38 +94,35 @@ class OnlineTrackEntry extends StatelessWidget {
     ].join(' · ');
     // 详情行**分段**（2026-10-12）：带了对应 id 的那一段才可点 ⇒ 艺人页 / 专辑页 ✓。
     // 没有 id 的段保持纯文本（不猜、不假装可点 ✓）。
-    final detailParts = <({String text, VoidCallback? onTap, String? tooltip})>[
-      if (artistText.isNotEmpty)
-        (
-          text: artistText,
-          onTap: track.artistIds.isEmpty
-              ? null
-              : () => context.push(
-                  app_paths.ONLINE_ARTIST_PAGE,
-                  extra: (
-                    platform: track.ref.platform,
-                    artistId: track.artistIds.first,
-                    name: track.artists.isEmpty ? null : track.artists.first,
-                  ),
-                ),
-          tooltip: track.artistIds.isEmpty ? null : '查看艺人',
-        ),
-      if (albumText.isNotEmpty)
-        (
-          text: albumText,
-          onTap: track.albumIds.isEmpty
-              ? null
-              : () => context.push(
-                  app_paths.ONLINE_ALBUM_PAGE,
-                  extra: (
-                    platform: track.ref.platform,
-                    albumId: track.albumIds.first,
-                    name: albumText,
-                  ),
-                ),
-          tooltip: track.albumIds.isEmpty ? null : '查看专辑',
-        ),
-    ];
+    //
+    // **艺人是一位一段**（2026-11-03 修复）：此前整段艺人名（`甲、乙`）共用一个回调、
+    // 目标写死 `artistIds.first` ✗ ⇒ 多艺人歌曲里点第二位名字也进**第一位**艺人的页面 ✗。
+    // 现在每位艺人各自一段、各带自己的 id ✓（见 [_artistParts]）。
+    final detailParts =
+        <({
+          String text,
+          VoidCallback? onTap,
+          String? tooltip,
+          String? separator,
+        })>[
+          ..._artistParts(context),
+          if (albumText.isNotEmpty)
+            (
+              text: albumText,
+              onTap: track.albumIds.isEmpty
+                  ? null
+                  : () => context.push(
+                      app_paths.ONLINE_ALBUM_PAGE,
+                      extra: (
+                        platform: track.ref.platform,
+                        albumId: track.albumIds.first,
+                        name: albumText,
+                      ),
+                    ),
+              tooltip: track.albumIds.isEmpty ? null : '查看专辑',
+              separator: ' · ',
+            ),
+        ];
     // 与既有各页一致（非空查找）：收藏状态是这一行的必要输入，页面必须提供它。
     final favorites = context.watch<PersonalOnlinePlaylistController>();
     final row = OnlineTrackRow(
@@ -151,6 +148,50 @@ class OnlineTrackEntry extends StatelessWidget {
     );
     if (!animateEntrance) return row;
     return DirectionalListItemEntrance(identity: track.ref, child: row);
+  }
+
+  /// 把曲目的艺人渲染成**一位一段**（2026-11-03 修复）。
+  ///
+  /// 为什么不能整段一个回调：多艺人歌曲（`artists = ['甲', '乙']`、`artistIds = ['1', '2']`）
+  /// 的详情行此前是**一整段**「甲、乙」+ 写死的 `artistIds.first` ⇒ 点「乙」也进「甲」的页面 ✗。
+  /// 现在每位艺人各自一段、各自带自己的 id ✓；**没带 id 的那一位**保持纯文本 ✓（不猜、不借第一位 ✓）。
+  ///
+  /// 名字与 id **按位对齐**：`artistIds` 是"带 id 的那些艺人"的同序列表（见 `MusicTrack.artistIds`），
+  /// 一旦两侧长度不一致就说不清对应关系 ⇒ 整体退化成整段纯文本，宁可不给入口也不绑错人 ✓。
+  List<OnlineTrackDetailPart> _artistParts(BuildContext context) {
+    final artists = track.artists;
+    final ids = track.artistIds;
+    if (artists.isEmpty) return const [];
+    if (ids.length == artists.length) {
+      return [
+        for (var index = 0; index < artists.length; index++)
+          (
+            text: artists[index],
+            onTap: ids[index].isEmpty
+                ? null
+                : () => context.push(
+                    app_paths.ONLINE_ARTIST_PAGE,
+                    extra: (
+                      platform: track.ref.platform,
+                      artistId: ids[index],
+                      name: artists[index],
+                    ),
+                  ),
+            tooltip: ids[index].isEmpty ? null : '查看艺人',
+            // 第一位前面没有分隔符；其后的每位艺人前面是 `、` ✓（专辑段自带 ` · ` ✓）。
+            separator: index == 0 ? null : '、',
+          ),
+      ];
+    }
+    // 名字与 id 的位数对不上 ⇒ 无法确定"这个名字是哪位艺人" ⇒ 只给纯文本 ✓。
+    return [
+      (
+        text: artists.join('、'),
+        onTap: null,
+        tooltip: null,
+        separator: ' · ',
+      ),
+    ];
   }
 }
 

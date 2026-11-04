@@ -2,11 +2,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/online_track_row.dart';
 import 'package:pure_music/core/database.dart';
+import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
@@ -190,6 +192,139 @@ void main() {
 
     await pumpEntry(tester, forTrack: track('t1'));
     expect(find.byType(DirectionalListItemEntrance), findsOneWidget);
+  });
+
+  // ------------------------------------------------------- 多艺人的艺人入口
+  //
+  // 用户报告（2026-11-03）：一首歌有多个艺人时，点「查看艺人」不管点第几位，
+  // 都进**第一位**的页面 ✗。成因是详情行把整串艺人名做成**一段**、目标写死
+  // `artistIds.first` ⇒ 现在每位艺人各是一段、各带自己的 id ✓。
+
+  MusicTrack multiArtistTrack() => MusicTrack(
+    ref: const PlatformTrackRef(platform: MusicPlatform.qq, trackId: 'multi-1'),
+    title: '合唱曲目',
+    artists: const ['甲', '乙', '丙'],
+    artistIds: const ['artist-a', 'artist-b', 'artist-c'],
+    album: '专辑一',
+    albumIds: const ['album-1'],
+    availability: TrackAvailability.playable,
+  );
+
+  /// 用**真路由**跑：断言的是"点了之后进了哪位艺人的页面"，
+  /// 而不是"回调被调用了几次"（后者抓不到"两个名字都绑第一个 id"这个缺陷 ✗）。
+  Future<GoRouter> pumpWithRouter(
+    WidgetTester tester, {
+    required MusicTrack forTrack,
+  }) async {
+    tester.view.physicalSize = const Size(900, 400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final router = GoRouter(
+      initialLocation: '/entry-host',
+      routes: [
+        GoRoute(
+          path: '/entry-host',
+          builder: (context, state) => Scaffold(
+            body: OnlineTrackEntry(track: forTrack, onTap: () {}),
+          ),
+        ),
+        GoRoute(
+          path: app_paths.ONLINE_ARTIST_PAGE,
+          builder: (context, state) {
+            final extra =
+                state.extra
+                    as ({MusicPlatform platform, String artistId, String? name})?;
+            return Scaffold(
+              body: Text('artist:${extra?.artistId}|${extra?.name}'),
+            );
+          },
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<PersonalOnlinePlaylistController>.value(
+        value: favorites,
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    return router;
+  }
+
+  testWidgets('★ 多艺人：每位艺人各一段（`甲、乙、丙 · 专辑`），不是合成一整段', (tester) async {
+    await pumpEntry(tester, forTrack: multiArtistTrack());
+
+    for (final name in ['甲', '乙', '丙']) {
+      expect(find.text(name), findsOneWidget, reason: '$name 应当自成一个可点段');
+    }
+    // 艺人之间是 `、`；艺人→专辑、专辑→来源是 ` · `（与单艺人时的排版一致 ✓）。
+    expect(find.text('、'), findsNWidgets(2));
+    expect(find.text(' · '), findsNWidgets(2));
+    expect(find.text('甲、乙、丙'), findsNothing);
+  });
+
+  testWidgets('★ 多艺人：点第二位艺人 ⇒ 进**第二位**的页面（回归：以前一律进第一位）', (
+    tester,
+  ) async {
+    await pumpWithRouter(tester, forTrack: multiArtistTrack());
+
+    await tester.tap(find.text('乙'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('artist:artist-b|乙'),
+      findsOneWidget,
+      reason: '点「乙」必须带着乙自己的 id 进艺人页（以前写死 artistIds.first ⇒ 进了甲）',
+    );
+    expect(find.textContaining('artist-a'), findsNothing);
+  });
+
+  testWidgets('★ 多艺人：点第三位艺人 ⇒ 进第三位的页面（不是"第一位或第二位"）', (tester) async {
+    await pumpWithRouter(tester, forTrack: multiArtistTrack());
+
+    await tester.tap(find.text('丙'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('artist:artist-c|丙'), findsOneWidget);
+  });
+
+  testWidgets('名字与 id 位数对不上 ⇒ 整段纯文本（不猜是哪位、也不借第一位）', (tester) async {
+    final mismatched = MusicTrack(
+      ref: const PlatformTrackRef(platform: MusicPlatform.qq, trackId: 'multi-2'),
+      title: '信息不全',
+      artists: const ['甲', '乙'],
+      // 只带一位 id：说不清它属于谁 ⇒ 不许绑到任何一个名字上。
+      artistIds: const ['artist-a'],
+      availability: TrackAvailability.playable,
+    );
+    await pumpWithRouter(tester, forTrack: mismatched);
+
+    expect(find.byTooltip('查看艺人'), findsNothing);
+    await tester.tap(find.text('甲、乙'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('artist:'), findsNothing, reason: '不该跳到任何艺人页');
+  });
+
+  testWidgets('没带 id 的那一位保持纯文本，其余位照旧可点（不静默降级整行）', (tester) async {
+    final partial = MusicTrack(
+      ref: const PlatformTrackRef(platform: MusicPlatform.qq, trackId: 'multi-3'),
+      title: '部分带 id',
+      artists: const ['甲', '乙'],
+      // 位数对齐，但第二位没有 id ⇒ 乙是纯文本、甲仍可点。
+      artistIds: const ['artist-a', ''],
+      availability: TrackAvailability.playable,
+    );
+    await pumpWithRouter(tester, forTrack: partial);
+
+    expect(find.byTooltip('查看艺人'), findsOneWidget);
+    await tester.tap(find.text('乙'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('artist:'), findsNothing);
+
+    await tester.tap(find.text('甲'));
+    await tester.pumpAndSettle();
+    expect(find.text('artist:artist-a|甲'), findsOneWidget);
   });
 
   // ----------------------------------------------------------------- F1 判据统一
