@@ -41,6 +41,12 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
   /// 才会体现在这里，因此卡片上的开关另有"下次启动生效"的提示。
   OnlineMusicCapabilities? _capabilities;
 
+  /// 哪些平台卡的能力行是展开的（按 `configKey` 记，**默认全收起**）。
+  ///
+  /// 状态放在面板而不是卡内 State：本页是惰性 `ListView`，卡滚出视口会被销毁，
+  /// 状态留在卡内会让"滚回来又变回收起"。
+  final Set<String> _expandedPlatformKeys = {};
+
   @override
   void initState() {
     super.initState();
@@ -500,6 +506,8 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
         // 自定义平台（自定义平台此前根本不出现在这里 ⇒ 它的启用开关与逐能力候选无从设置）。
         for (final identity in settings.platformIdentities) ...[
           _PlatformCard(
+            // 稳定 key 让卡在重建时保持身份（展开状态另由面板按 configKey 持有）。
+            key: ValueKey('online-music-platform-card-${identity.configKey}'),
             identity: identity,
             label: _platformCardLabel(identity, settings),
             settings: settings,
@@ -521,6 +529,12 @@ class _OnlineMusicSettingsPanelState extends State<OnlineMusicSettingsPanel> {
             needsRestart: _controller.identityNeedsRestart(identity),
             capabilityNeedsRestart: (capability) => _controller
                 .identityCapabilityNeedsRestart(identity, capability),
+            expanded: _expandedPlatformKeys.contains(identity.configKey),
+            onToggleExpanded: () => setState(() {
+              if (!_expandedPlatformKeys.add(identity.configKey)) {
+                _expandedPlatformKeys.remove(identity.configKey);
+              }
+            }),
             onEnabledChanged: (value) => _apply(
               _controller.setIdentityEnabled(identity, enabled: value),
             ),
@@ -573,10 +587,20 @@ String _capabilityLabel(OnlineMusicCapability capability) =>
 /// "显式指定过"意味着隐式条目不再救场，所以必须给用户一条回到"自动"的路）。
 const _autoProviderValue = '';
 
-/// 一个平台一张卡（D8:A）：卡头 = 平台名 + 启用开关 + 不可用原因；
+/// 一个平台一张卡（D8:A）：卡头 = 平台名 + 状态文案 + 启用开关；
 /// 卡内每个能力一行，选择该平台下支持该能力的 Provider。
+///
+/// 2.3（用户裁定）：**能力行默认收起** —— 每张卡有 19 条能力行，全部铺开会把设置页
+/// 拉得极长。卡头常驻（平台名 / 短 ID / 状态文案 / 开关），点头部展开或收起能力行；
+/// 折叠只改变"看不看得见"，不改变任何语义：状态文案仍按 P-37 各自标注来源，
+/// 四层"改动下次启动生效"提示逐层保留，最后一个启用平台仍不可关。
+///
+/// 展开状态**由面板持有**（[expanded] / [onToggleExpanded]），不放在本类的 State 里：
+/// 面板用的是惰性 `ListView`，卡滚出视口会被销毁 —— 把状态留在卡内会在滚动回来时
+/// 悄悄变回"收起"。
 class _PlatformCard extends StatelessWidget {
   const _PlatformCard({
+    super.key,
     required this.identity,
     required this.label,
     required this.settings,
@@ -586,6 +610,8 @@ class _PlatformCard extends StatelessWidget {
     required this.runtimeServesPlatform,
     required this.needsRestart,
     required this.capabilityNeedsRestart,
+    required this.expanded,
+    required this.onToggleExpanded,
     required this.onEnabledChanged,
     required this.onCapabilityChanged,
   });
@@ -620,6 +646,12 @@ class _PlatformCard extends StatelessWidget {
   final void Function(OnlineMusicCapability capability, String? providerId)
   onCapabilityChanged;
 
+  /// 能力行是否展开（默认收起，见类文档）。
+  final bool expanded;
+
+  /// 点头部的回调（只切换展开状态，不改任何配置）。
+  final VoidCallback onToggleExpanded;
+
   /// P-37：卡上的状态行，**每条都标注事实来源**。
   ///
   /// 以前这里只显示一句、且用优先级把另一个事实吃掉（运行中原因优先，其次才是
@@ -646,34 +678,63 @@ class _PlatformCard extends StatelessWidget {
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
+        // 与折叠前一致的内边距：卡头（含开关）与能力行共用同一块留白。
         padding: const EdgeInsets.fromLTRB(16, 8, 8, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // ── 卡头：常驻，点击折叠/展开 ──────────────────────────────────
+            //
+            // 只有「文本区 + 箭头」是点击区，**Switch 不在点击区内**：
+            // 否则点开关会顺带展开卡片（"点开关不得触发展开"）。
             Row(
               children: [
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        label,
-                        style: const TextStyle(
-                          fontSize: AppType.body,
-                          fontWeight: AppType.weightSemibold,
-                        ),
-                      ),
-                      for (final line in statusLines)
-                        Text(
-                          line,
-                          style: TextStyle(
-                            fontSize: AppType.caption,
-                            color: scheme.onSurfaceVariant,
+                  child: InkWell(
+                    key: ValueKey(
+                      'online-music-platform-card-header-${identity.configKey}',
+                    ),
+                    onTap: onToggleExpanded,
+                    borderRadius: AppRadius.smCircular,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  label,
+                                  style: const TextStyle(
+                                    fontSize: AppType.body,
+                                    fontWeight: AppType.weightSemibold,
+                                  ),
+                                ),
+                                for (final line in statusLines)
+                                  Text(
+                                    line,
+                                    style: TextStyle(
+                                      fontSize: AppType.caption,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
-                    ],
+                        // 展开指示：与状态文案同色，避免抢走平台名与开关的注意力。
+                        Icon(
+                          expanded ? Symbols.expand_less : Symbols.expand_more,
+                          size: 20,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                    ),
                   ),
                 ),
+                // Switch 在 InkWell **之外**：点它只改启用状态，不折叠。
                 Tooltip(
                   message: canToggle ? '启用 / 停用该平台' : '至少保留一个启用的平台',
                   child: Switch(
@@ -691,8 +752,10 @@ class _PlatformCard extends StatelessWidget {
                 padding: EdgeInsets.only(top: 4.0),
                 child: _SettingsHint('该平台的改动尚未生效（下次启动）'),
               ),
-            for (final capability in OnlineMusicCapability.values)
-              _buildCapabilityRow(context, capability),
+            // ── 折叠体：19 条能力行（默认收起）─────────────────────────────
+            if (expanded)
+              for (final capability in OnlineMusicCapability.values)
+                _buildCapabilityRow(context, capability),
           ],
         ),
       ),

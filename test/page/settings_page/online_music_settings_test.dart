@@ -54,6 +54,27 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 2.3：平台卡的能力行**默认收起** ⇒ 断言卡内内容前先点卡头展开。
+  ///
+  /// 折叠是刻意的（设置页太长），所以"看不到能力行"是正确行为；直接断言卡内内容
+  /// 会把"没展开"误读成"没有这一行"。点的是卡头里那段可点区域（InkWell），
+  /// 不是 Switch 的位置。
+  Future<void> expandCard(WidgetTester tester, String headerKeySuffix) async {
+    await tester.tap(
+      find.byKey(
+        ValueKey('online-music-platform-card-header-$headerKeySuffix'),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  /// 展开全部内置平台卡。
+  Future<void> expandBuiltinCards(WidgetTester tester) async {
+    for (final platform in builtinMusicPlatforms) {
+      await expandCard(tester, platform.name);
+    }
+  }
+
   /// 把能力表单滚到指定文案出现为止。
   ///
   /// 表单是 `ListView`（**惰性构建**）⇒ 视口外的控件根本没进 widget 树；
@@ -100,9 +121,11 @@ void main() {
     expect(find.text('能力分配'), findsNothing);
     expect(find.text('默认提供商'), findsNothing);
     expect(find.text('提供商配置'), findsOneWidget);
+    // 2.3：平台卡的能力行**默认收起** ⇒ 断言前先展开（不然"没展开"会被误读成"没有这一行"）。
     for (final platform in builtinMusicPlatforms) {
       expect(find.text(musicPlatformLabel(platform)), findsOneWidget);
     }
+    await expandBuiltinCards(tester);
     // 每个平台卡内五行能力（search / 歌单详情 / 歌单列表 / lyric / stream）。
     for (final capability in OnlineMusicCapability.values) {
       expect(
@@ -748,6 +771,60 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('平台卡：能力行默认收起，点卡头才展开（再点收起）', (tester) async {
+    final controller = _controller();
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    const unconfigured = '未配置：该平台下没有支持此能力的条目';
+    // 2.3：默认收起 —— 19 条能力行一条都不在树里（这正是"缩短设置页"的来源）。
+    expect(
+      find.text(unconfigured),
+      findsNothing,
+      reason: '默认收起 ⇒ 卡内能力行不渲染',
+    );
+    expect(
+      find.text(onlineMusicCapabilityLabel(OnlineMusicCapability.search)),
+      findsNothing,
+    );
+    // 卡头仍在：平台名与开关一个不少。
+    for (final platform in builtinMusicPlatforms) {
+      expect(find.text(musicPlatformLabel(platform)), findsOneWidget);
+    }
+    expect(find.byType(Switch), findsNWidgets(builtinMusicPlatforms.length));
+
+    // 点酷狗卡头 ⇒ 只有它展开（默认条目只服务网易云 ⇒ 19 条全是"未配置"）。
+    await expandCard(tester, MusicPlatform.kugou.name);
+    expect(
+      find.text(unconfigured),
+      findsNWidgets(OnlineMusicCapability.values.length),
+      reason: '展开后 19 条能力行齐全',
+    );
+
+    // 再点一次 ⇒ 收起，行又消失。
+    await expandCard(tester, MusicPlatform.kugou.name);
+    expect(find.text(unconfigured), findsNothing, reason: '可再次收起');
+  });
+
+  testWidgets('平台卡：点启用开关**不会**触发展开', (tester) async {
+    final controller = _controller();
+    addTearDown(controller.dispose);
+    await pumpPanel(tester, controller);
+
+    // 关掉酷狗：开关只改启用状态，不得顺带把卡展开。
+    await tester.tap(find.byType(Switch).at(2));
+    await tester.pumpAndSettle();
+
+    expect(controller.settings.isPlatformEnabled(MusicPlatform.kugou), isFalse);
+    expect(
+      find.text('未配置：该平台下没有支持此能力的条目'),
+      findsNothing,
+      reason: '点开关不得触发展开（否则每次开关都会把 19 行倒出来）',
+    );
+    // 状态文案是卡头的一部分，收起也照样更新。
+    expect(find.text('已停用'), findsOneWidget);
+  });
+
   testWidgets('平台卡：卡内为某能力指定 Provider 会写成该组合的显式候选', (tester) async {
     final controller = _controller(
       configured: OnlineMusicSettings.fromJson({
@@ -766,6 +843,8 @@ void main() {
       }),
     );
     await pumpPanel(tester, controller);
+    // 2.3：能力行默认收起 ⇒ 先展开网易云卡（候选行都在折叠体里）。
+    await expandCard(tester, MusicPlatform.netease.name);
 
     // 没有显式指定时显示"自动"，并说明自动会用哪个条目。
     expect(find.textContaining('自动：按条目顺序使用 neA'), findsWidgets);
@@ -813,6 +892,8 @@ void main() {
     final controller = _controller();
     addTearDown(controller.dispose);
     await pumpPanel(tester, controller);
+    // 2.3：能力行默认收起 ⇒ 先展开三张卡再数（否则数到的是"没展开"，不是"没有"）。
+    await expandBuiltinCards(tester);
 
     const unconfigured = '未配置：该平台下没有支持此能力的条目';
     // 默认只有一个 netease 条目：QQ / 酷狗的所有能力都没有候选。
@@ -2250,6 +2331,8 @@ void main() {
 
     // 起点：一致 ⇒ 没有任何"未生效"标记。
     expect(find.textContaining('尚未生效'), findsNothing);
+    // 2.3：能力级（第 4 层）提示在折叠体里 ⇒ 先展开；平台级（第 3 层）提示常驻卡头下方。
+    await expandCard(tester, MusicPlatform.netease.name);
 
     await controller.assignPlatformCapability(
       MusicPlatform.netease,
@@ -2258,8 +2341,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('这里的改动尚未生效'), findsOneWidget);
-    expect(find.textContaining('该平台的改动尚未生效'), findsOneWidget);
+    expect(
+      find.textContaining('这里的改动尚未生效'),
+      findsOneWidget,
+      reason: '能力级提示：展开后仍在（折叠不吞掉提示）',
+    );
+    expect(
+      find.textContaining('该平台的改动尚未生效'),
+      findsOneWidget,
+      reason: '平台级提示：常驻，不需要展开',
+    );
   });
 
   // ------------------------------------------------------------------ F2（P-22）
@@ -2281,6 +2372,8 @@ void main() {
     final controller = _controller(configured: settings, active: settings);
     addTearDown(controller.dispose);
     await pumpPanel(tester, controller);
+    // 2.3：候选行在折叠体里 ⇒ 先展开网易云卡。
+    await expandCard(tester, MusicPlatform.netease.name);
 
     expect(find.text('已指定 chksz'), findsOneWidget);
 
