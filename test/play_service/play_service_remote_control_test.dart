@@ -105,10 +105,12 @@ void main() {
     expect(binding.resume(), isFalse);
     expect(binding.canSeekFromUi, isTrue);
     expect(binding.canSeekProgressFromUi, isTrue);
+    // 在线歌词行门禁是远程专用：无远程会话时关闭，本地走 canSeekFromUi。
+    expect(binding.canSeekLyricLineFromUi, isFalse);
   });
 
   test(
-    'remote seek routes to the remote backend while the lyric gate stays shut',
+    'remote seek routes to the remote backend while the local lyric gate stays shut',
     () async {
       final seekCalls = <Duration>[];
       binding.bind(
@@ -123,9 +125,10 @@ void main() {
         },
       );
 
-      // opening：进度条与歌词行都不可跳。
+      // opening：进度条与本地歌词门禁都不可跳。
       expect(binding.canSeekProgressFromUi, isFalse);
       expect(binding.canSeekFromUi, isFalse);
+      expect(binding.canSeekLyricLineFromUi, isFalse);
 
       for (final state in const [
         PlaybackBackendState.playing,
@@ -135,10 +138,10 @@ void main() {
       ]) {
         source.add(_State(state));
         await pumpEventQueue();
-        // 进度条放开，歌词行门禁保持关闭。
+        // 进度条放开；本地歌词门的禁保持关闭（与在线歌词门禁是两回事）。
         expect(binding.canSeekProgressFromUi, isTrue);
         expect(binding.canSeekFromUi, isFalse);
-        // 同步的歌词路径仍拒绝，且不触发远程 handler。
+        // 同步的本地歌词路径仍拒绝，且不触发远程 handler。
         expect(binding.seekFromUi(() => fail('local seek must not run')), isFalse);
         expect(await binding.seekRemoteProgress(12.5), isTrue);
       }
@@ -164,6 +167,7 @@ void main() {
 
     expect(binding.canSeekProgressFromUi, isFalse);
     expect(binding.canSeekFromUi, isFalse);
+    expect(binding.canSeekLyricLineFromUi, isFalse);
     expect(await binding.seekRemoteProgress(1), isFalse);
   });
 
@@ -194,6 +198,103 @@ void main() {
     );
 
     expect(await binding.seekRemoteProgress(3), isFalse);
+  });
+
+  test('remote lyric-line seek opens only for seekable remote states', () async {
+    final seekCalls = <Duration>[];
+    binding.bind(
+      initialState: const _State(PlaybackBackendState.opening),
+      stateStream: source.stream,
+      isActive: () => binding.state.isActive,
+      pause: () => true,
+      resume: () => true,
+      seek: (position) async {
+        seekCalls.add(position);
+        return true;
+      },
+    );
+
+    // opening：流还不能跳，歌词行也不可点（且不得触碰 handler）。
+    expect(binding.canSeekLyricLineFromUi, isFalse);
+    expect(await binding.seekLyricLine(1.0), isFalse);
+    expect(seekCalls, isEmpty);
+
+    // 可跳状态：歌词行放开，跳转落到远程 handler。
+    for (final state in const [
+      PlaybackBackendState.playing,
+      PlaybackBackendState.paused,
+      PlaybackBackendState.stalled,
+      PlaybackBackendState.completed,
+    ]) {
+      source.add(_State(state));
+      await pumpEventQueue();
+      expect(binding.canSeekLyricLineFromUi, isTrue);
+      // 本地门禁仍关闭（两者不共用一个开关）。
+      expect(binding.canSeekFromUi, isFalse);
+      expect(await binding.seekLyricLine(42.0), isTrue);
+    }
+    expect(seekCalls, List.filled(4, const Duration(seconds: 42)));
+
+    // failed / controlInFlight：门禁关闭且拒绝跳转。
+    source.add(const _State(PlaybackBackendState.failed));
+    await pumpEventQueue();
+    expect(binding.canSeekLyricLineFromUi, isFalse);
+    expect(await binding.seekLyricLine(7.0), isFalse);
+    source.add(
+      const _State(PlaybackBackendState.playing, controlInFlight: true),
+    );
+    await pumpEventQueue();
+    expect(binding.canSeekLyricLineFromUi, isFalse);
+    expect(await binding.seekLyricLine(7.0), isFalse);
+    expect(seekCalls, List.filled(4, const Duration(seconds: 42)));
+  });
+
+  test('lyric-line seek never degrades to the local player', () async {
+    final seekCalls = <Duration>[];
+    binding.bind(
+      initialState: const _State.inactive(),
+      stateStream: source.stream,
+      isActive: () => binding.state.isActive,
+      pause: () => true,
+      resume: () => true,
+      seek: (position) async {
+        seekCalls.add(position);
+        return true;
+      },
+    );
+
+    // 无远程会话：门禁关闭 ⇒ 拒绝，不落到任何 handler。
+    expect(binding.canSeekLyricLineFromUi, isFalse);
+    expect(await binding.seekLyricLine(9.5), isFalse);
+    expect(seekCalls, isEmpty);
+    // 本地门禁此时是开的（本地链路照旧）。
+    expect(binding.canSeekFromUi, isTrue);
+  });
+
+  test('lyric-line seek without a bound handler degrades to false', () async {
+    binding.bind(
+      initialState: const _State(PlaybackBackendState.playing),
+      stateStream: source.stream,
+      isActive: () => binding.state.isActive,
+      pause: () => true,
+      resume: () => true,
+    );
+
+    expect(binding.canSeekLyricLineFromUi, isTrue);
+    expect(await binding.seekLyricLine(3), isFalse);
+  });
+
+  test('lyric-line seek failure surfaces false and never throws', () async {
+    binding.bind(
+      initialState: const _State(PlaybackBackendState.playing),
+      stateStream: source.stream,
+      isActive: () => binding.state.isActive,
+      pause: () => true,
+      resume: () => true,
+      seek: (_) async => throw StateError('backend rejected lyric seek'),
+    );
+
+    expect(await binding.seekLyricLine(5), isFalse);
   });
 
   test('remote seek without a bound handler degrades to false', () async {

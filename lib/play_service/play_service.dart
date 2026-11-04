@@ -82,6 +82,10 @@ final class _InactiveRemotePlaybackControlState
 
 /// 远程激活时**进度条**是否可跳（与歌词行点击门禁 [RemotePlaybackControlBinding.canSeekFromUi] 分开）。
 ///
+/// 注意：本地场景（`!state.isActive`）刻意返回 `true`（进度条本地当然可跳）。
+/// 因此**在线歌词行**的门禁不能只用本函数，见
+/// [RemotePlaybackControlBinding.canSeekLyricLineFromUi]（显式叠加了 `isActive`）。
+///
 /// 抽成顶层纯函数：绑定层用它算快照，UI 用同一个规则直接由收到的状态求值，
 /// 避免 UI 依赖"监听器注册顺序"这种隐式前提。
 bool remoteProgressSeekAllowed(RemotePlaybackControlState state) {
@@ -116,10 +120,11 @@ final class RemotePlaybackControlBinding {
   Stream<RemotePlaybackControlState> get stateStream => _stateController.stream;
   bool get isActive => _isActiveReader?.call() ?? _state.isActive;
 
-  /// **歌词行点击跳转**的门禁：远程激活时保持关闭。
+  /// **本地歌词行点击**的门禁：远程激活时保持关闭。
   ///
-  /// 本包只解进度条，点歌词行跳转不在范围内；歌词组件（受保护文件）读的就是这个值，
-  /// 因此这里**不能**随远程一起放开。
+  /// 消费方是本地歌词视图（`vertical_lyric_view.dart`）与同步入口 [seekFromUi]。
+  /// 在线歌词行点击**不读这里**，它有自己的门禁 [canSeekLyricLineFromUi]：
+  /// 两者共用开关会让本地链路跟着远程行为一起变，而本地仍应保持原有语义。
   bool get canSeekFromUi => !isActive;
 
   /// **进度条**的门禁：远程激活时，只要流确实可跳就放开。
@@ -127,6 +132,16 @@ final class RemotePlaybackControlBinding {
   /// 与 [canSeekFromUi] 分开是有意的：两者共用一个开关会把"点歌词行跳转"
   /// 顺带解锁（歌词组件未改一行代码也会跟着变行为）。
   bool get canSeekProgressFromUi => remoteProgressSeekAllowed(_state);
+
+  /// **在线歌词行点击**的门禁（新增的第三个门禁，不复用前两个）。
+  ///
+  /// 与 [canSeekProgressFromUi] 的差别只在**是否远程会话**这一层：
+  /// [remoteProgressSeekAllowed] 在本地场景刻意返回 `true`（进度条本地当然可跳），
+  /// 若本门禁只写它，本地也会被判为可点 —— 而本地歌词行点击的判定源是
+  /// [canSeekFromUi]（`vertical_lyric_view.dart` 读的那个），两者会分裂成双重标准。
+  /// 因此这里显式叠加 [isActive]：只有远程会话才走本门禁。
+  bool get canSeekLyricLineFromUi =>
+      isActive && remoteProgressSeekAllowed(_state);
 
   void bind({
     required RemotePlaybackControlState initialState,
@@ -195,6 +210,15 @@ final class RemotePlaybackControlBinding {
     } catch (_) {
       return false;
     }
+  }
+
+  /// **在线歌词行**的跳转入口：门禁 [canSeekLyricLineFromUi] 关时直接拒绝，
+  /// 否则完全复用 [seekRemoteProgress] 的路由与静默失败语义。
+  ///
+  /// 只服务远程：本入口不碰本地播放器（本地歌词行继续走同步的 `seekFromUi`）。
+  Future<bool> seekLyricLine(double seconds) async {
+    if (!canSeekLyricLineFromUi) return false;
+    return seekRemoteProgress(seconds);
   }
 
   void clear() {
@@ -343,6 +367,14 @@ class PlayService {
   bool get canSeekProgressFromUi =>
       _remotePlaybackControls.canSeekProgressFromUi;
 
+  /// **在线歌词行**可跳：仅远程激活且流可跳时为真（见
+  /// [RemotePlaybackControlBinding.canSeekLyricLineFromUi]）。
+  ///
+  /// 视图在构建期读它决定 `onTap` 是否为 null；点击时 [seekLyricLineFromUi]
+  /// 会再判一次，避免门禁在两次读取之间变化后仍然提交。
+  bool get canSeekLyricLineFromUi =>
+      _remotePlaybackControls.canSeekLyricLineFromUi;
+
   ValueListenable<double> get activeVolumeDsp => _activeVolume;
   bool get canSetActiveVolume => _activeVolume.canSetVolume;
 
@@ -490,7 +522,10 @@ class PlayService {
     }
   }
 
-  /// **歌词行点击**路径（保持同步 bool 语义，远程激活时仍被拒绝）。
+  /// **本地歌词行点击**路径（保持同步 bool 语义，远程激活时仍被拒绝）。
+  ///
+  /// 在线歌词行**不走这里**（远程激活时本入口恒为 false）：它走异步的
+  /// [seekLyricLineFromUi]，因为远程跳转必须能报告失败供 UI 提示与回滚。
   bool seekFromUi(double seconds) {
     return _remotePlaybackControls.seekFromUi(
       () => playbackService.seek(seconds),
@@ -511,6 +546,16 @@ class PlayService {
     } catch (_) {
       return false;
     }
+  }
+
+  /// **在线歌词行点击**路径：只服务远程会话。
+  ///
+  /// 本地（非远程）时一律返回 false —— 本地歌词行点击继续走旧的同步
+  /// [seekFromUi]（`vertical_lyric_view.dart` 那一侧），本入口不碰本地播放器，
+  /// 因此本地链路零回归。
+  Future<bool> seekLyricLineFromUi(double seconds) async {
+    if (!_remotePlaybackControls.isActive) return false;
+    return _remotePlaybackControls.seekLyricLine(seconds);
   }
 
   void _stopLocalFromSmtc() {

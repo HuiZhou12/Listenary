@@ -9,6 +9,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/route_visibility.dart';
+import 'package:pure_music/core/utils.dart' show showTextOnSnackBar, ToastVariant;
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/lyric_timing.dart';
@@ -22,6 +23,7 @@ import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.d
     show alwaysShowLyricViewControls, lyricDisplayPrimaryIndex;
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/remote_lyric_controller.dart';
+import 'package:pure_music/play_service/remote_playback_timeline.dart';
 
 const _remoteOpacityBase = 0.88;
 const _remoteOpacityMinClamp = 0.30;
@@ -87,6 +89,13 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
   Duration _lastScrollTickElapsed = Duration.zero;
 
   bool _isHovered = false;
+  /// 远程时间轴：点击歌词行跳转要给它一个 seek 预期（避免成功后短暂回跳），
+  /// 失败时要靠它回滚到真实播放点（见 [_seekToLine]）。
+  ///
+  /// 可空读取：组合根一定提供该 Provider（`entry.dart` 的 `MultiProvider`），
+  /// 但纯视图测试可能只装配会话与歌词控制器 —— 缺省时降级为"只提交、不做预期/回滚"，
+  /// 不因缺 Provider 而崩。
+  RemotePlaybackTimelineController? _timeline;
 
   @override
   bool get wantKeepAlive => true;
@@ -104,6 +113,7 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _timeline = context.read<RemotePlaybackTimelineController?>();
     final route = ModalRoute.of(context);
     if (_route != route) {
       final oldRoute = _route;
@@ -509,9 +519,38 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
         line.bgWords.isNotEmpty;
   }
 
+  /// 点击一行歌词：把播放位置跳到该行起始时间。
+  ///
+  /// 门禁是**在线歌词行专用**的 [PlayService.canSeekLyricLineFromUi]（仅远程激活且
+  /// 流可跳时为真），不是本地视图读的 `canSeekFromUi` —— 后者刻意在远程期间保持关闭。
+  ///
+  /// 提交顺序与进度条（`page.dart` 的 `_submitProgressSeek`）同款：
+  /// 1. 先给时间轴一个 seek 预期，成功后不会出现"先回跳再前进"；
+  /// 2. 异步提交跳转；
+  /// 3. 成功即止：时间轴已挪到目标 ⇒ 歌词控制器重发快照 ⇒ 当前行与滚动由既有的
+  ///    `_onLyricChanged` / `_requestScrollToCurrent` 自动跟随（这里不写滚动代码）；
+  /// 4. 失败则放弃预期并立刻按后端真实位置重采样，视口与当前行就此留在原处，
+  ///    再给一条与进度条逐字一致的错误提示。
+  ///
+  /// 不抛异常：底层只返回 bool。
   void _seekToLine(LyricLine line) {
-    if (!PlayService.instance.canSeekFromUi) return;
-    PlayService.instance.seekFromUi(line.start.inMilliseconds / 1000.0);
+    final service = PlayService.instance;
+    if (!service.canSeekLyricLineFromUi) return;
+    final target = line.start;
+    final timeline = _timeline;
+    timeline?.expectSeek(target);
+    unawaited(
+      service.seekLyricLineFromUi(target.inMilliseconds / 1000.0).then((ok) {
+        if (ok || !mounted) return;
+        timeline
+          ?..abandonSeekExpectation()
+          ..resyncNow();
+        showTextOnSnackBar(
+          '当前音源不支持进度跳转',
+          variant: ToastVariant.error,
+        );
+      }),
+    );
   }
 
   /// 取某一行交给 [LyricsLineWidget] 的渲染对象。
@@ -777,7 +816,10 @@ class _RemoteVerticalLyricViewState extends State<RemoteVerticalLyricView>
                                           lyric,
                                           index,
                                         )?.toDouble(),
-                                    onTap: PlayService.instance.canSeekFromUi
+                                    onTap:
+                                        PlayService
+                                            .instance
+                                            .canSeekLyricLineFromUi
                                         ? () => _seekToLine(line)
                                         : null,
                                   ),
