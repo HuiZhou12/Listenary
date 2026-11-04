@@ -288,6 +288,23 @@ final class RemotePlaybackSessionController {
     action: _backend.resume,
   );
 
+  /// 远程进度跳转：成功返回 true；失败（音源不支持/越界/状态不对/异常）返回 false。
+  ///
+  /// **不抛异常** —— 调用方是 UI 手势回调，异常必须在这里收敛。
+  /// 失败时**不改会话状态**：流继续按原位置播，UI 负责提示并回滚位置。
+  Future<bool> seek(Duration position) async {
+    if (_disposed || !_sessionStarted || position.isNegative) return false;
+    final backend = _backend;
+    if (backend is! SeekablePlaybackBackend) return false;
+    final seekable = backend as SeekablePlaybackBackend;
+    try {
+      await seekable.seek(position);
+    } catch (_) {
+      return false;
+    }
+    return true;
+  }
+
   bool _navigate(int offset) {
     if (_disposed || !_sessionStarted) return false;
     final snapshot = _queue.value;

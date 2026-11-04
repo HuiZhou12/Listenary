@@ -61,11 +61,28 @@ final class PlaybackBackendControlException implements Exception {
   String toString() => 'PlaybackBackendControlException';
 }
 
+/// 后端拒绝进度跳转（音源不支持、流尚未下载到该位置、或当前状态不可跳转）。
+///
+/// **只向上层暴露这一种类型**：驱动层抛出的 [FormatException] 等细节
+/// （可能带流地址/签名线索）一律在 backend 边界收敛掉。
+final class PlaybackBackendSeekException implements Exception {
+  const PlaybackBackendSeekException();
+
+  @override
+  String toString() => 'PlaybackBackendSeekException';
+}
+
 abstract interface class ControllablePlaybackBackend
     implements PlaybackBackend {
   Future<void> pause();
 
   Future<void> resume();
+}
+
+/// 可跳转进度的后端；远程流后端也实现它。
+abstract interface class SeekablePlaybackBackend implements PlaybackBackend {
+  /// 跳到 [position]。失败时抛 [PlaybackBackendSeekException]，不中断当前流。
+  Future<void> seek(Duration position);
 }
 
 abstract interface class PositionReadablePlaybackBackend

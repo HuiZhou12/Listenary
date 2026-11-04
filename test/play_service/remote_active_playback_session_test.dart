@@ -58,7 +58,6 @@ void main() {
         canSeek: false,
       ),
     );
-
     gate.complete();
     await play;
   });
@@ -180,7 +179,7 @@ void main() {
         canPause: true,
         canPrevious: true,
         canNext: true,
-        canSeek: false,
+        canSeek: true,
       ),
     );
 
@@ -190,6 +189,7 @@ void main() {
     expect(harness.activeSession.value.controlInFlight, isTrue);
     expect(harness.activeSession.value.capabilities.canPlay, isFalse);
     expect(harness.activeSession.value.capabilities.canPause, isFalse);
+    // 控制中禁止并发跳转，避免和 pause/resume 抢同一个流。
     expect(harness.activeSession.value.capabilities.canSeek, isFalse);
 
     pauseGate.complete();
@@ -200,6 +200,7 @@ void main() {
     );
     expect(harness.activeSession.value.capabilities.canPlay, isTrue);
     expect(harness.activeSession.value.capabilities.canPause, isFalse);
+    expect(harness.activeSession.value.capabilities.canSeek, isTrue);
 
     harness.queue.select(0);
     expect(harness.activeSession.value.capabilities.canPrevious, isFalse);
@@ -207,6 +208,38 @@ void main() {
     harness.queue.select(2);
     expect(harness.activeSession.value.capabilities.canPrevious, isTrue);
     expect(harness.activeSession.value.capabilities.canNext, isFalse);
+  });
+
+  test('remote seek reaches the backend and reports success', () async {
+    await harness.session.play(0, requestedQuality: 'lossless');
+    harness.backend.emit(PlaybackBackendState.playing);
+
+    expect(await harness.session.seek(const Duration(seconds: 42)), isTrue);
+    expect(harness.backend.seekCalls, [const Duration(seconds: 42)]);
+  });
+
+  test('remote seek failure returns false and keeps the stream state', () async {
+    await harness.session.play(0, requestedQuality: 'lossless');
+    harness.backend.emit(PlaybackBackendState.playing);
+    harness.backend.seekError = StateError('stream has not downloaded yet');
+
+    expect(await harness.session.seek(const Duration(minutes: 2)), isFalse);
+    // 失败不断流、不改会话状态。
+    expect(
+      harness.activeSession.value.state,
+      ActivePlaybackSessionState.playing,
+    );
+    expect(harness.activeSession.value.capabilities.canSeek, isTrue);
+  });
+
+  test('remote seek is rejected before a session or with a negative position', () async {
+    expect(await harness.session.seek(const Duration(seconds: 5)), isFalse);
+    expect(harness.backend.seekCalls, isEmpty);
+
+    await harness.session.play(0, requestedQuality: 'lossless');
+    harness.backend.emit(PlaybackBackendState.playing);
+    expect(await harness.session.seek(const Duration(seconds: -1)), isFalse);
+    expect(harness.backend.seekCalls, isEmpty);
   });
 
   test('inactive control releases the remote lease', () async {
@@ -380,14 +413,24 @@ final class _LocalBridge implements LocalPlaybackSessionBridge {
   void restore(LocalPlaybackResumePoint resumePoint) {}
 }
 
-final class _Backend implements ControllablePlaybackBackend {
+final class _Backend
+    implements ControllablePlaybackBackend, SeekablePlaybackBackend {
   final _states = StreamController<PlaybackBackendState>.broadcast(sync: true);
   Future<void>? pauseGate;
+  final seekCalls = <Duration>[];
+  Object? seekError;
 
   @override
   Stream<PlaybackBackendState> get stateStream => _states.stream;
 
   void emit(PlaybackBackendState state) => _states.add(state);
+
+  @override
+  Future<void> seek(Duration position) async {
+    seekCalls.add(position);
+    final error = seekError;
+    if (error != null) throw error;
+  }
 
   @override
   Future<void> open(PlaybackSource source) async {}

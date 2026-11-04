@@ -340,6 +340,107 @@ void main() {
       expect(controller.isAdvancing, isFalse);
       expect(positions, isEmpty);
     });
+
+    group('seek guard', () {
+      setUp(() {
+        positions.add(const Duration(seconds: 2));
+        controller.synchronize(
+          revision: 1,
+          state: PlaybackBackendState.playing,
+          duration: const Duration(seconds: 60),
+        );
+      });
+
+      test('expectSeek moves the anchor immediately and stops the back-jump', () {
+        now = const Duration(milliseconds: 500);
+        // 跳转前的外推点是 2.5s。
+        expect(
+          controller.projectedSnapshot.position,
+          const Duration(milliseconds: 2500),
+        );
+
+        controller.expectSeek(const Duration(seconds: 30));
+
+        // 锚点已挪到目标，不再按旧位置外推 ⇒ 不会回跳。
+        expect(controller.value.position, const Duration(seconds: 30));
+        expect(
+          controller.projectedSnapshot.position,
+          const Duration(seconds: 30),
+        );
+        expect(controller.isSeekGuardActive, isTrue);
+      });
+
+      test('stale samples at the old position are dropped during the window', () {
+        controller.expectSeek(const Duration(seconds: 30));
+        now += const Duration(milliseconds: 50);
+
+        // 后端还没跟上，采样仍报旧位置 → 丢弃，UI 停在目标。
+        positions.add(const Duration(seconds: 2));
+        tickerFactory.tickActive();
+
+        expect(controller.value.position, const Duration(seconds: 30));
+        expect(controller.isSeekGuardActive, isTrue);
+      });
+
+      test('a sample that catches up ends the guard and is trusted', () {
+        controller.expectSeek(const Duration(seconds: 30));
+        now += const Duration(milliseconds: 100);
+
+        positions.add(const Duration(milliseconds: 30100));
+        tickerFactory.tickActive();
+
+        expect(controller.value.position, const Duration(milliseconds: 30100));
+        expect(controller.isSeekGuardActive, isFalse);
+        expect(positions, isEmpty);
+      });
+
+      test('the guard expires so a genuinely different position wins', () {
+        controller.expectSeek(const Duration(seconds: 30));
+        now += RemotePlaybackTimelineController.seekGuardWindow;
+
+        positions.add(const Duration(seconds: 5));
+        tickerFactory.tickActive();
+
+        expect(controller.value.position, const Duration(seconds: 5));
+        expect(controller.isSeekGuardActive, isFalse);
+      });
+
+      test('abandoning the expectation resumes normal sampling at once', () {
+        controller.expectSeek(const Duration(seconds: 30));
+        controller.abandonSeekExpectation();
+        now += const Duration(milliseconds: 50);
+
+        positions.add(const Duration(seconds: 2));
+        tickerFactory.tickActive();
+
+        expect(controller.value.position, const Duration(seconds: 2));
+        expect(controller.isSeekGuardActive, isFalse);
+      });
+
+      test('resyncNow pulls the anchor back to the real position', () {
+        controller.expectSeek(const Duration(seconds: 30));
+        // 后端从未移动（跳转失败）。
+        positions.add(const Duration(seconds: 2));
+
+        controller.abandonSeekExpectation();
+        controller.resyncNow();
+
+        expect(controller.value.position, const Duration(seconds: 2));
+        expect(controller.isSeekGuardActive, isFalse);
+      });
+
+      test('a revision change clears a pending seek expectation', () {
+        controller.expectSeek(const Duration(seconds: 30));
+        controller.synchronize(
+          revision: 2,
+          state: PlaybackBackendState.opening,
+          duration: Duration.zero,
+        );
+
+        expect(controller.isSeekGuardActive, isFalse);
+        expect(controller.value.position, Duration.zero);
+      });
+    });
   });
 }
 

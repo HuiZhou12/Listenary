@@ -80,6 +80,25 @@ final class _InactiveRemotePlaybackControlState
   bool get isActive => false;
 }
 
+/// 远程激活时**进度条**是否可跳（与歌词行点击门禁 [RemotePlaybackControlBinding.canSeekFromUi] 分开）。
+///
+/// 抽成顶层纯函数：绑定层用它算快照，UI 用同一个规则直接由收到的状态求值，
+/// 避免 UI 依赖"监听器注册顺序"这种隐式前提。
+bool remoteProgressSeekAllowed(RemotePlaybackControlState state) {
+  if (!state.isActive) return true;
+  if (state.controlInFlight) return false;
+  return switch (state.state) {
+    PlaybackBackendState.playing ||
+    PlaybackBackendState.paused ||
+    PlaybackBackendState.stalled ||
+    PlaybackBackendState.completed => true,
+    PlaybackBackendState.opening ||
+    PlaybackBackendState.stopped ||
+    PlaybackBackendState.failed ||
+    null => false,
+  };
+}
+
 final class RemotePlaybackControlBinding {
   final _stateController =
       StreamController<RemotePlaybackControlState>.broadcast();
@@ -88,6 +107,7 @@ final class RemotePlaybackControlBinding {
   StreamSubscription<RemotePlaybackControlState>? _stateSubscription;
   bool Function()? _pauseHandler;
   bool Function()? _resumeHandler;
+  Future<bool> Function(Duration position)? _seekHandler;
   bool Function()? _isActiveReader;
   int _revision = 0;
   bool _disposed = false;
@@ -95,7 +115,18 @@ final class RemotePlaybackControlBinding {
   RemotePlaybackControlState get state => _state;
   Stream<RemotePlaybackControlState> get stateStream => _stateController.stream;
   bool get isActive => _isActiveReader?.call() ?? _state.isActive;
+
+  /// **歌词行点击跳转**的门禁：远程激活时保持关闭。
+  ///
+  /// 本包只解进度条，点歌词行跳转不在范围内；歌词组件（受保护文件）读的就是这个值，
+  /// 因此这里**不能**随远程一起放开。
   bool get canSeekFromUi => !isActive;
+
+  /// **进度条**的门禁：远程激活时，只要流确实可跳就放开。
+  ///
+  /// 与 [canSeekFromUi] 分开是有意的：两者共用一个开关会把"点歌词行跳转"
+  /// 顺带解锁（歌词组件未改一行代码也会跟着变行为）。
+  bool get canSeekProgressFromUi => remoteProgressSeekAllowed(_state);
 
   void bind({
     required RemotePlaybackControlState initialState,
@@ -103,6 +134,7 @@ final class RemotePlaybackControlBinding {
     required bool Function() isActive,
     required bool Function() pause,
     required bool Function() resume,
+    Future<bool> Function(Duration position)? seek,
   }) {
     if (_disposed) {
       throw StateError('RemotePlaybackControlBinding has been disposed');
@@ -115,6 +147,7 @@ final class RemotePlaybackControlBinding {
     }
     _pauseHandler = pause;
     _resumeHandler = resume;
+    _seekHandler = seek;
     _isActiveReader = isActive;
     _setState(initialState);
     _stateSubscription = stateStream.listen((state) {
@@ -149,6 +182,21 @@ final class RemotePlaybackControlBinding {
     return true;
   }
 
+  /// 远程进度跳转（异步、失败返回 false，不抛异常）。
+  ///
+  /// 没绑定 handler（组合根未装配）时返回 false，让 UI 走"失败提示+回滚"。
+  Future<bool> seekRemoteProgress(double seconds) async {
+    final handler = _seekHandler;
+    if (handler == null) return false;
+    try {
+      return await handler(
+        Duration(microseconds: (seconds * Duration.microsecondsPerSecond).round()),
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
   void clear() {
     if (_disposed) return;
     _clear();
@@ -160,6 +208,7 @@ final class RemotePlaybackControlBinding {
     ++_revision;
     _pauseHandler = null;
     _resumeHandler = null;
+    _seekHandler = null;
     _isActiveReader = null;
     final subscription = _stateSubscription;
     _stateSubscription = null;
@@ -172,6 +221,7 @@ final class RemotePlaybackControlBinding {
     ++_revision;
     _pauseHandler = null;
     _resumeHandler = null;
+    _seekHandler = null;
     _isActiveReader = null;
     final subscription = _stateSubscription;
     _stateSubscription = null;
@@ -288,6 +338,11 @@ class PlayService {
   Stream<RemotePlaybackControlState> get remotePlaybackControlStateStream =>
       _remotePlaybackControls.stateStream;
   bool get canSeekFromUi => _remotePlaybackControls.canSeekFromUi;
+
+  /// 进度条可跳：远程激活时也放开（见 [RemotePlaybackControlBinding.canSeekProgressFromUi]）。
+  bool get canSeekProgressFromUi =>
+      _remotePlaybackControls.canSeekProgressFromUi;
+
   ValueListenable<double> get activeVolumeDsp => _activeVolume;
   bool get canSetActiveVolume => _activeVolume.canSetVolume;
 
@@ -394,6 +449,7 @@ class PlayService {
     required bool Function() isActive,
     required bool Function() pause,
     required bool Function() resume,
+    Future<bool> Function(Duration position)? seek,
   }) {
     _remotePlaybackControls.bind(
       initialState: initialState,
@@ -401,6 +457,7 @@ class PlayService {
       isActive: isActive,
       pause: pause,
       resume: resume,
+      seek: seek,
     );
   }
 
@@ -433,10 +490,27 @@ class PlayService {
     }
   }
 
+  /// **歌词行点击**路径（保持同步 bool 语义，远程激活时仍被拒绝）。
   bool seekFromUi(double seconds) {
     return _remotePlaybackControls.seekFromUi(
       () => playbackService.seek(seconds),
     );
+  }
+
+  /// **进度条**路径：远程激活时路由到远程后端，本地时走本地播放器。
+  ///
+  /// 返回 false = 这次跳转没成功（UI 据此提示并回滚）；不抛异常。
+  Future<bool> seekProgressFromUi(double seconds) async {
+    if (!canSeekProgressFromUi) return false;
+    if (_remotePlaybackControls.isActive) {
+      return _remotePlaybackControls.seekRemoteProgress(seconds);
+    }
+    try {
+      playbackService.seek(seconds);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   void _stopLocalFromSmtc() {

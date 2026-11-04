@@ -83,6 +83,15 @@ final class RemotePlaybackTimelineController
        _clock = clock ?? _createRemotePlaybackTimelineClock(),
        super(const RemotePlaybackTimelineSnapshot.unknown());
 
+  /// seek 后保护窗口：窗口内与跳转方向相反的旧采样一律丢弃。
+  ///
+  /// 参考本地歌词的 `_pendingSeekMs` 思路：seek 之后后端位置要等下一次采样才回来，
+  /// 期间 [projectedSnapshot] 会按**旧锚点**继续外推 ⇒ UI 短暂回跳到跳转前的位置。
+  static const seekGuardWindow = Duration(milliseconds: 400);
+
+  /// 认定"采样已跟上跳转目标"的容差。
+  static const seekGuardTolerance = Duration(milliseconds: 120);
+
   final Duration? Function() _readPosition;
   final RemotePlaybackTimelineTickerFactory _tickerFactory;
   final RemotePlaybackTimelineClock _clock;
@@ -94,11 +103,48 @@ final class RemotePlaybackTimelineController
   Duration? _positionSampleTime;
   int _tickerGeneration = 0;
   bool _disposed = false;
+  Duration? _seekTarget;
+  Duration? _seekGuardUntil;
 
   bool get isAdvancing =>
       !_disposed &&
       _state == PlaybackBackendState.playing &&
       value.hasKnownPosition;
+
+  /// 是否处于 seek 保护窗口内（测试与 UI 诊断用）。
+  bool get isSeekGuardActive {
+    final until = _seekGuardUntil;
+    return until != null && _clock() < until;
+  }
+
+  /// 声明"刚刚跳到 [target]"。
+  ///
+  /// 立刻把锚点挪到目标位置（这会消掉基于旧位置的整段外推），并在
+  /// [seekGuardWindow] 内拒绝仍停留在旧位置附近的过期采样。
+  void expectSeek(Duration target) {
+    if (_disposed) return;
+    _seekTarget = target;
+    _seekGuardUntil = _clock() + seekGuardWindow;
+    _publish(position: target, updateSampleTime: true);
+  }
+
+  /// 放弃 seek 期望（UI 判定跳转失败、已回滚时调用），让下一次采样立刻生效。
+  void abandonSeekExpectation() {
+    _seekTarget = null;
+    _seekGuardUntil = null;
+  }
+
+  /// 立刻按后端真实位置重采样一次（绕开 seek 保护窗口）。
+  ///
+  /// 用于跳转失败的回滚：先丢弃期望，再把锚点拉回真实位置，
+  /// 避免 UI 停在用户拖动出来的那个假位置上。
+  void resyncNow() {
+    if (_disposed) return;
+    final revision = _revision;
+    if (revision == null) return;
+    abandonSeekExpectation();
+    _sample(revision);
+  }
 
   RemotePlaybackTimelineSnapshot get projectedSnapshot {
     final position = value.position;
@@ -128,6 +174,10 @@ final class RemotePlaybackTimelineController
     _revision = revision;
     _state = state;
     _duration = duration > Duration.zero ? duration : null;
+
+    // 换曲（revision 变）时上一次的 seek 期望已经无意义，必须丢弃，
+    // 否则新曲的位置会被旧曲的目标位置挡住。
+    if (revisionChanged) abandonSeekExpectation();
 
     if (revisionChanged || state == PlaybackBackendState.opening) {
       _cancelTicker();
@@ -165,6 +215,7 @@ final class RemotePlaybackTimelineController
     _state = null;
     _duration = null;
     _positionSampleTime = null;
+    abandonSeekExpectation();
     _setValue(const RemotePlaybackTimelineSnapshot.unknown());
   }
 
@@ -197,7 +248,27 @@ final class RemotePlaybackTimelineController
       return;
     }
     if (position == null || position.isNegative) return;
+    if (_shouldIgnoreSampleAfterSeek(position)) return;
     _publish(position: position, updateSampleTime: true);
+  }
+
+  /// seek 保护窗口内丢弃"还没跟上跳转"的过期采样。
+  ///
+  /// 判据：窗口未过期，且采样点还没接近跳转目标。一旦采样跟上
+  /// （落在目标容差内），立刻解除保护、恢复正常采信。
+  bool _shouldIgnoreSampleAfterSeek(Duration sample) {
+    final target = _seekTarget;
+    final until = _seekGuardUntil;
+    if (target == null || until == null) return false;
+    if (_clock() >= until) {
+      abandonSeekExpectation();
+      return false;
+    }
+    if ((sample - target).abs() <= seekGuardTolerance) {
+      abandonSeekExpectation();
+      return false;
+    }
+    return true;
   }
 
   void _publish({required Duration? position, required bool updateSampleTime}) {

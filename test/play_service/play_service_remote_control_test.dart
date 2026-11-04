@@ -104,38 +104,112 @@ void main() {
     expect(binding.pause(), isFalse);
     expect(binding.resume(), isFalse);
     expect(binding.canSeekFromUi, isTrue);
+    expect(binding.canSeekProgressFromUi, isTrue);
   });
 
-  test('active state blocks UI seek without invoking local seek', () async {
-    var seekCount = 0;
+  test(
+    'remote seek routes to the remote backend while the lyric gate stays shut',
+    () async {
+      final seekCalls = <Duration>[];
+      binding.bind(
+        initialState: const _State(PlaybackBackendState.opening),
+        stateStream: source.stream,
+        isActive: () => binding.state.isActive,
+        pause: () => true,
+        resume: () => true,
+        seek: (position) async {
+          seekCalls.add(position);
+          return true;
+        },
+      );
+
+      // opening：进度条与歌词行都不可跳。
+      expect(binding.canSeekProgressFromUi, isFalse);
+      expect(binding.canSeekFromUi, isFalse);
+
+      for (final state in const [
+        PlaybackBackendState.playing,
+        PlaybackBackendState.paused,
+        PlaybackBackendState.stalled,
+        PlaybackBackendState.completed,
+      ]) {
+        source.add(_State(state));
+        await pumpEventQueue();
+        // 进度条放开，歌词行门禁保持关闭。
+        expect(binding.canSeekProgressFromUi, isTrue);
+        expect(binding.canSeekFromUi, isFalse);
+        // 同步的歌词路径仍拒绝，且不触发远程 handler。
+        expect(binding.seekFromUi(() => fail('local seek must not run')), isFalse);
+        expect(await binding.seekRemoteProgress(12.5), isTrue);
+      }
+
+      expect(seekCalls, [
+        const Duration(milliseconds: 12500),
+        const Duration(milliseconds: 12500),
+        const Duration(milliseconds: 12500),
+        const Duration(milliseconds: 12500),
+      ]);
+    },
+  );
+
+  test('failed state keeps the progress gate closed', () async {
     binding.bind(
-      initialState: const _State(PlaybackBackendState.opening),
+      initialState: const _State(PlaybackBackendState.failed),
+      stateStream: source.stream,
+      isActive: () => binding.state.isActive,
+      pause: () => true,
+      resume: () => true,
+      seek: (_) async => false,
+    );
+
+    expect(binding.canSeekProgressFromUi, isFalse);
+    expect(binding.canSeekFromUi, isFalse);
+    expect(await binding.seekRemoteProgress(1), isFalse);
+  });
+
+  test('control-in-flight keeps the progress gate closed', () {
+    binding.bind(
+      initialState: const _State(
+        PlaybackBackendState.playing,
+        controlInFlight: true,
+      ),
+      stateStream: source.stream,
+      isActive: () => binding.state.isActive,
+      pause: () => true,
+      resume: () => true,
+      seek: (_) async => true,
+    );
+
+    expect(binding.canSeekProgressFromUi, isFalse);
+  });
+
+  test('remote seek failure surfaces false and never throws', () async {
+    binding.bind(
+      initialState: const _State(PlaybackBackendState.playing),
+      stateStream: source.stream,
+      isActive: () => binding.state.isActive,
+      pause: () => true,
+      resume: () => true,
+      seek: (_) async => throw StateError('backend rejected seek'),
+    );
+
+    expect(await binding.seekRemoteProgress(3), isFalse);
+  });
+
+  test('remote seek without a bound handler degrades to false', () async {
+    binding.bind(
+      initialState: const _State(PlaybackBackendState.playing),
       stateStream: source.stream,
       isActive: () => binding.state.isActive,
       pause: () => true,
       resume: () => true,
     );
 
-    expect(binding.canSeekFromUi, isFalse);
-    expect(binding.seekFromUi(() => seekCount++), isFalse);
-
-    for (final state in const [
-      PlaybackBackendState.playing,
-      PlaybackBackendState.paused,
-      PlaybackBackendState.stalled,
-      PlaybackBackendState.completed,
-      PlaybackBackendState.failed,
-    ]) {
-      source.add(_State(state));
-      await pumpEventQueue();
-      expect(binding.canSeekFromUi, isFalse);
-      expect(binding.seekFromUi(() => seekCount++), isFalse);
-    }
-
-    expect(seekCount, 0);
+    expect(binding.canSeekProgressFromUi, isTrue);
+    expect(await binding.seekRemoteProgress(3), isFalse);
   });
 
-  test('clearing active state restores UI seek', () {
+  test('clearing active state restores local UI seek', () {
     var seekCount = 0;
     binding.bind(
       initialState: const _State(PlaybackBackendState.playing),
@@ -148,6 +222,7 @@ void main() {
     binding.clear();
 
     expect(binding.canSeekFromUi, isTrue);
+    expect(binding.canSeekProgressFromUi, isTrue);
     expect(binding.seekFromUi(() => seekCount++), isTrue);
     expect(seekCount, 1);
   });

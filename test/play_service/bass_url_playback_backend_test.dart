@@ -269,6 +269,52 @@ void main() {
 
     expect(driver.disposeCount, 1);
   });
+
+  test('seek reaches the driver and keeps the state unchanged', () async {
+    driver.state = PlayerState.playing;
+    await backend.open(_remoteSource());
+    states.clear();
+
+    await backend.seek(const Duration(seconds: 42));
+
+    expect(driver.seekValues, [42.0]);
+    expect(states, isEmpty);
+    expect(backend, isA<SeekablePlaybackBackend>());
+  });
+
+  test('driver seek errors collapse into a safe backend exception', () async {
+    driver.state = PlayerState.playing;
+    await backend.open(_remoteSource());
+    driver.seekError = const FormatException(
+      'download has not yet reached it (https://media.invalid/a?sig=secret)',
+    );
+
+    Object? error;
+    try {
+      await backend.seek(const Duration(seconds: 90));
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error, isA<PlaybackBackendSeekException>());
+    expect(error.toString(), isNot(contains('secret')));
+    // 失败不断流：状态没有变成 failed/stopped。
+    expect(states.last, PlaybackBackendState.playing);
+  });
+
+  test('seek is rejected without an applicable stream state', () async {
+    await expectLater(
+      backend.seek(const Duration(seconds: 1)),
+      throwsA(isA<PlaybackBackendSeekException>()),
+    );
+    expect(driver.seekValues, isEmpty);
+
+    await expectLater(
+      backend.seek(const Duration(seconds: -1)),
+      throwsA(isA<PlaybackBackendSeekException>()),
+    );
+    expect(driver.seekValues, isEmpty);
+  });
 }
 
 RemotePlaybackSource _remoteSource({String trackId = 'track-1'}) {
@@ -305,6 +351,8 @@ final class _FakeBassUrlPlaybackDriver implements BassUrlPlaybackDriver {
   Object? durationError;
   int durationReadCount = 0;
   final volumeValues = <double>[];
+  final seekValues = <double>[];
+  Object? seekError;
 
   @override
   Stream<PlayerState> get stateStream => _states.stream;
@@ -365,6 +413,13 @@ final class _FakeBassUrlPlaybackDriver implements BassUrlPlaybackDriver {
     final error = resumeError;
     if (error != null) throw error;
     emit(PlayerState.playing);
+  }
+
+  @override
+  Future<void> seek(double seconds) async {
+    seekValues.add(seconds);
+    final error = seekError;
+    if (error != null) throw error;
   }
 
   @override

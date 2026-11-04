@@ -6,7 +6,7 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_source.dart';
 
 void main() {
-  test('remote activation cancels an active seek drag only', () {
+  test('seek drag is cancelled only when seeking is unavailable', () {
     expect(
       shouldCancelNowPlayingSeekDrag(canSeekFromUi: false, isDragging: true),
       isTrue,
@@ -15,19 +15,22 @@ void main() {
       shouldCancelNowPlayingSeekDrag(canSeekFromUi: false, isDragging: false),
       isFalse,
     );
+    // 远程播放中进度条可跳 ⇒ 状态推送不应打断拖拽。
     expect(
       shouldCancelNowPlayingSeekDrag(canSeekFromUi: true, isDragging: true),
       isFalse,
     );
   });
 
-  test('remote activation publishes disabled seek state', () async {
+  test('progress gate opens for remote while the lyric gate stays shut', () async {
     final binding = RemotePlaybackControlBinding();
     final source = StreamController<RemotePlaybackControlState>.broadcast();
-    final enabledStates = <bool>[];
-    final subscription = binding.stateStream.listen(
-      (_) => enabledStates.add(binding.canSeekFromUi),
-    );
+    final progressStates = <bool>[];
+    final lyricStates = <bool>[];
+    final subscription = binding.stateStream.listen((_) {
+      progressStates.add(binding.canSeekProgressFromUi);
+      lyricStates.add(binding.canSeekFromUi);
+    });
 
     binding.bind(
       initialState: const _State(PlaybackBackendState.playing),
@@ -41,7 +44,10 @@ void main() {
     binding.clear();
     await pumpEventQueue();
 
-    expect(enabledStates, [false, false, true]);
+    // 远程播放/暂停时进度条可跳；清除远程后恢复本地可跳。
+    expect(progressStates, [true, true, true]);
+    // 歌词行点击：远程期间始终关闭，清除远程后恢复。
+    expect(lyricStates, [false, false, true]);
 
     await subscription.cancel();
     await binding.dispose();

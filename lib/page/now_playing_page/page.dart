@@ -92,6 +92,11 @@ double _responsiveNowPlayingCoverSize({
   return availableExtent * fillFraction;
 }
 
+/// 远程状态变化时是否要打断正在进行的拖拽。
+///
+/// 语义已随"远程可跳进度"调整：**不再因为远程激活本身取消拖拽**
+/// （那会让在线播放时手指一拖就被系统收回），只在进度条此刻**确实不可跳**
+/// （opening/failed/控制中）时才取消，避免用户拖到一个永远不会提交的位置。
 @visibleForTesting
 bool shouldCancelNowPlayingSeekDrag({
   required bool canSeekFromUi,
@@ -2166,7 +2171,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
     _playbackService = context.read<PlaybackService>();
     _activePlaybackSession = context.read<ActivePlaybackSession>();
     _remotePlaybackTimeline = context.read<RemotePlaybackTimelineController>();
-    _canSeekFromUi = _playService.canSeekFromUi;
+    _canSeekFromUi = _playService.canSeekProgressFromUi;
     _remotePlaybackControlSubscription = _playService
         .remotePlaybackControlStateStream
         .listen(_onRemotePlaybackControlStateChanged);
@@ -2200,7 +2205,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   }
 
   void _onRemotePlaybackControlStateChanged(RemotePlaybackControlState state) {
-    final canSeekFromUi = !state.isActive;
+    final canSeekFromUi = remoteProgressSeekAllowed(state);
     if (_canSeekFromUi == canSeekFromUi) return;
     _canSeekFromUi = canSeekFromUi;
     if (shouldCancelNowPlayingSeekDrag(
@@ -2310,6 +2315,39 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
     }
   }
 
+  /// 提交一次进度条跳转（拖拽结束 / 点击）。
+  ///
+  /// 先乐观地把条挪到目标位置并给远程时间轴一个 seek 预期（避免回跳），
+  /// 失败时提示「当前音源不支持进度跳转」并把位置回滚到真实播放点。
+  void _submitProgressSeek(double targetSeconds) {
+    final usesRemote =
+        _activePlaybackSession.value.source ==
+        ActivePlaybackSessionSource.remote;
+    _syncLivePosition(targetSeconds, force: true);
+
+    if (!usesRemote) {
+      // 本地：同步 seek，门禁拒绝时静默回滚（保持改前行为）。
+      if (!_playService.seekFromUi(targetSeconds)) {
+        _syncFromSource(force: true);
+      }
+      return;
+    }
+
+    // 远程：给时间轴一个 seek 预期，异步提交；失败提示 + 回滚。
+    _remotePlaybackTimeline.expectSeek(
+      Duration(microseconds: (targetSeconds * 1000000).round()),
+    );
+    unawaited(
+      _playService.seekProgressFromUi(targetSeconds).then((ok) {
+        if (ok || !mounted) return;
+        _remotePlaybackTimeline.abandonSeekExpectation();
+        _remotePlaybackTimeline.resyncNow();
+        _syncFromSource(force: true);
+        showTextOnSnackBar('当前音源不支持进度跳转', variant: ToastVariant.error);
+      }),
+    );
+  }
+
   @override
   void activate() {
     super.activate();
@@ -2388,7 +2426,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
                   behavior: HitTestBehavior.opaque,
                   onHorizontalDragStart: _canSeekFromUi
                       ? (details) {
-                          if (!_playService.canSeekFromUi) return;
+                          if (!_playService.canSeekProgressFromUi) return;
                           isDragging.value = true;
                           final value =
                               (details.localPosition.dx / width).clamp(
@@ -2401,7 +2439,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
                       : null,
                   onHorizontalDragUpdate: _canSeekFromUi
                       ? (details) {
-                          if (!_playService.canSeekFromUi) return;
+                          if (!_playService.canSeekProgressFromUi) return;
                           final value =
                               (details.localPosition.dx / width).clamp(
                                 0.0,
@@ -2414,25 +2452,23 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
                   onHorizontalDragEnd: _canSeekFromUi
                       ? (details) {
                           isDragging.value = false;
-                          if (!_playService.canSeekFromUi) {
+                          if (!_playService.canSeekProgressFromUi) {
                             _syncFromSource(force: true);
                             return;
                           }
-                          _syncLivePosition(dragPosition.value, force: true);
-                          _playService.seekFromUi(dragPosition.value);
+                          _submitProgressSeek(dragPosition.value);
                         }
                       : null,
                   onTapDown: _canSeekFromUi
                       ? (details) {
-                          if (!_playService.canSeekFromUi) return;
+                          if (!_playService.canSeekProgressFromUi) return;
                           final value =
                               (details.localPosition.dx / width).clamp(
                                 0.0,
                                 1.0,
                               ) *
                               max;
-                          _syncLivePosition(value, force: true);
-                          _playService.seekFromUi(value);
+                          _submitProgressSeek(value);
                         }
                       : null,
                   child: CustomPaint(
@@ -2441,10 +2477,8 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
                       dragPosition: dragPosition,
                       isDragging: isDragging,
                       max: max,
-                      color: _canSeekFromUi
-                          ? barColor
-                          : scheme.onSurface.withValues(alpha: 0.38),
-                      glowColor: _canSeekFromUi ? barGlow : Colors.transparent,
+                      color: barColor,
+                      glowColor: barGlow,
                       inactiveColor: scheme.brightness == Brightness.dark
                           ? scheme.surfaceContainerHighest
                           : const Color(0x33FFFFFF),
@@ -2454,8 +2488,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
                     size: Size(width, 24),
                   ),
                 );
-                if (_canSeekFromUi) return slider;
-                return Tooltip(message: '远程播放暂不支持进度跳转', child: slider);
+                return slider;
               },
             ),
           ),

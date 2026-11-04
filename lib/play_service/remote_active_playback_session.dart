@@ -125,5 +125,17 @@ ActivePlaybackSessionCapabilities _capabilitiesFor({
   canPause: !controlInFlight && state == PlaybackBackendState.playing,
   canPrevious: currentIndex != null && currentIndex > 0,
   canNext: currentIndex != null && currentIndex + 1 < queueLength,
-  canSeek: false,
+  // 远程流现在支持进度跳转：后端直接试跳，失败由 UI 提示并回滚位置。
+  // 只在流确实开着、且没有其它控制在飞时可跳；opening/stopped/failed 不行。
+  canSeek: !controlInFlight && _remoteSeekable(state),
 );
+
+bool _remoteSeekable(PlaybackBackendState state) => switch (state) {
+  PlaybackBackendState.playing ||
+  PlaybackBackendState.paused ||
+  PlaybackBackendState.stalled ||
+  PlaybackBackendState.completed => true,
+  PlaybackBackendState.opening ||
+  PlaybackBackendState.stopped ||
+  PlaybackBackendState.failed => false,
+};

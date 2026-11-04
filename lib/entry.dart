@@ -321,6 +321,9 @@ class _EntryState extends State<Entry>
       isActive: () => _remotePlaybackSessionController.controlState.isActive,
       pause: _remotePlaybackSessionController.pause,
       resume: _remotePlaybackSessionController.resume,
+      // 进度条远程跳转：组合根把会话控制器的 seek 接到 PlayService，
+      // 会话层负责调远程 backend 并把失败收敛成 false。
+      seek: _remotePlaybackSessionController.seek,
     );
     _playService.bindRemoteVolume(_remotePlaybackBackend.setVolume);
     windowManager.addListener(this);

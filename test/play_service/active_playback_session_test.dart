@@ -262,12 +262,14 @@ const _localCapabilities = ActivePlaybackSessionCapabilities(
   canSeek: true,
 );
 
+// 远程会话现在也支持进度跳转（后端直接试跳，失败由 UI 提示并回滚），
+// 因此远程能力基线里的 canSeek 与本地一样为 true。
 const _remoteCapabilities = ActivePlaybackSessionCapabilities(
   canPlay: true,
   canPause: true,
   canPrevious: true,
   canNext: true,
-  canSeek: false,
+  canSeek: true,
 );
 
 ActivePlaybackSessionItem _item(String title) => ActivePlaybackSessionItem(

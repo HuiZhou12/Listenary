@@ -23,6 +23,10 @@ abstract interface class BassUrlPlaybackDriver {
 
   Future<void> resume();
 
+  /// 跳到 [seconds]；驱动不支持时抛异常（由 backend 收敛成
+  /// [PlaybackBackendSeekException]），**不中断当前流**。
+  Future<void> seek(double seconds);
+
   Future<void> stop();
 
   Future<void> dispose();
@@ -71,6 +75,17 @@ final class BassPlayerUrlPlaybackDriver implements BassUrlPlaybackDriver {
   }
 
   @override
+  Future<void> seek(double seconds) async {
+    final player = _player;
+    if (player == null) {
+      throw StateError('remote stream is not open');
+    }
+    // BassPlayer.seek 是同步的，失败时抛 FormatException（BASS_ErrorGetCode 分支）；
+    // 这里直接向上抛，由 BassUrlPlaybackBackend 收敛成安全异常。
+    player.seek(seconds);
+  }
+
+  @override
   Future<void> stop() async {
     _player?.freeFStream();
   }
@@ -88,7 +103,8 @@ final class BassUrlPlaybackBackend
         PositionReadablePlaybackBackend,
         DurationReadablePlaybackBackend,
         SpectrumReadablePlaybackBackend,
-        VolumeControllablePlaybackBackend {
+        VolumeControllablePlaybackBackend,
+        SeekablePlaybackBackend {
   BassUrlPlaybackBackend({BassUrlPlaybackDriver? driver})
     : _driver = driver ?? BassPlayerUrlPlaybackDriver();
 
@@ -200,6 +216,30 @@ final class BassUrlPlaybackBackend
     action: _driver.resume,
   );
 
+  /// 远程流跳转。
+  ///
+  /// **不做 Range 探测**：直接试，驱动抛什么都在这里收敛成
+  /// [PlaybackBackendSeekException]，且**不改状态、不断流** ——
+  /// 失败只是"这次跳转没成功"，当前流该继续播就继续播。
+  @override
+  Future<void> seek(Duration position) async {
+    if (_disposed || !_canSeek) {
+      throw const PlaybackBackendSeekException();
+    }
+    if (position.isNegative) throw const PlaybackBackendSeekException();
+    final operation = _operation;
+    try {
+      await _driver.seek(
+        position.inMicroseconds / Duration.microsecondsPerSecond,
+      );
+    } catch (_) {
+      if (_disposed || operation != _operation) return;
+      throw const PlaybackBackendSeekException();
+    }
+    if (_disposed || operation != _operation) return;
+    // 跳转成功后位置立刻变化，但状态不变；不发状态事件（否则会打断时间轴）。
+  }
+
   @override
   Duration? readPosition() {
     if (_disposed || !_canReadPosition) return null;
@@ -238,6 +278,15 @@ final class BassUrlPlaybackBackend
 
   bool get _canReadDuration => switch (_lastState) {
     PlaybackBackendState.opening ||
+    PlaybackBackendState.playing ||
+    PlaybackBackendState.paused ||
+    PlaybackBackendState.stalled ||
+    PlaybackBackendState.completed => true,
+    _ => false,
+  };
+
+  /// 只在流确实开着的状态允许跳转；opening/stopped/failed 拒绝。
+  bool get _canSeek => switch (_lastState) {
     PlaybackBackendState.playing ||
     PlaybackBackendState.paused ||
     PlaybackBackendState.stalled ||
