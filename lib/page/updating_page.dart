@@ -148,7 +148,10 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
       await _subscription?.cancel();
       final ctx = context;
       if (ctx.mounted) {
-        ctx.go(app_paths.AUDIOS_PAGE);
+        // D1（2026-11-03 已拍板）：非首启的启动落地页 = **首页**。
+        // 改前这里硬编码 `AUDIOS_PAGE` ✗ —— 与 `startPage` 默认值（HOME）是两套口径；
+        // `startPage` 机制本身不动（它只服务 `/` 重定向，启动流程不访问 `/`）。
+        ctx.go(app_paths.HOME_PAGE);
       }
     } catch (e, trace) {
       logger.e('索引完成后读取音乐库失败', error: e, stackTrace: trace);

@@ -126,7 +126,8 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
                       AppPreference.instance.userFolders = List.from(folders);
                       await AppPreference.instance.save();
                       if (context.mounted) {
-                        context.go(app_paths.AUDIOS_PAGE);
+                        // D1（2026-11-03 已拍板）：首启（选完目录/建完索引）也落**首页**。
+                        context.go(app_paths.HOME_PAGE);
                       }
                     },
                   );
@@ -192,7 +193,9 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
                           );
                           await AppPreference.instance.save();
                           if (mounted) {
-                            context.go(app_paths.AUDIOS_PAGE);
+                            // D1（2026-11-03 已拍板）：首启「跳过」同样落**首页**
+                            // —— 它是 welcoming 的另一个完成出口，落点必须与选完目录一致。
+                            context.go(app_paths.HOME_PAGE);
                           }
                         } finally {
                           if (mounted) {
