@@ -6,83 +6,30 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:provider/provider.dart';
-import 'package:pure_music/component/online_search_launcher.dart';
+import 'package:pure_music/component/online_search_panel.dart';
 import 'package:pure_music/component/online_track_row.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
 import 'package:pure_music/core/database.dart';
-import 'package:pure_music/page/online_music_page.dart';
-import 'package:pure_music/play_service/playback_source.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
-import 'package:sqlite3/sqlite3.dart';
+import 'package:sqlite3/sqlite3.dart' hide Row;
 
+/// 在线搜索**面板**的 widget 测试。
+///
+/// 由 `test/page/online_music_page_test.dart` 迁移而来（页面 2026-11-03 撤销，D2）：
+/// 面板不再自带输入框 ⇒ `_pumpPanel` 直接注入 `query`，提交走
+/// `GlobalKey<OnlineSearchPanelState>.submit`（Spec §5.4.2 的选定方案），
+/// 原来"输入后点「在线搜索」"的动作在这里是"调一次 `handle.submit()`"。
+/// 页面级断言（`find.text('在线音乐')` 标题等）已删除 —— 标题归搜索弹窗的 frame。
 void main() {
   setUpAll(() {
     HotKeyManagerPlatform.instance = _FakeHotKeyManager();
   });
 
-  test('online selection filters explicitly unplayable tracks', () {
-    final tracks = [
-      _track('1', title: 'Playable'),
-      _track('2', title: 'Paid', availability: TrackAvailability.paid),
-      _track(
-        '3',
-        title: 'Unavailable',
-        availability: TrackAvailability.unavailable,
-      ),
-      _track('4', title: 'Unknown', availability: TrackAvailability.unknown),
-    ];
-
-    final selection = OnlineTrackSelection.fromResultPage(
-      tracks: tracks,
-      selectedRef: tracks.last.ref,
-    );
-
-    expect(selection.tracks.map((track) => track.ref.trackId), ['1', '4']);
-    expect(selection.selectedIndex, 1);
-  });
-
-  test('history selection preserves visible order and last quality', () {
-    final entries = [
-      _history('2', quality: 'standard'),
-      _history('1', quality: 'lossless'),
-    ];
-
-    final selection = OnlineTrackSelection.fromHistory(
-      entries: entries,
-      selectedRef: entries.last.track.ref,
-    );
-
-    expect(selection.tracks.map((track) => track.ref.trackId), ['2', '1']);
-    expect(selection.selectedIndex, 1);
-    expect(selection.requestedQuality, 'lossless');
-  });
-
-  test('active matching online identity is reused without a new request', () {
-    final ref = _track('1', title: 'Current').ref;
-
-    expect(
-      shouldReuseActiveOnlineTrack(
-        state: PlaybackBackendState.playing,
-        currentRef: ref,
-        selectedRef: ref,
-      ),
-      isTrue,
-    );
-    expect(
-      shouldReuseActiveOnlineTrack(
-        state: PlaybackBackendState.failed,
-        currentRef: ref,
-        selectedRef: ref,
-      ),
-      isFalse,
-    );
-  });
-
-  testWidgets('opens online history from the page toolbar', (tester) async {
+  testWidgets('opens online history from the panel header', (tester) async {
     var requested = false;
-    await _pumpPage(
+    await _pumpPanel(
       tester,
       search:
           ({
@@ -112,10 +59,8 @@ void main() {
       return _page([_track('1', title: 'Explicit Result')]);
     }
 
-    await _pumpPage(tester, search: search);
+    await _pumpPanel(tester, search: search);
 
-    expect(find.text('在线音乐'), findsOneWidget);
-    expect(find.byKey(const ValueKey('online-search-field')), findsOneWidget);
     expect(find.text('在线搜索'), findsOneWidget);
 
     await tester.enterText(
@@ -166,7 +111,7 @@ void main() {
         value: controller,
         child: MaterialApp(
           home: Scaffold(
-            body: OnlineMusicPage(
+            body: _PanelHost(
               search:
                   ({
                     required keyword,
@@ -213,7 +158,7 @@ void main() {
   testWidgets('renders result cover without a music-note placeholder', (
     tester,
   ) async {
-    await _pumpPage(
+    await _pumpPanel(
       tester,
       search:
           ({
@@ -230,13 +175,7 @@ void main() {
           ]),
     );
 
-    await tester.enterText(
-      find.byKey(const ValueKey('online-search-field')),
-      'cover',
-    );
-    await tester.pump();
-    await tester.tap(find.byTooltip('在线搜索'));
-    await tester.pumpAndSettle();
+    await _submit(tester, 'cover');
 
     expect(find.byKey(const ValueKey('online-track-cover-1')), findsOneWidget);
     final cover = tester.widget<RemoteMediaCover>(
@@ -259,7 +198,7 @@ void main() {
     MusicTrack? selectedTrack;
     var requestCount = 0;
 
-    await _pumpPage(
+    await _pumpPanel(
       tester,
       search:
           ({
@@ -307,7 +246,7 @@ void main() {
     final secondResponse = Completer<MusicSearchPage>();
     final calls = <_SearchCall>[];
 
-    await _pumpPage(
+    await _pumpPanel(
       tester,
       search:
           ({
@@ -354,7 +293,7 @@ void main() {
   testWidgets('disposal cancels an active request', (tester) async {
     final response = Completer<MusicSearchPage>();
     OnlineMusicCancelToken? token;
-    await _pumpPage(
+    await _pumpPanel(
       tester,
       search:
           ({
@@ -374,6 +313,7 @@ void main() {
     );
     await tester.pump();
     await tester.tap(find.byTooltip('在线搜索'));
+    // 不 pumpAndSettle：在途请求不会完成，加载态里的进度条是无限动画。
     await tester.pump();
     await tester.pumpWidget(const SizedBox.shrink());
 
@@ -385,7 +325,7 @@ void main() {
   testWidgets('shows empty, retryable, and unauthorized states', (
     tester,
   ) async {
-    await _pumpPage(
+    await _pumpPanel(
       tester,
       search:
           ({
@@ -395,18 +335,12 @@ void main() {
             required cancelToken,
           }) async => _page(const []),
     );
-    await tester.enterText(
-      find.byKey(const ValueKey('online-search-field')),
-      'empty',
-    );
-    await tester.pump();
-    await tester.tap(find.byTooltip('在线搜索'));
-    await tester.pumpAndSettle();
+    await _submit(tester, 'empty');
     expect(find.text('没有找到在线曲目'), findsOneWidget);
     expect(find.text('重新搜索'), findsOneWidget);
 
     var attempts = 0;
-    await _pumpPage(
+    await _pumpPanel(
       tester,
       search:
           ({
@@ -425,19 +359,13 @@ void main() {
             return _page([_track('1', title: 'Retry Result')]);
           },
     );
-    await tester.enterText(
-      find.byKey(const ValueKey('online-search-field')),
-      'retry',
-    );
-    await tester.pump();
-    await tester.tap(find.byTooltip('在线搜索'));
-    await tester.pumpAndSettle();
+    await _submit(tester, 'retry');
     expect(find.text('网络请求失败，请稍后重试'), findsOneWidget);
     await tester.tap(find.text('重试'));
     await tester.pumpAndSettle();
     expect(find.text('Retry Result'), findsOneWidget);
 
-    await _pumpPage(
+    await _pumpPanel(
       tester,
       search:
           ({
@@ -452,13 +380,7 @@ void main() {
             );
           },
     );
-    await tester.enterText(
-      find.byKey(const ValueKey('online-search-field')),
-      'unauthorized',
-    );
-    await tester.pump();
-    await tester.tap(find.byTooltip('在线搜索'));
-    await tester.pumpAndSettle();
+    await _submit(tester, 'unauthorized');
     expect(find.text('请先配置有效的 ChKSz API Key'), findsOneWidget);
     expect(find.text('去设置'), findsOneWidget);
   });
@@ -475,23 +397,22 @@ void main() {
       return _page([_track('1', title: 'Persistent Result')]);
     }
 
-    await _pumpPage(tester, search: search);
-    await tester.enterText(
-      find.byKey(const ValueKey('online-search-field')),
-      'persistent query',
-    );
-    await tester.pump();
-    await tester.tap(find.byTooltip('在线搜索'));
-    await tester.pumpAndSettle();
+    final handle = await _pumpPanel(tester, search: search);
+    await _submit(tester, 'persistent query');
 
-    await _pumpPage(tester, search: search);
+    // 父级重建（同一 state 保留）⇒ 不重新发请求，结果还在。
+    handle.rebuild();
+    await tester.pumpAndSettle();
 
     expect(requestCount, 1);
     expect(find.text('Persistent Result'), findsOneWidget);
-    final field = tester.widget<TextField>(
-      find.byKey(const ValueKey('online-search-field')),
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('online-search-field')))
+          .controller
+          ?.text,
+      'persistent query',
     );
-    expect(field.controller?.text, 'persistent query');
   });
 
   testWidgets('pagination appends the next page with offset = loaded count', (
@@ -511,11 +432,7 @@ void main() {
       return _page(_tracks(30, 30), offset: 30, limit: 30, total: 60);
     }
 
-    await _pumpPage(
-      tester,
-      size: const Size(1200, 5000),
-      search: search,
-    );
+    await _pumpPanel(tester, size: const Size(1200, 5000), search: search);
     await _submit(tester, 'page');
 
     // 首请求参数不变：limit 30 / offset 0
@@ -566,7 +483,7 @@ void main() {
       ], offset: 30, limit: 30, total: 60);
     }
 
-    await _pumpPage(
+    await _pumpPanel(
       tester,
       size: const Size(1200, 5000),
       search: search,
@@ -600,7 +517,7 @@ void main() {
     tester,
   ) async {
     // total 远大于已加载数量，但首请求只返回 10 条：双重判定必须拦住入口
-    await _pumpPage(
+    await _pumpPanel(
       tester,
       size: const Size(1200, 1600),
       search:
@@ -635,7 +552,7 @@ void main() {
       return _page(_tracks(30, 5), offset: 30, limit: 30, total: 60);
     }
 
-    await _pumpPage(tester, size: const Size(1200, 3000), search: search);
+    await _pumpPanel(tester, size: const Size(1200, 3000), search: search);
     await _submit(tester, 'short-last');
     await tester.tap(_loadMoreButton);
     await tester.pumpAndSettle();
@@ -669,7 +586,7 @@ void main() {
       return _page(_tracks(30, 5), offset: 30, limit: 30, total: 60);
     }
 
-    await _pumpPage(tester, size: const Size(1200, 3000), search: search);
+    await _pumpPanel(tester, size: const Size(1200, 3000), search: search);
     await _submit(tester, 'retry-more');
     await tester.tap(_loadMoreButton);
     await tester.pumpAndSettle();
@@ -713,7 +630,7 @@ void main() {
       return staleMore.future;
     }
 
-    await _pumpPage(tester, size: const Size(1200, 3000), search: search);
+    await _pumpPanel(tester, size: const Size(1200, 3000), search: search);
     await _submit(tester, 'first');
     await tester.tap(_loadMoreButton);
     await tester.pump();
@@ -751,7 +668,7 @@ void main() {
       return _page(_tracks(30, 5), offset: 30, limit: 30, total: 60);
     }
 
-    await _pumpPage(tester, size: const Size(1200, 3000), search: search);
+    await _pumpPanel(tester, size: const Size(1200, 3000), search: search);
     await _submit(tester, 'reset');
     await tester.tap(_loadMoreButton);
     await tester.pumpAndSettle();
@@ -770,10 +687,96 @@ void main() {
   });
 }
 
-Future<void> _pumpPage(
+/// 面板的测试宿主：一个输入框把文本交给面板的 `query`，提交走
+/// `GlobalKey<OnlineSearchPanelState>.submit`（Spec §5.4.2 的选定方案）。
+///
+/// 弹窗里这一层由 `SearchDialog` 承担；测试里单独造一个，让面板测试**不依赖弹窗**。
+class _PanelHost extends StatefulWidget {
+  const _PanelHost({
+    super.key,
+    required this.search,
+    this.onTrackSelected,
+    this.onHistoryRequested,
+  });
+
+  final OnlineSearchQuery search;
+  final Future<void> Function(MusicSearchPage page, MusicTrack selected)?
+  onTrackSelected;
+  final VoidCallback? onHistoryRequested;
+
+  @override
+  State<_PanelHost> createState() => _PanelHostState();
+}
+
+class _PanelHostState extends State<_PanelHost> {
+  final TextEditingController controller = TextEditingController();
+  final GlobalKey<OnlineSearchPanelState> panelKey = GlobalKey();
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  /// 模拟"提交按钮 / Enter"：直接调面板的 `submit`（与弹窗同一条路径）。
+  void submit() {
+    final query = controller.text;
+    final panel = panelKey.currentState;
+    if (panel != null) {
+      panel.submit(query);
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      panelKey.currentState?.submit(query);
+    });
+  }
+
+  /// 模拟"父级重建"：查询词与已提交状态都不变。
+  void rebuild() => setState(() {});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        TextField(
+          key: const ValueKey('online-search-field'),
+          controller: controller,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            suffixIcon: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: '在线搜索',
+                  onPressed: submit,
+                  icon: const Icon(Icons.travel_explore),
+                ),
+              ],
+            ),
+          ),
+          onChanged: (_) => setState(() {}),
+          onSubmitted: (_) => submit(),
+        ),
+        Expanded(
+          child: OnlineSearchPanel(
+            key: panelKey,
+            query: controller.text,
+            search: widget.search,
+            onTrackSelected: widget.onTrackSelected,
+            onHistoryRequested: widget.onHistoryRequested,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+Future<_PanelHostState> _pumpPanel(
   WidgetTester tester, {
-  required OnlineMusicSearch search,
-  OnlineTrackSelected? onTrackSelected,
+  required OnlineSearchQuery search,
+  Future<void> Function(MusicSearchPage page, MusicTrack selected)?
+  onTrackSelected,
   VoidCallback? onHistoryRequested,
   Size size = const Size(1200, 900),
 }) async {
@@ -788,12 +791,14 @@ Future<void> _pumpPage(
   );
   addTearDown(favorites.dispose);
   addTearDown(database.dispose);
+  final handleKey = GlobalKey<_PanelHostState>();
   await tester.pumpWidget(
     ChangeNotifierProvider<PersonalOnlinePlaylistController>.value(
       value: favorites,
       child: MaterialApp(
         home: Scaffold(
-          body: OnlineMusicPage(
+          body: _PanelHost(
+            key: handleKey,
             search: search,
             onTrackSelected: onTrackSelected,
             onHistoryRequested: onHistoryRequested,
@@ -803,6 +808,7 @@ Future<void> _pumpPage(
     ),
   );
   await tester.pump();
+  return handleKey.currentState!;
 }
 
 MusicSearchPage _page(
@@ -855,14 +861,6 @@ MusicTrack _track(
   duration: const Duration(seconds: 123),
   availability: availability,
 );
-
-OnlineHistoryEntry _history(String id, {required String quality}) =>
-    OnlineHistoryEntry(
-      track: _track(id, title: 'History $id'),
-      playCount: 1,
-      lastPlayedAt: DateTime.utc(2026, 8, 18),
-      lastQuality: quality,
-    );
 
 final class _SearchCall {
   const _SearchCall(this.keyword, this.limit, this.offset, this.cancelToken);

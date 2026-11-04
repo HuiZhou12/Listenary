@@ -30,10 +30,12 @@ void main() {
     expect(sideNavDestinationTop(0, expandedT: 1), 28);
     expect(sideNavDestinationTop(1, expandedT: 1), 82);
     expect(sideNavDestinationTop(5, expandedT: 1), 326);
-    // 新增「探索」（下标 1）后，本地曲库组整体后移一位：下标 7（文件夹）之前
-    // 只剩两个组头（聚合、本地曲库），收藏与回顾组现在从下标 8 开始。
+    // 2026-11-03 删除「在线音乐」（Spec D2）后下标整体前移一位 ⇒
+    // 「收藏与回顾」组从下标 **7**（歌单）开始（此前是 8）：
+    // 下标 7 之前有三个组头（聚合 / 本地曲库 / 收藏与回顾）⇒ 7*54 + 3*28 = 462。
     // 这是**组边界真的移动了**，不是把断言放宽。
-    expect(sideNavDestinationTop(7, expandedT: 1), 434);
+    expect(sideNavDestinationTop(7, expandedT: 1), 462);
+    // 下标 8（统计）仍在本组内，组头数量不变 ⇒ 与前值一致。
     expect(sideNavDestinationTop(8, expandedT: 1), 516);
     expect(sideNavDestinationOffset(0.5, expandedT: 1), 55);
   });
@@ -43,12 +45,13 @@ void main() {
   ) async {
     await _pumpSideNav(tester, expanded: true);
 
-    // 第一组现在叫「聚合」（主页 + 探索 + 在线音乐 + 我的收藏），组名与条目名不再同名。
+    // 第一组叫「聚合」（主页 + 探索 + 我的收藏），组名与条目名不再同名。
+    // 2026-11-03：删除「在线音乐」目的地（Spec D2）⇒ 聚合组 3 项。
     expect(find.text('聚合'), findsOneWidget);
     for (final label in [
       '主页',
       '探索',
-      '在线音乐',
+      '我的收藏',
       '本地曲库',
       '收藏与回顾',
       '系统',
@@ -63,7 +66,8 @@ void main() {
   ) async {
     await _pumpSideNav(tester, expanded: false);
 
-    expect(find.text('在线音乐'), findsOneWidget);
+    // 「我的收藏」是删掉「在线音乐」后聚合组的第 3 项（仍是聚合入口）。
+    expect(find.text('我的收藏'), findsOneWidget);
     for (final label in ['本地曲库', '收藏与回顾', '系统']) {
       expect(find.text(label), findsNothing);
     }
@@ -84,7 +88,7 @@ void main() {
     for (final label in [
       '主页',
       '探索',
-      '在线音乐',
+      '我的收藏',
       '本地曲库',
       '收藏与回顾',
       '系统',
@@ -107,10 +111,11 @@ Future<void> _pumpSideNav(
   });
 
   final router = GoRouter(
-    initialLocation: app_paths.ONLINE_MUSIC_PAGE,
+    // 侧栏是壳的一部分：这里用探索页当宿主（`/online` 已撤销，Spec D2）。
+    initialLocation: app_paths.EXPLORE_PAGE,
     routes: [
       GoRoute(
-        path: app_paths.ONLINE_MUSIC_PAGE,
+        path: app_paths.EXPLORE_PAGE,
         builder: (context, state) => Scaffold(
           drawer: hasDrawer ? const Drawer() : null,
           body: const SideNav(),

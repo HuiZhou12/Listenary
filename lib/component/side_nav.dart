@@ -37,10 +37,11 @@ const destinations = <DestinationDesc>[
     startPageIndex: app_paths.HOME_START_PAGE_INDEX,
   ),
   // 探索紧随主页：两者是并列的一级入口（主页="与你有关"，探索="按目录浏览"）。
-  // **刻意不给 startPageIndex**：与在线音乐/收藏/统计/设置一致，避免新增一个
+  // **刻意不给 startPageIndex**：与收藏/统计/设置一致，避免新增一个
   // 会改写用户启动页偏好的目的地，也避免再动 START_PAGES 的下标语义。
   DestinationDesc(Symbols.explore, '探索', app_paths.EXPLORE_PAGE),
-  DestinationDesc(Symbols.cloud, '在线音乐', app_paths.ONLINE_MUSIC_PAGE),
+  // 「在线音乐」目的地已删除（2026-11-03，Spec D2）：那页整体撤销，
+  // 在线搜索并进标题栏搜索弹窗的「在线」来源（D1 / D6）。
   DestinationDesc(Symbols.favorite, '我的收藏', app_paths.FAVORITES_PAGE),
   DestinationDesc(
     Symbols.library_music,
@@ -85,11 +86,13 @@ class DestinationGroupDesc {
 
 const destinationGroups = <DestinationGroupDesc>[
   // 四个分组**数量不变**（几何按"组头数量"计算，见下面的 extent 函数）；
-  // 探索归入「聚合」组：它与主页/在线音乐/收藏都是聚合入口。
-  DestinationGroupDesc('聚合', [0, 1, 2, 3]),
-  DestinationGroupDesc('本地曲库', [4, 5, 6, 7]),
-  DestinationGroupDesc('收藏与回顾', [8, 9]),
-  DestinationGroupDesc('系统', [10]),
+  // 探索归入「聚合」组：它与主页/我的收藏同为聚合入口。
+  // 2026-11-03 删除「在线音乐」项后下标整体前移一位（Spec §5.6 旧→新对照表）；
+  // 注意「我的收藏」仍属**聚合**组 ⇒ 聚合组是 3 项，不是 2 项。
+  DestinationGroupDesc('聚合', [0, 1, 2]),
+  DestinationGroupDesc('本地曲库', [3, 4, 5, 6]),
+  DestinationGroupDesc('收藏与回顾', [7, 8]),
+  DestinationGroupDesc('系统', [9]),
 ];
 
 const double sideNavItemHeight = 54.0;

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,17 +5,19 @@ import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/component/online_track_row.dart';
 import 'package:pure_music/core/database.dart';
-import 'package:pure_music/page/online_music_page.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
-import 'package:sqlite3/sqlite3.dart';
+import 'package:sqlite3/sqlite3.dart' hide Row;
 
-/// S8：搜索页的多平台聚合 UI —— 「全部 / 各平台」筛选、来源标签、按平台各自分页、
+import 'online_search_host.dart';
+
+/// S8：在线搜索面板的多平台聚合 UI —— 「全部 / 各平台」筛选、来源标签、按平台各自分页、
 /// 单平台失败隔离（Spec §8，D6:A / D6b:a / D6c:a）。
 ///
-/// 单平台（注入 `search`）路径的既有行为由 `online_music_page_test.dart` 守着；
-/// 本文件只覆盖走 `OnlineMusicService.searchAggregated` 的多平台路径。
+/// 2026-11-03 由 `test/page/online_music_aggregated_search_page_test.dart` 迁移：
+/// 宿主从 `OnlineMusicPage` 换成 `OnlineSearchHost`（页面撤销，D2），
+/// **分组 / 筛选 / 分页 key / 失败隔离的断言逐条保留**。
 void main() {
   const netease = MusicPlatform.netease;
   const qq = MusicPlatform.qq;
@@ -39,7 +39,7 @@ void main() {
           ),
     );
 
-    await _pumpPage(tester, service);
+    await _pumpPanel(tester, service);
     expect(find.text('全部'), findsOneWidget);
 
     await _submit(tester, 'song');
@@ -100,7 +100,7 @@ void main() {
           ),
     );
 
-    await _pumpPage(tester, service);
+    await _pumpPanel(tester, service);
     await _submit(tester, 'song');
 
     expect(find.text('Netease Song'), findsOneWidget);
@@ -127,7 +127,7 @@ void main() {
           ),
     );
 
-    await _pumpPage(tester, service);
+    await _pumpPanel(tester, service);
     await _submit(tester, 'song');
 
     expect(find.text('在线搜索失败'), findsOneWidget);
@@ -167,7 +167,7 @@ void main() {
     );
 
     // 视口设得足够高，两个平台的页脚都在构建范围内（不依赖滚动）。
-    await _pumpPage(tester, service, size: const Size(1200, 3200));
+    await _pumpPanel(tester, service, size: const Size(1200, 3200));
     await _submit(tester, 'song');
 
     // 只有 QQ 还有下一页。
@@ -207,7 +207,7 @@ void main() {
           ),
     );
 
-    await _pumpPage(tester, service);
+    await _pumpPanel(tester, service);
     await _submit(tester, 'song');
     expect(service.calls, hasLength(1));
     expect(service.calls.single.platforms, [netease, qq]);
@@ -257,7 +257,7 @@ void main() {
           ),
     );
 
-    await _pumpPage(tester, service);
+    await _pumpPanel(tester, service);
     expect(find.byType(SegmentedButton<PlatformIdentity?>), findsNothing);
     // W6：单个平台不摆假选项，但要让人看懂现在搜的是哪一家。
     expect(find.text('当前平台：网易云'), findsOneWidget);
@@ -276,7 +276,7 @@ void main() {
           throw StateError('should not be called'),
     );
 
-    await _pumpPage(tester, service);
+    await _pumpPanel(tester, service);
     await _submit(tester, 'song');
 
     expect(find.text('没有可搜索的平台'), findsOneWidget);
@@ -285,7 +285,7 @@ void main() {
   });
 }
 
-Future<void> _pumpPage(
+Future<void> _pumpPanel(
   WidgetTester tester,
   OnlineMusicService service, {
   Size size = const Size(1200, 2000),
@@ -309,17 +309,14 @@ Future<void> _pumpPage(
         ),
         Provider<OnlineMusicService>.value(value: service),
       ],
-      child: const MaterialApp(home: Scaffold(body: OnlineMusicPage())),
+      child: const MaterialApp(home: Scaffold(body: OnlineSearchHost())),
     ),
   );
   await tester.pump();
 }
 
 Future<void> _submit(WidgetTester tester, String query) async {
-  await tester.enterText(
-    find.byKey(const ValueKey('online-search-field')),
-    query,
-  );
+  await tester.enterText(find.byKey(onlineSearchHostFieldKey), query);
   await tester.pump();
   await tester.tap(find.byTooltip('在线搜索'));
   await tester.pumpAndSettle();

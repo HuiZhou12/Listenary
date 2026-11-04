@@ -1,12 +1,14 @@
 // ignore_for_file: constant_identifier_names
 
-const String ONLINE_MUSIC_PAGE = '/online';
-// 在线艺人页（`artist` 能力，2026-10-12）：作为 `/online` 的子路由 ⇒ 与其它在线页同族 ✓。
-const String ONLINE_ARTIST_PAGE = '/online/artist';
-// 艺人的**全部热门歌曲**（2026-10-12）：艺人页「全部显示」的目标 ✓；作为 `/online/artist` 的子路由 ✓。
-const String ARTIST_HOT_SONGS_PAGE = '/online/artist/hot-songs';
-// 在线专辑页（`album` 能力，2026-10-12）：同为 `/online` 的子路由 ✓。
-const String ONLINE_ALBUM_PAGE = '/online/album';
+// `/online` 路由页与它的三个子路由：页面本身已撤销（2026-11-03，搜索合并），
+// 三个子路由**改挂 `/explore` 下**继续可用（D5 已拍板）。
+// ⚠️ 三个常量的**变量名保持不变、只改字面值**（Spec I1）：11 处调用点因此零改动。
+// 在线艺人页（`artist` 能力，2026-10-12）✓。
+const String ONLINE_ARTIST_PAGE = '/explore/artist';
+// 艺人的**全部热门歌曲**（2026-10-12）：艺人页「全部显示」的目标 ✓；作为 `artist` 的子路由 ✓。
+const String ARTIST_HOT_SONGS_PAGE = '/explore/artist/hot-songs';
+// 在线专辑页（`album` 能力，2026-10-12）✓。
+const String ONLINE_ALBUM_PAGE = '/explore/album';
 // 「新专辑」与「新歌」是**两个**落地页（2026-10-17 拆开 ✓）：探索页两个区块的
 // 「查看全部」各进自己的页 ✓ —— 此前共用一个「专辑和单曲」页，于是某个入口下
 // 两个标题叠在一起，且点「新歌 → 查看全部」先看到「新专辑」✗。

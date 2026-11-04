@@ -61,7 +61,6 @@ void main() {
               ExplorePage(collectionLimit: collectionLimit ?? 24),
         ),
         for (final path in [
-          app_paths.ONLINE_MUSIC_PAGE,
           app_paths.SETTINGS_PAGE,
           app_paths.ONLINE_PLAYLIST_DETAIL_PAGE,
           app_paths.EXPLORE_CHART_LIST_PAGE,
@@ -843,7 +842,6 @@ void main() {
           builder: (context, state) => const ExplorePage(collectionLimit: 24),
         ),
         for (final path in [
-          app_paths.ONLINE_MUSIC_PAGE,
           app_paths.SETTINGS_PAGE,
           app_paths.ONLINE_PLAYLIST_DETAIL_PAGE,
           app_paths.EXPLORE_CHART_LIST_PAGE,
@@ -933,7 +931,6 @@ void main() {
           builder: (context, state) => const ExplorePage(collectionLimit: 24),
         ),
         for (final path in [
-          app_paths.ONLINE_MUSIC_PAGE,
           app_paths.SETTINGS_PAGE,
           app_paths.ONLINE_PLAYLIST_DETAIL_PAGE,
           app_paths.EXPLORE_CHART_LIST_PAGE,
@@ -985,17 +982,16 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  // ------------------------------------------------------------------ 工具条跳转
+  // ------------------------------------------------ 工具条（D7：搜索入口已移除）
 
-  testWidgets('★ 工具条「搜索在线音乐」→ 在线搜索页', (tester) async {
+  testWidgets('★ 工具条不再有「搜索在线音乐」入口（D7：入口只剩标题栏）', (tester) async {
     await pumpExplore(tester, service: allCapabilitiesService());
 
-    await tester.tap(find.byTooltip('搜索在线音乐'));
-    await tester.pumpAndSettle();
-
-    // 与主页那几个「查看全部」同类的**跳转契约**：路径常量写错一个字，
-    // 用户点了没反应或落到别处，而且**不会报任何错**。
-    expect(find.text('stub:${app_paths.ONLINE_MUSIC_PAGE}'), findsOneWidget);
+    // 2026-11-03 / D7：在线搜索并进标题栏搜索弹窗的「在线」来源 ⇒
+    // 探索页工具条上那个按钮**直接删除**（不再预选在线，也不再跳 `/online`）。
+    // 这条断言守的是"入口只剩一个"：多一个入口就多一条会自动漂移的路径。
+    expect(find.byTooltip('搜索在线音乐'), findsNothing);
+    expect(find.byTooltip('刷新'), findsOneWidget);
   });
 }
 

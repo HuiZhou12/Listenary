@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:pure_music/core/database.dart';
-import 'package:pure_music/page/online_music_page.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
@@ -11,12 +10,18 @@ import 'package:pure_music/services/music_platform/provider/composite_online_mus
 import 'package:pure_music/services/music_platform/provider/online_music_capability.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider.dart';
 import 'package:pure_music/services/music_platform/provider/online_music_provider_registry.dart';
-import 'package:sqlite3/sqlite3.dart';
+import 'package:sqlite3/sqlite3.dart' hide Row;
 
-/// decoupling-2.2（R4 / R5 / G3）：在线搜索页按**平台身份**筛选、请求与分组。
+import 'online_search_host.dart';
+
+/// decoupling-2.2（R4 / R5 / G3）：在线搜索按**平台身份**筛选、请求与分组。
 ///
 /// 用真实的 `CompositeOnlineMusicService`（不写测试替身）—— 这样断言的是端到端契约：
-/// 页面把身份传到了服务层、服务层按身份路由、结果又按身份回到分组。
+/// 面板把身份传到了服务层、服务层按身份路由、结果又按身份回到分组。
+///
+/// 2026-11-03 由 `test/page/custom_platform_search_page_test.dart` 迁移：宿主从
+/// `OnlineMusicPage` 换成 `OnlineSearchHost`（页面撤销，D2），**R4/R5 的断言逐条保留**
+/// —— 它们正是搜索弹窗「在线」分支的验收证据。
 void main() {
   // ⚠️ 两个 UUID 的**前 8 位必须不同**：短 ID 就是前 8 位（`PlatformIdentity.shortId`），
   // 若相同则短 ID 也无法区分同名平台（真实 UUID v4 撞前 8 位的概率可忽略）。
@@ -38,7 +43,7 @@ void main() {
     ),
   );
 
-  Future<void> pumpPage(
+  Future<void> pumpPanel(
     WidgetTester tester,
     OnlineMusicService service, {
     Size size = const Size(1200, 2200),
@@ -62,17 +67,14 @@ void main() {
           ),
           Provider<OnlineMusicService>.value(value: service),
         ],
-        child: const MaterialApp(home: Scaffold(body: OnlineMusicPage())),
+        child: const MaterialApp(home: Scaffold(body: OnlineSearchHost())),
       ),
     );
     await tester.pump();
   }
 
   Future<void> submit(WidgetTester tester, String query) async {
-    await tester.enterText(
-      find.byKey(const ValueKey('online-search-field')),
-      query,
-    );
+    await tester.enterText(find.byKey(onlineSearchHostFieldKey), query);
     await tester.pump();
     await tester.tap(find.byTooltip('在线搜索'));
     await tester.pumpAndSettle();
@@ -81,9 +83,9 @@ void main() {
   testWidgets('★ R4 两个自定义平台各自成组，标签用自己的 platformName（不串台）', (tester) async {
     final service = serviceWithCustomPlatforms();
     addTearDown(service.dispose);
-    await pumpPage(tester, service);
+    await pumpPanel(tester, service);
 
-    // 门槛：两个自定义身份都可搜索（否则页面根本不会请求它们）。
+    // 门槛：两个自定义身份都可搜索（否则面板根本不会请求它们）。
     expect(
       service.capabilities.searchableIdentities,
       containsAll(const [alpha, beta]),
@@ -116,7 +118,7 @@ void main() {
   testWidgets('★ R4 筛选：选一个自定义平台只请求它（单平台模式）', (tester) async {
     final service = serviceWithCustomPlatforms();
     addTearDown(service.dispose);
-    await pumpPage(tester, service);
+    await pumpPanel(tester, service);
     await submit(tester, 'song');
 
     // 未登记 platformName ⇒ 兜底文案「自定义平台」；两者**同名** ⇒ 按 G6 附短 ID 区分。
@@ -161,7 +163,7 @@ void main() {
   testWidgets('★ R5 停用其中一个自定义平台 ⇒ 它不再出现在筛选里', (tester) async {
     final service = serviceWithCustomPlatforms(enabled: {alpha.normalized});
     addTearDown(service.dispose);
-    await pumpPage(tester, service);
+    await pumpPanel(tester, service);
 
     expect(service.capabilities.canSearchIdentity(alpha), isTrue);
     expect(

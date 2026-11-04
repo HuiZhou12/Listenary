@@ -33,7 +33,6 @@ void main() {
   test('non-start destinations do not map to a local start page', () {
     for (final path in [
       app_paths.EXPLORE_PAGE,
-      app_paths.ONLINE_MUSIC_PAGE,
       app_paths.FAVORITES_PAGE,
       app_paths.STATS_PAGE,
       app_paths.SETTINGS_PAGE,

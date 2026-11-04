@@ -2,12 +2,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:pure_music/component/online_search_panel.dart';
 import 'package:pure_music/core/database.dart';
-import 'package:pure_music/page/online_music_page.dart';
 import 'package:pure_music/services/music_platform/index.dart';
 import 'package:pure_music/services/music_platform/online_library/online_library_repository.dart';
 import 'package:pure_music/services/music_platform/online_library/personal_online_playlist_controller.dart';
-import 'package:sqlite3/sqlite3.dart';
+import 'package:sqlite3/sqlite3.dart' hide Row;
 
 /// **搜索结果里的专辑行**（2026-10-12 新增 ✓）。
 ///
@@ -16,7 +16,8 @@ import 'package:sqlite3/sqlite3.dart';
 /// ⇒ 我们的专辑结果也**混在同一个列表**里，行内元信息以「**专辑 · 年份 · N 首**」开头 ✓
 ///（年份与曲目数都只写**平台声明**的事实 ✓）。
 ///
-/// （单独一个文件：既有的 `online_music_page_test.dart` 很大，**不动它** ✓ —— 这一课是 R92 学到的 ✓。）
+/// 2026-11-03：宿主由 `OnlineMusicPage` 改为 `OnlineSearchPanel`（页面撤销，D2）——
+/// 断言逐条保留，它们正是 D1「专辑/艺人混排」的验收证据。
 void main() {
   testWidgets('搜索结果里混排专辑行，并以「专辑 · 年份 · N 首」自报家门', (tester) async {
     tester.view.physicalSize = const Size(1200, 900);
@@ -37,46 +38,17 @@ void main() {
         value: favorites,
         child: Provider<OnlineMusicService?>.value(
           value: _AlbumSearchService(),
-          child: MaterialApp(
-            home: Scaffold(
-              body: OnlineMusicPage(
-                // 曲目链路用注入的搜索（只走单平台）✓；专辑链路走注入的服务 ✓。
-                search:
-                    ({
-                      required keyword,
-                      required limit,
-                      required offset,
-                      required cancelToken,
-                    }) async => MusicSearchPage(
-                      platform: MusicPlatform.netease,
-                      items: [
-                        MusicTrack(
-                          ref: const PlatformTrackRef(
-                            platform: MusicPlatform.netease,
-                            trackId: 't1',
-                          ),
-                          title: '曲目一',
-                          artists: const ['甲'],
-                        ),
-                      ],
-                      offset: offset,
-                      limit: limit,
-                      total: 1,
-                    ),
-                onTrackSelected: (page, selected) async {},
-                onHistoryRequested: () {},
-              ),
-            ),
-          ),
+          child: MaterialApp(home: Scaffold(body: _AlbumRowHost())),
         ),
       ),
     );
+    await tester.pump();
 
+    // 面板是"**显式提交**才搜"✓：宿主在输入框上回车即可（`onSubmitted` ✓）。
     await tester.enterText(
       find.byKey(const ValueKey('online-search-field')),
       '故里逢春',
     );
-    // 本页是"**显式提交**才搜"✓：在输入框上回车即可（`onSubmitted` ✓）。
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pumpAndSettle();
 
@@ -99,6 +71,82 @@ void main() {
     // 来源徽章照旧 ✓（这一行属于哪个平台 ✓）。
     expect(find.text('网易云'), findsWidgets);
   });
+}
+
+/// 面板的最小宿主：一个输入框 + `GlobalKey` 直调提交（面板不再自带输入框，D2）。
+class _AlbumRowHost extends StatefulWidget {
+  @override
+  State<_AlbumRowHost> createState() => _AlbumRowHostState();
+}
+
+class _AlbumRowHostState extends State<_AlbumRowHost> {
+  final _controller = TextEditingController();
+  final _panelKey = GlobalKey<OnlineSearchPanelState>();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  /// 提交（回车）：直接调面板的 `submit`（与弹窗同一条路径）。
+  void _submit() {
+    final query = _controller.text;
+    final panel = _panelKey.currentState;
+    if (panel != null) {
+      panel.submit(query);
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _panelKey.currentState?.submit(query);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        TextField(
+          key: const ValueKey('online-search-field'),
+          controller: _controller,
+          textInputAction: TextInputAction.search,
+          onChanged: (_) => setState(() {}),
+          onSubmitted: (_) => _submit(),
+        ),
+        Expanded(
+          child: OnlineSearchPanel(
+            key: _panelKey,
+            // 曲目链路用注入的搜索（只走单平台）✓；专辑链路走注入的服务 ✓。
+            search:
+                ({
+                  required keyword,
+                  required limit,
+                  required offset,
+                  required cancelToken,
+                }) async => MusicSearchPage(
+                  platform: MusicPlatform.netease,
+                  items: [
+                    MusicTrack(
+                      ref: const PlatformTrackRef(
+                        platform: MusicPlatform.netease,
+                        trackId: 't1',
+                      ),
+                      title: '曲目一',
+                      artists: const ['甲'],
+                    ),
+                  ],
+                  offset: offset,
+                  limit: limit,
+                  total: 1,
+                ),
+            onTrackSelected: (page, selected) async {},
+            query: _controller.text,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// 极简假件：只实现"搜专辑"需要的成员，其余交给 `noSuchMethod`（Dart 允许 ✓）。

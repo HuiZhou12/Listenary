@@ -15,7 +15,6 @@ import 'package:pure_music/page/audios_page.dart';
 import 'package:pure_music/page/folder_detail_page.dart';
 import 'package:pure_music/page/folders_page.dart';
 import 'package:pure_music/page/now_playing_page/page.dart';
-import 'package:pure_music/page/online_music_page.dart';
 import 'package:pure_music/page/artist_hot_songs_page.dart';
 import 'package:pure_music/page/online_artist_page.dart';
 import 'package:pure_music/page/online_album_page.dart';
@@ -784,6 +783,8 @@ class _EntryState extends State<Entry>
             ],
           ),
           // branch 顺序**必须与侧边栏 `destinations` 一致**（导航壳按下标切分支）。
+          // 分支数 = `destinations` 条数 = **10**（2026-11-03 撤销 `/online` 分支，
+          // 侧栏同步删「在线音乐」并重编索引；`favorites` 由第 4 支前移为第 3 支）。
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -841,16 +842,8 @@ class _EntryState extends State<Entry>
                       child: const ChartListPage(),
                     ),
                   ),
-                ],
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: app_paths.ONLINE_MUSIC_PAGE,
-                builder: (context, state) => const OnlineMusicPage(),
-                routes: [
+                  // ⚠️ 以下三个原本挂在 `/online`（该页 2026-11-03 撤销，D2）
+                  // ⇒ **改挂 `/explore` 下继续可用**（D5 已拍板），形状与语义逐字未变 ✓。
                   GoRoute(
                     // 在线专辑页：`extra` 带平台 + 专辑 id（+ 已知专辑名 ✓）。
                     path: 'album',
@@ -902,7 +895,7 @@ class _EntryState extends State<Entry>
                           if (extra == null) {
                             return SlideTransitionPage(
                               key: state.pageKey,
-                              child: const OnlineMusicPage(),
+                              child: const ExplorePage(),
                             );
                           }
                           return SlideTransitionPage(

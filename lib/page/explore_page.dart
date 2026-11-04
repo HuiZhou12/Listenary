@@ -333,11 +333,9 @@ class _ExplorePageState extends State<ExplorePage>
       title: '探索',
       subtitle: '按平台浏览内容，来源始终可见',
       actions: [
-        IconButton.filledTonal(
-          tooltip: '搜索在线音乐',
-          onPressed: () => context.go(app_paths.ONLINE_MUSIC_PAGE),
-          icon: const Icon(Symbols.search),
-        ),
+        // 工具条「搜索在线音乐」按钮已删除（2026-11-03 / D7）：在线搜索并进
+        // 标题栏搜索弹窗的「在线」来源 ⇒ 入口只剩标题栏那一个，默认本地。
+        // 探索页**不再**预选在线，也不用再为它持有 `go` 跳转。
         IconButton.filledTonal(
           tooltip: '刷新',
           // 接 `_load` 而不是 `_reload`：先清掉旧错误再重新拉取（见 `_load` 的注释）。

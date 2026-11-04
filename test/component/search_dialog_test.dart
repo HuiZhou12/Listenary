@@ -11,23 +11,25 @@ void main() {
     HotKeyManagerPlatform.instance = _FakeHotKeyManager();
   });
 
-  testWidgets('shows only the three local search categories', (tester) async {
+  testWidgets('defaults to local source with three categories', (tester) async {
     await _pumpDialog(tester);
 
     expect(find.text('音乐'), findsOneWidget);
     expect(find.text('艺术家'), findsOneWidget);
     expect(find.text('专辑'), findsOneWidget);
-    expect(find.text('在线'), findsNothing);
+    // 来源切换：两个来源都可见（D1）。
+    expect(find.text('本地'), findsOneWidget);
+    expect(find.text('在线'), findsOneWidget);
+    // 在线分支的提交按钮只在在线来源出现。
     expect(find.byTooltip('在线搜索'), findsNothing);
     expect(
       tester.widget<TextField>(find.byType(TextField)).decoration?.hintText,
-      // 2026-10-17（Q4）：范围如实写明 —— 全局搜索**只搜本机曲库**，不聚合在线结果 ✓
-      //（在线搜索在「在线音乐」页，那是另一条入口 ✓）。
+      // 本地来源的提示文案保持不变：它描述的是**本地分支**的范围。
       '搜索本地曲库（歌曲、艺术家、专辑）',
     );
   });
 
-  testWidgets('launcher opens local search without a ChKSz provider', (
+  testWidgets('launcher opens local search without any online provider', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -48,7 +50,8 @@ void main() {
 
     expect(find.byType(SearchDialog), findsOneWidget);
     expect(find.text('音乐'), findsOneWidget);
-    expect(find.text('在线'), findsNothing);
+    // 没有可搜索平台 ⇒「在线」仍可见（视觉置灰），但点击**不切换来源**（I3）。
+    expect(find.text('在线'), findsOneWidget);
   });
 
   testWidgets('local category switching and clear action remain available', (
@@ -74,6 +77,7 @@ void main() {
   });
 }
 
+/// 打开弹窗（本地来源，无在线平台 provider）。
 Future<void> _pumpDialog(WidgetTester tester) async {
   tester.view.physicalSize = const Size(1200, 900);
   tester.view.devicePixelRatio = 1;

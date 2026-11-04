@@ -76,7 +76,6 @@ void main() {
         ),
         // 主页里的跳转目标：用轻量占位页，避免拉进整棵设置/统计树。
         for (final path in [
-          app_paths.ONLINE_MUSIC_PAGE,
           app_paths.EXPLORE_PAGE,
           app_paths.FAVORITES_PAGE,
           app_paths.STATS_PAGE,
