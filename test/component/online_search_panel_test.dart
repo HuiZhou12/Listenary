@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:provider/provider.dart';
+import 'package:pure_music/component/online_album_row.dart';
 import 'package:pure_music/component/online_search_panel.dart';
 import 'package:pure_music/component/online_track_row.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
@@ -685,6 +686,126 @@ void main() {
     expect(find.text('没有更多了'), findsNothing);
     expect(find.text('在线搜索'), findsOneWidget);
   });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 结果分类 tab（2026-11-04 新增）：纯显示过滤，不重新发请求。
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// 同时能出曲目 / 专辑 / 艺人三类行的服务（专辑与艺人走 capability 门槛）。
+  testWidgets('分类 tab 四个都在，默认选中「全部」', (tester) async {
+    await _pumpPanel(tester, search: _singleTrackSearch, service: _CategoryService());
+
+    // 四个 tab 都在（用 tab 自己的按钮类型定位，避免与平台筛选的「全部」混淆）。
+    for (final label in ['全部', '单曲', '专辑', '艺人']) {
+      expect(
+        find.widgetWithText(OutlinedButton, label),
+        findsOneWidget,
+        reason: '分类 tab 缺了「$label」',
+      );
+    }
+
+    await _submit(tester, 'song');
+
+    // 默认「全部」⇒ 三类行都在（现状零回归）。
+    expect(find.byType(OnlineTrackRow), findsOneWidget);
+    expect(find.byType(OnlineAlbumRow), findsOneWidget);
+    expect(find.text('阿YueYue'), findsOneWidget);
+  });
+
+  testWidgets('切「专辑」后只剩专辑行（曲目行消失），且不重新发请求', (tester) async {
+    var requests = 0;
+    await _pumpPanel(
+      tester,
+      service: _CategoryService(),
+      search: ({
+        required keyword,
+        required limit,
+        required offset,
+        required cancelToken,
+      }) async {
+        requests++;
+        return _page([_track('1', title: 'Category Track')]);
+      },
+    );
+    await _submit(tester, 'song');
+    expect(requests, 1);
+    expect(find.byType(OnlineTrackRow), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '专辑'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OnlineTrackRow), findsNothing, reason: '「专辑」视图不该有曲目行');
+    expect(find.byType(OnlineAlbumRow), findsOneWidget);
+    expect(requests, 1, reason: '分类是纯显示过滤 ⇒ 不得重新发请求');
+  });
+
+  testWidgets('切「艺人」后艺人行在、曲目行不在', (tester) async {
+    await _pumpPanel(
+      tester,
+      service: _CategoryService(),
+      search: ({
+        required keyword,
+        required limit,
+        required offset,
+        required cancelToken,
+      }) async => _page([_track('1', title: 'Category Track')]),
+    );
+    await _submit(tester, 'song');
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '艺人'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('阿YueYue'), findsOneWidget);
+    expect(find.byType(OnlineTrackRow), findsNothing);
+    expect(find.byType(OnlineAlbumRow), findsNothing);
+  });
+
+  testWidgets('「单曲」视图保留曲目行、去掉专辑与艺人行', (tester) async {
+    await _pumpPanel(
+      tester,
+      service: _CategoryService(),
+      search: ({
+        required keyword,
+        required limit,
+        required offset,
+        required cancelToken,
+      }) async => _page([_track('1', title: 'Category Track')]),
+    );
+    await _submit(tester, 'song');
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '单曲'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OnlineTrackRow), findsOneWidget);
+    expect(find.byType(OnlineAlbumRow), findsNothing);
+    expect(find.text('阿YueYue'), findsNothing);
+    // 分页入口在所有分类下都可见（仍拉全类型）。
+    expect(find.text('没有更多了'), findsOneWidget);
+  });
+
+  testWidgets('搜索成功但某分类为空 ⇒ 居中提示「没有找到专辑」', (tester) async {
+    // 曲目有结果、专辑/艺人两条链路没有 ⇒「专辑」分类一条都没有。
+    await _pumpPanel(
+      tester,
+      service: _CategoryService(searchAlbumAndArtist: false),
+      search: ({
+        required keyword,
+        required limit,
+        required offset,
+        required cancelToken,
+      }) async => _page([_track('1', title: 'Category Track')]),
+    );
+    await _submit(tester, 'song');
+    expect(find.byType(OnlineTrackRow), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '专辑'));
+    await tester.pumpAndSettle();
+
+    // 分类为空 ≠ 整次搜索为空：走分类专属的居中空态。
+    expect(find.text('没有找到专辑'), findsOneWidget);
+    expect(find.text('没有找到在线曲目'), findsNothing);
+    expect(find.byType(OnlineTrackRow), findsNothing);
+  });
 }
 
 /// 面板的测试宿主：一个输入框把文本交给面板的 `query`，提交走
@@ -779,6 +900,8 @@ Future<_PanelHostState> _pumpPanel(
   onTrackSelected,
   VoidCallback? onHistoryRequested,
   Size size = const Size(1200, 900),
+  /// 提供它 ⇒ 面板能走**专辑/艺人**两条链路（分类过滤用例需要那两类行）。
+  OnlineMusicService? service,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -792,19 +915,21 @@ Future<_PanelHostState> _pumpPanel(
   addTearDown(favorites.dispose);
   addTearDown(database.dispose);
   final handleKey = GlobalKey<_PanelHostState>();
+  final panel = _PanelHost(
+    key: handleKey,
+    search: search,
+    onTrackSelected: onTrackSelected,
+    onHistoryRequested: onHistoryRequested,
+  );
   await tester.pumpWidget(
-    ChangeNotifierProvider<PersonalOnlinePlaylistController>.value(
-      value: favorites,
-      child: MaterialApp(
-        home: Scaffold(
-          body: _PanelHost(
-            key: handleKey,
-            search: search,
-            onTrackSelected: onTrackSelected,
-            onHistoryRequested: onHistoryRequested,
-          ),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<PersonalOnlinePlaylistController>.value(
+          value: favorites,
         ),
-      ),
+        if (service != null) Provider<OnlineMusicService?>.value(value: service),
+      ],
+      child: MaterialApp(home: Scaffold(body: panel)),
     ),
   );
   await tester.pump();
@@ -869,6 +994,83 @@ final class _SearchCall {
   final int limit;
   final int offset;
   final OnlineMusicCancelToken cancelToken;
+}
+
+/// 分类过滤用例的搜索注入：单平台、返回一条曲目。
+Future<MusicSearchPage> _singleTrackSearch({
+  required String keyword,
+  required int limit,
+  required int offset,
+  required OnlineMusicCancelToken cancelToken,
+}) async => _page([_track('1', title: 'Category Track')]);
+
+/// 同时提供**专辑与艺人**两条链路的假服务（分类过滤用例需要三类行都在）。
+///
+/// 用 `UnsupportedOnlineMusicProvider` 之外的极简实现：只实现被调用到的成员，
+/// 其余交给 `noSuchMethod` —— 与既有测试同一写法。
+final class _CategoryService implements OnlineMusicService {
+  _CategoryService({this.searchAlbumAndArtist = true});
+
+  /// 是否声明并实现专辑/艺人搜索（false ⇒ 面板不会产生这两类行）。
+  final bool searchAlbumAndArtist;
+
+  @override
+  OnlineMusicCapabilities get capabilities => OnlineMusicCapabilities(
+    searchablePlatforms: const [MusicPlatform.netease],
+    resolvablePlatforms: const [],
+    albumPlatforms: searchAlbumAndArtist
+        ? const [MusicPlatform.netease]
+        : const [],
+    searchableAlbumPlatforms: searchAlbumAndArtist
+        ? const [MusicPlatform.netease]
+        : const [],
+    artistPlatforms: searchAlbumAndArtist
+        ? const [MusicPlatform.netease]
+        : const [],
+    searchableArtistPlatforms: searchAlbumAndArtist
+        ? const [MusicPlatform.netease]
+        : const [],
+  );
+
+  @override
+  Future<List<OnlineAlbumSummary>> searchAlbums({
+    required MusicPlatform platform,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => searchAlbumAndArtist
+      ? [
+          OnlineAlbumSummary(
+            platform: MusicPlatform.netease,
+            id: 'a1',
+            name: 'Category Album',
+            trackCount: 2,
+            releaseTime: DateTime.utc(2020, 7, 29),
+          ),
+        ]
+      : const [];
+
+  @override
+  Future<List<OnlineArtistSummary>> searchArtists({
+    required MusicPlatform platform,
+    required String keyword,
+    int limit = 30,
+    int offset = 0,
+    required OnlineMusicCancelToken cancelToken,
+  }) async => searchAlbumAndArtist
+      ? [
+          OnlineArtistSummary(
+            platform: MusicPlatform.netease,
+            id: 'ar1',
+            name: '阿YueYue',
+          ),
+        ]
+      : const [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('这个测试用不到：${invocation.memberName}');
 }
 
 final class _FakeHotKeyManager extends HotKeyManagerPlatform {

@@ -563,7 +563,9 @@ class _AudioTileState extends State<AudioTile> {
                                       ),
                                       const SizedBox(width: 4.0),
                                       Text(
-                                        '${audio.artist} - ${audio.album}',
+                                        // 分隔符统一为 ` · `（2026-11-04）：与在线行
+                                        // 的「艺人 · 专辑」读法一致。
+                                        '${audio.artist} · ${audio.album}',
                                         style: TextStyle(color: metadataColor),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,

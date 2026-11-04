@@ -40,7 +40,15 @@ void main() {
     );
 
     await _pumpPanel(tester, service);
-    expect(find.text('全部'), findsOneWidget);
+    // 「全部」既是**平台筛选**的默认项、也是**分类 tab** 的默认项（2026-11-04 新增）
+    // ⇒ 断言限定在平台筛选里，否则数到 2 个。
+    expect(
+      find.descendant(
+        of: find.byType(SegmentedButton<PlatformIdentity?>),
+        matching: find.text('全部'),
+      ),
+      findsOneWidget,
+    );
 
     await _submit(tester, 'song');
 

@@ -11,6 +11,7 @@ import 'package:pure_music/component/online_source_label.dart';
 import 'package:pure_music/component/online_track_entry.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/remote_media_cover.dart';
+import 'package:pure_music/component/search_dialog_layout.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/search_action_state.dart';
@@ -104,6 +105,12 @@ class OnlineSearchPanelState extends State<OnlineSearchPanel> {
   /// 却打了全部平台"。此处旧注释曾写"只在已取回结果上做显示过滤、不重新发请求"，
   /// 与实现相反，已按当前行为更正。
   PlatformIdentity? _filter;
+
+  /// 结果**分类**视图（2026-11-04 新增）：「全部 / 单曲 / 专辑 / 艺人」，默认「全部」。
+  ///
+  /// 与 [_filter] 是两种不同的东西：分类是**纯显示过滤**（不重新发请求、不取消在途），
+  /// 平台筛选"切换即重发"。分类状态跟随面板实例 —— 切来源会重建面板 ⇒ 回到「全部」。
+  OnlineSearchCategory _category = OnlineSearchCategory.all;
 
   /// 首请求（聚合请求）的取消令牌。
   OnlineMusicCancelToken? _cancelToken;
@@ -662,20 +669,30 @@ class OnlineSearchPanelState extends State<OnlineSearchPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Spec D6：顶部保留「在线播放历史」入口（撤销 `/online` 页后该入口的替代）。
-        if (widget.onHistoryRequested != null)
-          Align(
-            alignment: Alignment.centerRight,
-            child: IconButton.filledTonal(
-              tooltip: '在线播放历史',
-              onPressed: widget.onHistoryRequested,
-              icon: const Icon(Symbols.history),
-            ),
+        // **行 1**（2026-11-04 视觉重设计）：平台筛选 + 右侧「在线播放历史」入口。
+        // 此前是"历史按钮独占一行 + 筛选一行"⇒ 两行并一行，把高度让给结果区。
+        if (identities.isNotEmpty || widget.onHistoryRequested != null)
+          Row(
+            children: [
+              if (identities.isNotEmpty)
+                Expanded(child: _buildPlatformFilter(identities))
+              // 没有平台时历史入口仍然靠右（与独占一行时的位置一致）。
+              else
+                const Spacer(),
+              if (widget.onHistoryRequested != null)
+                IconButton.filledTonal(
+                  tooltip: '在线播放历史',
+                  onPressed: widget.onHistoryRequested,
+                  icon: const Icon(Symbols.history),
+                ),
+            ],
           ),
-        if (identities.isNotEmpty) ...[
-          if (widget.onHistoryRequested != null) const SizedBox(height: 8.0),
-          _buildPlatformFilter(identities),
-        ],
+        // **行 2**：结果分类 tab（与本地分支的 tab 行同一视觉水平线）。
+        Padding(
+          padding: const EdgeInsets.only(top: Spacing.md),
+          child: _buildCategoryTabs(),
+        ),
+        // **行 3**：进度槽（现状 12px）。
         SizedBox(
           height: 12.0,
           child: _status == OnlineSearchStatus.loading
@@ -688,6 +705,40 @@ class OnlineSearchPanelState extends State<OnlineSearchPanel> {
         Expanded(child: _buildSearchBody()),
       ],
     );
+  }
+
+  /// 结果分类 tab（「全部 / 单曲 / 专辑 / 艺人」）。
+  ///
+  /// 视觉与本地分支的三档 tab 完全一致（同一个 [SearchCategoryButton]）；切换只改
+  /// [_category]，**不触发请求**（见 [filterOnlineSearchEntries]）。
+  Widget _buildCategoryTabs() {
+    return Wrap(
+      spacing: 8.0,
+      runSpacing: 8.0,
+      children: [
+        for (final category in OnlineSearchCategory.values)
+          SearchCategoryButton(
+            label: category.label,
+            icon: _categoryIcon(category),
+            selected: _category == category,
+            onPressed: () => _onCategoryChanged(category),
+          ),
+      ],
+    );
+  }
+
+  static IconData _categoryIcon(OnlineSearchCategory category) =>
+      switch (category) {
+        OnlineSearchCategory.all => Symbols.apps,
+        OnlineSearchCategory.track => Symbols.music_note,
+        OnlineSearchCategory.album => Symbols.album,
+        OnlineSearchCategory.artist => Symbols.person,
+      };
+
+  /// 切换分类：**纯显示过滤** —— 不重新发请求、不取消在途、不动任何累计结果。
+  void _onCategoryChanged(OnlineSearchCategory category) {
+    if (_category == category) return;
+    setState(() => _category = category);
   }
 
   /// 「全部 / 各平台」筛选（D6:A / W6）。
@@ -706,12 +757,18 @@ class OnlineSearchPanelState extends State<OnlineSearchPanel> {
         children: [
           Icon(Symbols.public, size: 14, color: scheme.onSurfaceVariant),
           const SizedBox(width: Spacing.xs),
-          Text(
-            '当前平台：${disambiguatedPlatformLabel(identities.single, identities)}',
-            key: const ValueKey('online-search-single-platform'),
-            style: TextStyle(
-              color: scheme.onSurfaceVariant,
-              fontSize: AppType.caption,
+          // Flexible：这一行现在与「在线播放历史」同排（2026-11-04）⇒ 可用宽度更窄，
+          // 长平台名在窄窗口下必须能省略，而不是溢出。
+          Flexible(
+            child: Text(
+              '当前平台：${disambiguatedPlatformLabel(identities.single, identities)}',
+              key: const ValueKey('online-search-single-platform'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: AppType.caption,
+              ),
             ),
           ),
         ],
@@ -739,18 +796,23 @@ class OnlineSearchPanelState extends State<OnlineSearchPanel> {
   }
 
   Widget _buildSearchBody() {
+    // 面板的所有空态都走**居中列**（`centered: true`）：面板只住在搜索弹窗里，
+    // 横排会让图标偏到左边、偏离弹窗的中轴。
     return switch (_status) {
       OnlineSearchStatus.idle => const QuietEmptyState(
+        centered: true,
         icon: Symbols.cloud,
         title: '在线搜索',
         message: '输入关键词，搜索已启用的在线平台。',
       ),
       OnlineSearchStatus.loading => const QuietEmptyState(
+        centered: true,
         icon: Symbols.hourglass_top,
         title: '正在搜索',
         message: '正在获取在线结果。',
       ),
       OnlineSearchStatus.empty => QuietEmptyState(
+        centered: true,
         icon: Symbols.cloud_off,
         title: '没有找到在线曲目',
         message: '换个关键词再试试。',
@@ -761,6 +823,7 @@ class OnlineSearchPanelState extends State<OnlineSearchPanel> {
         ),
       ),
       OnlineSearchStatus.noPlatform => QuietEmptyState(
+        centered: true,
         icon: Symbols.cloud_off,
         title: '没有可搜索的平台',
         message: '请先在设置里启用平台，并为其配置可用的服务。',
@@ -789,6 +852,7 @@ class OnlineSearchPanelState extends State<OnlineSearchPanel> {
     final error = _error!;
     final unauthorized = error.kind == OnlineMusicErrorKind.notConfigured;
     return QuietEmptyState(
+      centered: true,
       icon: unauthorized ? Symbols.key_off : Symbols.cloud_off,
       title: '在线搜索失败',
       message: error.safeMessage,
@@ -802,11 +866,12 @@ class OnlineSearchPanelState extends State<OnlineSearchPanel> {
     );
   }
 
-  /// 把各平台分组摊平成一维行列表（摊平顺序见 [flattenOnlineSearchEntries]）。
+  /// 把各平台分组摊平成一维行列表（摊平顺序见 [flattenOnlineSearchEntries]），
+  /// 再按当前分类做**纯显示过滤**（见 [filterOnlineSearchEntries]）。
   List<OnlineSearchEntry> _buildEntries() {
     final visible = _visibleIdentities;
     // 只有一个平台（或筛选到单一平台）时不摆分组表头：多平台聚合才需要它。
-    return flattenOnlineSearchEntries(
+    final entries = flattenOnlineSearchEntries(
       groups: [
         for (final group in _groups)
           if (visible.contains(group.identity)) group,
@@ -817,9 +882,31 @@ class OnlineSearchPanelState extends State<OnlineSearchPanel> {
       artistsFailed: _artistsFailed,
       showHeaders: visible.length > 1,
     );
+    return filterOnlineSearchEntries(entries, _category);
   }
 
+  /// 该分类下**有没有结果**（只看这一分类自己的类型行；失败行/页脚不算）。
+  ///
+  /// 用来区分"整次搜索成功但这一分类为空"与"列表本来就有东西可摆"。
+  bool _hasEntriesForCategory() => _buildEntries().any(
+    (entry) => switch (entry) {
+      OnlineSearchFooterEntry() ||
+      OnlineSearchFailureEntry() ||
+      OnlineSearchGroupHeaderEntry() => false,
+      _ => true,
+    },
+  );
+
   Widget _buildResultList() {
+    // 搜索成功但**当前分类**一条都没有 ⇒ 居中提示（不是整页空态：别的分类可能有结果）。
+    if (_category != OnlineSearchCategory.all && !_hasEntriesForCategory()) {
+      return QuietEmptyState(
+        centered: true,
+        icon: _categoryIcon(_category),
+        title: '没有找到${_category.label}',
+        message: '换个关键词，或者切到「全部」看其它类型的结果。',
+      );
+    }
     final entries = _buildEntries();
     // **不留 `Spacing.bottomNav`**（Spec 4.5）：那是给页面级迷你播放器让位的；
     // 面板现在住在搜索弹窗里，弹窗内没有迷你播放器 ⇒ 底部留白只会浪费高度。

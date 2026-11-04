@@ -164,6 +164,101 @@ String disambiguatedPlatformLabel(
   return sameName > 1 ? '$label（$shortId）' : label;
 }
 
+/// 在线搜索结果的**分类视图**（2026-11-04 新增）。
+///
+/// ⚠️ 这是**纯显示过滤**的判据，不参与请求：切换分类不重新发请求
+/// （与平台筛选"切换即重发"是两件事，见 `OnlineSearchPanelState._onFilterChanged`）。
+enum OnlineSearchCategory {
+  /// 现状（曲目 → 专辑 → 艺人 + 分组头 + 失败行 + 空组行 + 页脚）—— 默认值。
+  all('全部'),
+
+  /// 只留曲目行 + 平台级失败行 + 页脚（分组头按"过滤后仍有可见条目"保留）。
+  track('单曲'),
+
+  /// 只留专辑行 + 专辑失败行 + 平台级失败行 + 页脚。
+  album('专辑'),
+
+  /// 只留艺人行 + 艺人失败行 + 平台级失败行 + 页脚。
+  artist('艺人');
+
+  const OnlineSearchCategory(this.label);
+
+  /// tab 上的文案。
+  final String label;
+}
+
+/// 把摊平后的行列表按 [category] 过滤（**纯函数**，不动 [flattenOnlineSearchEntries]）。
+///
+/// 保留规则（逐条对应设计稿 §6）：
+/// - 平台级失败行（[OnlineSearchFailureEntry]）与页脚（[OnlineSearchFooterEntry]）
+///   在每个分类都保留 —— 前者是"这个平台没搜到"的如实交代，后者是分页入口
+///   （加载更多在所有分类下都可用，且仍拉全类型）；
+/// - 空组行（[OnlineSearchEmptyGroupEntry]）只在「单曲」保留：在那个视图里它说的正是
+///   "这个平台没有单曲"；在专辑/艺人视图里它会读成"专辑没有结果"，而并非事实；
+/// - 分组头（[OnlineSearchGroupHeaderEntry]）**只保留过滤后仍有内容的平台** ——
+///   否则会留下"只有平台名、下面空无一物"的标题。
+///
+/// [OnlineSearchCategory.all] 原样返回（同一个 list 实例）—— 默认值零行为回归。
+List<OnlineSearchEntry> filterOnlineSearchEntries(
+  List<OnlineSearchEntry> entries,
+  OnlineSearchCategory category,
+) {
+  if (category == OnlineSearchCategory.all) return entries;
+
+  /// 该分类下这条行是否属于"要展示的类型"。
+  bool keepForCategory(OnlineSearchEntry entry) => switch (entry) {
+    OnlineSearchGroupHeaderEntry() => true, // 头部由下面按块判定
+    OnlineSearchTrackEntry() => category == OnlineSearchCategory.track,
+    OnlineSearchAlbumEntry() => category == OnlineSearchCategory.album,
+    OnlineSearchAlbumFailureEntry() => category == OnlineSearchCategory.album,
+    OnlineSearchArtistEntry() => category == OnlineSearchCategory.artist,
+    OnlineSearchArtistFailureEntry() => category == OnlineSearchCategory.artist,
+    OnlineSearchEmptyGroupEntry() => category == OnlineSearchCategory.track,
+    OnlineSearchFailureEntry() => true,
+    OnlineSearchFooterEntry() => true,
+  };
+
+  /// 头部之外的这类行是否算"内容"（用来决定这个平台还要不要摆表头）：
+  /// 页脚在每个分类都在，据此补头会留下空标题 ⇒ 不算内容；平台级失败行则**算**内容
+  /// （它的文案不含平台名，没有表头就说不清是哪个平台失败）。
+  bool isContent(OnlineSearchEntry entry) => switch (entry) {
+    OnlineSearchFailureEntry() => true,
+    OnlineSearchFooterEntry() || OnlineSearchGroupHeaderEntry() => false,
+    _ => true,
+  };
+
+  final result = <OnlineSearchEntry>[];
+  // 按分组头切块：块内是同一平台的行（摊平顺序固定，见 [flattenOnlineSearchEntries]）。
+  var block = <OnlineSearchEntry>[];
+  OnlineSearchGroupHeaderEntry? header;
+
+  void flush() {
+    final kept = [
+      for (final entry in block)
+        if (keepForCategory(entry)) entry,
+    ];
+    final hasContent = kept.any(isContent);
+    // 表头只在"这一块还有内容"时补回：没有表头（单平台）时不存在空标题问题。
+    // 内容为空的块**仍输出它的页脚**（「加载更多」在所有分类下都可用），只是不带标题 ——
+    // 否则在专辑视图里，一个没有专辑但有下一页的平台会连分页入口一起消失。
+    if (header != null && hasContent) result.add(header!);
+    result.addAll(kept);
+    block = <OnlineSearchEntry>[];
+    header = null;
+  }
+
+  for (final entry in entries) {
+    if (entry is OnlineSearchGroupHeaderEntry) {
+      flush();
+      header = entry;
+      continue;
+    }
+    block.add(entry);
+  }
+  flush();
+  return result;
+}
+
 /// 把各平台分组摊平成一维行列表（面板交给 `ListView.builder` 保持懒构建）。
 ///
 /// 摊平顺序**固定**（逐字沿用原搜索页）：分组头 → 曲目 → 专辑 → 艺人 →

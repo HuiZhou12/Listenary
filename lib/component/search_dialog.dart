@@ -12,6 +12,7 @@ import 'package:pure_music/component/online_search_panel.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/search_dialog_layout.dart';
 import 'package:pure_music/core/hotkeys.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/menu_styles.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
@@ -44,6 +45,7 @@ class _SearchEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return QuietEmptyState(
+      centered: true,
       icon: icon,
       title: title,
       message: message,
@@ -459,41 +461,62 @@ class _SearchDialogState extends State<SearchDialog> {
     );
   }
 
-  /// 标题栏：标题 + 来源切换（SegmentedButton）。
+  /// 标题区：左标题 + 右关闭（2026-11-04 视觉重设计）。
+  ///
+  /// 不加副标题：那会引入被测试钉死计数的「本地」「在线」字样。
+  /// 关闭行为等价于点遮罩 ⇒ 直接 `Navigator.pop`。
+  Widget _buildTitle() {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Text(
+          '搜索',
+          style: TextStyle(
+            color: scheme.onSurface,
+            fontSize: AppType.sectionTitle,
+            fontWeight: AppType.weightBold,
+          ),
+        ),
+        const Spacer(),
+        IconButton(
+          tooltip: '关闭',
+          visualDensity: VisualDensity.compact,
+          onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(Icons.close),
+        ),
+      ],
+    );
+  }
+
+  /// 来源切换（SegmentedButton），位于输入框下方、左对齐（2026-11-04 视觉重设计）。
   ///
   /// I3：没有可搜索平台时「在线」**不是 disabled 段**（disabled 段不可点，也就
   /// 无从"点击引导去设置"）⇒ 视觉置灰 + 仍可点，点击走引导。
-  Widget _buildTitle() {
+  Widget _buildSourceSwitch() {
     final scheme = Theme.of(context).colorScheme;
     final hasOnline = _searchableIdentities().isNotEmpty;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text('搜索'),
-        const SizedBox(width: 16.0),
-        SegmentedButton<SearchSource>(
-          showSelectedIcon: false,
-          segments: [
-            const ButtonSegment<SearchSource>(
-              value: SearchSource.local,
-              label: Text('本地'),
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: SegmentedButton<SearchSource>(
+        showSelectedIcon: false,
+        segments: [
+          const ButtonSegment<SearchSource>(
+            value: SearchSource.local,
+            label: Text('本地'),
+          ),
+          ButtonSegment<SearchSource>(
+            value: SearchSource.online,
+            label: Text(
+              '在线',
+              style: hasOnline
+                  ? null
+                  : TextStyle(color: scheme.onSurface.withValues(alpha: 0.38)),
             ),
-            ButtonSegment<SearchSource>(
-              value: SearchSource.online,
-              label: Text(
-                '在线',
-                style: hasOnline
-                    ? null
-                    : TextStyle(
-                        color: scheme.onSurface.withValues(alpha: 0.38),
-                      ),
-              ),
-            ),
-          ],
-          selected: {_source},
-          onSelectionChanged: (selection) => _switchSource(selection.first),
-        ),
-      ],
+          ),
+        ],
+        selected: {_source},
+        onSelectionChanged: (selection) => _switchSource(selection.first),
+      ),
     );
   }
 
@@ -505,7 +528,7 @@ class _SearchDialogState extends State<SearchDialog> {
     return SearchDialogFrame(
       title: _buildTitle(),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Focus(
             onFocusChange: HotkeysHelper.onFocusChanges,
@@ -520,7 +543,13 @@ class _SearchDialogState extends State<SearchDialog> {
                   : TextInputAction.done,
               style: TextStyle(color: scheme.onSurface),
               decoration: InputDecoration(
-                prefixIcon: const Icon(Symbols.search),
+                // 视觉重设计（2026-11-04）：图标 24 → 20、纵向内边距 8 → 10，
+                // 其余全部沿用主题的 filled 样式（hint 文案逐字不动）。
+                prefixIcon: const Icon(Symbols.search, size: 20.0),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: Spacing.md,
+                  vertical: 10.0,
+                ),
                 // 提示文案随来源切换：本地搜本机曲库，在线搜已启用的在线平台。
                 hintText: online
                     ? '搜索在线音乐'
@@ -555,6 +584,10 @@ class _SearchDialogState extends State<SearchDialog> {
               onSubmitted: online ? (_) => _submitOnlineSearch() : null,
             ),
           ),
+          // 来源切换在输入框**下方**（2026-11-04 视觉重设计：它描述的是"往哪里搜"，
+          // 属于输入的一部分，而不是标题的一部分）。
+          const SizedBox(height: Spacing.md),
+          _buildSourceSwitch(),
           if (!online)
             ValueListenableBuilder(
               valueListenable: _isSearching,
@@ -565,9 +598,12 @@ class _SearchDialogState extends State<SearchDialog> {
                         padding: EdgeInsets.only(top: 8.0),
                         child: LinearProgressIndicator(minHeight: 2.0),
                       )
-                    : const SizedBox(height: 12.0),
+                    : const SizedBox(height: Spacing.md),
               ),
-            ),
+            )
+          else
+            // 在线分支的进度槽在面板顶部（现状），这里只补 12px 的呼吸。
+            const SizedBox(height: Spacing.md),
           Expanded(
             child: online ? _buildOnlineBranch() : _buildLocalBranch(),
           ),

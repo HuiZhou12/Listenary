@@ -67,7 +67,22 @@ void main() {
     expect(find.textContaining('专辑 · 2020 年 · 2 首'), findsOneWidget);
     // **艺人行**同样混排 ✓，以「艺人」自报家门 ✓（参考的第三种类型 ✓）。
     expect(find.text('阿YueYue'), findsOneWidget);
-    expect(find.text('艺人'), findsOneWidget);
+    // 2026-11-04：面板新增分类 tab（「全部 / 单曲 / 专辑 / 艺人」）⇒ 界面上有两处「艺人」。
+    // 断言收窄到**艺人行内部**，才能继续证明"这一行自报家门"（而不是数到 tab 就算过）。
+    expect(find.text('艺人'), findsNWidgets(2), reason: '分类 tab + 艺人行各一处');
+    expect(
+      find.descendant(
+        of: find
+            .ancestor(
+              of: find.text('阿YueYue'),
+              matching: find.byType(InkWell),
+            )
+            .first,
+        matching: find.text('艺人'),
+      ),
+      findsOneWidget,
+      reason: '艺人行仍以「艺人」自报家门',
+    );
     // 来源徽章照旧 ✓（这一行属于哪个平台 ✓）。
     expect(find.text('网易云'), findsWidgets);
   });

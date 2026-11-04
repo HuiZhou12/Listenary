@@ -1,6 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:pure_music/core/design_tokens.dart';
 
+/// 搜索弹窗的外壳（2026-11-04 视觉重设计）。
+///
+/// 从 `AlertDialog` 换成 `Dialog`：圆角与底色由全应用 `dialogTheme` 统一给出
+/// （`lib/entry.dart`：12 圆角 + `surface`），内部节奏完全由这里与
+/// `search_dialog.dart` 接管 —— `AlertDialog` 那套 24/16 混用的
+/// titlePadding / contentPadding 不再参与布局。
+///
+/// 与全应用自绘对话框同一套形状（先例：`folder_manager_dialog.dart` 的「管理文件夹」、
+/// `lyric_source_view.dart` 的「搜索歌词」）：`insetPadding` 24 + 内层 16 全周。
 class SearchDialogFrame extends StatelessWidget {
   const SearchDialogFrame({
     super.key,
@@ -17,10 +26,28 @@ class SearchDialogFrame extends StatelessWidget {
     final width = (size.width - 64).clamp(280.0, 900.0).toDouble();
     final height = (size.height - 180).clamp(300.0, 720.0).toDouble();
 
-    return AlertDialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      title: title,
-      content: SizedBox(width: width, height: height, child: child),
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: Spacing.xl,
+        vertical: Spacing.xl,
+      ),
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Padding(
+          padding: const EdgeInsets.all(Spacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: Spacing.lg),
+                child: title,
+              ),
+              Expanded(child: child),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

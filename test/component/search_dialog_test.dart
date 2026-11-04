@@ -75,6 +75,45 @@ void main() {
     expect(tester.widget<TextField>(field).controller?.text, isEmpty);
     expect(find.text('输入关键词开始搜索'), findsOneWidget);
   });
+
+  testWidgets('title row keeps a close action that dismisses the dialog', (
+    tester,
+  ) async {
+    // 从**真弹窗**打开（`show()`）：关闭按钮要验的是"弹窗真的没了"，
+    // 直接把 `SearchDialog` 当页面塞进 Widget 树时 `pop` 无处可去。
+    await _pumpDialogViaShow(tester);
+
+    expect(find.byType(SearchDialog), findsOneWidget);
+    expect(find.text('搜索'), findsOneWidget);
+    expect(find.byTooltip('关闭'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SearchDialog), findsNothing);
+  });
+}
+
+/// 通过 `SearchDialog.show()` 打开弹窗（关闭行为有真实的 navigator 可退）。
+Future<void> _pumpDialogViaShow(WidgetTester tester) async {
+  tester.view.physicalSize = const Size(1200, 900);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => IconButton(
+            onPressed: () => SearchDialog.show(context),
+            icon: const Icon(Icons.search),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.byIcon(Icons.search));
+  await tester.pumpAndSettle();
 }
 
 /// 打开弹窗（本地来源，无在线平台 provider）。
