@@ -87,6 +87,27 @@ const _benchmarkLyricConfig = LyricRenderConfig(
   staggerStyle: LyricStaggerStyle.spring,
 );
 
+/// 辉光对照相位的唯一差异是 [LyricRenderConfig.enableGlow]（§7.3 P1）。
+///
+/// fixture 用混合词长：`heartbeat`（1700 ms）会进 `scaleAndGlow`，
+/// 短词不会 ⇒ `glow_off` 相位仍能跑缩放路径，对照不失真（V5）。
+const _benchmarkLyricConfigGlowOn = _benchmarkLyricConfig;
+
+const _benchmarkLyricConfigGlowOff = LyricRenderConfig(
+  textAlign: LyricTextAlign.left,
+  baseFontSize: 32,
+  translationBaseFontSize: 28,
+  showTranslation: true,
+  showRoman: true,
+  fontWeight: 700,
+  enableBlur: true,
+  enableGlow: false,
+  liftStyle: LyricLiftStyle.cosine,
+  liftPeak: 2.5,
+  liftDurationMs: 300,
+  staggerStyle: LyricStaggerStyle.spring,
+);
+
 const _steadyPhaseDuration = Duration(seconds: 15);
 
 Future<void> main() async {
@@ -116,6 +137,7 @@ class _BackgroundBenchmarkAppState extends State<_BackgroundBenchmarkApp> {
   var _enableAnimation = true;
   var _showBackground = true;
   var _showLyrics = false;
+  var _lyricConfig = _benchmarkLyricConfig;
   var _spectrumStep = 0;
 
   @override
@@ -202,6 +224,24 @@ class _BackgroundBenchmarkAppState extends State<_BackgroundBenchmarkApp> {
       reports.add(
         await _measurePhase('lyrics_active', _steadyPhaseDuration),
       );
+
+      // ── 辉光净成本对照（§7.3 P1）──────────────────────────────────────
+      // 同一 fixture、同一 15 s、同一 16 ms 进度 timer；唯一差异是 enableGlow。
+      // 指标口径与判定阈值（16.67 ms）完全沿用，脚本按报告里的相位遍历。
+      setState(() => _lyricConfig = _benchmarkLyricConfigGlowOn);
+      await Future<void>.delayed(const Duration(seconds: 1));
+      reports.add(
+        await _measurePhase('lyrics_active_glow_on', _steadyPhaseDuration),
+      );
+
+      setState(() => _lyricConfig = _benchmarkLyricConfigGlowOff);
+      await Future<void>.delayed(const Duration(seconds: 1));
+      reports.add(
+        await _measurePhase('lyrics_active_glow_off', _steadyPhaseDuration),
+      );
+
+      // 复原，保证后续相位与改动前同构。
+      setState(() => _lyricConfig = _benchmarkLyricConfigGlowOn);
 
       setState(() {
         _showBackground = true;
@@ -442,7 +482,7 @@ class _BackgroundBenchmarkAppState extends State<_BackgroundBenchmarkApp> {
                       currentTimeMs: 0,
                       currentTimeListenable: _lyricTime,
                       blurSigma: 0,
-                      config: _benchmarkLyricConfig,
+                      config: _lyricConfig,
                       scheme: scheme,
                       isMainLine: true,
                       useMaterialYouColor: false,

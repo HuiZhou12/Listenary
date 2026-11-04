@@ -122,6 +122,52 @@ Duration lyricMedianWordDuration(List<SyncLyricWord> words) {
   return Duration(microseconds: medianMicros);
 }
 
+// ── 辉光强度的等价性钉死常量（D2：不得放宽/收紧）─────────────────────────
+//
+// 这些常量与公式只做"可断言化"提纯，数值与改动前的内联表达式逐项相等。
+const lyricGlowNearSigmaMin = 2.5;
+const lyricGlowNearSigmaMax = 5.0;
+const lyricGlowFarSigmaMin = 7.0;
+const lyricGlowFarSigmaMax = 12.0;
+
+/// 辉光层数（D2：固定 2 层，不得减为 1 层）。
+const lyricGlowLayerCount = 2;
+
+/// 辉光层混合模式（D2：两层都用 `screen`）。
+const lyricGlowBlendMode = BlendMode.screen;
+
+/// 远层辉光相对近层的不透明度系数（D2：固定 0.55）。
+const lyricGlowFarAlphaFactor = 0.55;
+
+/// 近层辉光 sigma：`fontSize * (0.08 + 0.02 * strength)`，clamp 到 2.5–5.0。
+double lyricGlowNearSigma({
+  required double fontSize,
+  required double strength,
+}) {
+  return (fontSize * (0.08 + 0.02 * strength))
+      .clamp(lyricGlowNearSigmaMin, lyricGlowNearSigmaMax)
+      .toDouble();
+}
+
+/// 远层辉光 sigma：`fontSize * (0.22 + 0.05 * strength)`，clamp 到 7.0–12.0。
+double lyricGlowFarSigma({required double fontSize, required double strength}) {
+  return (fontSize * (0.22 + 0.05 * strength))
+      .clamp(lyricGlowFarSigmaMin, lyricGlowFarSigmaMax)
+      .toDouble();
+}
+
+/// 辉光基础不透明度：`0.30 + 0.14 * strength`。
+double lyricGlowAlpha(double strength) => 0.30 + 0.14 * strength;
+
+/// 亚像素对齐：只对 baseline（y）按 device pixel 量化，x 保持连续。
+///
+/// 量化幅度不超过 `0.5 / dpr`，且对 y 单调不减（Grill Q7：x 若量化会让
+/// 逐字缩放的连续抛物线变成阶梯，反而制造新抖动）。
+double alignBaseline(double y, double devicePixelRatio) {
+  if (!devicePixelRatio.isFinite || devicePixelRatio <= 0) return y;
+  return (y * devicePixelRatio).round() / devicePixelRatio;
+}
+
 List<LyricLineTrack> _activeLineTracks(
   LyricRenderConfig config, {
   required bool hasTranslation,
@@ -180,14 +226,12 @@ class _LineGroup {
 
 class _WordPaintInfo {
   final List<_CharInfo> chars;
-  final String text;
   bool hasLift;
   final double wordProgress;
   final double wordDurationSec;
 
   _WordPaintInfo({
     required this.chars,
-    required this.text,
     required this.hasLift,
     required this.wordProgress,
     required this.wordDurationSec,
@@ -271,6 +315,12 @@ class LyricsLinePainter extends CustomPainter {
   final double? highlightDeadlineMs;
   final Duration lineMedianWordDuration;
 
+  /// device pixel ratio，用于 baseline 亚像素对齐（§5.1.4）。
+  ///
+  /// 由构造参数注入（不每帧读 `MediaQuery`）；dpr 变化会让已量化的 baseline
+  /// 失效，因此它参与 `shouldRepaint` 比较（V3）。
+  final double devicePixelRatio;
+
   // 多声部时按 agent 强制对齐：v1 左对齐，v2 右对齐
   LyricTextAlign get _effectiveTextAlign {
     if (config.hasMultipleAgents) {
@@ -292,6 +342,27 @@ class LyricsLinePainter extends CustomPainter {
   static final _blurPaintCache = <int, Paint>{};
   static const _maxBlurPaintCacheSize = 64;
 
+  /// 逐字光层 Paint 缓存（§5.1.1 第 2 步）。
+  ///
+  /// 键 = `(σBucket, blendMode)`：σ 与 style 都是**词级常量**，只有
+  /// `Paint.color` 每字变化，因此颜色绝不进键、而是每次使用前覆写。
+  /// 缓存的是 **Paint 实例**，绝不缓存"已经 layout 好的光层段落"（Q2）。
+  static final _glowPaintCache = <int, Paint>{};
+  static const _maxGlowPaintCacheSize = 16;
+
+  /// 单字文本层段落缓存（§5.1.1 第 3 步）。
+  ///
+  /// 只服务**颜色恒定**的层（dim 与纯色 played）。渐变 sweep 路径的
+  /// `LinearGradient.stops` 每帧变化，**永不进此缓存**（Q2）。
+  /// 缓存值是已 layout 的 `TextPainter`，因此必须独立于 `_textPainterPool`
+  /// 管理（V2：缓存命中时不得占用池内实例）。
+  static final _paragraphCache = <String, TextPainter>{};
+  static const _maxParagraphCacheSize = 256;
+
+  /// 段落缓存命中的 layout 次数统计（§8 WP3 的"4 → 2"断言用）。
+  static int _paragraphLayoutCount = 0;
+  static int _paragraphCacheHitCount = 0;
+
   LyricsLinePainter({
     required this.line,
     required this.currentTimeMs,
@@ -308,6 +379,7 @@ class LyricsLinePainter extends CustomPainter {
     this.agent,
     this.opacity = 1.0,
     this.highlightDeadlineMs,
+    this.devicePixelRatio = 1.0,
     required this.lineMedianWordDuration,
   }) : super(
          repaint: Listenable.merge([
@@ -345,6 +417,91 @@ class LyricsLinePainter extends CustomPainter {
     }
     _blurPaintCache[key] = paint;
     return paint;
+  }
+
+  /// 取一个按 `(σBucket, blendMode)` 复用的光层 Paint（§5.1.1 第 2 步）。
+  ///
+  /// 颜色**不进键**，由调用方在使用前逐字覆写；`MaskFilter` 继续复用
+  /// 既有的 `_blurFilter`（已按 σ 量化，不新增第二套 σ 缓存）。
+  static Paint _glowPaint(double sigma, BlendMode blendMode) {
+    final sigmaBucket = (sigma * 2).round();
+    final key = sigmaBucket * 31 + blendMode.index;
+    final cached = _glowPaintCache[key];
+    if (cached != null) {
+      _glowPaintCache.remove(key);
+      _glowPaintCache[key] = cached;
+      return cached;
+    }
+    if (_glowPaintCache.length >= _maxGlowPaintCacheSize) {
+      _glowPaintCache.remove(_glowPaintCache.keys.first);
+    }
+    final paint = Paint()
+      ..maskFilter = _blurFilter(sigma)
+      ..blendMode = blendMode;
+    _glowPaintCache[key] = paint;
+    return paint;
+  }
+
+  /// 取一个已 layout 的单字段落（§5.1.1 第 3 步）。
+  ///
+  /// 键包含 `char/styleSignature`，其中 styleSignature 覆盖
+  /// `fontFamily/fontSize/fontWeight/height/letterSpacing` 与**完整 ARGB 颜色**。
+  /// 颜色进键是 R1 的直接缓解：换色即 miss，不会把旧色烘死。
+  ///
+  /// 返回 `null` 表示本次不缓存（调用方回落到 `_textPainterPool`）。
+  static TextPainter? _cachedParagraph(
+    String char,
+    TextStyle style,
+    double opacitySignature,
+    int zhModeIndex, {
+    bool cacheable = true,
+  }) {
+    if (!cacheable || char.isEmpty) return null;
+    final color = style.color;
+    if (color == null) return null; // foreground(Paint) 层的颜色在 Paint 上，不进此缓存
+    final key = _paragraphKey(char, style, color, opacitySignature, zhModeIndex);
+    final cached = _paragraphCache[key];
+    if (cached != null) {
+      _paragraphCache.remove(key);
+      _paragraphCache[key] = cached;
+      _paragraphCacheHitCount++;
+      return cached;
+    }
+    return null;
+  }
+
+  static String _paragraphKey(
+    String char,
+    TextStyle style,
+    Color color,
+    double opacitySignature,
+    int zhModeIndex,
+  ) {
+    return '$char|${style.fontFamily}|${style.fontSize}|'
+        '${style.fontWeight?.value}|${style.height}|${style.letterSpacing}|'
+        '${color.toARGB32()}|$opacitySignature|$zhModeIndex';
+  }
+
+  /// 把一个已 layout 的单字段落放进缓存，并把该段的 `TextPainter` 所有权
+  /// 移交给缓存（**不得**再 `recycleTextPainter`，否则池会 dispose 仍在用的
+  /// 段落 —— V2）。
+  static void _storeParagraph(
+    String char,
+    TextStyle style,
+    Color color,
+    double opacitySignature,
+    int zhModeIndex,
+    TextPainter tp,
+  ) {
+    final key = _paragraphKey(char, style, color, opacitySignature, zhModeIndex);
+    if (_paragraphCache.length >= _maxParagraphCacheSize) {
+      final evicted = _paragraphCache.remove(_paragraphCache.keys.first);
+      evicted?.dispose();
+    } else if (_paragraphCache.containsKey(key)) {
+      return;
+    }
+    _paragraphLayoutCount++;
+    _paragraphCache[key] = tp;
   }
 
   TextStyle _textStyle({
@@ -403,6 +560,17 @@ class LyricsLinePainter extends CustomPainter {
     _measureCache.clear();
     _blurFilterCache.clear();
     _blurPaintCache.clear();
+    _glowPaintCache.clear();
+    _clearParagraphCache();
+  }
+
+  static void _clearParagraphCache() {
+    for (final tp in _paragraphCache.values) {
+      tp.dispose();
+    }
+    _paragraphCache.clear();
+    _paragraphLayoutCount = 0;
+    _paragraphCacheHitCount = 0;
   }
 
   /// 压缩对象池（主动瘦身，保留最少必要对象）
@@ -417,6 +585,12 @@ class LyricsLinePainter extends CustomPainter {
     }
     while (_blurPaintCache.length > 16) {
       _blurPaintCache.remove(_blurPaintCache.keys.first);
+    }
+    while (_glowPaintCache.length > 8) {
+      _glowPaintCache.remove(_glowPaintCache.keys.first);
+    }
+    while (_paragraphCache.length > 64) {
+      _paragraphCache.remove(_paragraphCache.keys.first)?.dispose();
     }
   }
 
@@ -442,6 +616,12 @@ class LyricsLinePainter extends CustomPainter {
         : '0.0';
     return 'Pool: size=${_textPainterPool.length}/$_maxPoolSize, hit=$hitRate%';
   }
+
+  /// 段落缓存的 layout 次数与命中次数（`@visibleForTesting` 语义的只读探针，
+  /// 供 §8 WP3 的"每帧 layout 4 → 2"断言使用；不改变生产行为）。
+  static int get paragraphLayoutCount => _paragraphLayoutCount;
+  static int get paragraphCacheHitCount => _paragraphCacheHitCount;
+  static int get paragraphCacheSize => _paragraphCache.length;
 
   double _bgOpacity(SyncLyricLine syncLine) {
     return _bgHeightFactor(syncLine);
@@ -893,7 +1073,22 @@ class LyricsLinePainter extends CustomPainter {
     );
     final playedTextColor = _styleColor(playedStyle, playedColor);
 
+    // 段落缓存的失效签名（Q2）：颜色已烘进 style 的 ARGB 键里；这里补上
+    // opacity 与中转换模式（二者都会改变最终字形/颜色，但未必改变 style 对象）。
+    final opacitySignature = _opacityFactor;
+    final zhModeIndex = zhMode.index;
+
     // ── Helper: paint one word with a given style ─────────────────────────
+    //
+    // D6（已拍板）：**统一逐字绘制**，整词快路径已删除。换行与 x 坐标本来
+    // 就是逐字测量的结果（measureRawChar / measureHeight），整词绘制等于用
+    // 另一套塑形去覆盖同一组 x，是"词进入效果时字距微跳"的根源。
+    // 已接受的代价：拉丁词无 kerning 时的字距亚像素变化（用户签认）。
+    //
+    // 每帧 layout 次数（原 4 次 → 现 0–2 次 + 缓存命中）：
+    //   dim / 纯色 played 层走段落缓存（颜色恒定，命中即跳过 layout）；
+    //   光层（far + near）每字必须重建（颜色逐字烘进段落）；
+    //   渐变 sweep 的 played 层永不进缓存（stops 每帧变化）。
     void paintWord(
       _WordPaintInfo word,
       TextStyle style,
@@ -902,6 +1097,8 @@ class LyricsLinePainter extends CustomPainter {
       Color? glowColor,
       double glowAlpha = 0.0,
       bool paintText = true,
+      bool cacheableText = true,
+      bool paintGlow = true,
     }) {
       final wc = word.chars;
       if (wc.isEmpty) return;
@@ -919,35 +1116,27 @@ class LyricsLinePainter extends CustomPainter {
               wordDurationSec: word.wordDurationSec,
             )
           : LyricWordEffect.none;
-      final hasScale = effect != LyricWordEffect.none;
-      if (!useLift && !hasScale && !hasGlow) {
-        if (paintText) {
-          tp.text = TextSpan(text: word.text, style: style);
-          tp.layout();
-          tp.paint(canvas, Offset(wc.first.x, wc.first.y));
-        }
-        return;
-      }
 
+      // 词级常量：σ、光层 Paint 与光层 TextStyle 每词只算一次（§5.1.2）。
+      // Paint 的 color 逐字覆写，σ 与 style 不变 ⇒ 不再每词每帧 2 次 copyWith。
       final effectStrength = _lyricWordEffectStrength(
         wordDuration,
         lineMedianWordDuration,
       );
-      final nearGlowSigma = (fontSize * (0.08 + 0.02 * effectStrength))
-          .clamp(2.5, 5.0)
-          .toDouble();
-      final farGlowSigma = (fontSize * (0.22 + 0.05 * effectStrength))
-          .clamp(7.0, 12.0)
-          .toDouble();
-      final nearGlowPaint = hasGlow
-          ? (Paint()
-              ..maskFilter = _blurFilter(nearGlowSigma)
-              ..blendMode = BlendMode.screen)
+      final nearGlowPaint = hasGlow && paintGlow
+          ? _glowPaint(
+              lyricGlowNearSigma(
+                fontSize: fontSize,
+                strength: effectStrength,
+              ),
+              lyricGlowBlendMode,
+            )
           : null;
-      final farGlowPaint = hasGlow
-          ? (Paint()
-              ..maskFilter = _blurFilter(farGlowSigma)
-              ..blendMode = BlendMode.screen)
+      final farGlowPaint = hasGlow && paintGlow
+          ? _glowPaint(
+              lyricGlowFarSigma(fontSize: fontSize, strength: effectStrength),
+              lyricGlowBlendMode,
+            )
           : null;
       final nearGlowStyle = nearGlowPaint == null
           ? null
@@ -963,8 +1152,15 @@ class LyricsLinePainter extends CustomPainter {
               foreground: farGlowPaint,
               shadows: null,
             );
+      final textColor = style.color;
+
       for (final info in wc) {
-        final paintOffset = Offset(info.x, info.y + info.yLift);
+        // 亚像素对齐只作用于 y（§5.1.4 / Grill Q7）：x 保持连续，否则
+        // 逐字缩放的连续抛物线会变成阶梯。三层共用同一个 Offset。
+        final paintOffset = Offset(
+          info.x,
+          alignBaseline(info.y + info.yLift, devicePixelRatio),
+        );
         final scale = lyricCharacterScale(
           effect: effect,
           duration: wordDuration,
@@ -987,12 +1183,14 @@ class LyricsLinePainter extends CustomPainter {
           final pulse = _lyricEffectParabola(info.charProgress);
           final adjustedAlpha = resolvedGlowColor!.a * glowAlpha * pulse;
           if (adjustedAlpha > 0.02) {
+            // 远层：α = adjustedAlpha * 0.55（D2 不变）
             farGlowPaint.color = resolvedGlowColor.withValues(
-              alpha: adjustedAlpha * 0.55,
+              alpha: adjustedAlpha * lyricGlowFarAlphaFactor,
             );
             tp.text = TextSpan(text: info.char, style: farGlowStyle);
             tp.layout();
             tp.paint(canvas, paintOffset);
+            // 近层：α = adjustedAlpha（D2 不变）
             nearGlowPaint.color = resolvedGlowColor.withValues(
               alpha: adjustedAlpha,
             );
@@ -1002,9 +1200,39 @@ class LyricsLinePainter extends CustomPainter {
           }
         }
         if (paintText) {
-          tp.text = TextSpan(text: info.char, style: style);
-          tp.layout();
-          tp.paint(canvas, paintOffset);
+          final cached = textColor == null
+              ? null
+              : _cachedParagraph(
+                  info.char,
+                  style,
+                  opacitySignature,
+                  zhModeIndex,
+                  cacheable: cacheableText,
+                );
+          if (cached != null) {
+            cached.paint(canvas, paintOffset);
+          } else if (cacheableText && textColor != null) {
+            // 未命中：新建一个**由缓存接管**的实例（不进 `_textPainterPool`，
+            // 否则 `clearPool()` 会 dispose 仍在缓存里的段落 —— V2）。
+            // 一次 layout 同时用于本帧绘制与后续命中。
+            final owned = TextPainter(
+              text: TextSpan(text: info.char, style: style),
+              textDirection: TextDirection.ltr,
+            )..layout();
+            owned.paint(canvas, paintOffset);
+            _storeParagraph(
+              info.char,
+              style,
+              textColor,
+              opacitySignature,
+              zhModeIndex,
+              owned,
+            );
+          } else {
+            tp.text = TextSpan(text: info.char, style: style);
+            tp.layout();
+            tp.paint(canvas, paintOffset);
+          }
         }
         if (needsScale) {
           canvas.restore();
@@ -1018,18 +1246,15 @@ class LyricsLinePainter extends CustomPainter {
 
       final words = <_WordPaintInfo>[];
       List<_CharInfo>? currentChars;
-      StringBuffer? currentText;
       var currentHasLift = false;
       int? currentWordIndex;
       var lineFullyPlayed = true;
       void finishWord() {
         final chars = currentChars;
-        final text = currentText;
-        if (chars == null || text == null || chars.isEmpty) return;
+        if (chars == null || chars.isEmpty) return;
         final first = chars.first;
         final word = _WordPaintInfo(
           chars: chars,
-          text: text.toString(),
           hasLift: currentHasLift,
           wordProgress: first.wordProgress,
           wordDurationSec: first.wordDurationSec,
@@ -1042,12 +1267,10 @@ class LyricsLinePainter extends CustomPainter {
         if (currentChars == null || info.wordIndex != currentWordIndex) {
           finishWord();
           currentChars = <_CharInfo>[];
-          currentText = StringBuffer();
           currentHasLift = false;
           currentWordIndex = info.wordIndex;
         }
         currentChars.add(info);
-        currentText!.write(info.char);
         currentHasLift = currentHasLift || info.yLift != 0.0;
       }
       finishWord();
@@ -1226,19 +1449,27 @@ class LyricsLinePainter extends CustomPainter {
       }
 
       // ── Pass 2: played 文字层 ────────────────────────────────────────────
-      void paintPlayedLayer(TextStyle style) {
+      // 纯色 played 层的颜色在整行生命周期内恒定 ⇒ 可进段落缓存；
+      // 渐变 sweep 层的 stops 每帧变化 ⇒ **永不缓存**（Grill Q2）。
+      void paintPlayedLayer(TextStyle style, {required bool cacheable}) {
         for (final wc in words) {
-          paintWord(wc, style, wc.hasLift, applyScale: config.enableGlow);
+          paintWord(
+            wc,
+            style,
+            wc.hasLift,
+            applyScale: config.enableGlow,
+            cacheableText: cacheable,
+          );
         }
       }
 
       // Soft sweep highlight: old visual feel without saveLayer masking.
       if (lineFullyPlayed || clippedHighlightR >= right - 0.5) {
-        paintPlayedLayer(playedStyle);
+        paintPlayedLayer(playedStyle, cacheable: true);
       } else if (clippedHighlightR > left) {
         canvas.save();
         canvas.clipRect(playedClip);
-        paintPlayedLayer(gradientPlayedStyle);
+        paintPlayedLayer(gradientPlayedStyle, cacheable: false);
         canvas.restore();
       }
     }
@@ -2034,6 +2265,7 @@ class LyricsLinePainter extends CustomPainter {
         fontFamily != oldDelegate.fontFamily ||
         agent != oldDelegate.agent ||
         highlightDeadlineMs != oldDelegate.highlightDeadlineMs ||
+        devicePixelRatio != oldDelegate.devicePixelRatio ||
         isMainLine != oldDelegate.isMainLine ||
         isHighlightActive != oldDelegate.isHighlightActive ||
         accelerateTailHighlight != oldDelegate.accelerateTailHighlight;
@@ -2042,6 +2274,7 @@ class LyricsLinePainter extends CustomPainter {
   double measureHeight(
     double maxWidth, {
     bool reserveBackgroundVocalHeight = true,
+    double? backgroundVocalHeightFactor,
   }) {
     final isSyncLineByLine =
         line is SyncLyricLine &&
@@ -2265,7 +2498,10 @@ class LyricsLinePainter extends CustomPainter {
           bgHeight += bgFontSize * 0.45 + bgTransTp.height;
           recycleTextPainter(bgTransTp);
         }
-        height += bgHeight * _bgHeightFactor(syncLine);
+        final heightFactor = backgroundVocalHeightFactor ?? _bgHeightFactor(
+          syncLine,
+        );
+        height += bgHeight * heightFactor;
       }
 
       return height;
