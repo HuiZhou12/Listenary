@@ -202,6 +202,11 @@ Future<void> main() async {
 
   // 品牌页成为窗口的首帧内容 ⇒ 天然没有「空壳」闪烁；`initWindow` 的
   // waitUntilReadyToShow → show/focus 时机保持原样。
+  // `startupClock` 只用于日志诊断：品牌页的可见时长从**首帧**起算，不再抵扣这段耗时
+  // （2026-11-04 真机验收：旧口径把可见窗口吃光，用户完全没看清）。
+  // 主题不在主壳之前显式解析：品牌页由 `SplashPage`/`resolveSplashColorScheme` 在
+  // build 里读 `ThemeProvider`（带兜底）——它需要 FRB，而 `RustLib.init` 失败是被
+  // `main()` 吞掉后继续的，在这里直接摸 `ThemeProvider.instance` 会新增一条崩溃路径。
   runApp(
     SplashGate(
       alreadyElapsed: startupClock.elapsed,
