@@ -690,47 +690,71 @@ class _PlatformCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: InkWell(
-                    key: ValueKey(
-                      'online-music-platform-card-header-${identity.configKey}',
-                    ),
-                    onTap: onToggleExpanded,
+                  // 卡头的高亮**只覆盖文字区与箭头**，并且四周留 4/2 的内缩：
+                  // 以前 InkWell 没有任何颜色参数 ⇒ 默认 hover 色块铺满整条卡头、
+                  // 且直接贴到卡片边缘（用户真机验收报的就是这个 ✗）。
+                  child: Material(
+                    type: MaterialType.transparency,
                     borderRadius: AppRadius.smCircular,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  label,
-                                  style: const TextStyle(
-                                    fontSize: AppType.body,
-                                    fontWeight: AppType.weightSemibold,
-                                  ),
+                    child: InkWell(
+                      key: ValueKey(
+                        'online-music-platform-card-header-${identity.configKey}',
+                      ),
+                      onTap: onToggleExpanded,
+                      hoverColor: scheme.onSurface.withValues(
+                        alpha: Alpha.hover,
+                      ),
+                      // 键盘 focus / 点按涟漪都不再额外压一层底色：
+                      // 默认 focus 是 12%，比 hover 暗三倍，会出现"切回鼠标还留着深色块"。
+                      focusColor: Colors.transparent,
+                      splashColor: Colors.transparent,
+                      borderRadius: AppRadius.smCircular,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4.0,
+                          vertical: 2.0,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 4.0,
                                 ),
-                                for (final line in statusLines)
-                                  Text(
-                                    line,
-                                    style: TextStyle(
-                                      fontSize: AppType.caption,
-                                      color: scheme.onSurfaceVariant,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      label,
+                                      style: const TextStyle(
+                                        fontSize: AppType.body,
+                                        fontWeight: AppType.weightSemibold,
+                                      ),
                                     ),
-                                  ),
-                              ],
+                                    for (final line in statusLines)
+                                      Text(
+                                        line,
+                                        style: TextStyle(
+                                          fontSize: AppType.caption,
+                                          color: scheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ),
+                            // 展开指示：与状态文案同色，避免抢走平台名与开关的注意力。
+                            Icon(
+                              expanded
+                                  ? Symbols.expand_less
+                                  : Symbols.expand_more,
+                              size: 20,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 4),
+                          ],
                         ),
-                        // 展开指示：与状态文案同色，避免抢走平台名与开关的注意力。
-                        Icon(
-                          expanded ? Symbols.expand_less : Symbols.expand_more,
-                          size: 20,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 4),
-                      ],
+                      ),
                     ),
                   ),
                 ),

@@ -37,6 +37,9 @@ class OnlineAlbumRow extends StatelessWidget {
         borderRadius: AppRadius.smCircular,
         child: InkWell(
           borderRadius: AppRadius.smCircular,
+          // 与曲目行同一惯例（`onSurface @ Alpha.hover`）✓：不写会拿到主题默认的
+          // 纯黑/纯白 4%（不跟配色走）⇒ 同一页里两种来源的 hover 色相不一致 ✗。
+          hoverColor: scheme.onSurface.withValues(alpha: Alpha.hover),
           onTap:
               onTapOverride ??
               () => context.push(

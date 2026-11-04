@@ -611,6 +611,28 @@ class _EntryState extends State<Entry>
         backgroundColor: colorScheme.surface,
         shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
       ),
+      // **全应用统一的 Tooltip 气泡**（用户真机验收：默认气泡是系统深灰块，
+      // 在我们的浅色卡片上像一块异物 ✗）。统一成"浅色融入式"：底色取容器色、
+      // 圆角与文字色都跟主题走，深浅色主题下都能读 ✓。只改样式，不改任何
+      // Tooltip 的 message 文本（测试按文案查找 ✓）。
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest,
+          borderRadius: AppRadius.xsCircular,
+        ),
+        textStyle: textTheme.bodySmall?.copyWith(
+          color: colorScheme.onSurface,
+          fontSize: AppType.caption,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: Spacing.sm,
+          vertical: 4,
+        ),
+        // 悬停 400ms 才出：太快会让扫过界面的鼠标一路"冒气泡"✗。
+        waitDuration: const Duration(milliseconds: 400),
+        // 与控件留 8px：贴着控件会盖住自身的下划线/描边 ✓。
+        verticalOffset: 8,
+      ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: colorScheme.surface,
         shape: const RoundedRectangleBorder(

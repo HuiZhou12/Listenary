@@ -768,6 +768,10 @@ class _ArtistTrackRow extends StatelessWidget {
                             message: '查看专辑',
                             child: InkWell(
                               borderRadius: AppRadius.xsCircular,
+                              // 与曲目行/专辑行同一惯例：只补颜色，不动布局 ✓。
+                              hoverColor: scheme.onSurface.withValues(
+                                alpha: Alpha.hover,
+                              ),
                               onTap: () => context.push(
                                 app_paths.ONLINE_ALBUM_PAGE,
                                 extra: (

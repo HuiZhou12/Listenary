@@ -419,13 +419,26 @@ class _DetailSegmentState extends State<_DetailSegment> {
       ),
     );
     if (onTap == null) return text;
+    final scheme = Theme.of(context).colorScheme;
     final link = MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: InkWell(
         onTap: onTap,
+        // 与整行同一浓度、同一来源（`onSurface @ Alpha.hover`）✓：
+        // 不写的话拿到的是主题默认的**纯黑/纯白** 4%（不跟配色走）⇒
+        // 换主题（封面取色）时这一段的高亮会和整行不是同一个色相 ✗。
+        hoverColor: scheme.onSurface.withValues(alpha: Alpha.hover),
+        // 键盘 focus（默认 12%）与点按涟漪都不再额外压底色：详情行的可点段
+        // 是"文字级的次级入口" ✓，压深一块方块会盖住整行的悬停反馈 ✗。
+        focusColor: Colors.transparent,
+        splashColor: Colors.transparent,
         borderRadius: AppRadius.xsCircular,
-        child: text,
+        // 2/1 的内缩：让高亮块**不贴字**（贴字会让下划线与色块黏在一起 ✗）。
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2.0, vertical: 1.0),
+          child: text,
+        ),
       ),
     );
     final tooltip = widget.part.tooltip;
